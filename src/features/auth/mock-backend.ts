@@ -163,17 +163,6 @@ export async function mockSendResetLink(email: string): Promise<{ sent: true }> 
 }
 
 /* -------------------------------------------------------------------------- */
-/* Onboarding — create a dispatch organization                                 */
-/* -------------------------------------------------------------------------- */
-
-/** Pretends to create an organization. Creates nothing. */
-export async function mockCreateOrganization(name: string): Promise<{ created: true }> {
-  void name; // the real adapter creates the organization under this name
-  await sleep(LATENCY_MS);
-  return { created: true };
-}
-
-/* -------------------------------------------------------------------------- */
 /* Onboarding — invitations                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -212,4 +201,168 @@ export async function mockAcceptInvitation(code: string): Promise<{ joined: true
   void code; // the real adapter redeems this invitation
   await sleep(LATENCY_MS);
   return { joined: true };
+}
+/* -------------------------------------------------------------------------- */
+/* Onboarding — FMCSA carrier lookup                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ███ NOT FMCSA ███
+ *
+ * Nothing below talks to FMCSA, SAFER, the QCMobile API or any other register.
+ * These are three invented carriers, chosen so every outcome the carrier
+ * verification screen has to handle can actually be reached in review.
+ */
+export interface FmcsaCarrier {
+  legalName: string;
+  dbaName?: string;
+  mc: string;
+  dot: string;
+  location: string;
+  entityType: string;
+  operatingStatus: string;
+  /** null models a register entry with no usable address on file. */
+  email: string | null;
+}
+
+const FMCSA_RECORDS: FmcsaCarrier[] = [
+  {
+    legalName: "Northline Freight LLC",
+    dbaName: "Northline",
+    mc: "123456",
+    dot: "1234567",
+    location: "Boise, ID",
+    entityType: "Carrier",
+    operatingStatus: "Authorized for property",
+    email: "sam_salem@gmail.com",
+  },
+  {
+    legalName: "Cascade Haul Inc",
+    mc: "654321",
+    dot: "7654321",
+    location: "Portland, OR",
+    entityType: "Carrier",
+    operatingStatus: "Authorized for property",
+    email: "ops_team@cascadehaul.com",
+  },
+  {
+    legalName: "Sierra Transport Co",
+    mc: "111111",
+    dot: "2222222",
+    location: "Reno, NV",
+    entityType: "Carrier",
+    operatingStatus: "Authorized for property",
+    email: null,
+  },
+];
+
+/** DOT numbers already claimed by an Antcolos account. */
+const CLAIMED_DOT_NUMBERS = new Set(["7654321"]);
+
+export type CarrierLookupResult =
+  | { status: "found"; carrier: FmcsaCarrier & { email: string } }
+  | { status: "not-found" }
+  | { status: "mismatch"; mcCarrier: string; dotCarrier: string }
+  | { status: "already-claimed"; carrier: FmcsaCarrier }
+  | { status: "no-email"; carrier: FmcsaCarrier };
+
+/**
+ * Pretends to search the federal register. Searches nothing.
+ *
+ * Either identifier on its own is enough. When both are given they must point
+ * at the same carrier — two valid numbers belonging to different companies is a
+ * distinct answer from "no such carrier", because it usually means a typo in
+ * one of them rather than a carrier that does not exist.
+ */
+export async function mockLookUpCarrier(
+  mcDigits: string,
+  dotDigits: string,
+): Promise<CarrierLookupResult> {
+  await sleep(1100); // a register lookup is the slowest thing in the flow
+
+  const byMc = mcDigits ? FMCSA_RECORDS.find((c) => c.mc === mcDigits) : undefined;
+  const byDot = dotDigits ? FMCSA_RECORDS.find((c) => c.dot === dotDigits) : undefined;
+
+  if (mcDigits && dotDigits) {
+    if (!byMc || !byDot) return { status: "not-found" };
+    if (byMc.dot !== byDot.dot) {
+      return { status: "mismatch", mcCarrier: byMc.legalName, dotCarrier: byDot.legalName };
+    }
+  }
+
+  const carrier = byMc ?? byDot;
+  if (!carrier) return { status: "not-found" };
+  if (CLAIMED_DOT_NUMBERS.has(carrier.dot)) return { status: "already-claimed", carrier };
+  if (!carrier.email) return { status: "no-email", carrier };
+  return { status: "found", carrier: { ...carrier, email: carrier.email } };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Onboarding — codes sent to an organization's own address                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Pretends to email a code to an address the user did not type — a carrier's
+ * FMCSA address, or a dispatch organization's official address. Sends nothing.
+ */
+export async function mockSendOrgCode(address: string): Promise<SendCodeResult> {
+  void address; // the real adapter sends the code here, and only here
+  await sleep(LATENCY_MS);
+  return { sent: true };
+}
+
+/** Same rules as the signup code. Verifies nothing. */
+export async function mockVerifyOrgCode(
+  code: string,
+  codeIsStale: boolean,
+): Promise<VerifyCodeResult> {
+  await sleep(LATENCY_MS);
+  if (code === ALWAYS_EXPIRED_CODE || codeIsStale) return { status: "expired" };
+  if (code === VALID_CODE) return { status: "verified" };
+  return { status: "invalid" };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Onboarding — organization creation                                          */
+/* -------------------------------------------------------------------------- */
+
+export interface CarrierOrganizationInput {
+  ownerLegalName: string;
+  mc: string;
+  dot: string;
+  legalName: string;
+}
+
+/**
+ * Pretends to create the carrier organization and record this user as its
+ * verified owner. Creates nothing.
+ */
+export async function mockCreateCarrierOrganization(
+  input: CarrierOrganizationInput,
+): Promise<{ created: true }> {
+  void input;
+  await sleep(LATENCY_MS);
+  return { created: true };
+}
+
+export interface DispatchOrganizationInput {
+  ownerLegalName: string;
+  organizationName: string;
+  /** The organization's official address. May equal the owner's personal one. */
+  organizationEmail: string;
+}
+
+/**
+ * Pretends to create the dispatch organization. Creates nothing.
+ *
+ * There is no password here on purpose: the person already set one for their
+ * personal Antcolos account during signup, and an organization is not an
+ * account you log into.
+ */
+export async function mockCreateDispatchOrganization(
+  input: DispatchOrganizationInput,
+): Promise<{ created: true }> {
+  void input;
+  await sleep(LATENCY_MS);
+  return { created: true };
 }

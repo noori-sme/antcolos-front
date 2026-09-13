@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { AuthShell, AuthSwitchLink } from "./shell";
 import { StepProgress } from "./controls";
 import { StepEmail } from "./step-email";
@@ -9,6 +9,7 @@ import { StepVerify } from "./step-verify";
 import { StepUsername } from "./step-username";
 import { StepPassword } from "./step-password";
 import { CODE_LENGTH } from "./rules";
+import { useStageFocus } from "./use-stage-focus";
 
 const STEPS = ["email", "verify", "username", "password"] as const;
 type Step = (typeof STEPS)[number];
@@ -25,23 +26,10 @@ type Step = (typeof STEPS)[number];
  */
 export function SignUpScreen() {
   const router = useRouter();
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  const isFirstRender = useRef(true);
-
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
-
-  // Moving focus to the new step's heading is what tells a screen-reader user
-  // that the screen changed. Skipped on first paint so loading /sign-up does not
-  // yank focus out of the browser chrome.
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    headingRef.current?.focus();
-  }, [step]);
+  const headingRef = useStageFocus<HTMLHeadingElement>(step);
 
   const copy: Record<Step, { title: string; description: React.ReactNode }> = {
     email: {

@@ -143,3 +143,101 @@ export function validateOrgName(raw: string): string | null {
   }
   return null;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Person's legal name                                                         */
+/* -------------------------------------------------------------------------- */
+
+export const FULL_NAME_MAX_LENGTH = 80;
+
+/**
+ * Deliberately loose. Legal names carry particles, hyphens, apostrophes,
+ * accents and single words, and a form that argues with someone about their own
+ * name is a bug. Only genuinely unusable input is refused.
+ */
+export function validateFullName(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return "Enter the owner's full legal name.";
+  if (value.length < 2) return "That name looks too short.";
+  if (value.length > FULL_NAME_MAX_LENGTH) {
+    return `Use at most ${FULL_NAME_MAX_LENGTH} characters.`;
+  }
+  if (!/\p{L}/u.test(value)) return "Enter the name as it appears on the authority.";
+  return null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Motor carrier identifiers                                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Either identifier alone is enough to look a carrier up; both is better. */
+export const MC_MAX_DIGITS = 8;
+export const DOT_MAX_DIGITS = 8;
+
+/** "MC-123456", "mc 123456" and "123456" all mean the same number. */
+export function normalizeMcNumber(raw: string): string {
+  return raw.trim().replace(/^mc[\s\-–—:]*/i, "").replace(/\D/g, "");
+}
+
+export function normalizeDotNumber(raw: string): string {
+  return raw.trim().replace(/^(usdot|dot)[\s\-–—:]*/i, "").replace(/\D/g, "");
+}
+
+/** Returns a problem with the shape, or null. Empty is allowed — see below. */
+export function validateMcNumber(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  if (!/^(mc[\s\-–—:]*)?\d+$/i.test(value)) return "An MC number is digits only, like 123456.";
+  const digits = normalizeMcNumber(value);
+  if (digits.length > MC_MAX_DIGITS) return `MC numbers are at most ${MC_MAX_DIGITS} digits.`;
+  return null;
+}
+
+export function validateDotNumber(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  if (!/^((usdot|dot)[\s\-–—:]*)?\d+$/i.test(value)) {
+    return "A DOT number is digits only, like 1234567.";
+  }
+  const digits = normalizeDotNumber(value);
+  if (digits.length > DOT_MAX_DIGITS) return `DOT numbers are at most ${DOT_MAX_DIGITS} digits.`;
+  return null;
+}
+
+/** At least one identifier has to be present for a lookup to mean anything. */
+export function validateCarrierIdentifiers(mc: string, dot: string): string | null {
+  if (!mc.trim() && !dot.trim()) return "Enter an MC number, a DOT number, or both.";
+  return null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Verification codes sent to an organization's own address                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Codes sent to a carrier's FMCSA address or a dispatch organization's official
+ * address last longer than the personal signup code: the person may have to go
+ * and ask someone else to read the mailbox to them.
+ */
+export const ORG_CODE_TTL_SECONDS = 600;
+
+/* -------------------------------------------------------------------------- */
+/* Email masking                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `sam_salem@gmail.com` -> `s******em@gmail.com`
+ *
+ * Enough of the address survives for the owner to recognise their own mailbox,
+ * not enough for a stranger reading over their shoulder to learn it. Used
+ * wherever an address the user did not type themselves is shown back to them.
+ */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return email;
+  const local = email.slice(0, at);
+  const domain = email.slice(at);
+  if (local.length <= 3) return `${local[0]}${"*".repeat(Math.max(1, local.length - 1))}${domain}`;
+  const stars = "*".repeat(Math.max(1, local.length - 3));
+  return `${local[0]}${stars}${local.slice(-2)}${domain}`;
+}
