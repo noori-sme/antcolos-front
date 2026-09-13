@@ -1,4 +1,4 @@
-import type { Driver, Load, NeedsYouItem, Truck } from "@/types";
+import type { Driver, FleetTruck, Load, NeedsYouItem } from "@/types";
 import type { ServiceContext } from "./context";
 
 export interface OperationalCounts {
@@ -26,7 +26,7 @@ export interface HomeSummary {
   needsYouPreview: NeedsYouItem[];
   activeLoads: Load[];
   upcomingLoads: Load[];
-  soonEmptyTrucks: Truck[];
+  soonEmptyTrucks: FleetTruck[];
   unassignedLoads: Load[];
   driversNeedingAttention: Driver[];
   financials: FinancialSummary | null;

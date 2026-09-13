@@ -9,6 +9,8 @@ export type PermissionKey =
   | "drivers:view" | "drivers:create" | "drivers:edit" | "drivers:delete"
   // Trucks
   | "trucks:view" | "trucks:create" | "trucks:edit" | "trucks:delete"
+  | "trucks:documents:manage" | "trucks:assignments:manage"
+  | "trucks:relationships:manage" | "trucks:ownership:review"
   // Trailers
   | "trailers:view" | "trailers:create" | "trailers:edit" | "trailers:delete"
   // Customers

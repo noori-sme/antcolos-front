@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { FleetRosterScreen } from "@/features/fleet/fleet-roster-screen";
 
 export const metadata = { title: "Trucks" };
 
 export default function Page() {
-  return <ModulePlaceholder title="Trucks" description="Permanent truck entities; carrier and driver attach as relationships." />;
+  return <FleetRosterScreen />;
 }

@@ -1,18 +1,35 @@
-export type TruckStatus = "available" | "on_load" | "out_of_service" | "maintenance";
+import type { TruckEquipmentType, TruckOperatingStatus } from "./truck";
+
+/** One status vocabulary for power units and trailers alike. */
+export type TruckStatus = TruckOperatingStatus;
 
 /**
- * A truck is a PERMANENT entity. Carrier, owner and driver are relationships
- * that change over time; they are never fields that get overwritten.
+ * One organization's operational view of a permanent truck.
+ *
+ * This is a PROJECTION, not the truck. The truck itself lives in the permanent
+ * registry keyed by `truckId`; this is what a particular organization sees of
+ * it right now, assembled from that organization's relationship: its own unit
+ * number, its own operating parameters, the driver it has assigned.
+ *
+ * It is derived, never stored, and never the source of truth. Two carriers
+ * looking at the same truck get two different projections of one record — not
+ * two trucks.
  */
-export interface Truck {
+export interface FleetTruck {
+  /** The permanent truck this is a view of. */
+  truckId: string;
+  /** Same value as truckId. Kept so existing callers can key rows by `id`. */
   id: string;
+  /** Whose view this is. Derived from the relationship, never trusted input. */
   organizationId: string;
+  /** This organization's label for the truck. Belongs to the relationship. */
   unit: string;
-  /** For dispatch agencies: the carrier authority this truck runs under. */
+  /** For dispatch organizations: the carrier that actually operates it. */
   carrierName?: string;
-  equipment: "cargo_van" | "sprinter" | "box_truck" | "dry_van" | "reefer" | "flatbed";
+  equipment: TruckEquipmentType;
   status: TruckStatus;
   currentDriverId?: string;
+  currentDriverName?: string;
   currentLoadId?: string;
   nextLoadId?: string;
   currentCity?: string;

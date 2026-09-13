@@ -1,4 +1,5 @@
-import { missingRequiredDocuments, type Load, type Truck } from "@/types";
+import { missingRequiredDocuments, type FleetTruck, type Load } from "@/types";
+import { fleetSync, truckContextFrom } from "./truck-registry";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
 import type { FinancialSummary, HomeService, HomeSummary } from "../contracts/home";
 import { mockNeedsYouService, urgencyScore } from "./needs-you";
@@ -21,14 +22,13 @@ function visibleLoads(ctx: ServiceContext): Load[] {
   return scoped.map((l) => redactFinancials(ctx, l));
 }
 
-function visibleTrucks(ctx: ServiceContext): Truck[] {
-  if (!ctx.permissions.has("trucks:view")) return [];
-  const org = mockStore.org(ctx.organizationId);
-  const trucks = org.trucks;
-  if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
-    return trucks.filter((t) => t.currentDriverId === ctx.driverProfileId);
-  }
-  return trucks;
+/**
+ * Trucks are no longer rows inside this organization's data. They live once, in
+ * the permanent registry, and this is the organization's view of the ones its
+ * relationships entitle it to see.
+ */
+function visibleTrucks(ctx: ServiceContext): FleetTruck[] {
+  return fleetSync(truckContextFrom(ctx));
 }
 
 function pickupAt(load: Load): number {
@@ -56,7 +56,7 @@ export const mockHomeService: HomeService = {
     );
 
     const soonEmptyTrucks = trucks
-      .filter((t) => t.status !== "out_of_service" && t.status !== "maintenance")
+      .filter((t) => t.status !== "unavailable" && t.status !== "maintenance")
       .filter((t) => {
         if (t.status === "available") return true;
         if (!t.estimatedEmptyAt) return false;

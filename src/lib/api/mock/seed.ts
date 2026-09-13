@@ -1,8 +1,9 @@
 import type {
-  Customer, Document, Driver, Load, LoadEvent, NeedsYouItem, Trailer, Truck,
+  Customer, Document, Driver, Load, LoadEvent, NeedsYouItem, Trailer,
 } from "@/types";
 import { buildLoad, nextId, type LoadSeed } from "./build-load";
 import { daysFromNow, hoursFromNow, minutesFromNow } from "./time";
+import { TRUCK_IDS } from "./truck-registry";
 
 /**
  * Seed data, PARTITIONED BY ORGANIZATION. Every collection is keyed by
@@ -13,7 +14,6 @@ export interface OrgData {
   loads: Load[];
   events: LoadEvent[];
   documents: Document[];
-  trucks: Truck[];
   trailers: Trailer[];
   drivers: Driver[];
   customers: Customer[];
@@ -78,28 +78,18 @@ function northline(): OrgData {
   ];
 
   const drivers: Driver[] = [
-    { id: "drv_nl_01", organizationId: org, userId: "usr_dmitri", displayName: "Dmitri Kovalenko", status: "driving", phone: "+1 (312) 555-0181", currentTruckId: "trk_nl_104", telegramConnected: true, documentWarnings: 0 },
-    { id: "drv_nl_02", organizationId: org, displayName: "Marisol Ortiz", status: "driving", phone: "+1 (312) 555-0182", currentTruckId: "trk_nl_107", telegramConnected: true, documentWarnings: 0 },
-    { id: "drv_nl_03", organizationId: org, displayName: "Ray Bell", status: "available", phone: "+1 (312) 555-0183", currentTruckId: "trk_nl_111", telegramConnected: true, documentWarnings: 0 },
-    { id: "drv_nl_04", organizationId: org, displayName: "Amir Haddad", status: "driving", phone: "+1 (312) 555-0184", currentTruckId: "trk_nl_115", telegramConnected: true, documentWarnings: 1 },
-    { id: "drv_nl_05", organizationId: org, displayName: "Tomas Reyes", status: "available", phone: "+1 (312) 555-0185", currentTruckId: "trk_nl_118", telegramConnected: false, documentWarnings: 0 },
-    { id: "drv_nl_06", organizationId: org, displayName: "Kelsey Nguyen", status: "off_duty", phone: "+1 (312) 555-0186", currentTruckId: "trk_nl_121", telegramConnected: true, documentWarnings: 0 },
+    { id: "drv_nl_01", organizationId: org, userId: "usr_dmitri", displayName: "Dmitri Kovalenko", status: "driving", phone: "+1 (312) 555-0181", currentTruckId: TRUCK_IDS.nl104, telegramConnected: true, documentWarnings: 0 },
+    { id: "drv_nl_02", organizationId: org, displayName: "Marisol Ortiz", status: "driving", phone: "+1 (312) 555-0182", currentTruckId: TRUCK_IDS.nl107, telegramConnected: true, documentWarnings: 0 },
+    { id: "drv_nl_03", organizationId: org, displayName: "Ray Bell", status: "available", phone: "+1 (312) 555-0183", currentTruckId: TRUCK_IDS.nl111, telegramConnected: true, documentWarnings: 0 },
+    { id: "drv_nl_04", organizationId: org, displayName: "Amir Haddad", status: "driving", phone: "+1 (312) 555-0184", currentTruckId: TRUCK_IDS.nl115, telegramConnected: true, documentWarnings: 1 },
+    { id: "drv_nl_05", organizationId: org, displayName: "Tomas Reyes", status: "available", phone: "+1 (312) 555-0185", currentTruckId: TRUCK_IDS.nl118, telegramConnected: false, documentWarnings: 0 },
+    { id: "drv_nl_06", organizationId: org, displayName: "Kelsey Nguyen", status: "off_duty", phone: "+1 (312) 555-0186", currentTruckId: TRUCK_IDS.nl121, telegramConnected: true, documentWarnings: 0 },
   ];
 
-  const trucks: Truck[] = [
-    { id: "trk_nl_104", organizationId: org, unit: "104", equipment: "cargo_van", status: "on_load", currentDriverId: "drv_nl_01", currentCity: "Lafayette", currentState: "IN", estimatedEmptyAt: hoursFromNow(4), minimumRatePerMileCents: 100, maxDeadheadMiles: 30, documentWarnings: 0 },
-    { id: "trk_nl_107", organizationId: org, unit: "107", equipment: "sprinter", status: "on_load", currentDriverId: "drv_nl_02", currentCity: "Indianapolis", currentState: "IN", estimatedEmptyAt: hoursFromNow(2), minimumRatePerMileCents: 105, maxDeadheadMiles: 30, documentWarnings: 0 },
-    { id: "trk_nl_111", organizationId: org, unit: "111", equipment: "cargo_van", status: "available", currentDriverId: "drv_nl_03", currentCity: "Chicago", currentState: "IL", estimatedEmptyAt: hoursFromNow(-3), minimumRatePerMileCents: 100, maxDeadheadMiles: 30, documentWarnings: 0 },
-    { id: "trk_nl_115", organizationId: org, unit: "115", equipment: "box_truck", status: "on_load", currentDriverId: "drv_nl_04", currentCity: "Memphis", currentState: "TN", estimatedEmptyAt: hoursFromNow(9), minimumRatePerMileCents: 120, maxDeadheadMiles: 45, documentWarnings: 1 },
-    { id: "trk_nl_118", organizationId: org, unit: "118", equipment: "cargo_van", status: "available", currentDriverId: "drv_nl_05", currentCity: "Joliet", currentState: "IL", estimatedEmptyAt: hoursFromNow(-20), minimumRatePerMileCents: 100, maxDeadheadMiles: 30, documentWarnings: 0 },
-    { id: "trk_nl_121", organizationId: org, unit: "121", equipment: "sprinter", status: "maintenance", currentDriverId: "drv_nl_06", currentCity: "Chicago", currentState: "IL", minimumRatePerMileCents: 105, maxDeadheadMiles: 30, documentWarnings: 0 },
-    { id: "trk_nl_124", organizationId: org, unit: "124", equipment: "cargo_van", status: "available", currentCity: "Rockford", currentState: "IL", estimatedEmptyAt: hoursFromNow(-40), minimumRatePerMileCents: 100, maxDeadheadMiles: 30, documentWarnings: 0 },
-    { id: "trk_nl_127", organizationId: org, unit: "127", equipment: "box_truck", status: "out_of_service", currentCity: "Gary", currentState: "IN", minimumRatePerMileCents: 120, maxDeadheadMiles: 45, documentWarnings: 2 },
-  ];
 
   const trailers: Trailer[] = [
     { id: "trl_nl_01", organizationId: org, unit: "T-220", kind: "dry_van", status: "available" },
-    { id: "trl_nl_02", organizationId: org, unit: "T-221", kind: "reefer", status: "on_load" },
+    { id: "trl_nl_02", organizationId: org, unit: "T-221", kind: "reefer", status: "loaded" },
   ];
 
   const TZ = "America/Chicago";
@@ -110,7 +100,7 @@ function northline(): OrgData {
       pickup: { city: "Chicago", state: "IL", timeZone: TZ, at: hoursFromNow(-9), facility: "Apex Cross-Dock 4", contactName: "Yard office", phone: "+1 (312) 555-0188", arrived: hoursFromNow(-9.4), departed: hoursFromNow(-8.2), instructions: "Dock 12. Driver must check in at the guard shack with the PU number.", refs: [["PU", "77120-A"], ["Seal", "0093412"]] },
       delivery: { city: "Columbus", state: "OH", timeZone: "America/New_York", at: hoursFromNow(5), facility: "Rivet DC Columbus", appointmentType: "appointment", contactName: "Receiving", phone: "+1 (614) 555-0140", instructions: "Appointment is firm. Late arrivals are rescheduled to the next morning.", refs: [["Delivery", "CMH-4471"]] },
       linehaul: 44400, loaded: 355, deadhead: 12, equipment: "cargo_van", weight: 3100, commodity: "Automotive parts",
-      driverId: "drv_nl_01", driverName: "Dmitri Kovalenko", truckId: "trk_nl_104",
+      driverId: "drv_nl_01", driverName: "Dmitri Kovalenko", truckId: TRUCK_IDS.nl104,
       has: ["rate_confirmation", "bill_of_lading"],
       extraEvents: [
         { kind: "load.eta_updated", at: hoursFromNow(-1.2), by: "system", source: "eld", etaAt: hoursFromNow(6.2), note: "ETA slipped 70 minutes: congestion on I-70 near Springfield" },
@@ -123,7 +113,7 @@ function northline(): OrgData {
       pickup: { city: "Joliet", state: "IL", timeZone: TZ, at: hoursFromNow(-14), arrived: hoursFromNow(-14.3), departed: hoursFromNow(-13.1) },
       delivery: { city: "Indianapolis", state: "IN", timeZone: "America/Indiana/Indianapolis", at: hoursFromNow(1), appointmentType: "fcfs", windowHours: 4, arrived: hoursFromNow(-2.7), instructions: "FCFS 07:00–11:00. Two hours free, then detention at $65/hr." },
       linehaul: 25100, loaded: 186, deadhead: 8, equipment: "sprinter", weight: 1850,
-      driverId: "drv_nl_02", driverName: "Marisol Ortiz", truckId: "trk_nl_107",
+      driverId: "drv_nl_02", driverName: "Marisol Ortiz", truckId: TRUCK_IDS.nl107,
       has: ["rate_confirmation", "bill_of_lading"],
       extraEvents: [
         { kind: "exception.detention_started", at: hoursFromNow(-0.7), by: "system", source: "eld", durationMinutes: 160, note: "On site 2h40m against 2h free time" },
@@ -135,7 +125,7 @@ function northline(): OrgData {
       pickup: { city: "Milwaukee", state: "WI", timeZone: TZ, at: hoursFromNow(-52), arrived: hoursFromNow(-52.5), departed: hoursFromNow(-51) },
       delivery: { city: "Kansas City", state: "MO", timeZone: TZ, at: hoursFromNow(-28), arrived: hoursFromNow(-28.4), departed: hoursFromNow(-27.2) },
       linehaul: 99800, loaded: 512, deadhead: 21, equipment: "box_truck", weight: 6400, commodity: "Packaged food",
-      driverId: "drv_nl_04", driverName: "Amir Haddad", truckId: "trk_nl_115",
+      driverId: "drv_nl_04", driverName: "Amir Haddad", truckId: TRUCK_IDS.nl115,
       has: ["rate_confirmation", "bill_of_lading"],
     },
     {
@@ -152,7 +142,7 @@ function northline(): OrgData {
       delivery: { city: "Memphis", state: "TN", timeZone: TZ, at: hoursFromNow(-50), arrived: hoursFromNow(-50.3), departed: hoursFromNow(-49.1) },
       linehaul: 104100, accessorials: [{ code: "detention", label: "Detention, 1.5 hrs", cents: 8000 }],
       loaded: 548, deadhead: 18, equipment: "box_truck", weight: 7200,
-      driverId: "drv_nl_04", driverName: "Amir Haddad", truckId: "trk_nl_115",
+      driverId: "drv_nl_04", driverName: "Amir Haddad", truckId: TRUCK_IDS.nl115,
       has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
     },
     {
@@ -175,7 +165,7 @@ function northline(): OrgData {
       pickup: { city: "Chicago", state: "IL", timeZone: TZ, at: daysFromNow(-6), arrived: daysFromNow(-6), departed: daysFromNow(-6) },
       delivery: { city: "Detroit", state: "MI", timeZone: "America/Detroit", at: daysFromNow(-6), arrived: daysFromNow(-6), departed: daysFromNow(-6) },
       linehaul: 34500, loaded: 283, deadhead: 11, equipment: "cargo_van",
-      driverId: "drv_nl_03", driverName: "Ray Bell", truckId: "trk_nl_111",
+      driverId: "drv_nl_03", driverName: "Ray Bell", truckId: TRUCK_IDS.nl111,
       has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
     },
     {
@@ -214,7 +204,7 @@ function northline(): OrgData {
       title: "Unit 107 goes empty in about 2 hours",
       reason: "Marisol Ortiz delivers in Indianapolis, IN at 14:15 with no next load committed.",
       detail: "Minimum rate $1.05/mi, deadhead limit 30 mi. Sprinter, available for same-day pickup.",
-      entity: { kind: "truck", id: "trk_nl_107", label: "Unit 107 · Sprinter · Indianapolis, IN", href: "/fleet/trucks" },
+      entity: { kind: "truck", id: TRUCK_IDS.nl107, label: "Unit 107 · Sprinter · Indianapolis, IN", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
       dueAt: hoursFromNow(2), source: "system", requires: ["trucks:view"],
     }),
@@ -222,7 +212,7 @@ function northline(): OrgData {
       category: "truck_going_empty", severity: "medium",
       title: "Unit 118 has been empty for 20 hours",
       reason: "Tomas Reyes is sitting in Joliet, IL with no assignment and no outreach recorded since yesterday.",
-      entity: { kind: "truck", id: "trk_nl_118", label: "Unit 118 · Cargo van · Joliet, IL", href: "/fleet/trucks" },
+      entity: { kind: "truck", id: TRUCK_IDS.nl118, label: "Unit 118 · Cargo van · Joliet, IL", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
       dueAt: hoursFromNow(6), source: "system", requires: ["trucks:view"],
     }),
@@ -295,7 +285,7 @@ function northline(): OrgData {
     }),
   ];
 
-  return { loads, events, documents, trucks, trailers, drivers, customers, needsYou: items };
+  return { loads, events, documents, trailers, drivers, customers, needsYou: items };
 }
 
 // ---------------------------------------------------------------------------
@@ -313,18 +303,12 @@ function meridian(): OrgData {
   ];
 
   const drivers: Driver[] = [
-    { id: "drv_md_01", organizationId: org, displayName: "Serge Petrov", status: "driving", currentTruckId: "trk_md_a12", telegramConnected: true, documentWarnings: 0 },
-    { id: "drv_md_02", organizationId: org, displayName: "Hannah Boyd", status: "available", currentTruckId: "trk_md_b04", telegramConnected: true, documentWarnings: 0 },
-    { id: "drv_md_03", organizationId: org, displayName: "Luis Carrera", status: "driving", currentTruckId: "trk_md_c31", telegramConnected: false, documentWarnings: 1 },
-    { id: "drv_md_04", organizationId: org, displayName: "Grace Lindqvist", status: "available", currentTruckId: "trk_md_a18", telegramConnected: true, documentWarnings: 0 },
+    { id: "drv_md_01", organizationId: org, displayName: "Serge Petrov", status: "driving", currentTruckId: TRUCK_IDS.mdA12, telegramConnected: true, documentWarnings: 0 },
+    { id: "drv_md_02", organizationId: org, displayName: "Hannah Boyd", status: "available", currentTruckId: TRUCK_IDS.mdB04, telegramConnected: true, documentWarnings: 0 },
+    { id: "drv_md_03", organizationId: org, displayName: "Luis Carrera", status: "driving", currentTruckId: TRUCK_IDS.crosswind, telegramConnected: false, documentWarnings: 1 },
+    { id: "drv_md_04", organizationId: org, displayName: "Grace Lindqvist", status: "available", currentTruckId: TRUCK_IDS.mdA18, telegramConnected: true, documentWarnings: 0 },
   ];
 
-  const trucks: Truck[] = [
-    { id: "trk_md_a12", organizationId: org, unit: "A-12", carrierName: "Baxter Transit LLC", equipment: "sprinter", status: "on_load", currentDriverId: "drv_md_01", currentCity: "Allentown", currentState: "PA", estimatedEmptyAt: hoursFromNow(3), minimumRatePerMileCents: 110, maxDeadheadMiles: 30, documentWarnings: 0 },
-    { id: "trk_md_b04", organizationId: org, unit: "B-04", carrierName: "Ridgeway Carriers", equipment: "cargo_van", status: "available", currentDriverId: "drv_md_02", currentCity: "Newark", currentState: "NJ", estimatedEmptyAt: hoursFromNow(-6), minimumRatePerMileCents: 100, maxDeadheadMiles: 25, documentWarnings: 0 },
-    { id: "trk_md_c31", organizationId: org, unit: "C-31", carrierName: "Crosswind Freight", equipment: "box_truck", status: "on_load", currentDriverId: "drv_md_03", currentCity: "Richmond", currentState: "VA", estimatedEmptyAt: hoursFromNow(7), minimumRatePerMileCents: 125, maxDeadheadMiles: 40, documentWarnings: 1 },
-    { id: "trk_md_a18", organizationId: org, unit: "A-18", carrierName: "Baxter Transit LLC", equipment: "cargo_van", status: "available", currentDriverId: "drv_md_04", currentCity: "Baltimore", currentState: "MD", estimatedEmptyAt: hoursFromNow(-1), minimumRatePerMileCents: 100, maxDeadheadMiles: 30, documentWarnings: 0 },
-  ];
 
   const TZ = "America/New_York";
   const { loads, events, documents } = expand(org, [
@@ -334,7 +318,7 @@ function meridian(): OrgData {
       pickup: { city: "Allentown", state: "PA", timeZone: TZ, at: hoursFromNow(-7), arrived: hoursFromNow(-7.3), departed: hoursFromNow(-6.1) },
       delivery: { city: "Pittsburgh", state: "PA", timeZone: TZ, at: hoursFromNow(3), appointmentType: "window", windowHours: 2 },
       linehaul: 38700, loaded: 298, deadhead: 14, equipment: "sprinter", weight: 2200,
-      driverId: "drv_md_01", driverName: "Serge Petrov", truckId: "trk_md_a12",
+      driverId: "drv_md_01", driverName: "Serge Petrov", truckId: TRUCK_IDS.mdA12,
       carrierOrganizationId: "carrier_baxter",
       has: ["rate_confirmation", "bill_of_lading"],
     },
@@ -344,7 +328,7 @@ function meridian(): OrgData {
       pickup: { city: "Richmond", state: "VA", timeZone: TZ, at: hoursFromNow(-4), arrived: hoursFromNow(-4.2), departed: hoursFromNow(-3.6) },
       delivery: { city: "Charlotte", state: "NC", timeZone: TZ, at: hoursFromNow(7) },
       linehaul: 53800, loaded: 291, deadhead: 22, equipment: "box_truck", weight: 5800,
-      driverId: "drv_md_03", driverName: "Luis Carrera", truckId: "trk_md_c31",
+      driverId: "drv_md_03", driverName: "Luis Carrera", truckId: TRUCK_IDS.crosswind,
       carrierOrganizationId: "carrier_crosswind",
       has: ["rate_confirmation"],
     },
@@ -368,7 +352,7 @@ function meridian(): OrgData {
       pickup: { city: "Trenton", state: "NJ", timeZone: TZ, at: daysFromNow(-2), arrived: daysFromNow(-2), departed: daysFromNow(-2) },
       delivery: { city: "Philadelphia", state: "PA", timeZone: TZ, at: daysFromNow(-2), arrived: daysFromNow(-2), departed: daysFromNow(-2) },
       linehaul: 17900, loaded: 112, deadhead: 8, equipment: "cargo_van",
-      driverId: "drv_md_02", driverName: "Hannah Boyd", truckId: "trk_md_b04",
+      driverId: "drv_md_02", driverName: "Hannah Boyd", truckId: TRUCK_IDS.mdB04,
       carrierOrganizationId: "carrier_ridgeway",
       has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
     },
@@ -382,7 +366,7 @@ function meridian(): OrgData {
       title: "B-04 has been empty for 6 hours in Newark",
       reason: "Hannah Boyd went empty at 06:10 with nothing booked. Ridgeway's minimum is $1.00/mi within 25 miles deadhead.",
       detail: "Newark is a strong outbound market this morning; 4 candidate loads matched on the last sweep.",
-      entity: { kind: "truck", id: "trk_md_b04", label: "B-04 · Ridgeway Carriers · Newark, NJ", href: "/fleet/trucks" },
+      entity: { kind: "truck", id: TRUCK_IDS.mdB04, label: "B-04 · Ridgeway Carriers · Newark, NJ", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
       dueAt: hoursFromNow(-1), source: "system", requires: ["trucks:view"],
     }),
@@ -390,7 +374,7 @@ function meridian(): OrgData {
       category: "truck_going_empty", severity: "high",
       title: "A-18 is empty in Baltimore",
       reason: "Grace Lindqvist delivered an hour ago. No next assignment and no outreach logged.",
-      entity: { kind: "truck", id: "trk_md_a18", label: "A-18 · Baxter Transit LLC · Baltimore, MD", href: "/fleet/trucks" },
+      entity: { kind: "truck", id: TRUCK_IDS.mdA18, label: "A-18 · Baxter Transit LLC · Baltimore, MD", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
       dueAt: hoursFromNow(2), source: "system", requires: ["trucks:view"],
     }),
@@ -437,7 +421,7 @@ function meridian(): OrgData {
     }),
   ];
 
-  return { loads, events, documents, trucks, trailers: [], drivers, customers, needsYou: items };
+  return { loads, events, documents, trailers: [], drivers, customers, needsYou: items };
 }
 
 // ---------------------------------------------------------------------------
@@ -454,14 +438,10 @@ function cascade(): OrgData {
   ];
 
   const drivers: Driver[] = [
-    { id: me, organizationId: org, userId: "usr_sam", displayName: "Sam Murtaza", status: "driving", currentTruckId: "trk_cs_42", currentLoadId: undefined, telegramConnected: true, documentWarnings: 1 },
-    { id: "drv_cs_02", organizationId: org, displayName: "Owen Fitz", status: "available", currentTruckId: "trk_cs_47", telegramConnected: true, documentWarnings: 0 },
+    { id: me, organizationId: org, userId: "usr_sam", displayName: "Sam Murtaza", status: "driving", currentTruckId: TRUCK_IDS.cs47, currentLoadId: undefined, telegramConnected: true, documentWarnings: 1 },
+    { id: "drv_cs_02", organizationId: org, displayName: "Owen Fitz", status: "available", currentTruckId: TRUCK_IDS.cs47, telegramConnected: true, documentWarnings: 0 },
   ];
 
-  const trucks: Truck[] = [
-    { id: "trk_cs_42", organizationId: org, unit: "42", equipment: "cargo_van", status: "on_load", currentDriverId: me, currentCity: "Salem", currentState: "OR", estimatedEmptyAt: hoursFromNow(5), minimumRatePerMileCents: 100, maxDeadheadMiles: 30, documentWarnings: 0 },
-    { id: "trk_cs_47", organizationId: org, unit: "47", equipment: "sprinter", status: "available", currentDriverId: "drv_cs_02", currentCity: "Portland", currentState: "OR", estimatedEmptyAt: hoursFromNow(-9), minimumRatePerMileCents: 105, maxDeadheadMiles: 30, documentWarnings: 0 },
-  ];
 
   const TZ = "America/Los_Angeles";
   const { loads, events, documents } = expand(org, [
@@ -471,7 +451,7 @@ function cascade(): OrgData {
       pickup: { city: "Portland", state: "OR", timeZone: TZ, at: hoursFromNow(-5), arrived: hoursFromNow(-5.2), departed: hoursFromNow(-4.4) },
       delivery: { city: "Eugene", state: "OR", timeZone: TZ, at: hoursFromNow(2), instructions: "Ring the bell at the side door; the dock closes at 18:00." },
       linehaul: 17000, loaded: 110, deadhead: 7, equipment: "cargo_van", weight: 1400,
-      driverId: me, driverName: "Sam Murtaza", truckId: "trk_cs_42",
+      driverId: me, driverName: "Sam Murtaza", truckId: TRUCK_IDS.cs47,
       has: ["rate_confirmation", "bill_of_lading"],
     },
     {
@@ -480,7 +460,7 @@ function cascade(): OrgData {
       pickup: { city: "Eugene", state: "OR", timeZone: TZ, at: hoursFromNow(8) },
       delivery: { city: "Boise", state: "ID", timeZone: "America/Boise", at: hoursFromNow(22) },
       linehaul: 47100, loaded: 428, deadhead: 4, equipment: "cargo_van",
-      driverId: me, driverName: "Sam Murtaza", truckId: "trk_cs_42", consent: "pending",
+      driverId: me, driverName: "Sam Murtaza", truckId: TRUCK_IDS.cs47, consent: "pending",
     },
     {
       ref: "CS-3309", status: "delivered",
@@ -488,7 +468,7 @@ function cascade(): OrgData {
       pickup: { city: "Seattle", state: "WA", timeZone: TZ, at: daysFromNow(-3), arrived: daysFromNow(-3), departed: daysFromNow(-3) },
       delivery: { city: "Portland", state: "OR", timeZone: TZ, at: daysFromNow(-3), arrived: daysFromNow(-3), departed: daysFromNow(-3) },
       linehaul: 24400, loaded: 174, deadhead: 5, equipment: "cargo_van",
-      driverId: me, driverName: "Sam Murtaza", truckId: "trk_cs_42",
+      driverId: me, driverName: "Sam Murtaza", truckId: TRUCK_IDS.cs47,
       has: ["rate_confirmation", "bill_of_lading"],
     },
     {
@@ -531,19 +511,19 @@ function cascade(): OrgData {
       category: "truck_going_empty", severity: "medium",
       title: "Unit 47 empty in Portland",
       reason: "Owen Fitz has been available for 9 hours with nothing booked.",
-      entity: { kind: "truck", id: "trk_cs_47", label: "Unit 47 · Sprinter · Portland, OR", href: "/fleet/trucks" },
+      entity: { kind: "truck", id: TRUCK_IDS.cs47, label: "Unit 47 · Sprinter · Portland, OR", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
       dueAt: hoursFromNow(3), source: "system", requires: ["trucks:view"],
     }),
   ];
 
-  return { loads, events, documents, trucks, trailers: [], drivers, customers, needsYou: items };
+  return { loads, events, documents, trailers: [], drivers, customers, needsYou: items };
 }
 
 /** A newly created organization that has not booked anything yet. */
 function empty(): OrgData {
   return {
-    loads: [], events: [], documents: [], trucks: [],
+    loads: [], events: [], documents: [],
     trailers: [], drivers: [], customers: [], needsYou: [],
   };
 }

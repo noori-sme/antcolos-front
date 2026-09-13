@@ -41,6 +41,10 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "trucks:create", label: "Add trucks", description: "Add a truck to the fleet.", group: "trucks", orgTypes: ["CARRIER"] },
   { key: "trucks:edit", label: "Edit trucks", description: "Change truck details and status.", group: "trucks", orgTypes: ["CARRIER"] },
   { key: "trucks:delete", label: "Delete trucks", description: "Permanently remove a truck.", group: "trucks", sensitive: true, orgTypes: ["CARRIER"] },
+  { key: "trucks:documents:manage", label: "Manage truck documents", description: "Add, replace and review registration, title, insurance and inspection paperwork.", group: "trucks" },
+  { key: "trucks:assignments:manage", label: "Assign drivers to trucks", description: "Put a driver on a truck, swap them, or end the assignment.", group: "trucks" },
+  { key: "trucks:relationships:manage", label: "Manage truck carrier relationships", description: "Connect a truck to this organization, or end that connection.", group: "trucks", sensitive: true },
+  { key: "trucks:ownership:review", label: "Review truck ownership claims", description: "Decide who legally owns a truck when somebody claims it. The strongest truck permission there is.", group: "trucks", sensitive: true },
 
   // ---- Trailers ----------------------------------------------------------
   { key: "trailers:view", label: "View trailers", description: "See trailers and what they are attached to.", group: "trailers" },

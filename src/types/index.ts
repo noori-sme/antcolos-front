@@ -11,6 +11,7 @@ export type * from "./fleet";
 export type * from "./needs-you";
 export type * from "./access";
 export type * from "./driver-profile";
+export type * from "./truck";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
