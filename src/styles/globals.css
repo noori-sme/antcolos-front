@@ -1,0 +1,257 @@
+@import "tailwindcss";
+
+/* Antcolos design tokens — THE single source of truth for color, type, radius,
+   elevation and density. Nothing outside this file may hardcode a color.
+   Replacing the brand later means editing this file and src/config/brand.ts. */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* ---- Brand ------------------------------------------------------------ */
+  --brand-primary:        oklch(0.52 0.084 196);   /* industrial teal        */
+  --brand-primary-hover:  oklch(0.46 0.084 196);
+  --brand-primary-fg:     oklch(0.99 0.002 196);
+  --brand-accent:         oklch(0.68 0.128 62);    /* restrained ochre       */
+  --brand-accent-fg:      oklch(0.22 0.020 62);
+
+  /* ---- Neutral surfaces (warm graphite, light) -------------------------- */
+  --canvas:               oklch(0.977 0.002 106);
+  --surface:              oklch(1    0     0);
+  --surface-raised:       oklch(1    0     0);
+  --surface-sunken:       oklch(0.958 0.003 106);
+  --surface-hover:        oklch(0.949 0.004 106);
+  --border:               oklch(0.895 0.004 106);
+  --border-strong:        oklch(0.815 0.006 106);
+
+  /* ---- Foreground ------------------------------------------------------- */
+  --fg:                   oklch(0.225 0.008 106);
+  --fg-muted:             oklch(0.482 0.008 106);
+  --fg-subtle:            oklch(0.605 0.007 106);
+  --fg-inverse:           oklch(0.985 0.002 106);
+
+  /* ---- Status (high visibility, consistent across themes) --------------- */
+  --status-neutral:       oklch(0.575 0.010 106);
+  --status-info:          oklch(0.535 0.110 245);
+  --status-progress:      oklch(0.545 0.098 265);
+  --status-success:       oklch(0.520 0.115 152);
+  --status-warning:       oklch(0.645 0.135 75);
+  --status-danger:        oklch(0.545 0.175 25);
+  --status-neutral-bg:    oklch(0.945 0.004 106);
+  --status-info-bg:       oklch(0.945 0.028 245);
+  --status-progress-bg:   oklch(0.945 0.026 265);
+  --status-success-bg:    oklch(0.945 0.032 152);
+  --status-warning-bg:    oklch(0.955 0.040 75);
+  --status-danger-bg:     oklch(0.950 0.030 25);
+
+  --focus-ring:           oklch(0.52 0.084 196);
+
+  /* ---- Radius ----------------------------------------------------------- */
+  --radius-xs: 0.1875rem;
+  --radius-sm: 0.3125rem;
+  --radius-md: 0.4375rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+
+  /* ---- Elevation (restrained — no decorative glow) ---------------------- */
+  --shadow-e1: 0 1px 2px 0 oklch(0.225 0.008 106 / 0.06);
+  --shadow-e2: 0 1px 3px 0 oklch(0.225 0.008 106 / 0.09), 0 1px 2px -1px oklch(0.225 0.008 106 / 0.06);
+  --shadow-e3: 0 8px 24px -6px oklch(0.225 0.008 106 / 0.14), 0 2px 6px -2px oklch(0.225 0.008 106 / 0.08);
+}
+
+.dark {
+  /* Lifted graphite, deliberately not near-black */
+  --canvas:               oklch(0.196 0.006 240);
+  --surface:              oklch(0.236 0.007 240);
+  --surface-raised:       oklch(0.268 0.008 240);
+  --surface-sunken:       oklch(0.172 0.006 240);
+  --surface-hover:        oklch(0.296 0.009 240);
+  --border:               oklch(0.318 0.009 240);
+  --border-strong:        oklch(0.408 0.011 240);
+
+  --fg:                   oklch(0.955 0.003 240);
+  --fg-muted:             oklch(0.735 0.008 240);
+  --fg-subtle:            oklch(0.615 0.009 240);
+  --fg-inverse:           oklch(0.196 0.006 240);
+
+  --brand-primary:        oklch(0.695 0.098 192);
+  --brand-primary-hover:  oklch(0.760 0.098 192);
+  --brand-primary-fg:     oklch(0.175 0.020 192);
+  --brand-accent:         oklch(0.775 0.120 68);
+  --brand-accent-fg:      oklch(0.205 0.020 68);
+
+  --status-neutral:       oklch(0.700 0.010 240);
+  --status-info:          oklch(0.715 0.108 245);
+  --status-progress:      oklch(0.720 0.098 265);
+  --status-success:       oklch(0.735 0.118 152);
+  --status-warning:       oklch(0.795 0.128 75);
+  --status-danger:        oklch(0.700 0.150 25);
+  --status-neutral-bg:    oklch(0.312 0.010 240);
+  --status-info-bg:       oklch(0.318 0.048 245);
+  --status-progress-bg:   oklch(0.318 0.044 265);
+  --status-success-bg:    oklch(0.312 0.048 152);
+  --status-warning-bg:    oklch(0.322 0.052 75);
+  --status-danger-bg:     oklch(0.320 0.058 25);
+
+  --focus-ring:           oklch(0.695 0.098 192);
+
+  --shadow-e1: 0 1px 2px 0 oklch(0 0 0 / 0.30);
+  --shadow-e2: 0 1px 3px 0 oklch(0 0 0 / 0.40), 0 1px 2px -1px oklch(0 0 0 / 0.30);
+  --shadow-e3: 0 8px 24px -6px oklch(0 0 0 / 0.55), 0 2px 6px -2px oklch(0 0 0 / 0.40);
+}
+
+/* ---- Density ------------------------------------------------------------
+   Comfortable is the default (owners, new users, and all touch surfaces).
+   Compact is opt-in for dispatchers. Density changes size and rhythm only —
+   never color, never hierarchy. Stored on the User, so it follows the person
+   across organizations. Touch devices are floored at comfortable sizing. */
+
+:root,
+[data-density="comfortable"] {
+  --control-h-sm:  2rem;
+  --control-h:     2.375rem;
+  --control-h-lg:  2.75rem;
+  --row-h:         3.25rem;
+  --cell-py:       0.75rem;
+  --stack-gap:     1rem;
+  --section-gap:   1.5rem;
+  --page-px:       1.5rem;
+  --page-py:       1.5rem;
+  --nav-item-h:    2.375rem;
+  --text-body:     0.9375rem;
+  --text-table:    0.875rem;
+}
+
+[data-density="compact"] {
+  --control-h-sm:  1.75rem;
+  --control-h:     2.125rem;
+  --control-h-lg:  2.375rem;
+  --row-h:         2.5rem;
+  --cell-py:       0.4375rem;
+  --stack-gap:     0.75rem;
+  --section-gap:   1.125rem;
+  --page-px:       1.25rem;
+  --page-py:       1.125rem;
+  --nav-item-h:    2.0625rem;
+  --text-body:     0.875rem;
+  --text-table:    0.8125rem;
+}
+
+@media (pointer: coarse) {
+  [data-density="compact"] {
+    --control-h-sm:  2rem;
+    --control-h:     2.5rem;
+    --control-h-lg:  2.875rem;
+    --row-h:         3.25rem;
+    --nav-item-h:    2.75rem;
+  }
+}
+
+@theme inline {
+  --color-canvas:          var(--canvas);
+  --color-surface:         var(--surface);
+  --color-surface-raised:  var(--surface-raised);
+  --color-surface-sunken:  var(--surface-sunken);
+  --color-surface-hover:   var(--surface-hover);
+  --color-border:          var(--border);
+  --color-border-strong:   var(--border-strong);
+
+  --color-fg:              var(--fg);
+  --color-fg-muted:        var(--fg-muted);
+  --color-fg-subtle:       var(--fg-subtle);
+  --color-fg-inverse:      var(--fg-inverse);
+
+  --color-primary:         var(--brand-primary);
+  --color-primary-hover:   var(--brand-primary-hover);
+  --color-primary-fg:      var(--brand-primary-fg);
+  --color-accent:          var(--brand-accent);
+  --color-accent-fg:       var(--brand-accent-fg);
+
+  --color-st-neutral:      var(--status-neutral);
+  --color-st-info:         var(--status-info);
+  --color-st-progress:     var(--status-progress);
+  --color-st-success:      var(--status-success);
+  --color-st-warning:      var(--status-warning);
+  --color-st-danger:       var(--status-danger);
+  --color-st-neutral-bg:   var(--status-neutral-bg);
+  --color-st-info-bg:      var(--status-info-bg);
+  --color-st-progress-bg:  var(--status-progress-bg);
+  --color-st-success-bg:   var(--status-success-bg);
+  --color-st-warning-bg:   var(--status-warning-bg);
+  --color-st-danger-bg:    var(--status-danger-bg);
+
+  --color-ring:            var(--focus-ring);
+
+  --font-sans:   var(--font-antcolos-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono:   var(--font-antcolos-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-e1: var(--shadow-e1);
+  --shadow-e2: var(--shadow-e2);
+  --shadow-e3: var(--shadow-e3);
+
+  --spacing-control-sm: var(--control-h-sm);
+  --spacing-control:    var(--control-h);
+  --spacing-control-lg: var(--control-h-lg);
+  --spacing-row:        var(--row-h);
+  --spacing-nav-item:   var(--nav-item-h);
+  --spacing-page-x:     var(--page-px);
+  --spacing-page-y:     var(--page-py);
+  --spacing-stack:      var(--stack-gap);
+  --spacing-section:    var(--section-gap);
+
+  --breakpoint-sm:  641px;
+  --breakpoint-md:  769px;
+  --breakpoint-lg:  1025px;
+  --breakpoint-xl:  1280px;
+  --breakpoint-2xl: 1536px;
+}
+
+@layer base {
+  * { border-color: var(--border); }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--fg);
+    font-size: var(--text-body);
+    font-feature-settings: "cv05" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Tabular figures everywhere numbers are compared — rates, weights, miles. */
+  .tnum, table, input[type="number"] { font-variant-numeric: tabular-nums; }
+
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  ::selection { background: color-mix(in oklch, var(--brand-primary) 26%, transparent); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+    border: 3px solid var(--canvas);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--fg-subtle); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

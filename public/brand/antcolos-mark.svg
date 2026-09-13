@@ -1,0 +1,8 @@
+<!-- PLACEHOLDER MARK — temporary, not the official Antcolos logo.
+     Replace this single file with the final mark (keep the 32x32 viewBox and
+     `currentColor`) and it updates everywhere the mark is used. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+  <rect width="32" height="32" rx="8" fill="currentColor"/>
+  <path d="M9 22.5 15.1 9.8a1 1 0 0 1 1.8 0L23 22.5" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+  <path d="M12.4 18.2h7.2" stroke="white" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+</svg>
