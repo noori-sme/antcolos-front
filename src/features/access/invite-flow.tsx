@@ -15,7 +15,8 @@ import {
   validateRoleName,
 } from "@/lib/permissions";
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
-import type { CustomRole, PermissionKey } from "@/types";
+import type { CustomRole, EngagementType, PermissionKey } from "@/types";
+import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import { PermissionPicker } from "./permission-picker";
 import {
   NeverGrantableNotice,
@@ -85,6 +86,8 @@ export function InviteFlow() {
   const [expiryDays, setExpiryDays] = useState<number>(14);
   const [permissions, setPermissions] = useState<Set<PermissionKey>>(new Set());
 
+  // Driver invitations only. The carrier picks this, never the driver.
+  const [engagementType, setEngagementType] = useState<EngagementType | null>(null);
   const [saveAsRole, setSaveAsRole] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
 
@@ -114,6 +117,7 @@ export function InviteFlow() {
   }, [organization]);
 
   const isDispatchOrg = preset?.kind === "dispatch_org";
+  const isDriver = preset?.kind === "driver";
   const needsRoleName = preset?.kind === "custom" && !savedRole;
   const effectiveRoleName = savedRole?.name ?? (needsRoleName ? roleName.trim() : preset?.label ?? "");
 
@@ -130,6 +134,7 @@ export function InviteFlow() {
     const base = role ? role.permissions : next.permissions;
     setPermissions(new Set(clampToGrantable(base, myPermissions, orgType)));
     setRoleName(role?.name ?? "");
+    setEngagementType(next.kind === "driver" ? "company_driver" : null);
     setSaveAsRole(false);
     setNewRoleName("");
     setSubmitted(false);
@@ -153,6 +158,7 @@ export function InviteFlow() {
     setSubmitted(true);
     const bad =
       !recipientName.trim() ||
+      (isDriver && !engagementType) ||
       validateEmail(recipientEmail) ||
       (needsRoleName && validateRoleName(roleName, [])) ||
       (saveAsRole && validateRoleName(newRoleName, roles.map((r) => r.name)));
@@ -186,6 +192,7 @@ export function InviteFlow() {
       kind: preset.kind,
       roleName: effectiveRoleName || preset.label,
       customRoleId,
+      engagementType: engagementType ?? undefined,
       recipientName,
       recipientEmail,
       permissions: safe,
@@ -241,6 +248,52 @@ export function InviteFlow() {
                   nothing with their other carrier clients.
                 </p>
               </div>
+            ) : null}
+
+            {isDriver ? (
+              <fieldset>
+                <legend className="mb-1.5 text-[0.8125rem] font-medium text-fg">
+                  Engagement type
+                </legend>
+                <p className="mb-2 text-[0.75rem] leading-relaxed text-fg-subtle">
+                  You choose this, not the driver. It decides what paperwork they owe you.
+                </p>
+                <div className="space-y-2">
+                  {(["company_driver", "owner_operator"] as const).map((value) => (
+                    <label
+                      key={value}
+                      className={cn(
+                        "flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 transition-colors",
+                        engagementType === value
+                          ? "border-primary bg-primary/[0.06]"
+                          : "border-border bg-surface hover:border-border-strong",
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="engagement-type"
+                        value={value}
+                        checked={engagementType === value}
+                        onChange={() => setEngagementType(value)}
+                        className="mt-0.5 size-4 shrink-0 accent-primary"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-[0.8125rem] font-medium text-fg">
+                          {ENGAGEMENT_LABEL[value]}
+                        </span>
+                        <span className="mt-0.5 block text-[0.75rem] leading-relaxed text-fg-muted">
+                          {ENGAGEMENT_DESCRIPTION[value]}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {submitted && !engagementType ? (
+                  <p role="alert" className="mt-1.5 text-[0.75rem] text-st-danger">
+                    Choose whether this driver is a company driver or an owner-operator.
+                  </p>
+                ) : null}
+              </fieldset>
             ) : null}
 
             {needsRoleName ? (
@@ -407,6 +460,9 @@ export function InviteFlow() {
                 label={isDispatchOrg ? "Invitation type" : "Role"}
                 value={effectiveRoleName || preset.label}
               />
+              {isDriver && engagementType ? (
+                <ReviewRow label="Engagement type" value={ENGAGEMENT_LABEL[engagementType]} />
+              ) : null}
               <ReviewRow label="Organization" value={organization.displayName} />
               <ReviewRow
                 label="Expires"

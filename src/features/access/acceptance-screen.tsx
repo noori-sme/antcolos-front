@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { AuthShell } from "@/features/auth/shell";
 import { FormAlert } from "@/features/auth/form-alert";
 import { PermissionSummary, SensitiveAccessWarning } from "./permission-summary";
+import { QuickOnboarding } from "@/features/driver/quick-onboarding";
+import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import {
   type InvitationLookup,
   mockAcceptTeamInvitation,
@@ -76,6 +78,10 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
 
   const invitation = state.invitation;
   const isOrgInvite = invitation.kind === "dispatch_org";
+
+  if (accepted && invitation.kind === "driver") {
+    return <QuickOnboarding invitation={invitation} />;
+  }
 
   if (accepted) {
     return (
@@ -202,6 +208,22 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
             </p>
           </div>
         </div>
+
+        {invitation.engagementType ? (
+          <div className="rounded-lg border border-border bg-surface p-3.5">
+            <p className="text-[0.75rem] text-fg-muted">Engagement type</p>
+            <p className="mt-0.5 text-[0.875rem] font-semibold text-fg">
+              {ENGAGEMENT_LABEL[invitation.engagementType]}
+            </p>
+            <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+              {ENGAGEMENT_DESCRIPTION[invitation.engagementType]}
+            </p>
+            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-subtle">
+              {invitation.organizationName} set this. If it looks wrong, ask them to send a new
+              invitation — it decides what paperwork you owe them.
+            </p>
+          </div>
+        ) : null}
 
         {invitation.scopedToCarrierName ? (
           <FormAlert

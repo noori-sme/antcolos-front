@@ -1,3 +1,4 @@
+import type { EngagementType } from "./driver-profile";
 import type { OrganizationType, PermissionKey } from "./permission";
 
 /**
@@ -26,6 +27,12 @@ export interface Invitation {
   /** The role as it read when sent — a preset name, or the custom role's name. */
   roleName: string;
   customRoleId?: string;
+  /**
+   * Driver invitations only. The carrier decides whether this is a company
+   * driver or an owner-operator — it sets the paperwork and the pay, so it is
+   * not the driver's to choose, and the acceptance screen shows it read-only.
+   */
+  engagementType?: EngagementType;
   recipientName: string;
   recipientEmail: string;
   /** Snapshotted too: editing a role later must not silently re-scope a

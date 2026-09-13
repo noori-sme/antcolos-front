@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { DocumentChecklistScreen } from "@/features/driver/document-checklist";
 
 export const metadata = { title: "My documents" };
 
 export default function Page() {
-  return <ModulePlaceholder title="My documents" description="Upload BOLs and scale tickets from the cab." />;
+  return <DocumentChecklistScreen />;
 }

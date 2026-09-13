@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Building2, ClipboardList, Container, FileText, Gauge,
-  Home, Inbox, Link2, MailPlus, Package, Palette, Receipt, Route, ScrollText, Settings2,
+  Home, IdCard, Inbox, Link2, MailPlus, Package, Palette, Receipt, Route, ScrollText, Settings2,
   Shield, Truck, UserCircle, Users, UsersRound,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
@@ -68,7 +68,8 @@ export const DRIVER_NAV: NavSection[] = [
     items: [
       { label: "Home", href: "/driver/home", icon: Home, requires: [], driverOnly: true, primaryMobile: true },
       { label: "My loads", href: "/driver/loads", icon: ClipboardList, requires: ["loads:view"], driverOnly: true, primaryMobile: true },
-      { label: "Documents", href: "/driver/documents", icon: FileText, requires: ["documents:view"], driverOnly: true, primaryMobile: true },
+      { label: "My documents", href: "/driver/documents", icon: FileText, requires: [], driverOnly: true, primaryMobile: true },
+      { label: "My profile", href: "/driver/profile", icon: IdCard, requires: [], driverOnly: true },
       { label: "Notifications", href: "/driver/notifications", icon: Bell, requires: [], driverOnly: true },
     ],
   },

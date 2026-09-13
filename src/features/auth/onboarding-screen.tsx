@@ -10,18 +10,14 @@ import { CarrierVerification } from "./carrier-verification";
 import { DispatchCreation } from "./dispatch-creation";
 import { FormAlert } from "./form-alert";
 import { InvitationPanel } from "./invitation-panel";
+import { DriverNeedsInvitationScreen } from "@/features/driver/needs-invitation-screen";
 import { useStageFocus } from "./use-stage-focus";
 
-type Stage = "role" | "carrier" | "dispatch-fork" | "create-org" | "join" | "done";
+type Stage = "role" | "carrier" | "driver" | "dispatch-fork" | "create-org" | "join" | "done";
 type Role = "carrier-owner" | "driver" | "dispatch";
-type Outcome = "driver" | "dispatch-joined";
+type Outcome = "dispatch-joined";
 
 const DONE_COPY: Record<Outcome, { title: string; description: string }> = {
-  driver: {
-    title: "You're set up as a driver",
-    description:
-      "You'll see the loads assigned to you, your documents and anything that needs your attention. Your carrier connects your account to their fleet.",
-  },
   "dispatch-joined": {
     title: "You've joined the dispatch organization",
     description:
@@ -59,8 +55,10 @@ export function OnboardingScreen() {
       setStage("dispatch-fork");
       return;
     }
-    setOutcome("driver");
-    setStage("done");
+    // Picking "Driver" is not the same as being hired. No carrier relationship
+    // exists until a carrier's invitation is accepted, so nothing is created
+    // here and nothing claims to be finished.
+    setStage("driver");
   }
 
   // These two run their own multi-step screens, headings and progress.
@@ -83,6 +81,10 @@ export function OnboardingScreen() {
       title: "How will you use Antcolos?",
       description:
         "This sets up your workspace and decides what you see first. You only answer this once.",
+    },
+    driver: {
+      title: "Joining as a driver",
+      description: "Drivers join a carrier through the carrier's invitation.",
     },
     "dispatch-fork": {
       title: "Dispatch organization",
@@ -128,6 +130,10 @@ export function OnboardingScreen() {
             selected={role === "dispatch"}
           />
         </div>
+      ) : null}
+
+      {stage === "driver" ? (
+        <DriverNeedsInvitationScreen onBack={() => setStage("role")} />
       ) : null}
 
       {stage === "dispatch-fork" ? (

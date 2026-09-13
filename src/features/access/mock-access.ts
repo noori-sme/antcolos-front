@@ -2,6 +2,7 @@
 
 import type {
   CustomRole,
+  EngagementType,
   Invitation,
   InvitationKind,
   InvitationStatus,
@@ -124,6 +125,7 @@ function seedInvitations(): Invitation[] {
     {
       ...base,
       id: "inv_1", token: "INV-DRIVER", kind: "driver", roleName: "Driver",
+      engagementType: "company_driver",
       recipientName: "Yusuf Demir", recipientEmail: "yusuf.demir@example.com",
       permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(6), createdAt: daysAgo(1), status: "pending",
@@ -173,6 +175,23 @@ function seedInvitations(): Invitation[] {
       recipientName: "Dana Wells", recipientEmail: "dana@example.com",
       permissions: ["loads:view", "customers:view", "invoices:view", "invoices:create", "rates:view"],
       expiresAt: daysFromNow(2), createdAt: daysAgo(6), status: "revoked",
+    },
+    {
+      ...base,
+      id: "inv_10", token: "INV-OWNEROP", kind: "driver", roleName: "Driver",
+      engagementType: "owner_operator",
+      recipientName: "Marcus Hale", recipientEmail: "marcus.hale@example.com",
+      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      expiresAt: daysFromNow(11), createdAt: daysAgo(1), status: "pending",
+    },
+    {
+      ...base,
+      id: "inv_11", token: "INV-DRIVER-ACCT", kind: "driver", roleName: "Driver",
+      engagementType: "company_driver",
+      recipientName: "Sam Murtaza", recipientEmail: "sam@antcolos.com",
+      recipientHasAccount: true,
+      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      expiresAt: daysFromNow(12), createdAt: daysAgo(1), status: "pending",
     },
     {
       ...base,
@@ -314,6 +333,7 @@ export interface InvitationDraft {
   kind: InvitationKind;
   roleName: string;
   customRoleId?: string;
+  engagementType?: EngagementType;
   recipientName: string;
   recipientEmail: string;
   permissions: PermissionKey[];
