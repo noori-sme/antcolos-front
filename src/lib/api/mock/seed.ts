@@ -216,7 +216,7 @@ function northline(): OrgData {
       detail: "Minimum rate $1.05/mi, deadhead limit 30 mi. Sprinter, available for same-day pickup.",
       entity: { kind: "truck", id: "trk_nl_107", label: "Unit 107 · Sprinter · Indianapolis, IN", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(2), source: "system", requires: ["equipment:view"],
+      dueAt: hoursFromNow(2), source: "system", requires: ["trucks:view"],
     }),
     needsYou(org, {
       category: "truck_going_empty", severity: "medium",
@@ -224,7 +224,7 @@ function northline(): OrgData {
       reason: "Tomas Reyes is sitting in Joliet, IL with no assignment and no outreach recorded since yesterday.",
       entity: { kind: "truck", id: "trk_nl_118", label: "Unit 118 · Cargo van · Joliet, IL", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(6), source: "system", requires: ["equipment:view"],
+      dueAt: hoursFromNow(6), source: "system", requires: ["trucks:view"],
     }),
     needsYou(org, {
       category: "unassigned_load", severity: "high",
@@ -384,7 +384,7 @@ function meridian(): OrgData {
       detail: "Newark is a strong outbound market this morning; 4 candidate loads matched on the last sweep.",
       entity: { kind: "truck", id: "trk_md_b04", label: "B-04 · Ridgeway Carriers · Newark, NJ", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(-1), source: "system", requires: ["equipment:view"],
+      dueAt: hoursFromNow(-1), source: "system", requires: ["trucks:view"],
     }),
     needsYou(org, {
       category: "truck_going_empty", severity: "high",
@@ -392,7 +392,7 @@ function meridian(): OrgData {
       reason: "Grace Lindqvist delivered an hour ago. No next assignment and no outreach logged.",
       entity: { kind: "truck", id: "trk_md_a18", label: "A-18 · Baxter Transit LLC · Baltimore, MD", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(2), source: "system", requires: ["equipment:view"],
+      dueAt: hoursFromNow(2), source: "system", requires: ["trucks:view"],
     }),
     needsYou(org, {
       category: "rate_con_verification", severity: "high",
@@ -533,17 +533,26 @@ function cascade(): OrgData {
       reason: "Owen Fitz has been available for 9 hours with nothing booked.",
       entity: { kind: "truck", id: "trk_cs_47", label: "Unit 47 · Sprinter · Portland, OR", href: "/fleet/trucks" },
       recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(3), source: "system", requires: ["equipment:view"],
+      dueAt: hoursFromNow(3), source: "system", requires: ["trucks:view"],
     }),
   ];
 
   return { loads, events, documents, trucks, trailers: [], drivers, customers, needsYou: items };
 }
 
+/** A newly created organization that has not booked anything yet. */
+function empty(): OrgData {
+  return {
+    loads: [], events: [], documents: [], trucks: [],
+    trailers: [], drivers: [], customers: [], needsYou: [],
+  };
+}
+
 export function buildSeed(): Record<string, OrgData> {
   return {
     org_northline: northline(),
     org_meridian: meridian(),
+    org_summit: empty(),
     org_cascade: cascade(),
   };
 }

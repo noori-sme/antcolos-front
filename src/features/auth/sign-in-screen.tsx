@@ -11,6 +11,7 @@ import { PasswordField } from "./password-field";
 import { SubmitButton } from "./controls";
 import { mockSignIn } from "./mock-backend";
 import { normalizeEmail, validateEmail } from "./rules";
+import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,6 +24,7 @@ import { cn } from "@/lib/utils";
  */
 export function SignInScreen() {
   const router = useRouter();
+  const invitationReturn = useInvitationReturnPath();
   const uid = useId();
   const emailId = `${uid}-email`;
   const passwordId = `${uid}-password`;
@@ -54,7 +56,8 @@ export function SignInScreen() {
     setPending(true);
     const result = await mockSignIn(normalizeEmail(email), password);
     if (result.status === "ok") {
-      router.push("/home");
+      // An invitation that sent them here is where they go back to.
+      router.push(invitationReturn ?? "/home");
       return;
     }
     setPending(false);
@@ -70,6 +73,11 @@ export function SignInScreen() {
       }
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        {invitationReturn ? (
+          <FormAlert tone="info" role="none" title="Sign in to accept your invitation.">
+            We&apos;ll take you straight back to it.
+          </FormAlert>
+        ) : null}
         {formError ? <FormAlert tone="danger" title={formError} /> : null}
 
         <Field label="Email address" htmlFor={emailId} error={emailError ?? undefined}>

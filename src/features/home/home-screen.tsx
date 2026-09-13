@@ -35,7 +35,7 @@ export function HomeScreen() {
   const { organization, membership } = useActiveMembership();
   const summary = useHomeSummary();
 
-  const canSeeEquipment = useCan("equipment:view");
+  const canSeeEquipment = useCan("trucks:view");
   const canSeeDrivers = useCan("drivers:view");
   const canSeeLoads = useCan("loads:view");
   const canSeeRevenue = useCan("revenue:view");

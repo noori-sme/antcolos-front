@@ -22,7 +22,7 @@ function visibleLoads(ctx: ServiceContext): Load[] {
 }
 
 function visibleTrucks(ctx: ServiceContext): Truck[] {
-  if (!ctx.permissions.has("equipment:view")) return [];
+  if (!ctx.permissions.has("trucks:view")) return [];
   const org = mockStore.org(ctx.organizationId);
   const trucks = org.trucks;
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
@@ -130,9 +130,9 @@ export const mockDirectoryService = {
     return found;
   },
   async truck(ctx: ServiceContext, truckId: string) {
-    if (!ctx.permissions.has("equipment:view")) throw new PermissionDeniedError(["equipment:view"]);
+    if (!ctx.permissions.has("trucks:view")) throw new PermissionDeniedError(["trucks:view"]);
     const found = visibleTrucks(ctx).find((t) => t.id === truckId);
-    if (!found) throw new PermissionDeniedError(["equipment:view"]);
+    if (!found) throw new PermissionDeniedError(["trucks:view"]);
     return found;
   },
   async driver(ctx: ServiceContext, driverId: string) {
@@ -143,7 +143,7 @@ export const mockDirectoryService = {
     return found;
   },
   async assignableMembers(ctx: ServiceContext) {
-    if (!ctx.permissions.has("users:view")) return [];
+    if (!ctx.permissions.has("members:view")) return [];
     return MOCK_ORG_MEMBERS[ctx.organizationId] ?? [];
   },
 };

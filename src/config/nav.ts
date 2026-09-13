@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Building2, ClipboardList, Container, FileText, Gauge,
-  Home, Inbox, Link2, Package, Palette, Receipt, Route, ScrollText, Settings2,
+  Home, Inbox, Link2, MailPlus, Package, Palette, Receipt, Route, ScrollText, Settings2,
   Shield, Truck, UserCircle, Users, UsersRound,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
@@ -43,8 +43,8 @@ export const PRODUCT_NAV: NavSection[] = [
     label: "Fleet & people",
     items: [
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
-      { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["equipment:view"] },
-      { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["equipment:view"] },
+      { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
+      { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
     ],
   },
   {
@@ -81,8 +81,9 @@ export const SETTINGS_NAV: NavSection[] = [
     label: "Organization",
     items: [
       { label: "Organization", href: "/settings/organization", icon: Building2, requires: ["organization:manage"] },
-      { label: "Users", href: "/settings/users", icon: Users, requires: ["users:view"] },
-      { label: "Permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
+      { label: "Users", href: "/settings/users", icon: Users, requires: ["members:view"] },
+      { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:view"] },
+      { label: "Roles and permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
       { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["integrations:view"] },
       { label: "Audit", href: "/settings/audit", icon: ScrollText, requires: ["audit:view"] },
     ],

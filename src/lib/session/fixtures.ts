@@ -50,6 +50,14 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     createdAt: "2026-02-18T14:02:00.000Z",
   },
   {
+    id: "org_summit",
+    type: "DISPATCH_AGENCY",
+    legalName: "Summit Dispatch Partners LLC",
+    displayName: "Summit Dispatch",
+    timeZone: "America/Denver",
+    createdAt: "2026-08-11T15:10:00.000Z",
+  },
+  {
     id: "org_cascade",
     type: "CARRIER",
     legalName: "Cascade Haul Co.",
@@ -89,11 +97,27 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     templateIds: [tpl("org_meridian", "dispatcher")],
     // Template plus one extra grant, minus one explicit revocation — the exact
     // case that fixed roles cannot express.
-    grants: ["customers:manage", "documents:approve"],
+    grants: ["customers:edit", "documents:approve"],
     revocations: ["loads:delete"],
     scope: DEFAULT_SCOPE,
     isOwner: false,
     joinedAt: "2026-02-18T14:02:00.000Z",
+  },
+  {
+    // The dispatch-agency side of ownership: the same person, owning a
+    // dispatch organization rather than a carrier. Its invitation types and
+    // permission set differ from Northline's, which is the point of having it.
+    id: "mem_summit_owner",
+    userId: MOCK_USER.id,
+    organizationId: "org_summit",
+    status: "active",
+    title: "Owner",
+    templateIds: [],
+    grants: [],
+    revocations: [],
+    scope: DEFAULT_SCOPE,
+    isOwner: true,
+    joinedAt: "2026-08-11T15:10:00.000Z",
   },
   {
     id: "mem_cascade_driver",

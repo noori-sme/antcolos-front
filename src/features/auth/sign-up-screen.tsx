@@ -10,6 +10,7 @@ import { StepUsername } from "./step-username";
 import { StepPassword } from "./step-password";
 import { CODE_LENGTH } from "./rules";
 import { useStageFocus } from "./use-stage-focus";
+import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
 
 const STEPS = ["email", "verify", "username", "password"] as const;
 type Step = (typeof STEPS)[number];
@@ -26,6 +27,7 @@ type Step = (typeof STEPS)[number];
  */
 export function SignUpScreen() {
   const router = useRouter();
+  const invitationReturn = useInvitationReturnPath();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -70,6 +72,13 @@ export function SignUpScreen() {
         ) : null
       }
     >
+      {invitationReturn ? (
+        <div className="mb-4 rounded-md border border-st-info/35 bg-st-info-bg/50 px-3 py-2.5 text-[0.8125rem] leading-relaxed">
+          <p className="font-medium text-fg">You&apos;re creating an account to accept an invitation.</p>
+          <p className="mt-0.5 text-fg-muted">We&apos;ll bring you straight back to it when you&apos;re done.</p>
+        </div>
+      ) : null}
+
       <StepProgress current={stepNumber} total={STEPS.length} />
 
       {step === "email" ? (
@@ -91,7 +100,9 @@ export function SignUpScreen() {
         <StepPassword
           email={email}
           username={username}
-          onCreated={() => router.push("/onboarding")}
+          // An invited person already has a place to go; onboarding is for
+          // people arriving on their own.
+          onCreated={() => router.push(invitationReturn ?? "/onboarding")}
           onBack={() => setStep("username")}
         />
       )}

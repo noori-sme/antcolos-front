@@ -9,7 +9,7 @@ import type { PermissionKey } from "@/types";
 const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/rate-cons/new": ["loads:create", "documents:upload"],
   "/rate-cons": ["loads:view"],
-  "/settings": ["users:view"],
+  "/settings": ["members:view"],
   "/account": [],
 };
 
