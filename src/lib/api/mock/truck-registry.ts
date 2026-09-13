@@ -85,6 +85,7 @@ export const TRUCK_IDS = {
   nl115: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1004",
   nl118: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1005",
   nl121: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1006",
+  nl131: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1009",
   nl124: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1007",
   nl127: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1008",
   mdA12: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2001",
@@ -108,6 +109,7 @@ export const FIXTURE_VINS = {
   mdB04: "1FTYE1CM4KKA12345",
   crosswind: "1GCWGAFP7N1234567",
   claimed: "1HTMMAAL5MH123456",
+  nl131: "1XKYDP9X3PJ131557",
 } as const;
 
 /* -------------------------------------------------------------------------- */
@@ -266,11 +268,11 @@ const BOX_SPECS: TruckSpecs = {
   hasReefer: false, hazmatCapable: false,
 };
 const TRACTOR_SPECS: TruckSpecs = {
-  gvwrLbs: 80000, emptyWeightLbs: 17800, axleCount: 3,
+  gvwrLbs: 80000, emptyWeightLbs: 17800, maxTowableWeightLbs: 68000, axleCount: 3,
   fuelType: "diesel", hasSleeper: true, hazmatCapable: true,
 };
 const HOTSHOT_SPECS: TruckSpecs = {
-  gvwrLbs: 14000, emptyWeightLbs: 8100, maxPayloadLbs: 5900,
+  gvwrLbs: 14000, emptyWeightLbs: 8100, maxPayloadLbs: 5900, maxTowableWeightLbs: 30000,
   axleCount: 2, fuelType: "diesel", hazmatCapable: false,
 };
 
@@ -302,6 +304,11 @@ function buildFixtures(): RegistryState {
     truck(T.nl121, V.nl121, "box_truck", 2021, "International", "MV607", "unavailable",
       plate("IL-3301E", "IL", 90, "Northline Freight LLC"), BOX_SPECS,
       { city: "Chicago", state: "IL" }, "org_northline", "White"),
+    // A road tractor with nothing on it, so a trailer can actually be hooked up.
+    truck(T.nl131, V.nl131, "tractor", 2023, "Volvo", "VNL 760", "available",
+      plate("IL-1315N", "IL", 330, "Northline Freight LLC"), TRACTOR_SPECS,
+      { city: "Chicago", state: "IL", homeTerminal: "Chicago, IL" },
+      "org_northline", "White"),
     truck(T.mdA12, V.mdA12, "tractor", 2020, "Peterbilt", "579", "loaded",
       plate("PA-2215T", "PA", 180, "Baxter Transit LLC"), TRACTOR_SPECS,
       { city: "Allentown", state: "PA", expectedAvailableAt: hoursFromNow(3) },
@@ -334,6 +341,7 @@ function buildFixtures(): RegistryState {
     own(T.nl118, "organization", "Halberd Leasing LLC", daysAgo(700), "ended", daysAgo(210)),
     own(T.nl118, "person", "Marcus Hale", daysAgo(210), "active", undefined, "dp_marcus"),
     own(T.nl121, "organization", "Northline Freight LLC", daysAgo(200), "active", undefined, "org_northline"),
+    own(T.nl131, "organization", "Northline Freight LLC", daysAgo(150), "active", undefined, "org_northline"),
     own(T.mdA12, "organization", "Baxter Transit LLC", daysAgo(500), "active", undefined, "org_baxter"),
     own(T.mdB04, "organization", "Ridgeway Carriers", daysAgo(420), "active", undefined, "org_ridgeway"),
     own(T.crosswind, "organization", "Crosswind Freight", daysAgo(320), "active", undefined, "org_crosswind"),
@@ -351,6 +359,7 @@ function buildFixtures(): RegistryState {
     rel(T.nl118, "org_northline", "Northline Freight", "leased_owner_operator", "118", "approved", daysAgo(200), 125, 40),
     // Requested but not yet accepted — an honest pending state, not a fleet member.
     rel(T.nl121, "org_northline", "Northline Freight", "carrier_owned", "121", "pending_approval", daysAgo(3), 110, 35),
+    rel(T.nl131, "org_northline", "Northline Freight", "carrier_owned", "131", "approved", daysAgo(150), 135, 50),
     rel(T.mdA12, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-12", "approved", daysAgo(500), 110, 30),
     rel(T.mdB04, "org_ridgeway", "Ridgeway Carriers", "carrier_owned", "B-04", "approved", daysAgo(420), 100, 25),
     rel(T.crosswind, "org_crosswind", "Crosswind Freight", "carrier_owned", "C-31", "approved", daysAgo(320), 125, 40),
@@ -395,6 +404,10 @@ function buildFixtures(): RegistryState {
     doc(T.nl118, "registration", "approved", "org_northline", "reg-118.pdf", daysFromNow(300)),
     doc(T.nl118, "lease_agreement", "pending_review", "org_northline", "lease-hale.pdf"),
     doc(T.claimed, "registration", "approved", "org_northline", "reg-127.pdf", daysFromNow(60)),
+    doc(T.nl131, "registration", "approved", "org_northline", "reg-131.pdf", daysFromNow(330)),
+    doc(T.nl131, "title", "approved", "org_northline", "title-131.pdf"),
+    doc(T.nl131, "insurance", "approved", "org_northline", "coi-131.pdf", daysFromNow(190)),
+    doc(T.nl131, "annual_inspection", "approved", "org_northline", "inspection-131.pdf", daysFromNow(240)),
   ];
 
   const claims: TruckOwnershipClaim[] = [
@@ -1458,6 +1471,44 @@ export async function submitTruckDocument(documentId: string, ctx: TruckContext)
   return { ...updated };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Read-only windows for the trailer registry                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The raw truck record, with no authorization of its own.
+ *
+ * Only the trailer registry calls this, and only after doing its own access
+ * check on the trailer. It exists so a compatibility check can read a power
+ * unit's specifications without going through an awaited, permission-gated
+ * profile call in the middle of a critical section.
+ */
+export function truckRecord(truckId: string): Truck | undefined {
+  return db().trucks.find((t) => t.truckId === truckId);
+}
+
+/** The organization currently holding operating authority over a truck. */
+export function truckLeaseHolder(truckId: string): string | undefined {
+  return holdingLease(truckId)?.organizationId;
+}
+
+/** The live lease on a truck, whoever holds it. */
+export function truckHoldingLease(truckId: string): TruckOperatingLease | undefined {
+  return holdingLease(truckId);
+}
+
+/** This carrier's unit number for a truck. Belongs to the relationship. */
+export function truckUnitNumber(truckId: string, organizationId: string): string | undefined {
+  return db().relationships.find(
+    (r) => r.truckId === truckId && r.organizationId === organizationId && r.status !== "ended",
+  )?.unitNumber;
+}
+
+/** This organization's own live lease on a truck, if it has one. */
+export function truckLeaseFor(truckId: string, organizationId: string) {
+  return leaseFor(truckId, organizationId);
+}
+
 /** Read-only helpers the screens use for counts, kept honest against the roster. */
 export function fleetCount(ctx: TruckContext): number {
   return fleetSync(ctx).length;
@@ -1513,11 +1564,34 @@ export type ActivationOutcome =
 export async function activateOperatingLease(
   truckId: string,
   ctx: TruckContext,
-  options: { loadReference?: string; expectedEndAt?: string; reserveOnly?: boolean } = {},
+  options: ActivationOptions = {},
 ): Promise<ActivationOutcome> {
   // All latency BEFORE the critical section, never inside it.
   await sleep(LATENCY_MS);
+  return activateOperatingLeaseSync(truckId, ctx, options);
+}
 
+export interface ActivationOptions {
+  loadReference?: string;
+  expectedEndAt?: string;
+  reserveOnly?: boolean;
+  /** Set when this lease is one half of a truck-and-trailer activation. */
+  combinationId?: string;
+}
+
+/**
+ * The critical section on its own, with no latency and no awaits.
+ *
+ * Exported so the trailer registry can lock a truck and a trailer inside ONE
+ * synchronous block. Locking them with two separate awaited calls would leave a
+ * gap in which another carrier could take the second asset, and the pair would
+ * end up running under two authorities.
+ */
+export function activateOperatingLeaseSync(
+  truckId: string,
+  ctx: TruckContext,
+  options: ActivationOptions = {},
+): ActivationOutcome {
   const missing = (["trucks:relationships:manage"] as PermissionKey[])
     .filter((k) => !ctx.permissions.has(k));
   if (missing.length) return { status: "unauthorized", missing };
@@ -1571,6 +1645,7 @@ export async function activateOperatingLease(
     relationshipId: relationship.id,
     status: options.reserveOnly ? "reserved" : "active",
     loadReference: options.loadReference,
+    combinationId: options.combinationId,
     reservedAt: at,
     activatedAt: options.reserveOnly ? undefined : at,
     expectedEndAt: options.expectedEndAt,

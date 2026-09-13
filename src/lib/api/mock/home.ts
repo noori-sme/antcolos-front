@@ -1,5 +1,6 @@
-import { missingRequiredDocuments, type FleetTruck, type Load } from "@/types";
+import { missingRequiredDocuments, type FleetTrailer, type FleetTruck, type Load } from "@/types";
 import { fleetSync, truckContextFrom } from "./truck-registry";
+import { trailerFleetSync } from "./trailer-registry";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
 import type { FinancialSummary, HomeService, HomeSummary } from "../contracts/home";
 import { mockNeedsYouService, urgencyScore } from "./needs-you";
@@ -31,6 +32,14 @@ function visibleTrucks(ctx: ServiceContext): FleetTruck[] {
   return fleetSync(truckContextFrom(ctx));
 }
 
+/**
+ * The trailer count comes from the trailer registry, not from a number kept
+ * here, so Home and the roster can never disagree about how many there are.
+ */
+function visibleTrailers(ctx: ServiceContext): FleetTrailer[] {
+  return trailerFleetSync(truckContextFrom(ctx));
+}
+
 function pickupAt(load: Load): number {
   return new Date(load.stops[0].appointmentAt).getTime();
 }
@@ -40,6 +49,7 @@ export const mockHomeService: HomeService = {
     const org = mockStore.org(ctx.organizationId);
     const loads = visibleLoads(ctx);
     const trucks = visibleTrucks(ctx);
+    const trailers = visibleTrailers(ctx);
 
     const needsYouAll = await mockNeedsYouService.list(ctx, { status: ["open", "escalated"] });
 
@@ -103,6 +113,8 @@ export const mockHomeService: HomeService = {
         activeLoads: activeLoads.length,
         unassignedLoads: unassignedLoads.length,
         trucksTotal: trucks.length,
+        trailersTotal: trailers.length,
+        trailersUnattached: trailers.filter((t) => t.attachmentState === "unattached").length,
         trucksAvailable: trucks.filter((t) => t.status === "available").length,
         trucksGoingEmpty: soonEmptyTrucks.length,
         documentsMissing,

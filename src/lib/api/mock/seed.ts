@@ -1,5 +1,5 @@
 import type {
-  Customer, Document, Driver, Load, LoadEvent, NeedsYouItem, Trailer,
+  Customer, Document, Driver, Load, LoadEvent, NeedsYouItem,
 } from "@/types";
 import { buildLoad, nextId, type LoadSeed } from "./build-load";
 import { daysFromNow, hoursFromNow, minutesFromNow } from "./time";
@@ -14,7 +14,6 @@ export interface OrgData {
   loads: Load[];
   events: LoadEvent[];
   documents: Document[];
-  trailers: Trailer[];
   drivers: Driver[];
   customers: Customer[];
   needsYou: NeedsYouItem[];
@@ -86,11 +85,6 @@ function northline(): OrgData {
     { id: "drv_nl_06", organizationId: org, displayName: "Kelsey Nguyen", status: "off_duty", phone: "+1 (312) 555-0186", currentTruckId: TRUCK_IDS.nl121, telegramConnected: true, documentWarnings: 0 },
   ];
 
-
-  const trailers: Trailer[] = [
-    { id: "trl_nl_01", organizationId: org, unit: "T-220", kind: "dry_van", status: "available" },
-    { id: "trl_nl_02", organizationId: org, unit: "T-221", kind: "reefer", status: "loaded" },
-  ];
 
   const TZ = "America/Chicago";
   const { loads, events, documents } = expand(org, [
@@ -285,7 +279,7 @@ function northline(): OrgData {
     }),
   ];
 
-  return { loads, events, documents, trailers, drivers, customers, needsYou: items };
+  return { loads, events, documents, drivers, customers, needsYou: items };
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +415,7 @@ function meridian(): OrgData {
     }),
   ];
 
-  return { loads, events, documents, trailers: [], drivers, customers, needsYou: items };
+  return { loads, events, documents, drivers, customers, needsYou: items };
 }
 
 // ---------------------------------------------------------------------------
@@ -517,14 +511,14 @@ function cascade(): OrgData {
     }),
   ];
 
-  return { loads, events, documents, trailers: [], drivers, customers, needsYou: items };
+  return { loads, events, documents, drivers, customers, needsYou: items };
 }
 
 /** A newly created organization that has not booked anything yet. */
 function empty(): OrgData {
   return {
     loads: [], events: [], documents: [],
-    trailers: [], drivers: [], customers: [], needsYou: [],
+    drivers: [], customers: [], needsYou: [],
   };
 }
 

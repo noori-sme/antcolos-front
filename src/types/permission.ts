@@ -11,8 +11,11 @@ export type PermissionKey =
   | "trucks:view" | "trucks:create" | "trucks:edit" | "trucks:delete"
   | "trucks:documents:manage" | "trucks:assignments:manage"
   | "trucks:relationships:manage" | "trucks:ownership:review"
-  // Trailers
+  // Trailers — a separate module from trucks, never the same permission
   | "trailers:view" | "trailers:create" | "trailers:edit" | "trailers:delete"
+  | "trailers:documents:manage" | "trailers:attachments:manage"
+  | "trailers:relationships:manage" | "trailers:ownership:review"
+  | "trailers:status:manage"
   // Customers
   | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
   // Documents

@@ -1,3 +1,5 @@
+import type { AssetActivationState } from "./asset";
+import type { TrailerAttachmentState, TrailerOperatingStatus, TrailerType } from "./trailer";
 import type { TruckActivationState, TruckEquipmentType, TruckOperatingStatus } from "./truck";
 
 /** One status vocabulary for power units and trailers alike. */
@@ -57,12 +59,45 @@ export interface FleetTruck {
   leaseExpectedEndAt?: string;
 }
 
-export interface Trailer {
+/**
+ * One organization's operational view of a permanent trailer.
+ *
+ * Like FleetTruck, this is a PROJECTION and never the trailer. The trailer
+ * lives in the permanent registry keyed by `trailerId`; this is what one
+ * organization sees of it right now, assembled from that organization's own
+ * relationship — its own unit number, and only the attachment, driver and load
+ * information it is entitled to.
+ */
+export interface FleetTrailer {
+  /** The permanent trailer this is a view of. */
+  trailerId: string;
+  /** Same value as trailerId. Kept so rows can be keyed by `id`. */
   id: string;
+  /** Whose view this is. Derived from the relationship, never trusted input. */
   organizationId: string;
+  /** This organization's label for the trailer. Belongs to the relationship. */
   unit: string;
-  kind: "dry_van" | "reefer" | "flatbed";
-  status: TruckStatus;
+  /** For dispatch organizations: the carrier whose freight it moves. */
+  carrierName?: string;
+  trailerType: TrailerType;
+  status: TrailerOperatingStatus;
+  attachmentState: TrailerAttachmentState;
+  /** The power unit it is on, when this viewer is entitled to know. */
+  attachedTruckId?: string;
+  attachedTruckUnit?: string;
+  currentCity?: string;
+  currentState?: string;
+  expectedAvailableAt?: string;
+  documentWarnings: number;
+  /**
+   * What THIS organization may do with the trailer right now. Two carriers
+   * looking at one trailer can legitimately see different values at once.
+   */
+  activationState: AssetActivationState;
+  /** True when another carrier holds the operating lease. Names nobody. */
+  lockedByAnotherCarrier: boolean;
+  /** Set only for the lease holder. Its own load reference. */
+  myLoadReference?: string;
 }
 
 export type DriverStatus = "available" | "driving" | "off_duty" | "inactive";

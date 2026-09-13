@@ -49,6 +49,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "drivers:view", "trucks:view", "trailers:view", "compliance:view", "compliance:manage",
+      "trucks:documents:manage", "trailers:documents:manage",
       "documents:view", "documents:upload", "documents:approve", "loads:view",
     ],
   },
@@ -59,13 +60,19 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     permissions: [
       "compliance:view", "compliance:manage",
       "documents:view", "documents:approve", "drivers:view", "trucks:view", "trailers:view",
+      "trailers:documents:manage",
     ],
   },
   {
     name: "Maintenance",
     description: "Equipment upkeep.",
     seeded: true,
-    permissions: ["trucks:view", "trucks:edit", "trailers:view", "trailers:edit", "documents:view", "documents:upload"],
+    permissions: [
+      "trucks:view", "trucks:edit", "trucks:documents:manage",
+      "trailers:view", "trailers:edit", "trailers:documents:manage",
+      "trailers:status:manage", "trailers:attachments:manage",
+      "documents:view", "documents:upload",
+    ],
   },
 ] as const;
 

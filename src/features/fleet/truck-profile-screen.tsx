@@ -26,6 +26,7 @@ import {
   type ClaimDecision, type TerminationStep, type TruckProfileView,
 } from "@/lib/api/mock/truck-registry";
 import { mockListCarrierDrivers } from "@/features/driver/mock-carrier-drivers";
+import { trailerOnTruck } from "@/lib/api/mock/trailer-registry";
 import type { TruckOperatingLease, TruckOperatingStatus, TruckSpecs } from "@/types";
 import {
   ActivationStateChip, CarrierStatusChip, ClaimStatusChip, DocumentStatusChip, LeaseStatusChip,
@@ -262,6 +263,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
                   value={view.dispatchAccess.filter((d) => d.status === "active").map((d) => d.dispatchOrganizationName).join(", ") || "None"}
                 />
                 <Row label="Current driver" value={assignment?.driverName ?? "Unassigned"} />
+                <AttachedTrailerRow truckId={truckId} />
               </dl>
               <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
                 Owning, operating and dispatching are three separate relationships. All three can be
@@ -498,6 +500,44 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
           </ol>
         </Panel>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * What this power unit is pulling.
+ *
+ * Read from the trailer registry by truckId rather than stored on the truck:
+ * the two assets have separate lives and separate owners, and a trailer nested
+ * inside a truck record would be wrong the moment either is sold.
+ */
+function AttachedTrailerRow({ truckId }: { truckId: string }) {
+  const ctx = useTruckContext();
+  const [row, setRow] = useState<{ trailerId: string; unit: string } | null | "none">(null);
+
+  useEffect(() => {
+    if (!ctx) return;
+    let cancelled = false;
+    trailerOnTruck(truckId, ctx).then((found) => {
+      if (cancelled) return;
+      setRow(found ? { trailerId: found.trailerId, unit: found.unit } : "none");
+    });
+    return () => { cancelled = true; };
+  }, [ctx, truckId]);
+
+  if (row === null) return <Row label="Trailer" value="…" />;
+  if (row === "none") return <Row label="Trailer" value="Nothing attached" />;
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2">
+      <dt className="text-[0.75rem] text-fg-muted">Trailer</dt>
+      <dd className="min-w-0 text-right text-[0.8125rem]">
+        <Link
+          href={`/fleet/trailers/${row.trailerId}`}
+          className="text-fg underline-offset-4 hover:underline"
+        >
+          Unit {row.unit}
+        </Link>
+      </dd>
     </div>
   );
 }

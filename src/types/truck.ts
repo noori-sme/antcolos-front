@@ -1,3 +1,15 @@
+import type {
+  AssetActivationState, AssetDocumentSnapshot, CarrierRelationshipStatus,
+  CarrierRelationshipType, DocumentLifecycleStatus, LeaseTermination,
+  OperatingLeaseStatus, OwnerType, OwnershipClaimStatus, OwnershipRecordStatus,
+  ScopedAccessStatus,
+} from "./asset";
+
+export type {
+  CarrierRelationshipStatus, CarrierRelationshipType, LeaseTermination,
+  OperatingLeaseStatus, OwnerType, OwnershipClaimStatus, OwnershipRecordStatus,
+} from "./asset";
+
 /**
  * The permanent Truck.
  *
@@ -85,7 +97,14 @@ export interface TruckAvailability {
 export interface TruckSpecs {
   gvwrLbs?: number;
   emptyWeightLbs?: number;
+  /** What the truck can carry itself. NOT what it can tow. */
   maxPayloadLbs?: number;
+  /**
+   * The heaviest trailer this power unit may pull, when anybody has recorded
+   * it. Absent for vehicles that do not tow, and absent when simply unknown —
+   * the compatibility service treats those two cases differently.
+   */
+  maxTowableWeightLbs?: number;
   cargoLengthIn?: number;
   cargoWidthIn?: number;
   cargoHeightIn?: number;
@@ -105,9 +124,6 @@ export interface TruckSpecs {
 /* -------------------------------------------------------------------------- */
 /* Legal ownership                                                             */
 /* -------------------------------------------------------------------------- */
-
-export type OwnerType = "person" | "organization";
-export type OwnershipRecordStatus = "active" | "ended";
 
 /**
  * Who legally owns the truck, and when.
@@ -134,8 +150,6 @@ export interface TruckOwnershipRecord {
   createdAt: string;
 }
 
-export type OwnershipClaimStatus = "pending" | "accepted" | "rejected" | "manual_review";
-
 /** Someone asserting they own a truck that already exists in Antcolos. */
 export interface TruckOwnershipClaim {
   id: string;
@@ -156,25 +170,9 @@ export interface TruckOwnershipClaim {
 /* Carrier operating relationship                                              */
 /* -------------------------------------------------------------------------- */
 
-export type CarrierRelationshipType = "carrier_owned" | "leased_owner_operator";
-
-/**
- * How far a carrier has got with onboarding this truck.
- *
- * This is eligibility, NOT operation. Several carriers can hold an approved
- * relationship with the same truck at the same time, each with its own
- * insurance evidence, lease agreement, documents and history. Being approved
- * means "allowed to run this truck when it is free" — never "running it now".
- */
-export type CarrierRelationshipStatus =
-  | "onboarding"
-  | "pending_approval"
-  | "approved"
-  | "suspended"
-  | "ended";
 
 /** Kept for dispatch-access records, which have a simpler lifecycle. */
-export type TruckRelationshipStatus = "pending" | "active" | "suspended" | "ended";
+export type TruckRelationshipStatus = ScopedAccessStatus;
 
 /**
  * Which carrier OPERATES the truck, and on what basis.
@@ -213,7 +211,6 @@ export interface TruckCarrierRelationship {
 /* Operating authority lease                                                   */
 /* -------------------------------------------------------------------------- */
 
-export type OperatingLeaseStatus = "reserved" | "active" | "pending_release" | "ended";
 
 /**
  * Exclusive operating authority over a truck, for a period of time.
@@ -238,6 +235,10 @@ export interface TruckOperatingLease {
    * another carrier, who sees only that the truck is unavailable.
    */
   loadReference?: string;
+  /** Set when this lease is one half of a truck-and-trailer activation. */
+  combinationId?: string;
+  /** The trailer the movement was activated with, when there was one. */
+  trailerId?: string;
   reservedAt?: string;
   activatedAt?: string;
   /** Planned end. Reaching it does NOT release the truck — see the checklist. */
@@ -250,19 +251,6 @@ export interface TruckOperatingLease {
   initiatedByName: string;
 }
 
-/**
- * What has to be true before exclusive control can be given up.
- *
- * A passing estimated delivery time is not on this list, and deliberately so: a
- * truck is not free because a clock says it should be. Every box is a real
- * event somebody recorded.
- */
-export interface LeaseTermination {
-  unloadedAt?: string;
-  tripRequirementsCompletedAt?: string;
-  deliveryConfirmationRecordedAt?: string;
-  exclusiveControlEndedAt?: string;
-}
 
 /**
  * What one carrier sees when it looks at one truck.
@@ -271,17 +259,7 @@ export interface LeaseTermination {
  * the truck — never stored, because it differs per carrier and changes the
  * moment somebody else activates.
  */
-export type TruckActivationState =
-  | "onboarding"
-  | "pending_approval"
-  | "approved"
-  | "available_for_activation"
-  | "activation_reserved"
-  | "active_operating_lease"
-  | "locked_by_other"
-  | "pending_release"
-  | "ended"
-  | "suspended";
+export type TruckActivationState = AssetActivationState;
 
 /* -------------------------------------------------------------------------- */
 /* Dispatch organization access                                                */
@@ -345,15 +323,7 @@ export interface TruckDriverAssignment {
 /* Documents                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export type TruckDocumentStatus =
-  | "missing"
-  | "selected_local"
-  | "pending_review"
-  | "approved"
-  | "rejected"
-  | "expiring_soon"
-  | "expired"
-  | "superseded";
+export type TruckDocumentStatus = DocumentLifecycleStatus;
 
 export type TruckDocumentKind =
   | "registration"
@@ -396,14 +366,7 @@ export interface TruckDocument {
 }
 
 /** What a carrier keeps after a document is replaced or a relationship ends. */
-export interface TruckDocumentSnapshot {
-  kind: TruckDocumentKind;
-  label: string;
-  fileName: string;
-  fileType?: string;
-  sizeBytes?: number;
-  capturedAt: string;
-}
+export type TruckDocumentSnapshot = AssetDocumentSnapshot<TruckDocumentKind>;
 
 /* -------------------------------------------------------------------------- */
 /* Timeline                                                                    */

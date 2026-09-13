@@ -5,6 +5,9 @@ export interface OperationalCounts {
   activeLoads: number;
   unassignedLoads: number;
   trucksTotal: number;
+  /** Same number the trailer roster shows, from the same registry. */
+  trailersTotal: number;
+  trailersUnattached: number;
   trucksAvailable: number;
   trucksGoingEmpty: number;
   documentsMissing: number;

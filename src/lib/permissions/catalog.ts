@@ -51,6 +51,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "trailers:create", label: "Add trailers", description: "Add a trailer to the fleet.", group: "trailers", orgTypes: ["CARRIER"] },
   { key: "trailers:edit", label: "Edit trailers", description: "Change trailer details and status.", group: "trailers", orgTypes: ["CARRIER"] },
   { key: "trailers:delete", label: "Delete trailers", description: "Permanently remove a trailer.", group: "trailers", sensitive: true, orgTypes: ["CARRIER"] },
+  { key: "trailers:documents:manage", label: "Manage trailer documents", description: "Add, replace and review registration, title, insurance and inspection paperwork for trailers.", group: "trailers" },
+  { key: "trailers:attachments:manage", label: "Attach and detach trailers", description: "Put a trailer on a power unit, reserve one, move it to another, or unhook it.", group: "trailers" },
+  { key: "trailers:relationships:manage", label: "Manage trailer carrier relationships", description: "Connect a trailer to this organization, take operating authority over it, or end that connection.", group: "trailers", sensitive: true },
+  { key: "trailers:status:manage", label: "Change trailer status and availability", description: "Mark a trailer available, loaded, in maintenance or out of service, and set where it will be free.", group: "trailers" },
+  { key: "trailers:ownership:review", label: "Review trailer ownership claims", description: "Decide who legally owns a trailer when somebody claims it. The strongest trailer permission there is.", group: "trailers", sensitive: true },
 
   // ---- Customers ---------------------------------------------------------
   { key: "customers:view", label: "View customers", description: "See the brokers and shippers you haul for.", group: "customers" },
