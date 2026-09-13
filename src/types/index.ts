@@ -9,6 +9,11 @@ export type * from "./event";
 export type * from "./document";
 export type * from "./fleet";
 export type * from "./needs-you";
+export type * from "./access";
+export type * from "./driver-profile";
+export type * from "./asset";
+export type * from "./truck";
+export type * from "./trailer";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";

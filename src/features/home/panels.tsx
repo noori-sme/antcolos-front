@@ -10,7 +10,7 @@ import { EQUIPMENT_LABEL } from "@/config/statuses";
 import { useActiveMembership, useCan } from "@/lib/session/hooks";
 import { dateTimeIn, money, ratePerMile, relativeTime, useNow } from "@/lib/utils";
 import { laneLabel } from "@/types";
-import type { Driver, Load, Truck as TruckType } from "@/types";
+import type { Driver, FleetTruck as TruckType, Load } from "@/types";
 
 function PanelShell({
   title, description, href, linkLabel, children, empty,

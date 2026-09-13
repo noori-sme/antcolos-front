@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  CircleDollarSign, Clock3, FileWarning, Package, Plus, Route, Truck,
+  CircleDollarSign, Clock3, Container, FileWarning, Package, Plus, Route, Truck,
 } from "lucide-react";
 import Link from "next/link";
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
@@ -35,7 +35,8 @@ export function HomeScreen() {
   const { organization, membership } = useActiveMembership();
   const summary = useHomeSummary();
 
-  const canSeeEquipment = useCan("equipment:view");
+  const canSeeEquipment = useCan("trucks:view");
+  const canSeeTrailers = useCan("trailers:view");
   const canSeeDrivers = useCan("drivers:view");
   const canSeeLoads = useCan("loads:view");
   const canSeeRevenue = useCan("revenue:view");
@@ -107,7 +108,7 @@ export function HomeScreen() {
 
       <section
         aria-label="Operational overview"
-        className="grid grid-cols-2 gap-stack xl:grid-cols-4"
+        className="grid grid-cols-2 gap-stack xl:grid-cols-3 2xl:grid-cols-5"
       >
         {canSeeLoads ? (
           <StatTile
@@ -132,6 +133,16 @@ export function HomeScreen() {
             hint={`${s.counts.trucksAvailable} empty now · ${s.counts.trucksTotal} total`}
             tone={s.counts.trucksGoingEmpty > 0 ? "warning" : "success"}
             href="/dispatch"
+          />
+        ) : null}
+
+        {canSeeTrailers ? (
+          <StatTile
+            icon={Container}
+            label="Trailers"
+            value={String(s.counts.trailersTotal)}
+            hint={`${s.counts.trailersUnattached} not on a power unit`}
+            href="/fleet/trailers"
           />
         ) : null}
 

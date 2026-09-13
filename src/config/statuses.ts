@@ -23,10 +23,11 @@ export const LOAD_STATUS: Record<LoadStatus, { label: string; tone: Tone }> = {
 };
 
 export const TRUCK_STATUS: Record<TruckStatus, { label: string; tone: Tone }> = {
-  available:      { label: "Available",      tone: "success" },
-  on_load:        { label: "On a load",      tone: "info" },
-  out_of_service: { label: "Out of service", tone: "danger" },
-  maintenance:    { label: "Maintenance",    tone: "warning" },
+  available: { label: "Available", tone: "success" },
+  loaded: { label: "Loaded", tone: "progress" },
+  expected_available: { label: "Expected available", tone: "info" },
+  unavailable: { label: "Unavailable", tone: "neutral" },
+  maintenance: { label: "Maintenance", tone: "warning" },
 };
 
 export const DRIVER_STATUS: Record<DriverStatus, { label: string; tone: Tone }> = {

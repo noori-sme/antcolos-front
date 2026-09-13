@@ -9,6 +9,7 @@ import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
 import { mockStore } from "./store";
+import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
 
 const LATENCY_MS = 180;
@@ -44,8 +45,9 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
     }
     if (item.entity.kind === "driver") return item.entity.id === ctx.driverProfileId;
     if (item.entity.kind === "truck") {
-      const truck = org.trucks.find((t) => t.id === item.entity.id);
-      return truck?.currentDriverId === ctx.driverProfileId;
+      // Visibility of a truck is a registry question, not an org-data one.
+      const mine = fleetSync(truckContextFrom(ctx));
+      return mine.some((t) => t.truckId === item.entity.id);
     }
     return false;
   }

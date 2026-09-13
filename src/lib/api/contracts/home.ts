@@ -1,10 +1,13 @@
-import type { Driver, Load, NeedsYouItem, Truck } from "@/types";
+import type { Driver, FleetTruck, Load, NeedsYouItem } from "@/types";
 import type { ServiceContext } from "./context";
 
 export interface OperationalCounts {
   activeLoads: number;
   unassignedLoads: number;
   trucksTotal: number;
+  /** Same number the trailer roster shows, from the same registry. */
+  trailersTotal: number;
+  trailersUnattached: number;
   trucksAvailable: number;
   trucksGoingEmpty: number;
   documentsMissing: number;
@@ -26,7 +29,7 @@ export interface HomeSummary {
   needsYouPreview: NeedsYouItem[];
   activeLoads: Load[];
   upcomingLoads: Load[];
-  soonEmptyTrucks: Truck[];
+  soonEmptyTrucks: FleetTruck[];
   unassignedLoads: Load[];
   driversNeedingAttention: Driver[];
   financials: FinancialSummary | null;

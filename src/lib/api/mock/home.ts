@@ -1,4 +1,6 @@
-import { missingRequiredDocuments, type Load, type Truck } from "@/types";
+import { missingRequiredDocuments, type FleetTrailer, type FleetTruck, type Load } from "@/types";
+import { fleetSync, truckContextFrom } from "./truck-registry";
+import { trailerFleetSync } from "./trailer-registry";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
 import type { FinancialSummary, HomeService, HomeSummary } from "../contracts/home";
 import { mockNeedsYouService, urgencyScore } from "./needs-you";
@@ -21,14 +23,21 @@ function visibleLoads(ctx: ServiceContext): Load[] {
   return scoped.map((l) => redactFinancials(ctx, l));
 }
 
-function visibleTrucks(ctx: ServiceContext): Truck[] {
-  if (!ctx.permissions.has("equipment:view")) return [];
-  const org = mockStore.org(ctx.organizationId);
-  const trucks = org.trucks;
-  if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
-    return trucks.filter((t) => t.currentDriverId === ctx.driverProfileId);
-  }
-  return trucks;
+/**
+ * Trucks are no longer rows inside this organization's data. They live once, in
+ * the permanent registry, and this is the organization's view of the ones its
+ * relationships entitle it to see.
+ */
+function visibleTrucks(ctx: ServiceContext): FleetTruck[] {
+  return fleetSync(truckContextFrom(ctx));
+}
+
+/**
+ * The trailer count comes from the trailer registry, not from a number kept
+ * here, so Home and the roster can never disagree about how many there are.
+ */
+function visibleTrailers(ctx: ServiceContext): FleetTrailer[] {
+  return trailerFleetSync(truckContextFrom(ctx));
 }
 
 function pickupAt(load: Load): number {
@@ -40,6 +49,7 @@ export const mockHomeService: HomeService = {
     const org = mockStore.org(ctx.organizationId);
     const loads = visibleLoads(ctx);
     const trucks = visibleTrucks(ctx);
+    const trailers = visibleTrailers(ctx);
 
     const needsYouAll = await mockNeedsYouService.list(ctx, { status: ["open", "escalated"] });
 
@@ -56,7 +66,7 @@ export const mockHomeService: HomeService = {
     );
 
     const soonEmptyTrucks = trucks
-      .filter((t) => t.status !== "out_of_service" && t.status !== "maintenance")
+      .filter((t) => t.status !== "unavailable" && t.status !== "maintenance")
       .filter((t) => {
         if (t.status === "available") return true;
         if (!t.estimatedEmptyAt) return false;
@@ -103,6 +113,8 @@ export const mockHomeService: HomeService = {
         activeLoads: activeLoads.length,
         unassignedLoads: unassignedLoads.length,
         trucksTotal: trucks.length,
+        trailersTotal: trailers.length,
+        trailersUnattached: trailers.filter((t) => t.attachmentState === "unattached").length,
         trucksAvailable: trucks.filter((t) => t.status === "available").length,
         trucksGoingEmpty: soonEmptyTrucks.length,
         documentsMissing,
@@ -130,9 +142,9 @@ export const mockDirectoryService = {
     return found;
   },
   async truck(ctx: ServiceContext, truckId: string) {
-    if (!ctx.permissions.has("equipment:view")) throw new PermissionDeniedError(["equipment:view"]);
+    if (!ctx.permissions.has("trucks:view")) throw new PermissionDeniedError(["trucks:view"]);
     const found = visibleTrucks(ctx).find((t) => t.id === truckId);
-    if (!found) throw new PermissionDeniedError(["equipment:view"]);
+    if (!found) throw new PermissionDeniedError(["trucks:view"]);
     return found;
   },
   async driver(ctx: ServiceContext, driverId: string) {
@@ -143,7 +155,7 @@ export const mockDirectoryService = {
     return found;
   },
   async assignableMembers(ctx: ServiceContext) {
-    if (!ctx.permissions.has("users:view")) return [];
+    if (!ctx.permissions.has("members:view")) return [];
     return MOCK_ORG_MEMBERS[ctx.organizationId] ?? [];
   },
 };

@@ -1,0 +1,111 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { AuthShell, AuthSwitchLink } from "./shell";
+import { StepProgress } from "./controls";
+import { StepEmail } from "./step-email";
+import { StepVerify } from "./step-verify";
+import { StepUsername } from "./step-username";
+import { StepPassword } from "./step-password";
+import { CODE_LENGTH } from "./rules";
+import { useStageFocus } from "./use-stage-focus";
+import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
+
+const STEPS = ["email", "verify", "username", "password"] as const;
+type Step = (typeof STEPS)[number];
+
+/**
+ * Sign Up — four steps behind one URL.
+ *
+ * Keeping the steps in a single screen means going back never loses what was
+ * already typed, and the browser's back button never drops someone into the
+ * middle of a half-finished signup.
+ *
+ * Once the account exists the person still has to say how they will use
+ * Antcolos, so the flow hands off to onboarding rather than the dashboard.
+ */
+export function SignUpScreen() {
+  const router = useRouter();
+  const invitationReturn = useInvitationReturnPath();
+  const [step, setStep] = useState<Step>("email");
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const headingRef = useStageFocus<HTMLHeadingElement>(step);
+
+  const copy: Record<Step, { title: string; description: React.ReactNode }> = {
+    email: {
+      title: "Create your Antcolos account",
+      description: "Start with the email address you use for work.",
+    },
+    verify: {
+      title: "Check your email",
+      description: (
+        <>
+          We sent a {CODE_LENGTH}-digit code to{" "}
+          <span className="font-medium text-fg">{email || "your email address"}</span>. Enter it
+          below to confirm the address is yours.
+        </>
+      ),
+    },
+    username: {
+      title: "Choose your username",
+      description:
+        "This is how teammates and dispatchers will see you across Antcolos. It is permanent, so pick carefully.",
+    },
+    password: {
+      title: "Create a password",
+      description: "Last step. Choose something strong that you do not use anywhere else.",
+    },
+  };
+
+  const stepNumber = STEPS.indexOf(step) + 1;
+
+  return (
+    <AuthShell
+      title={copy[step].title}
+      description={copy[step].description}
+      headingRef={headingRef}
+      footer={
+        step === "email" ? (
+          <AuthSwitchLink prompt="Already have an account?" href="/sign-in" label="Sign in" />
+        ) : null
+      }
+    >
+      {invitationReturn ? (
+        <div className="mb-4 rounded-md border border-st-info/35 bg-st-info-bg/50 px-3 py-2.5 text-[0.8125rem] leading-relaxed">
+          <p className="font-medium text-fg">You&apos;re creating an account to accept an invitation.</p>
+          <p className="mt-0.5 text-fg-muted">We&apos;ll bring you straight back to it when you&apos;re done.</p>
+        </div>
+      ) : null}
+
+      <StepProgress current={stepNumber} total={STEPS.length} />
+
+      {step === "email" ? (
+        <StepEmail email={email} onEmailChange={setEmail} onSent={() => setStep("verify")} />
+      ) : step === "verify" ? (
+        <StepVerify
+          email={email}
+          onVerified={() => setStep("username")}
+          onBack={() => setStep("email")}
+        />
+      ) : step === "username" ? (
+        <StepUsername
+          username={username}
+          onUsernameChange={setUsername}
+          onChosen={() => setStep("password")}
+          onBack={() => setStep("verify")}
+        />
+      ) : (
+        <StepPassword
+          email={email}
+          username={username}
+          // An invited person already has a place to go; onboarding is for
+          // people arriving on their own.
+          onCreated={() => router.push(invitationReturn ?? "/onboarding")}
+          onBack={() => setStep("username")}
+        />
+      )}
+    </AuthShell>
+  );
+}

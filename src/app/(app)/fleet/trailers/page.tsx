@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { TrailerRosterScreen } from "@/features/trailers/trailer-roster-screen";
 
 export const metadata = { title: "Trailers" };
 
 export default function Page() {
-  return <ModulePlaceholder title="Trailers" description="Trailer inventory and assignment." />;
+  return <TrailerRosterScreen />;
 }

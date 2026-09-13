@@ -8,10 +8,10 @@ import type {
  * Development fixtures only. Shapes match the typed contracts exactly, so
  * swapping in the real API is a service-layer change, not a UI change.
  *
- * One permanent user, three memberships, three organizations — chosen to prove
- * the model: the same person is an Owner in one org, a rate-blind Dispatcher in
- * another, and a scoped Driver in a third. Nothing about the profile changes
- * when they switch.
+ * One permanent user with several memberships, chosen to prove the model: the
+ * same person is an Owner in two different carriers, a rate-blind Dispatcher in
+ * a dispatch agency, an Owner in another, and a scoped Driver in a fifth.
+ * Nothing about the profile changes when they switch.
  */
 
 export const MOCK_USER: User = {
@@ -48,6 +48,28 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     displayName: "Meridian Dispatch",
     timeZone: "America/New_York",
     createdAt: "2026-02-18T14:02:00.000Z",
+  },
+  {
+    id: "org_summit",
+    type: "DISPATCH_AGENCY",
+    legalName: "Summit Dispatch Partners LLC",
+    displayName: "Summit Dispatch",
+    timeZone: "America/Denver",
+    createdAt: "2026-08-11T15:10:00.000Z",
+  },
+  {
+    // A SECOND carrier, so the truck side of the product can be reviewed from
+    // both ends: Baxter is approved to run two of Northline's trucks, which is
+    // what makes "one truck, several approved carriers, one operating lease"
+    // something you can actually look at.
+    id: "org_baxter",
+    type: "CARRIER",
+    legalName: "Baxter Transit LLC",
+    displayName: "Baxter Transit",
+    dotNumber: "3155902",
+    mcNumber: "MC-1098447",
+    timeZone: "America/New_York",
+    createdAt: "2026-03-09T13:30:00.000Z",
   },
   {
     id: "org_cascade",
@@ -89,11 +111,42 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     templateIds: [tpl("org_meridian", "dispatcher")],
     // Template plus one extra grant, minus one explicit revocation — the exact
     // case that fixed roles cannot express.
-    grants: ["customers:manage", "documents:approve"],
+    grants: ["customers:edit", "documents:approve"],
     revocations: ["loads:delete"],
     scope: DEFAULT_SCOPE,
     isOwner: false,
     joinedAt: "2026-02-18T14:02:00.000Z",
+  },
+  {
+    // The dispatch-agency side of ownership: the same person, owning a
+    // dispatch organization rather than a carrier. Its invitation types and
+    // permission set differ from Northline's, which is the point of having it.
+    id: "mem_summit_owner",
+    userId: MOCK_USER.id,
+    organizationId: "org_summit",
+    status: "active",
+    title: "Owner",
+    templateIds: [],
+    grants: [],
+    revocations: [],
+    scope: DEFAULT_SCOPE,
+    isOwner: true,
+    joinedAt: "2026-08-11T15:10:00.000Z",
+  },
+  {
+    // Owner of the second carrier. Same person, a different carrier — the org
+    // switcher is how you move between the two sides of an operating lease.
+    id: "mem_baxter_owner",
+    userId: MOCK_USER.id,
+    organizationId: "org_baxter",
+    status: "active",
+    title: "Owner",
+    templateIds: [],
+    grants: [],
+    revocations: [],
+    scope: DEFAULT_SCOPE,
+    isOwner: true,
+    joinedAt: "2026-03-09T13:30:00.000Z",
   },
   {
     id: "mem_cascade_driver",

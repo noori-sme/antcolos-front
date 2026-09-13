@@ -16,6 +16,7 @@ import { dateTimeIn, relativeTime, useNow } from "@/lib/utils";
 import { destinationStop, originStop } from "@/types";
 import { CATEGORY_LABEL } from "@/types";
 import { useHomeSummary } from "./hooks";
+import { ProfileChecklistBanner } from "@/features/driver/profile-checklist-banner";
 
 /**
  * Driver home: the current or next load first, one clear next action, and the
@@ -53,6 +54,9 @@ export function DriverHomeScreen() {
           {organization?.displayName}
         </p>
       </header>
+
+      {/* Prominent, but never in the way of the load. */}
+      <ProfileChecklistBanner />
 
       {current ? (
         <Card className="border-primary/40">

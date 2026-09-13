@@ -19,7 +19,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
-      "drivers:view", "equipment:view", "customers:view",
+      "drivers:view", "trucks:view", "trailers:view", "customers:view",
       "documents:view", "documents:upload", "compliance:view",
     ],
   },
@@ -48,7 +48,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     description: "Driver and equipment compliance.",
     seeded: true,
     permissions: [
-      "drivers:view", "equipment:view", "compliance:view", "compliance:manage",
+      "drivers:view", "trucks:view", "trailers:view", "compliance:view", "compliance:manage",
+      "trucks:documents:manage", "trailers:documents:manage",
       "documents:view", "documents:upload", "documents:approve", "loads:view",
     ],
   },
@@ -58,14 +59,20 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "compliance:view", "compliance:manage",
-      "documents:view", "documents:approve", "drivers:view", "equipment:view",
+      "documents:view", "documents:approve", "drivers:view", "trucks:view", "trailers:view",
+      "trailers:documents:manage",
     ],
   },
   {
     name: "Maintenance",
     description: "Equipment upkeep.",
     seeded: true,
-    permissions: ["equipment:view", "equipment:manage", "documents:view", "documents:upload"],
+    permissions: [
+      "trucks:view", "trucks:edit", "trucks:documents:manage",
+      "trailers:view", "trailers:edit", "trailers:documents:manage",
+      "trailers:status:manage", "trailers:attachments:manage",
+      "documents:view", "documents:upload",
+    ],
   },
 ] as const;
 
