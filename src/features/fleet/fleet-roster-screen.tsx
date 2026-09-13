@@ -12,7 +12,7 @@ import { EQUIPMENT_LABEL } from "@/lib/fleet/equipment";
 import { maskVin } from "@/lib/fleet/vin";
 import { listFleet, listPendingConnections } from "@/lib/api/mock/truck-registry";
 import type { FleetTruck, Truck, TruckCarrierRelationship, TruckOperatingStatus } from "@/types";
-import { RelationshipStatusChip, TruckStatusChip } from "./status-chips";
+import { ActivationStateChip, CarrierStatusChip, TruckStatusChip } from "./status-chips";
 import { TRUCK_STATUS_LABEL, formatDate } from "./fleet-labels";
 import { useTruckContext } from "./use-truck-context";
 import { cn } from "@/lib/utils";
@@ -105,7 +105,7 @@ export function FleetRosterScreen() {
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2 text-[0.875rem] font-medium text-fg">
                     Unit {relationship.unitNumber}
-                    <RelationshipStatusChip status={relationship.status} />
+                    <CarrierStatusChip status={relationship.status} />
                   </p>
                   <p className="mt-0.5 font-mono text-[0.75rem] break-all text-fg-subtle">
                     {maskVin(truck.vin)}
@@ -216,6 +216,7 @@ export function FleetRosterScreen() {
                   <p className="flex flex-wrap items-center gap-2">
                     <span className="text-[0.9375rem] font-semibold text-fg">Unit {truck.unit}</span>
                     <TruckStatusChip status={truck.status} />
+                    <ActivationStateChip state={truck.activationState} />
                     <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium text-fg-muted">
                       {EQUIPMENT_LABEL[truck.equipment]}
                     </span>
@@ -229,6 +230,9 @@ export function FleetRosterScreen() {
                   <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.75rem] text-fg-muted">
                     <span>{truck.currentDriverName ?? "No driver assigned"}</span>
                     {truck.carrierName ? <span>Runs under {truck.carrierName}</span> : null}
+                    {truck.lockedByAnotherCarrier ? (
+                      <span>Held by another carrier&apos;s operating lease</span>
+                    ) : null}
                     {truck.currentCity ? (
                       <span>{truck.currentCity}{truck.currentState ? `, ${truck.currentState}` : ""}</span>
                     ) : null}

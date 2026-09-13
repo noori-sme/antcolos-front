@@ -1,12 +1,14 @@
 "use client";
 
 import {
-  ArrowLeft, Eye, EyeOff, Gavel, Link2Off, TriangleAlert, Truck as TruckIcon, UserMinus, UserPlus,
+  ArrowLeft, Circle, CircleCheck, Eye, EyeOff, Gavel, Link2Off, LockKeyhole, LockKeyholeOpen,
+  TriangleAlert, Truck as TruckIcon, UserMinus, UserPlus,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
@@ -17,15 +19,20 @@ import {
 } from "@/lib/fleet/equipment";
 import { maskVin } from "@/lib/fleet/vin";
 import {
+  TERMINATION_STEPS, TERMINATION_STEP_LABEL, activateOperatingLease, approveCarrierRelationship,
   assignDriver, endCarrierRelationship, endDriverAssignment, getTruckProfile,
-  resolveOwnershipClaim, setTruckStatus, type ClaimDecision, type TruckProfileView,
+  outstandingTerminationSteps, recordTerminationStep, releaseOperatingLease,
+  resolveOwnershipClaim, setTruckStatus, terminationComplete,
+  type ClaimDecision, type TerminationStep, type TruckProfileView,
 } from "@/lib/api/mock/truck-registry";
 import { mockListCarrierDrivers } from "@/features/driver/mock-carrier-drivers";
-import type { TruckOperatingStatus, TruckSpecs } from "@/types";
+import type { TruckOperatingLease, TruckOperatingStatus, TruckSpecs } from "@/types";
 import {
-  ClaimStatusChip, DocumentStatusChip, RelationshipStatusChip, TruckStatusChip,
+  ActivationStateChip, CarrierStatusChip, ClaimStatusChip, DocumentStatusChip, LeaseStatusChip,
+  RelationshipStatusChip, TruckStatusChip,
 } from "./status-chips";
 import {
+  ACTIVATION_STATE_DESCRIPTION, ACTIVATION_STATE_LABEL, CARRIER_STATUS_DESCRIPTION,
   RELATIONSHIP_TYPE_LABEL, TRUCK_STATUS_LABEL, formatDate, formatInches, formatNumber,
 } from "./fleet-labels";
 import { useTruckContext } from "./use-truck-context";
@@ -36,6 +43,7 @@ const TABS = [
   ["specs", "Specifications"],
   ["documents", "Documents"],
   ["driver", "Driver"],
+  ["authority", "Operating authority"],
   ["relationships", "Carrier relationships"],
   ["ownership", "Ownership"],
   ["timeline", "Timeline"],
@@ -90,7 +98,17 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
 
   const { truck } = view;
   const activeOwner = view.ownership.find((o) => o.status === "active");
-  const operator = view.relationships.find((r) => r.status === "active");
+  // Whoever holds the truck is whoever holds the lease — approval alone is not
+  // operating. The relationship may be absent from `view` when the viewer is
+  // not entitled to see that carrier, which is why the name comes from the
+  // service rather than from this list.
+  const heldLease = view.leases.find(
+    (l) => l.status === "active" || l.status === "reserved" || l.status === "pending_release",
+  );
+  const operator = heldLease
+    ? view.relationships.find((r) => r.id === heldLease.relationshipId)
+    : undefined;
+  const visibleCarrier = view.relationships.find((r) => r.status === "approved");
   const myRelationship = view.myRelationship;
   const assignment = view.assignments.find(
     (a) => !a.endedAt && a.organizationId === ctx?.organizationId,
@@ -124,7 +142,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
       </div>
 
       <PageHeader
-        title={`Unit ${myRelationship?.unitNumber ?? operator?.unitNumber ?? "—"}`}
+        title={`Unit ${myRelationship?.unitNumber ?? visibleCarrier?.unitNumber ?? "—"}`}
         description={`${truck.year} ${truck.make} ${truck.model} · ${EQUIPMENT_LABEL[truck.equipmentType]}`}
       />
 
@@ -228,7 +246,17 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
             <Panel title="Who has what">
               <dl className="divide-y divide-border">
                 <Row label="Legal owner" value={activeOwner ? `${activeOwner.ownerName} (${activeOwner.ownerType})` : "Not recorded"} />
-                <Row label="Operating carrier" value={operator ? `${operator.organizationName} · ${RELATIONSHIP_TYPE_LABEL[operator.relationshipType]}` : "None"} />
+                <Row
+                  label="Operating carrier"
+                  value={
+                    view.operatingCarrierName
+                      ? `${view.operatingCarrierName}${operator ? ` · ${RELATIONSHIP_TYPE_LABEL[operator.relationshipType]}` : ""}`
+                      : view.lockedByAnotherCarrier
+                        ? "Another carrier — not shown"
+                        : "None — no active operating lease"
+                  }
+                />
+                <Row label="Your activation state" value={ACTIVATION_STATE_LABEL[view.activationState]} />
                 <Row
                   label="Dispatch access"
                   value={view.dispatchAccess.filter((d) => d.status === "active").map((d) => d.dispatchOrganizationName).join(", ") || "None"}
@@ -319,8 +347,18 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
         <DriverTab
           truckId={truckId}
           assignments={view.assignments}
-          canManage={!readOnly && Boolean(myRelationship && myRelationship.status === "active")}
+          canManage={!readOnly && Boolean(myRelationship && myRelationship.status === "approved")}
           busy={busy}
+          onChanged={load}
+          setBusy={setBusy}
+        />
+      ) : null}
+
+      {tab === "authority" ? (
+        <OperatingAuthorityTab
+          view={view}
+          busy={busy}
+          readOnly={readOnly}
           onChanged={load}
           setBusy={setBusy}
         />
@@ -334,7 +372,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
                 <li key={r.id} className="rounded-md border border-border bg-surface-sunken px-3.5 py-2.5">
                   <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium text-fg">
                     {r.organizationName}
-                    <RelationshipStatusChip status={r.status} />
+                    <CarrierStatusChip status={r.status} />
                     <span className="text-[0.75rem] font-normal text-fg-muted">
                       {RELATIONSHIP_TYPE_LABEL[r.relationshipType]} · unit {r.unitNumber}
                     </span>
@@ -371,7 +409,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
             </Panel>
           ) : null}
 
-          {myRelationship?.status === "active" && !readOnly ? (
+          {myRelationship?.status === "approved" && !readOnly ? (
             <Can permission="trucks:relationships:manage">
               <EndRelationship
                 organizationName={myRelationship.organizationName}
@@ -554,6 +592,356 @@ function EndRelationship({
       </div>
     </div>
   );
+}
+
+/**
+ * Operating authority: who is allowed to run this truck, and who is running it.
+ *
+ * The two are deliberately kept apart on this screen. Several carriers can be
+ * approved at once; exactly one can hold the truck. When somebody else holds
+ * it, this tab says so and says nothing else — no carrier name, no load, no
+ * dates, no driver.
+ */
+function OperatingAuthorityTab({
+  view, busy, readOnly, onChanged, setBusy,
+}: {
+  view: TruckProfileView;
+  busy: boolean;
+  readOnly: boolean;
+  onChanged: () => void;
+  setBusy: (v: boolean) => void;
+}) {
+  const ctx = useTruckContext();
+  const uid = useId();
+  const [loadReference, setLoadReference] = useState("");
+  const [expectedEnd, setExpectedEnd] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const state = view.activationState;
+  const lease = view.myLease;
+  // Controls stay on the page while a request is in flight and are disabled
+  // instead of removed — a checklist that vanishes mid-click is disorienting,
+  // and it makes it impossible to see what you just pressed.
+  const canAct = !readOnly;
+  const history = view.leases.filter((l) => l.status === "ended");
+
+  async function activate(reserveOnly: boolean) {
+    if (!ctx) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const outcome = await activateOperatingLease(view.truck.truckId, ctx, {
+      loadReference: loadReference.trim() || undefined,
+      expectedEndAt: expectedEnd ? new Date(expectedEnd).toISOString() : undefined,
+      reserveOnly,
+    }).catch(() => null);
+    setBusy(false);
+    if (!outcome) {
+      setError("Something went wrong. Nothing was changed.");
+    } else if (outcome.status === "locked_by_other") {
+      setError(
+        "This truck is already under another carrier's active operating lease, so your activation was refused. Nothing was reserved and nothing was changed.",
+      );
+    } else if (outcome.status === "not_approved") {
+      setError("Your organization is not approved to operate this truck yet.");
+    } else if (outcome.status === "unauthorized") {
+      setError("You do not have permission to activate operating authority.");
+    } else if (outcome.status === "reserved") {
+      setMessage("Activation reserved. No other carrier can take this truck while your reservation stands.");
+    } else {
+      setMessage("You now hold exclusive operating authority for this truck.");
+    }
+    onChanged();
+  }
+
+  async function step(which: TerminationStep) {
+    if (!ctx || !lease) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    await recordTerminationStep(lease.id, which, ctx).catch(() => setError("That step could not be recorded."));
+    setBusy(false);
+    onChanged();
+  }
+
+  async function release() {
+    if (!ctx || !lease) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const outcome = await releaseOperatingLease(lease.id, ctx).catch(() => null);
+    setBusy(false);
+    if (!outcome) {
+      setError("Something went wrong. Nothing was changed.");
+    } else if (outcome.status === "blocked") {
+      setError(
+        `The truck cannot be released yet. Still outstanding: ${outcome.outstanding
+          .map((o) => TERMINATION_STEP_LABEL[o].toLowerCase()).join("; ")}.`,
+      );
+    } else if (outcome.status === "unauthorized") {
+      setError("You do not have permission to end this operating lease.");
+    } else {
+      setMessage(
+        "The lease has ended and is kept as history. The truck is available again to every approved carrier, with the same ID, VIN, documents and relationships.",
+      );
+    }
+    onChanged();
+  }
+
+  return (
+    <div className="space-y-4">
+      <Panel title="Your position on this truck">
+        <p className="flex flex-wrap items-center gap-2">
+          <ActivationStateChip state={state} />
+          {view.myRelationship ? <CarrierStatusChip status={view.myRelationship.status} /> : null}
+        </p>
+        <p className="mt-2 text-[0.8125rem] leading-relaxed text-fg-muted">
+          {ACTIVATION_STATE_DESCRIPTION[state]}
+        </p>
+        {view.myRelationship ? (
+          <p className="mt-1 text-[0.75rem] leading-relaxed text-fg-subtle">
+            {CARRIER_STATUS_DESCRIPTION[view.myRelationship.status]}
+          </p>
+        ) : null}
+        <p className="mt-3 rounded-md border border-dashed border-border px-3 py-2.5 text-[0.75rem] leading-relaxed text-fg-subtle">
+          Being approved and operating are two different things. Approval stays yours whatever
+          happens here; it is the lease that decides who runs the truck.
+        </p>
+      </Panel>
+
+      {error ? (
+        <p role="alert" className="rounded-md border border-st-danger/40 bg-st-danger-bg/60 px-3.5 py-2.5 text-[0.8125rem] leading-relaxed text-fg">
+          {error}
+        </p>
+      ) : null}
+      {message ? (
+        <p role="status" className="rounded-md border border-st-success/40 bg-st-success-bg/60 px-3.5 py-2.5 text-[0.8125rem] leading-relaxed text-fg">
+          {message}
+        </p>
+      ) : null}
+
+      {state === "locked_by_other" ? (
+        <Panel title="Temporarily unavailable">
+          <p className="text-[0.8125rem] leading-relaxed text-fg-muted">
+            It becomes available for activation again once that lease is ended by the carrier
+            holding it — not when any estimated delivery time passes.
+          </p>
+          <p className="mt-2 text-[0.8125rem] leading-relaxed text-fg-muted">
+            Your onboarding, insurance, lease paperwork, permissions and history with this truck are
+            untouched and stay exactly as they are. You do not need to onboard again.
+          </p>
+          <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
+            Who holds it, what they are hauling and when they expect to finish are not shown here.
+          </p>
+        </Panel>
+      ) : null}
+
+      {state === "pending_approval" || state === "onboarding" ? (
+        <Panel title="Onboarding review">
+          <p className="text-[0.8125rem] leading-relaxed text-fg-muted">
+            Activation stays closed until this onboarding is approved. Approval makes you eligible;
+            it does not give you the truck.
+          </p>
+          {canAct && view.myRelationship ? (
+            <Can permission="trucks:relationships:manage">
+              <Button
+                className="mt-3" variant="secondary" size="sm" disabled={busy}
+                onClick={async () => {
+                  if (!ctx || !view.myRelationship) return;
+                  setBusy(true);
+                  setError(null);
+                  setMessage(null);
+                  await approveCarrierRelationship(view.myRelationship.id, ctx)
+                    .catch(() => setError("That could not be approved."));
+                  setBusy(false);
+                  onChanged();
+                }}
+              >
+                Record onboarding as approved
+              </Button>
+            </Can>
+          ) : null}
+        </Panel>
+      ) : null}
+
+      {state === "available_for_activation" && canAct ? (
+        <Can permission="trucks:relationships:manage">
+          <Panel title="Take operating authority">
+            <p className="text-[0.8125rem] leading-relaxed text-fg-muted">
+              This creates a time-bound operating lease. While it is live you are the only carrier
+              that can run this truck, and every other approved carrier sees it as temporarily
+              unavailable.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Your load reference"
+                htmlFor={`${uid}-ref`}
+                hint="Optional, and only ever visible to your organization."
+              >
+                <Input
+                  id={`${uid}-ref`}
+                  value={loadReference}
+                  onChange={(e) => setLoadReference(e.target.value)}
+                  placeholder="e.g. NL-2291"
+                />
+              </Field>
+              <Field
+                label="Expected end"
+                htmlFor={`${uid}-end`}
+                hint="A plan, not a trigger. Reaching it does not release the truck."
+              >
+                <Input
+                  id={`${uid}-end`}
+                  type="datetime-local"
+                  value={expectedEnd}
+                  onChange={(e) => setExpectedEnd(e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => void activate(false)}>
+                <LockKeyhole aria-hidden />
+                Activate operating authority
+              </Button>
+              <Button variant="secondary" size="sm" disabled={busy} onClick={() => void activate(true)}>
+                Reserve activation only
+              </Button>
+            </div>
+            <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
+              A reservation locks the truck too. If another carrier activates first, your request is
+              refused and nothing is created.
+            </p>
+          </Panel>
+        </Can>
+      ) : null}
+
+      {lease && lease.status !== "ended" ? (
+        <Panel title={lease.status === "reserved" ? "Your reservation" : "Your operating lease"}>
+          <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium text-fg">
+            {lease.organizationName}
+            <LeaseStatusChip status={lease.status} />
+          </p>
+          <dl className="mt-2 divide-y divide-border">
+            <Row label="Reserved" value={lease.reservedAt ? formatDate(lease.reservedAt) : "—"} />
+            <Row label="Activated" value={lease.activatedAt ? formatDate(lease.activatedAt) : "Not yet"} />
+            <Row label="Expected end" value={lease.expectedEndAt ? formatDate(lease.expectedEndAt) : "Not set"} />
+            <Row label="Your load reference" value={lease.loadReference ?? "None recorded"} />
+          </dl>
+
+          {lease.status === "reserved" && canAct ? (
+            <Can permission="trucks:relationships:manage">
+              <Button className="mt-3" variant="primary" size="sm" disabled={busy} onClick={() => void activate(false)}>
+                Confirm activation
+              </Button>
+            </Can>
+          ) : null}
+
+          {lease.status !== "reserved" ? (
+            <div className="mt-4">
+              <h4 className="text-[0.8125rem] font-semibold text-fg">Before the truck can be released</h4>
+              <p className="mt-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+                All four have to be on the record. The expected end time passing is not one of them
+                and never releases the truck on its own.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {TERMINATION_STEPS.map((which) => {
+                  const done = terminationStepAt(lease, which);
+                  return (
+                    <li
+                      key={which}
+                      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-border bg-surface-sunken px-3.5 py-2.5"
+                    >
+                      <span className="flex min-w-0 items-start gap-2 text-[0.8125rem] text-fg">
+                        {done ? (
+                          <CircleCheck className="mt-0.5 size-4 shrink-0 text-st-success" aria-hidden />
+                        ) : (
+                          <Circle className="mt-0.5 size-4 shrink-0 text-fg-subtle" aria-hidden />
+                        )}
+                        <span className="min-w-0">
+                          {TERMINATION_STEP_LABEL[which]}
+                          {done ? (
+                            <span className="mt-0.5 block text-[0.75rem] text-fg-subtle">
+                              Recorded {formatDate(done)}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                      {!done && canAct ? (
+                        <Can permission="trucks:relationships:manage">
+                          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void step(which)}>
+                            Record
+                          </Button>
+                        </Can>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {canAct ? (
+                <Can permission="trucks:relationships:manage">
+                  <div className="mt-3">
+                    <Button
+                      variant="primary" size="sm"
+                      disabled={busy || !terminationComplete(lease.termination)}
+                      onClick={() => void release()}
+                    >
+                      <LockKeyholeOpen aria-hidden />
+                      End the lease and release the truck
+                    </Button>
+                    {!terminationComplete(lease.termination) ? (
+                      <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-subtle">
+                        Still outstanding:{" "}
+                        {outstandingTerminationSteps(lease.termination)
+                          .map((o) => TERMINATION_STEP_LABEL[o].toLowerCase()).join("; ")}.
+                      </p>
+                    ) : null}
+                  </div>
+                </Can>
+              ) : null}
+            </div>
+          ) : null}
+        </Panel>
+      ) : null}
+
+      <Panel title="Lease history">
+        {history.length === 0 ? (
+          <p className="text-[0.8125rem] text-fg-muted">No lease has been completed on this truck yet.</p>
+        ) : (
+          <ul className="space-y-2">
+            {history.map((l) => (
+              <li key={l.id} className="rounded-md border border-border bg-surface-sunken px-3.5 py-2.5">
+                <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium text-fg">
+                  {l.organizationName}
+                  <LeaseStatusChip status={l.status} />
+                </p>
+                <p className="mt-0.5 text-[0.75rem] text-fg-subtle">
+                  {l.activatedAt ? `Activated ${formatDate(l.activatedAt)}` : "Never activated"}
+                  {l.endedAt ? ` · ended ${formatDate(l.endedAt)}` : ""}
+                  {l.loadReference ? ` · ${l.loadReference}` : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
+          Ended leases are kept for good. Releasing a truck removes the lock and nothing else.
+        </p>
+      </Panel>
+    </div>
+  );
+}
+
+const TERMINATION_FIELD: Record<TerminationStep, keyof TruckOperatingLease["termination"]> = {
+  unloaded: "unloadedAt",
+  trip_requirements: "tripRequirementsCompletedAt",
+  delivery_confirmation: "deliveryConfirmationRecordedAt",
+  exclusive_control: "exclusiveControlEndedAt",
+};
+
+function terminationStepAt(lease: TruckOperatingLease, step: TerminationStep): string | undefined {
+  return lease.termination[TERMINATION_FIELD[step]];
 }
 
 function DriverTab({

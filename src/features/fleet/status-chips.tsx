@@ -1,8 +1,10 @@
 import type {
-  OwnershipClaimStatus, TruckDocumentStatus, TruckOperatingStatus, TruckRelationshipStatus,
+  CarrierRelationshipStatus, OperatingLeaseStatus, OwnershipClaimStatus, TruckActivationState,
+  TruckDocumentStatus, TruckOperatingStatus, TruckRelationshipStatus,
 } from "@/types";
 import {
-  CLAIM_STATUS_LABEL, DOCUMENT_STATUS_LABEL, RELATIONSHIP_STATUS_LABEL, TRUCK_STATUS_LABEL,
+  ACTIVATION_STATE_LABEL, CARRIER_STATUS_LABEL, CLAIM_STATUS_LABEL, DOCUMENT_STATUS_LABEL,
+  LEASE_STATUS_LABEL, RELATIONSHIP_STATUS_LABEL, TRUCK_STATUS_LABEL,
 } from "./fleet-labels";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +31,46 @@ const REL_TONE: Record<TruckRelationshipStatus, string> = {
 
 export function RelationshipStatusChip({ status, className }: { status: TruckRelationshipStatus; className?: string }) {
   return <span className={cn(CHIP, REL_TONE[status], className)}>{RELATIONSHIP_STATUS_LABEL[status]}</span>;
+}
+
+const CARRIER_TONE: Record<CarrierRelationshipStatus, string> = {
+  onboarding: "bg-st-progress-bg text-st-progress",
+  pending_approval: "bg-st-info-bg text-st-info",
+  approved: "bg-st-success-bg text-st-success",
+  suspended: "bg-st-warning-bg text-st-warning",
+  ended: "bg-st-neutral-bg text-st-neutral",
+};
+
+export function CarrierStatusChip({ status, className }: { status: CarrierRelationshipStatus; className?: string }) {
+  return <span className={cn(CHIP, CARRIER_TONE[status], className)}>{CARRIER_STATUS_LABEL[status]}</span>;
+}
+
+const LEASE_TONE: Record<OperatingLeaseStatus, string> = {
+  reserved: "bg-st-info-bg text-st-info",
+  active: "bg-st-success-bg text-st-success",
+  pending_release: "bg-st-warning-bg text-st-warning",
+  ended: "bg-st-neutral-bg text-st-neutral",
+};
+
+export function LeaseStatusChip({ status, className }: { status: OperatingLeaseStatus; className?: string }) {
+  return <span className={cn(CHIP, LEASE_TONE[status], className)}>{LEASE_STATUS_LABEL[status]}</span>;
+}
+
+const ACTIVATION_TONE: Record<TruckActivationState, string> = {
+  onboarding: "bg-st-progress-bg text-st-progress",
+  pending_approval: "bg-st-info-bg text-st-info",
+  approved: "bg-st-info-bg text-st-info",
+  available_for_activation: "bg-st-success-bg text-st-success",
+  activation_reserved: "bg-st-info-bg text-st-info",
+  active_operating_lease: "bg-st-progress-bg text-st-progress",
+  locked_by_other: "bg-st-neutral-bg text-st-neutral",
+  pending_release: "bg-st-warning-bg text-st-warning",
+  ended: "bg-st-neutral-bg text-st-neutral",
+  suspended: "bg-st-warning-bg text-st-warning",
+};
+
+export function ActivationStateChip({ state, className }: { state: TruckActivationState; className?: string }) {
+  return <span className={cn(CHIP, ACTIVATION_TONE[state], className)}>{ACTIVATION_STATE_LABEL[state]}</span>;
 }
 
 const DOC_TONE: Record<TruckDocumentStatus, string> = {

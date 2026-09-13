@@ -158,6 +158,22 @@ export interface TruckOwnershipClaim {
 
 export type CarrierRelationshipType = "carrier_owned" | "leased_owner_operator";
 
+/**
+ * How far a carrier has got with onboarding this truck.
+ *
+ * This is eligibility, NOT operation. Several carriers can hold an approved
+ * relationship with the same truck at the same time, each with its own
+ * insurance evidence, lease agreement, documents and history. Being approved
+ * means "allowed to run this truck when it is free" — never "running it now".
+ */
+export type CarrierRelationshipStatus =
+  | "onboarding"
+  | "pending_approval"
+  | "approved"
+  | "suspended"
+  | "ended";
+
+/** Kept for dispatch-access records, which have a simpler lifecycle. */
 export type TruckRelationshipStatus = "pending" | "active" | "suspended" | "ended";
 
 /**
@@ -178,7 +194,11 @@ export interface TruckCarrierRelationship {
   organizationName: string;
   relationshipType: CarrierRelationshipType;
   unitNumber: string;
-  status: TruckRelationshipStatus;
+  status: CarrierRelationshipStatus;
+  /** Per-carrier onboarding evidence. Never shared with another carrier. */
+  insuranceEvidence?: TruckDocumentSnapshot[];
+  leaseAgreement?: TruckDocumentSnapshot;
+  approvedAt?: string;
   startedAt: string;
   endedAt?: string;
   endReason?: string;
@@ -188,6 +208,80 @@ export interface TruckCarrierRelationship {
   minimumRatePerMileCents?: number;
   maxDeadheadMiles?: number;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Operating authority lease                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type OperatingLeaseStatus = "reserved" | "active" | "pending_release" | "ended";
+
+/**
+ * Exclusive operating authority over a truck, for a period of time.
+ *
+ * A truck can be onboarded and approved with any number of carriers, but it can
+ * only physically run under ONE authority at a time — so exactly one lease may
+ * be reserved or active for a truck at any moment. Everyone else who is
+ * approved simply waits.
+ *
+ * The lease is what locks the truck, and only the lease releases it.
+ */
+export interface TruckOperatingLease {
+  id: string;
+  truckId: string;
+  organizationId: string;
+  organizationName: string;
+  /** The approved onboarding relationship that entitled this carrier to it. */
+  relationshipId: string;
+  status: OperatingLeaseStatus;
+  /**
+   * The carrier's own reference for the work. Confidential: never shown to
+   * another carrier, who sees only that the truck is unavailable.
+   */
+  loadReference?: string;
+  reservedAt?: string;
+  activatedAt?: string;
+  /** Planned end. Reaching it does NOT release the truck — see the checklist. */
+  expectedEndAt?: string;
+  releaseRequestedAt?: string;
+  endedAt?: string;
+  termination: LeaseTermination;
+  createdAt: string;
+  initiatedByMembershipId: string;
+  initiatedByName: string;
+}
+
+/**
+ * What has to be true before exclusive control can be given up.
+ *
+ * A passing estimated delivery time is not on this list, and deliberately so: a
+ * truck is not free because a clock says it should be. Every box is a real
+ * event somebody recorded.
+ */
+export interface LeaseTermination {
+  unloadedAt?: string;
+  tripRequirementsCompletedAt?: string;
+  deliveryConfirmationRecordedAt?: string;
+  exclusiveControlEndedAt?: string;
+}
+
+/**
+ * What one carrier sees when it looks at one truck.
+ *
+ * Derived from that carrier's own relationship plus whatever lease is live on
+ * the truck — never stored, because it differs per carrier and changes the
+ * moment somebody else activates.
+ */
+export type TruckActivationState =
+  | "onboarding"
+  | "pending_approval"
+  | "approved"
+  | "available_for_activation"
+  | "activation_reserved"
+  | "active_operating_lease"
+  | "locked_by_other"
+  | "pending_release"
+  | "ended"
+  | "suspended";
 
 /* -------------------------------------------------------------------------- */
 /* Dispatch organization access                                                */
@@ -330,6 +424,14 @@ export type TruckEventKind =
   | "dispatch_access_requested"
   | "dispatch_access_started"
   | "dispatch_access_ended"
+  | "relationship_approved"
+  | "activation_reserved"
+  | "lease_activated"
+  | "lease_locked_others"
+  | "lease_release_requested"
+  | "lease_termination_step"
+  | "lease_ended"
+  | "activation_refused"
   | "driver_assigned"
   | "driver_unassigned"
   | "document_added"

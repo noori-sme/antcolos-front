@@ -10,6 +10,10 @@ import type {
   TruckDocumentKind,
   TruckDocumentSnapshot,
   TruckDriverAssignment,
+  TruckOperatingLease,
+  LeaseTermination,
+  TruckActivationState,
+  CarrierRelationshipStatus,
   TruckEquipmentType,
   TruckEvent,
   TruckEventKind,
@@ -117,6 +121,7 @@ interface RegistryState {
   relationships: TruckCarrierRelationship[];
   dispatchAccess: TruckDispatchAccess[];
   assignments: TruckDriverAssignment[];
+  leases: TruckOperatingLease[];
   documents: TruckDocument[];
   events: TruckEvent[];
 }
@@ -185,13 +190,17 @@ function own(
 function rel(
   truckId: string, organizationId: string, organizationName: string,
   relationshipType: CarrierRelationshipType, unitNumber: string,
-  status: TruckCarrierRelationship["status"], startedAt: string,
+  status: CarrierRelationshipStatus, startedAt: string,
   minimumRatePerMileCents = 100, maxDeadheadMiles = 30,
 ): TruckCarrierRelationship {
   return {
     id: rowId("rel"), truckId, organizationId, organizationName, relationshipType,
     unitNumber, status, startedAt, initiatedByOrganizationId: organizationId,
     createdAt: startedAt, minimumRatePerMileCents, maxDeadheadMiles,
+    approvedAt: status === "approved" ? startedAt : undefined,
+    insuranceEvidence: status === "approved"
+      ? [{ kind: "insurance", label: "Insurance evidence", fileName: "coi.pdf", capturedAt: startedAt }]
+      : undefined,
   };
 }
 
@@ -334,20 +343,20 @@ function buildFixtures(): RegistryState {
   ];
 
   const relationships: TruckCarrierRelationship[] = [
-    rel(T.nl104, "org_northline", "Northline Freight", "carrier_owned", "104", "active", daysAgo(380), 100, 30),
-    rel(T.nl107, "org_northline", "Northline Freight", "carrier_owned", "107", "active", daysAgo(360), 105, 30),
-    rel(T.nl111, "org_northline", "Northline Freight", "carrier_owned", "111", "active", daysAgo(300), 120, 45),
-    rel(T.nl115, "org_northline", "Northline Freight", "carrier_owned", "115", "active", daysAgo(600), 140, 60),
+    rel(T.nl104, "org_northline", "Northline Freight", "carrier_owned", "104", "approved", daysAgo(380), 100, 30),
+    rel(T.nl107, "org_northline", "Northline Freight", "carrier_owned", "107", "approved", daysAgo(360), 105, 30),
+    rel(T.nl111, "org_northline", "Northline Freight", "carrier_owned", "111", "approved", daysAgo(300), 120, 45),
+    rel(T.nl115, "org_northline", "Northline Freight", "carrier_owned", "115", "approved", daysAgo(600), 140, 60),
     // The carrier operates it; Marcus Hale owns it. Two different things.
-    rel(T.nl118, "org_northline", "Northline Freight", "leased_owner_operator", "118", "active", daysAgo(200), 125, 40),
+    rel(T.nl118, "org_northline", "Northline Freight", "leased_owner_operator", "118", "approved", daysAgo(200), 125, 40),
     // Requested but not yet accepted — an honest pending state, not a fleet member.
-    rel(T.nl121, "org_northline", "Northline Freight", "carrier_owned", "121", "pending", daysAgo(3), 110, 35),
-    rel(T.mdA12, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-12", "active", daysAgo(500), 110, 30),
-    rel(T.mdB04, "org_ridgeway", "Ridgeway Carriers", "carrier_owned", "B-04", "active", daysAgo(420), 100, 25),
-    rel(T.crosswind, "org_crosswind", "Crosswind Freight", "carrier_owned", "C-31", "active", daysAgo(320), 125, 40),
-    rel(T.claimed, "org_northline", "Northline Freight", "carrier_owned", "127", "active", daysAgo(260), 120, 45),
-    rel(T.mdA18, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-18", "active", daysAgo(280), 100, 30),
-    rel(T.cs47, "org_cascade", "Cascade Haul", "carrier_owned", "47", "active", daysAgo(340), 105, 30),
+    rel(T.nl121, "org_northline", "Northline Freight", "carrier_owned", "121", "pending_approval", daysAgo(3), 110, 35),
+    rel(T.mdA12, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-12", "approved", daysAgo(500), 110, 30),
+    rel(T.mdB04, "org_ridgeway", "Ridgeway Carriers", "carrier_owned", "B-04", "approved", daysAgo(420), 100, 25),
+    rel(T.crosswind, "org_crosswind", "Crosswind Freight", "carrier_owned", "C-31", "approved", daysAgo(320), 125, 40),
+    rel(T.claimed, "org_northline", "Northline Freight", "carrier_owned", "127", "approved", daysAgo(260), 120, 45),
+    rel(T.mdA18, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-18", "approved", daysAgo(280), 100, 30),
+    rel(T.cs47, "org_cascade", "Cascade Haul", "carrier_owned", "47", "approved", daysAgo(340), 105, 30),
   ];
 
   // Meridian dispatches for carriers it neither owns nor operates for.
@@ -409,6 +418,26 @@ function buildFixtures(): RegistryState {
     },
   ];
 
+  // Baxter is ALSO approved to run Northline's 107 — the multi-carrier case.
+  relationships.push(
+    rel(T.nl107, "org_baxter", "Baxter Transit LLC", "leased_owner_operator", "BX-07", "approved", daysAgo(60), 115, 35),
+    rel(T.nl104, "org_baxter", "Baxter Transit LLC", "leased_owner_operator", "BX-04", "approved", daysAgo(45), 110, 30),
+  );
+
+  const northline107 = relationships.find(
+    (r) => r.truckId === T.nl107 && r.organizationId === "org_northline",
+  )!;
+  const leases: TruckOperatingLease[] = [
+    {
+      id: "lease_nl107", truckId: T.nl107,
+      organizationId: "org_northline", organizationName: "Northline Freight",
+      relationshipId: northline107.id, status: "active",
+      loadReference: "NL-2291", reservedAt: daysAgo(2), activatedAt: daysAgo(2),
+      expectedEndAt: hoursFromNow(2), termination: {},
+      createdAt: daysAgo(2), initiatedByMembershipId: "seed", initiatedByName: "Antcolos",
+    },
+  ];
+
   const events: TruckEvent[] = [
     evt(T.nl118, "created", "Truck registered in Antcolos", daysAgo(700), "org_northline"),
     evt(T.nl118, "ownership_started", "Halberd Leasing LLC recorded as owner", daysAgo(700)),
@@ -421,6 +450,8 @@ function buildFixtures(): RegistryState {
     evt(T.nl115, "ownership_claim_resolved", "Ownership claim rejected", daysAgo(38), "org_northline"),
     evt(T.nl121, "relationship_requested", "Northline Freight requested to operate this truck", daysAgo(3), "org_northline"),
     evt(T.nl121, "driver_unassigned", "Kelsey Nguyen assignment ended", daysAgo(60), "org_northline"),
+    evt(T.nl107, "lease_activated", "Northline Freight took exclusive operating authority", daysAgo(2), "org_northline"),
+    evt(T.nl107, "lease_locked_others", "Activation locked for every other approved carrier", daysAgo(2), "org_northline"),
     evt(T.mdA12, "dispatch_access_started", "Meridian Dispatch granted dispatch access", daysAgo(120), "org_baxter"),
   ];
 
@@ -428,7 +459,7 @@ function buildFixtures(): RegistryState {
     events.push(evt(t.truckId, "created", "Truck registered in Antcolos", t.createdAt, t.createdByOrganizationId));
   }
 
-  return { trucks, ownership, claims, relationships, dispatchAccess, assignments, documents, events };
+  return { trucks, ownership, claims, relationships, dispatchAccess, assignments, documents, events, leases };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -473,18 +504,76 @@ function requirePermissions(ctx: TruckContext, ...keys: PermissionKey[]) {
   if (missing.length) throw new TruckPermissionError(missing);
 }
 
-/** The organization's live operating relationship with a truck, if any. */
-function activeRelationship(truckId: string, organizationId: string) {
+/**
+ * The organization's onboarding relationship with a truck, whatever stage it is
+ * at. Several carriers can hold one of these on the same truck at once.
+ */
+function relationshipFor(truckId: string, organizationId: string) {
   return db().relationships.find(
-    (r) => r.truckId === truckId && r.organizationId === organizationId &&
-      (r.status === "active" || r.status === "suspended"),
+    (r) => r.truckId === truckId && r.organizationId === organizationId && r.status !== "ended",
   );
 }
 
+/** Onboarded and cleared to run the truck — when the truck is free. */
+function approvedRelationship(truckId: string, organizationId: string) {
+  const found = relationshipFor(truckId, organizationId);
+  return found?.status === "approved" ? found : undefined;
+}
+
+/** Kept for callers that only care that a relationship exists but is not live. */
 function pendingRelationship(truckId: string, organizationId: string) {
-  return db().relationships.find(
-    (r) => r.truckId === truckId && r.organizationId === organizationId && r.status === "pending",
+  const found = relationshipFor(truckId, organizationId);
+  return found && (found.status === "pending_approval" || found.status === "onboarding")
+    ? found
+    : undefined;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Operating authority                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The one lease that currently holds the truck, if any.
+ *
+ * A reservation counts: it is the moment exclusivity is taken, and it is what
+ * makes two simultaneous activations impossible.
+ */
+function holdingLease(truckId: string) {
+  return db().leases.find(
+    (l) => l.truckId === truckId && (l.status === "active" || l.status === "reserved" || l.status === "pending_release"),
   );
+}
+
+function leaseFor(truckId: string, organizationId: string) {
+  const held = holdingLease(truckId);
+  return held && held.organizationId === organizationId ? held : undefined;
+}
+
+/**
+ * What this carrier sees of this truck right now.
+ *
+ * "Approved" and "operating" are different answers, and the gap between them is
+ * the whole point: an approved carrier whose truck is out under somebody else's
+ * authority is locked, not un-onboarded.
+ */
+export function activationStateFor(
+  truckId: string,
+  organizationId: string,
+): TruckActivationState {
+  const relationship = db().relationships.find(
+    (r) => r.truckId === truckId && r.organizationId === organizationId,
+  );
+  if (!relationship || relationship.status === "ended") return "ended";
+  if (relationship.status === "suspended") return "suspended";
+  if (relationship.status === "onboarding") return "onboarding";
+  if (relationship.status === "pending_approval") return "pending_approval";
+
+  const held = holdingLease(truckId);
+  if (!held) return "available_for_activation";
+  if (held.organizationId !== organizationId) return "locked_by_other";
+  if (held.status === "reserved") return "activation_reserved";
+  if (held.status === "pending_release") return "pending_release";
+  return "active_operating_lease";
 }
 
 function activeDispatchAccess(truckId: string, organizationId: string) {
@@ -493,9 +582,28 @@ function activeDispatchAccess(truckId: string, organizationId: string) {
   );
 }
 
-/** Whoever currently operates the truck, whatever organization that is. */
+/**
+ * Whoever currently holds operating authority — the lease holder, not merely an
+ * approved carrier. Returns nothing when the truck is free.
+ */
 function operatingCarrier(truckId: string) {
-  return db().relationships.find((r) => r.truckId === truckId && r.status === "active");
+  const held = holdingLease(truckId);
+  if (!held) return undefined;
+  return db().relationships.find((r) => r.id === held.relationshipId);
+}
+
+/**
+ * A carrier other than this one that is already onboarded on the truck.
+ *
+ * This is an eligibility question, not an operating one: a truck somebody else
+ * has onboarded is connected by asking, whether or not anybody holds a lease on
+ * it right now.
+ */
+function otherApprovedCarrier(truckId: string, organizationId: string) {
+  return db().relationships.find(
+    (r) => r.truckId === truckId && r.organizationId !== organizationId
+      && (r.status === "approved" || r.status === "suspended"),
+  );
 }
 
 function activeOwnership(truckId: string) {
@@ -506,6 +614,38 @@ function activeAssignment(truckId: string, organizationId: string) {
   return db().assignments.find(
     (a) => a.truckId === truckId && a.organizationId === organizationId && !a.endedAt,
   );
+}
+
+/**
+ * Whose private records on this truck this viewer may read.
+ *
+ * "all" for the recorded owner: they own the vehicle and granted every
+ * relationship on it. Everybody else sees exactly one carrier — a carrier sees
+ * itself, a dispatch organization sees the carrier that granted its access, a
+ * driver sees the carrier that assigned them. This is the thing that stops one
+ * approved carrier reading a competitor's lease dates, unit number, driver or
+ * load reference while it waits for the truck to come free.
+ */
+function visibleCarrierOrgIds(truckId: string, ctx: TruckContext): Set<string> | "all" {
+  const owner = activeOwnership(truckId);
+  if (owner?.ownerRef && owner.ownerRef === ctx.organizationId) return "all";
+  const ids = new Set<string>();
+  if (relationshipFor(truckId, ctx.organizationId)) ids.add(ctx.organizationId);
+  const grant = activeDispatchAccess(truckId, ctx.organizationId);
+  if (grant) ids.add(grant.grantedByCarrierOrganizationId);
+  if (ctx.driverProfileId) {
+    for (const a of db().assignments) {
+      if (a.truckId === truckId && a.driverProfileId === ctx.driverProfileId && !a.endedAt) {
+        ids.add(a.organizationId);
+      }
+    }
+  }
+  return ids;
+}
+
+function canSeeCarrier(visible: Set<string> | "all", organizationId?: string): boolean {
+  if (visible === "all") return true;
+  return organizationId !== undefined && visible.has(organizationId);
 }
 
 export type TruckAccessReason =
@@ -523,7 +663,10 @@ export type TruckAccessReason =
  * it first registered.
  */
 export function accessReason(truckId: string, ctx: TruckContext): TruckAccessReason | null {
-  if (activeRelationship(truckId, ctx.organizationId)) return "operating_carrier";
+  // Any live onboarding relationship earns visibility, approved or not yet —
+  // a carrier locked out by somebody else's lease has not lost its truck.
+  const relationship = relationshipFor(truckId, ctx.organizationId);
+  if (relationship && relationship.status === "approved") return "operating_carrier";
   if (pendingRelationship(truckId, ctx.organizationId)) return "pending_relationship";
   if (activeDispatchAccess(truckId, ctx.organizationId)) return "dispatch_access";
   const owner = activeOwnership(truckId);
@@ -559,11 +702,19 @@ function documentWarnings(truckId: string): number {
 
 /** What one organization sees of one permanent truck, right now. */
 function project(truck: Truck, ctx: TruckContext): FleetTruck {
-  const relationship = activeRelationship(truck.truckId, ctx.organizationId)
+  const relationship = approvedRelationship(truck.truckId, ctx.organizationId)
     ?? pendingRelationship(truck.truckId, ctx.organizationId);
   const dispatchGrant = activeDispatchAccess(truck.truckId, ctx.organizationId);
   const operator = operatingCarrier(truck.truckId);
-  const assignment = activeAssignment(truck.truckId, operator?.organizationId ?? ctx.organizationId);
+  const visible = visibleCarrierOrgIds(truck.truckId, ctx);
+  // The operating carrier's driver belongs to that carrier. Another approved
+  // carrier waiting for the truck is not entitled to know who is on it.
+  const assignedFor = canSeeCarrier(visible, operator?.organizationId)
+    ? operator?.organizationId ?? ctx.organizationId
+    : ctx.organizationId;
+  const assignment = activeAssignment(truck.truckId, assignedFor);
+  const state = activationStateFor(truck.truckId, ctx.organizationId);
+  const mine = leaseFor(truck.truckId, ctx.organizationId);
 
   return {
     truckId: truck.truckId,
@@ -571,7 +722,9 @@ function project(truck: Truck, ctx: TruckContext): FleetTruck {
     organizationId: ctx.organizationId,
     unit: relationship?.unitNumber ?? dispatchGrant?.unitLabel ?? "—",
     // A dispatcher needs to know whose authority the truck runs under.
-    carrierName: dispatchGrant ? operator?.organizationName : undefined,
+    // A dispatcher's "runs under" is the carrier that granted it access — the
+    // one whose freight it moves — which is true whether or not a lease is live.
+    carrierName: dispatchGrant?.grantedByCarrierName,
     equipment: truck.equipmentType,
     status: truck.status,
     currentDriverId: assignment?.driverProfileId,
@@ -582,6 +735,12 @@ function project(truck: Truck, ctx: TruckContext): FleetTruck {
     minimumRatePerMileCents: relationship?.minimumRatePerMileCents ?? 100,
     maxDeadheadMiles: relationship?.maxDeadheadMiles ?? 30,
     documentWarnings: documentWarnings(truck.truckId),
+    activationState: state,
+    lockedByAnotherCarrier: state === "locked_by_other",
+    // Only the holder's own reference travels. Nobody else gets it, not even
+    // the owner, and not the dispatch organization.
+    myLoadReference: mine?.loadReference,
+    leaseExpectedEndAt: mine?.expectedEndAt,
   };
 }
 
@@ -623,7 +782,7 @@ export async function listPendingConnections(ctx: TruckContext): Promise<
   await sleep(200);
   if (!ctx.permissions.has("trucks:view")) return [];
   return db().relationships
-    .filter((r) => r.organizationId === ctx.organizationId && r.status === "pending")
+    .filter((r) => r.organizationId === ctx.organizationId && (r.status === "pending_approval" || r.status === "onboarding"))
     .map((r) => ({ truck: db().trucks.find((t) => t.truckId === r.truckId)!, relationship: r }))
     .filter((row) => Boolean(row.truck));
 }
@@ -638,14 +797,34 @@ export interface TruckProfileView {
   assignments: TruckDriverAssignment[];
   documents: TruckDocument[];
   events: TruckEvent[];
+  leases: TruckOperatingLease[];
   /** This organization's own live relationship, when it has one. */
   myRelationship?: TruckCarrierRelationship;
+  /** What THIS organization may do with the truck right now. */
+  activationState: TruckActivationState;
+  /** This organization's own lease, when it is the one holding the truck. */
+  myLease?: TruckOperatingLease;
+  /**
+   * The carrier holding operating authority — present ONLY when the viewer is
+   * entitled to know who it is (the owner, the holder itself, or a dispatch
+   * organization working for it). An approved carrier that is merely waiting
+   * gets `undefined` and the plain fact that the truck is busy.
+   */
+  operatingCarrierName?: string;
+  /**
+   * True when somebody else holds the truck. Deliberately carries no carrier
+   * name and no load reference — an approved carrier is entitled to know the
+   * truck is busy, not who has it or what they are hauling.
+   */
+  lockedByAnotherCarrier: boolean;
 }
 
 export async function getTruckProfile(truckId: string, ctx: TruckContext): Promise<TruckProfileView> {
   await sleep(300);
   const truck = getTruckOrThrow(truckId, ctx);
   const reason = accessReason(truckId, ctx)!;
+  const visible = visibleCarrierOrgIds(truckId, ctx);
+  const holder = operatingCarrier(truckId);
   const byDate = <T extends { startedAt?: string; createdAt?: string; at?: string }>(a: T, b: T) =>
     String(b.startedAt ?? b.createdAt ?? b.at ?? "").localeCompare(String(a.startedAt ?? a.createdAt ?? a.at ?? ""));
 
@@ -654,13 +833,63 @@ export async function getTruckProfile(truckId: string, ctx: TruckContext): Promi
     accessReason: reason,
     ownership: db().ownership.filter((o) => o.truckId === truckId).sort(byDate),
     claims: db().claims.filter((c) => c.truckId === truckId).sort(byDate),
-    relationships: db().relationships.filter((r) => r.truckId === truckId).sort(byDate),
-    dispatchAccess: db().dispatchAccess.filter((d) => d.truckId === truckId).sort(byDate),
-    assignments: db().assignments.filter((a) => a.truckId === truckId).sort(byDate),
+    // Each carrier's own onboarding, insurance and unit number stay its own.
+    relationships: db().relationships
+      .filter((r) => r.truckId === truckId && canSeeCarrier(visible, r.organizationId))
+      .sort(byDate),
+    dispatchAccess: db().dispatchAccess
+      .filter((d) => d.truckId === truckId
+        && (canSeeCarrier(visible, d.grantedByCarrierOrganizationId)
+          || d.dispatchOrganizationId === ctx.organizationId))
+      .sort(byDate),
+    assignments: db().assignments
+      .filter((a) => a.truckId === truckId && canSeeCarrier(visible, a.organizationId))
+      .sort(byDate),
     documents: db().documents.filter((d) => d.truckId === truckId),
     events: db().events.filter((e) => e.truckId === truckId)
+      .map((e) => redactEvent(e, visible))
       .sort((a, b) => b.at.localeCompare(a.at)),
-    myRelationship: activeRelationship(truckId, ctx.organizationId) ?? pendingRelationship(truckId, ctx.organizationId),
+    leases: db().leases
+      .filter((l) => l.truckId === truckId && canSeeCarrier(visible, l.organizationId))
+      // Even the owner, who may see that a lease existed, does not get the
+      // carrier's load reference — that belongs to the carrier that booked it.
+      .map((l) => (l.organizationId === ctx.organizationId ? l : { ...l, loadReference: undefined }))
+      .sort(byDate),
+    myRelationship: relationshipFor(truckId, ctx.organizationId),
+    activationState: activationStateFor(truckId, ctx.organizationId),
+    myLease: leaseFor(truckId, ctx.organizationId),
+    lockedByAnotherCarrier: activationStateFor(truckId, ctx.organizationId) === "locked_by_other",
+    operatingCarrierName: canSeeCarrier(visible, holder?.organizationId)
+      ? holder?.organizationName
+      : undefined,
+  };
+}
+
+/** Event kinds that name a carrier's commercial activity rather than the truck. */
+const CARRIER_PRIVATE_EVENTS = new Set<TruckEventKind>([
+  "relationship_requested", "relationship_started", "relationship_ended",
+  "relationship_suspended", "relationship_approved", "activation_reserved",
+  "lease_activated", "lease_release_requested", "lease_termination_step",
+  "lease_ended", "activation_refused", "driver_assigned", "driver_unassigned",
+]);
+
+/**
+ * The timeline records everything, and shows each viewer only what is theirs.
+ *
+ * A locked-out carrier still sees that the truck was taken and when — it needs
+ * that to understand why it cannot activate — but the line no longer names the
+ * carrier, the driver or the load.
+ */
+function redactEvent(event: TruckEvent, visible: Set<string> | "all"): TruckEvent {
+  if (canSeeCarrier(visible, event.organizationId)) return event;
+  if (!CARRIER_PRIVATE_EVENTS.has(event.kind)) {
+    return { ...event, actorName: undefined };
+  }
+  return {
+    ...event,
+    summary: "Recorded by another carrier",
+    detail: undefined,
+    actorName: undefined,
   };
 }
 
@@ -770,7 +999,7 @@ export async function registerOrConnectTruck(
 
     const relationship = rel(
       truckId, ctx.organizationId, organizationNameFor(ctx.organizationId),
-      input.relationshipType, input.unitNumber.trim(), "active", iso(now()),
+      input.relationshipType, input.unitNumber.trim(), "approved", iso(now()),
       input.minimumRatePerMileCents ?? 100, input.maxDeadheadMiles ?? 30,
     );
     db().relationships = [relationship, ...db().relationships];
@@ -782,7 +1011,7 @@ export async function registerOrConnectTruck(
   }
 
   /* ---- The VIN is already a truck. Never create a second one. ---- */
-  const mineActive = activeRelationship(existing.truckId, ctx.organizationId);
+  const mineActive = approvedRelationship(existing.truckId, ctx.organizationId);
   if (mineActive) return { status: "existing_connected", truck: existing, relationship: mineActive };
 
   const minePending = pendingRelationship(existing.truckId, ctx.organizationId);
@@ -797,13 +1026,15 @@ export async function registerOrConnectTruck(
 
   const owner = activeOwnership(existing.truckId);
   const ownedByMe = owner?.ownerRef === ctx.organizationId;
-  const operator = operatingCarrier(existing.truckId);
+  // Whoever is onboarded already — lease or no lease. Being approved is enough
+  // to make this somebody else's truck to connect to rather than to take.
+  const operator = otherApprovedCarrier(existing.truckId, ctx.organizationId);
 
-  // Somebody else is running it. Ask, never take.
+  // Somebody else is already onboarded on it. Ask, never take.
   if (operator && operator.organizationId !== ctx.organizationId) {
     const requested = rel(
       existing.truckId, ctx.organizationId, organizationNameFor(ctx.organizationId),
-      input.relationshipType, input.unitNumber.trim(), "pending", iso(now()),
+      input.relationshipType, input.unitNumber.trim(), "pending_approval", iso(now()),
       input.minimumRatePerMileCents ?? 100, input.maxDeadheadMiles ?? 30,
     );
     db().relationships = [requested, ...db().relationships];
@@ -828,7 +1059,7 @@ export async function registerOrConnectTruck(
   // Ours already, or ownerless: connect it.
   const relationship = rel(
     existing.truckId, ctx.organizationId, organizationNameFor(ctx.organizationId),
-    input.relationshipType, input.unitNumber.trim(), "active", iso(now()),
+    input.relationshipType, input.unitNumber.trim(), "approved", iso(now()),
     input.minimumRatePerMileCents ?? 100, input.maxDeadheadMiles ?? 30,
   );
   db().relationships = [relationship, ...db().relationships];
@@ -872,9 +1103,10 @@ export async function lookUpVin(vin: string, ctx: TruckContext): Promise<VinLook
   return {
     vin: normalized,
     truck,
-    operatorName: operatingCarrier(truck.truckId)?.organizationName,
+    operatorName: (operatingCarrier(truck.truckId)
+      ?? otherApprovedCarrier(truck.truckId, ctx.organizationId))?.organizationName,
     ownerName: activeOwnership(truck.truckId)?.ownerName,
-    alreadyConnected: Boolean(activeRelationship(truck.truckId, ctx.organizationId)),
+    alreadyConnected: Boolean(approvedRelationship(truck.truckId, ctx.organizationId)),
     pendingForMe: Boolean(pendingRelationship(truck.truckId, ctx.organizationId)),
   };
 }
@@ -1082,7 +1314,7 @@ export async function assignDriver(
   await sleep(LATENCY_MS);
   requirePermissions(ctx, "trucks:assignments:manage");
   getTruckOrThrow(truckId, ctx);
-  if (!activeRelationship(truckId, ctx.organizationId)) throw new TruckNotFoundError();
+  if (!approvedRelationship(truckId, ctx.organizationId)) throw new TruckNotFoundError();
   if (!eligibleDriverIds.includes(driver.driverProfileId)) {
     throw new TruckPermissionError(["trucks:assignments:manage"]);
   }
@@ -1146,7 +1378,7 @@ export async function setTruckStatus(
   await sleep(350);
   requirePermissions(ctx, "trucks:edit");
   const truck = getTruckOrThrow(truckId, ctx);
-  if (!activeRelationship(truckId, ctx.organizationId)) throw new TruckNotFoundError();
+  if (!approvedRelationship(truckId, ctx.organizationId)) throw new TruckNotFoundError();
 
   const updated: Truck = { ...truck, status, availability: availability ?? truck.availability };
   db().trucks = db().trucks.map((t) => (t.truckId === truckId ? updated : t));
@@ -1252,4 +1484,261 @@ export function truckContextFrom(ctx: {
     permissions: ctx.permissions,
     driverProfileId: ctx.scope?.loads === "assigned" ? ctx.driverProfileId : undefined,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Operating authority: activation, locking and release                        */
+/* -------------------------------------------------------------------------- */
+
+export type ActivationOutcome =
+  | { status: "activated"; lease: TruckOperatingLease }
+  | { status: "reserved"; lease: TruckOperatingLease }
+  | { status: "locked_by_other" }
+  | { status: "not_approved"; relationshipStatus: CarrierRelationshipStatus | "none" }
+  | { status: "unauthorized"; missing: PermissionKey[] };
+
+/**
+ * Take exclusive operating authority over a truck.
+ *
+ * The check and the write happen together, synchronously, with no await between
+ * them. That is what makes two carriers racing for the same truck safe: the
+ * simulated latency is taken *first*, then one caller runs this block to
+ * completion before the other can start, and the loser sees a truck that is
+ * already held. Splitting the check from the write — even by one await — would
+ * let both win.
+ *
+ * A carrier that is merely approved is not operating. Approval is permission to
+ * take the truck when it is free; this is the taking.
+ */
+export async function activateOperatingLease(
+  truckId: string,
+  ctx: TruckContext,
+  options: { loadReference?: string; expectedEndAt?: string; reserveOnly?: boolean } = {},
+): Promise<ActivationOutcome> {
+  // All latency BEFORE the critical section, never inside it.
+  await sleep(LATENCY_MS);
+
+  const missing = (["trucks:relationships:manage"] as PermissionKey[])
+    .filter((k) => !ctx.permissions.has(k));
+  if (missing.length) return { status: "unauthorized", missing };
+
+  /* ---- critical section: no awaits from here to the return ---- */
+  const relationship = db().relationships.find(
+    (r) => r.truckId === truckId && r.organizationId === ctx.organizationId,
+  );
+  if (!relationship || relationship.status !== "approved") {
+    return { status: "not_approved", relationshipStatus: relationship?.status ?? "none" };
+  }
+
+  const held = holdingLease(truckId);
+  if (held) {
+    if (held.organizationId !== ctx.organizationId) {
+      // Losing the race is a real event and is recorded, but the timeline entry
+      // names no load and no competitor.
+      record({
+        truckId, at: iso(now()), kind: "activation_refused",
+        summary: "Activation refused — the truck is under another carrier's operating lease",
+        organizationId: ctx.organizationId, actorName: ctx.actorName,
+      });
+      return { status: "locked_by_other" };
+    }
+    // Already ours: upgrade a reservation to active rather than double-book.
+    if (held.status === "reserved" && !options.reserveOnly) {
+      const upgraded: TruckOperatingLease = {
+        ...held, status: "active", activatedAt: iso(now()),
+        loadReference: options.loadReference ?? held.loadReference,
+        expectedEndAt: options.expectedEndAt ?? held.expectedEndAt,
+      };
+      db().leases = db().leases.map((l) => (l.id === held.id ? upgraded : l));
+      record({
+        truckId, at: iso(now()), kind: "lease_activated",
+        summary: `${relationship.organizationName} took exclusive operating authority`,
+        organizationId: ctx.organizationId, actorName: ctx.actorName,
+      });
+      return { status: "activated", lease: { ...upgraded } };
+    }
+    return held.status === "reserved"
+      ? { status: "reserved", lease: { ...held } }
+      : { status: "activated", lease: { ...held } };
+  }
+
+  const at = iso(now());
+  const lease: TruckOperatingLease = {
+    id: rowId("lease"),
+    truckId,
+    organizationId: ctx.organizationId,
+    organizationName: relationship.organizationName,
+    relationshipId: relationship.id,
+    status: options.reserveOnly ? "reserved" : "active",
+    loadReference: options.loadReference,
+    reservedAt: at,
+    activatedAt: options.reserveOnly ? undefined : at,
+    expectedEndAt: options.expectedEndAt,
+    termination: {},
+    createdAt: at,
+    initiatedByMembershipId: ctx.membershipId,
+    initiatedByName: ctx.actorName,
+  };
+  db().leases = [lease, ...db().leases];
+  /* ---- end critical section ---- */
+
+  record({
+    truckId, at, kind: options.reserveOnly ? "activation_reserved" : "lease_activated",
+    summary: options.reserveOnly
+      ? `${relationship.organizationName} reserved activation`
+      : `${relationship.organizationName} took exclusive operating authority`,
+    organizationId: ctx.organizationId, actorName: ctx.actorName,
+  });
+  record({
+    truckId, at, kind: "lease_locked_others",
+    summary: "Activation locked for every other approved carrier",
+    detail: "Their onboarding, documents and history are untouched.",
+    organizationId: ctx.organizationId, actorName: ctx.actorName,
+  });
+
+  return options.reserveOnly
+    ? { status: "reserved", lease: { ...lease } }
+    : { status: "activated", lease: { ...lease } };
+}
+
+export type TerminationStep =
+  | "unloaded"
+  | "trip_requirements"
+  | "delivery_confirmation"
+  | "exclusive_control";
+
+const STEP_FIELD: Record<TerminationStep, keyof LeaseTermination> = {
+  unloaded: "unloadedAt",
+  trip_requirements: "tripRequirementsCompletedAt",
+  delivery_confirmation: "deliveryConfirmationRecordedAt",
+  exclusive_control: "exclusiveControlEndedAt",
+};
+
+/** The four release requirements, in the order they are asked for. */
+export const TERMINATION_STEPS: TerminationStep[] = [
+  "unloaded", "trip_requirements", "delivery_confirmation", "exclusive_control",
+];
+
+export const TERMINATION_STEP_LABEL: Record<TerminationStep, string> = {
+  unloaded: "Load marked unloaded",
+  trip_requirements: "Trip and lease termination requirements completed",
+  delivery_confirmation: "Delivery or release confirmation recorded",
+  exclusive_control: "Exclusive operational control formally ended",
+};
+
+/** Every box that must be ticked before a truck can be let go. */
+export function terminationComplete(termination: LeaseTermination): boolean {
+  return Boolean(
+    termination.unloadedAt &&
+    termination.tripRequirementsCompletedAt &&
+    termination.deliveryConfirmationRecordedAt &&
+    termination.exclusiveControlEndedAt,
+  );
+}
+
+export function outstandingTerminationSteps(termination: LeaseTermination): TerminationStep[] {
+  return (Object.keys(STEP_FIELD) as TerminationStep[]).filter((step) => !termination[STEP_FIELD[step]]);
+}
+
+/**
+ * Record one of the four things that have to happen before release.
+ *
+ * Note what is NOT here: the estimated delivery time passing. A truck is not
+ * free because a clock says it should be, and nothing in this file will ever
+ * unlock it on that basis.
+ */
+export async function recordTerminationStep(
+  leaseId: string,
+  step: TerminationStep,
+  ctx: TruckContext,
+): Promise<TruckOperatingLease> {
+  await sleep(300);
+  requirePermissions(ctx, "trucks:relationships:manage");
+  const lease = db().leases.find((l) => l.id === leaseId);
+  if (!lease || lease.organizationId !== ctx.organizationId) throw new TruckNotFoundError();
+  if (lease.status === "ended") throw new TruckNotFoundError();
+
+  const at = iso(now());
+  const updated: TruckOperatingLease = {
+    ...lease,
+    status: lease.status === "active" ? "pending_release" : lease.status,
+    releaseRequestedAt: lease.releaseRequestedAt ?? at,
+    termination: { ...lease.termination, [STEP_FIELD[step]]: at },
+  };
+  db().leases = db().leases.map((l) => (l.id === leaseId ? updated : l));
+  record({
+    truckId: lease.truckId, at, kind: "lease_termination_step",
+    summary: TERMINATION_STEP_LABEL[step], organizationId: ctx.organizationId, actorName: ctx.actorName,
+  });
+  return { ...updated };
+}
+
+export type ReleaseOutcome =
+  | { status: "released"; lease: TruckOperatingLease }
+  | { status: "blocked"; outstanding: TerminationStep[] }
+  | { status: "unauthorized"; missing: PermissionKey[] };
+
+/**
+ * End exclusive operating authority and hand the truck back.
+ *
+ * Refused until all four termination requirements are on the record. The
+ * completed lease is kept as history, the truck keeps its permanent id and
+ * everything else, and every other approved carrier becomes eligible again
+ * without having to re-onboard.
+ */
+export async function releaseOperatingLease(
+  leaseId: string,
+  ctx: TruckContext,
+): Promise<ReleaseOutcome> {
+  await sleep(LATENCY_MS);
+  const missing = (["trucks:relationships:manage"] as PermissionKey[])
+    .filter((k) => !ctx.permissions.has(k));
+  if (missing.length) return { status: "unauthorized", missing };
+
+  const lease = db().leases.find((l) => l.id === leaseId);
+  if (!lease || lease.organizationId !== ctx.organizationId) throw new TruckNotFoundError();
+
+  const outstanding = outstandingTerminationSteps(lease.termination);
+  if (outstanding.length > 0) return { status: "blocked", outstanding };
+
+  const at = iso(now());
+  const ended: TruckOperatingLease = { ...lease, status: "ended", endedAt: at };
+  db().leases = db().leases.map((l) => (l.id === leaseId ? ended : l));
+  record({
+    truckId: lease.truckId, at, kind: "lease_ended",
+    summary: `${lease.organizationName} released exclusive operating authority`,
+    detail: "The truck is available again to every approved carrier. Nothing else changed.",
+    organizationId: ctx.organizationId, actorName: ctx.actorName,
+  });
+  return { status: "released", lease: { ...ended } };
+}
+
+/** Approve an onboarding relationship so that carrier becomes eligible. */
+export async function approveCarrierRelationship(
+  relationshipId: string,
+  ctx: TruckContext,
+): Promise<TruckCarrierRelationship> {
+  await sleep(350);
+  requirePermissions(ctx, "trucks:relationships:manage");
+  const relationship = db().relationships.find((r) => r.id === relationshipId);
+  if (!relationship) throw new TruckNotFoundError();
+  // Only the recorded owner, or the onboarding carrier itself, may clear it.
+  // Anybody else asking gets the same answer as an id that does not exist.
+  const owner = activeOwnership(relationship.truckId);
+  const allowed = relationship.organizationId === ctx.organizationId
+    || (owner?.ownerRef !== undefined && owner.ownerRef === ctx.organizationId);
+  if (!allowed) throw new TruckNotFoundError();
+  if (relationship.status !== "pending_approval" && relationship.status !== "onboarding") {
+    return { ...relationship };
+  }
+  const at = iso(now());
+  const approved: TruckCarrierRelationship = { ...relationship, status: "approved", approvedAt: at };
+  db().relationships = db().relationships.map((r) => (r.id === relationshipId ? approved : r));
+  record({
+    truckId: relationship.truckId, at, kind: "relationship_approved",
+    summary: `${relationship.organizationName} approved to operate this truck`,
+    detail: "Eligible to activate when the truck is free. Not operating yet.",
+    organizationId: ctx.organizationId, actorName: ctx.actorName,
+  });
+  return { ...approved };
 }

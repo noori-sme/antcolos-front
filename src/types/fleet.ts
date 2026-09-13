@@ -1,4 +1,4 @@
-import type { TruckEquipmentType, TruckOperatingStatus } from "./truck";
+import type { TruckActivationState, TruckEquipmentType, TruckOperatingStatus } from "./truck";
 
 /** One status vocabulary for power units and trailers alike. */
 export type TruckStatus = TruckOperatingStatus;
@@ -39,6 +39,22 @@ export interface FleetTruck {
   minimumRatePerMileCents: number;
   maxDeadheadMiles: number;
   documentWarnings: number;
+  /**
+   * What THIS organization may do with the truck right now — approved, free to
+   * activate, held by itself, or held by somebody else. Two carriers looking at
+   * one truck can legitimately see different values here at the same moment.
+   */
+  activationState: TruckActivationState;
+  /**
+   * True when another carrier holds the operating lease. Carries no carrier name
+   * and no load reference on purpose: the truck being busy is not confidential,
+   * who has it and what they are hauling is.
+   */
+  lockedByAnotherCarrier: boolean;
+  /** Set only for the carrier that holds the lease. Its own load reference. */
+  myLoadReference?: string;
+  /** Set only for the lease holder: the planned end. Reaching it frees nothing. */
+  leaseExpectedEndAt?: string;
 }
 
 export interface Trailer {
