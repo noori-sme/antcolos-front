@@ -7,6 +7,7 @@ import { mockDriverWorkflowService } from "./mock/driver-workflow";
 import { mockInvoicesService } from "./mock/invoices";
 import { mockLoadsService } from "./mock/loads";
 import { mockNeedsYouService } from "./mock/needs-you";
+import { mockSettlementsService } from "./mock/settlements";
 
 /**
  * Service registry. Today every call resolves to the mock adapter; when Taqi
@@ -18,6 +19,7 @@ const mockServices: AntcolosServices = {
   home: mockHomeService,
   directory: mockDirectoryService,
   loads: mockLoadsService,
+  settlements: mockSettlementsService,
   driverWorkflow: mockDriverWorkflowService,
   invoices: mockInvoicesService,
   documents: mockDocumentsService,

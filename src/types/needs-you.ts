@@ -20,6 +20,9 @@ export type NeedsYouCategory =
   | "detention"
   | "expiring_document"
   | "settlement_review"
+  | "settlement_missing_data"
+  | "settlement_dispute"
+  | "settlement_payment_overdue"
   | "invoice_review"
   | "invoice_dispute"
   | "invoice_overdue"
@@ -128,6 +131,8 @@ export interface NeedsYouEntityRef {
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
   | "review" | "confirm_status" | "start_search" | "contact_customer"
+  | "approve_settlement" | "resolve_dispute" | "record_payment"
+
   // Maintenance
   | "schedule_service" | "open_repair_order" | "review_defect" | "return_to_service"
 
@@ -196,6 +201,16 @@ export interface NeedsYouItem {
   source: NeedsYouSource;
   /** Permission required to see this item at all. */
   requires: PermissionKey[];
+  /**
+   * True when the item is COMPUTED from another module's state rather than
+   * stored here — a settlement blocked by missing data, say.
+   *
+   * A derived item cannot be assigned, snoozed, escalated or resolved, because
+   * there is nothing to write to and hiding the row would not fix the thing it
+   * is about. It stops appearing when the underlying state stops producing it,
+   * which is the only honest way to close it.
+   */
+  derived?: boolean;
   createdAt: string;
   snoozedUntil?: string;
   snoozeReason?: string;
@@ -234,6 +249,9 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   detention: "Possible detention",
   expiring_document: "Document expiry",
   settlement_review: "Settlement review",
+  settlement_missing_data: "Settlement missing data",
+  settlement_dispute: "Settlement disputed",
+  settlement_payment_overdue: "Settlement overdue",
   invoice_review: "Invoice review",
   invoice_dispute: "Invoice disputed",
   invoice_overdue: "Invoice overdue",

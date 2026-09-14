@@ -1,5 +1,7 @@
 import type { badgeVariants } from "@/components/ui/badge";
-import type { LoadStatus, TruckStatus, DriverStatus } from "@/types";
+import type {
+  DriverStatus, LoadStatus, PayeeKind, SettlementStatus, TruckStatus,
+} from "@/types";
 
 type Tone = NonNullable<Parameters<typeof badgeVariants>[0]>["tone"];
 
@@ -35,6 +37,30 @@ export const DRIVER_STATUS: Record<DriverStatus, { label: string; tone: Tone }> 
   driving:   { label: "Driving",   tone: "info" },
   off_duty:  { label: "Off duty",  tone: "neutral" },
   inactive:  { label: "Inactive",  tone: "neutral" },
+};
+
+/**
+ * Settlement tone is chosen by what the number MEANS to the person reading it,
+ * not by how far along the workflow it is: "approved" is not success, because
+ * nobody has been paid yet. Only paid is green.
+ */
+export const SETTLEMENT_STATUS: Record<SettlementStatus, { label: string; tone: Tone }> = {
+  draft:             { label: "Draft",             tone: "neutral" },
+  needs_review:      { label: "Needs review",      tone: "warning" },
+  approved:          { label: "Approved",          tone: "info" },
+  disputed:          { label: "Disputed",          tone: "danger" },
+  ready_for_payment: { label: "Ready for payment", tone: "info" },
+  partially_paid:    { label: "Partially paid",    tone: "progress" },
+  paid:              { label: "Paid",              tone: "success" },
+  voided:            { label: "Voided",            tone: "neutral" },
+};
+
+export const PAYEE_KIND_LABEL: Record<PayeeKind, string> = {
+  company_driver: "Company driver",
+  owner_operator: "Owner-operator",
+  dispatcher: "Dispatcher",
+  dispatch_organization: "Dispatch organization",
+  other_payee: "Other payee",
 };
 
 export const EQUIPMENT_LABEL: Record<string, string> = {

@@ -1,4 +1,4 @@
-import type { NeedsYouFilters } from "@/types";
+import type { NeedsYouFilters, SettlementFilters, SettlementSort } from "@/types";
 
 /**
  * Every query key is namespaced by organization. Org A's data can never be
@@ -32,4 +32,33 @@ export const queryKeys = {
     [...orgKey(organizationId), "insurance", membershipId, "claim", claimId] as const,
   invoices: (organizationId: string, membershipId: string, scope: unknown) =>
     [...orgKey(organizationId), "invoices", membershipId, scope ?? null] as const,
+} as const;
+
+/**
+ * Settlement keys carry the MEMBERSHIP as well as the organization, because two
+ * memberships in one carrier legitimately see different settlements: an
+ * accountant sees everyone's, a driver sees only their own. Keying on the
+ * organization alone would let one be served from the other's cache.
+ */
+export const settlementKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "settlements"] as const,
+  list: (
+    organizationId: string,
+    membershipId: string,
+    filters: SettlementFilters,
+    sort?: SettlementSort,
+  ) =>
+    [...orgKey(organizationId), "settlements", membershipId, "list", filters, sort ?? null] as const,
+  totals: (organizationId: string, membershipId: string, filters: SettlementFilters) =>
+    [...orgKey(organizationId), "settlements", membershipId, "totals", filters] as const,
+  detail: (organizationId: string, membershipId: string, settlementId: string) =>
+    [...orgKey(organizationId), "settlements", membershipId, "detail", settlementId] as const,
+  audit: (organizationId: string, membershipId: string, settlementId: string) =>
+    [...orgKey(organizationId), "settlements", membershipId, "audit", settlementId] as const,
+  statements: (organizationId: string, membershipId: string, settlementId: string) =>
+    [...orgKey(organizationId), "settlements", membershipId, "statements", settlementId] as const,
+  payees: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "settlements", membershipId, "payees"] as const,
+  periods: (organizationId: string) =>
+    [...orgKey(organizationId), "settlements", "periods"] as const,
 } as const;

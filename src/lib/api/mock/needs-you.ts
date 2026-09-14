@@ -9,6 +9,7 @@ import {
 import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
+import { isDerivedSettlementItem, settlementNeedsYouItems } from "./settlement-needs-you";
 import { ensureInvoiceNeedsYou } from "./invoice-registry";
 import { mockStore } from "./store";
 import {
@@ -77,6 +78,9 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // Maintenance is derived the same way: a defect or an overdue service
     // shows up while it is true and stops showing when it is dealt with.
     ...maintenanceNeedsYouItems(maintenanceContextFrom(ctx)),
+    // Settlement items are derived too. Their own module has already applied
+    // carrier isolation and payee privacy, so they arrive ready to show.
+    ...settlementNeedsYouItems(ctx),
   ];
 }
 
@@ -148,6 +152,15 @@ function appendHistory(
 }
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
+  // A settlement item is computed from the settlement itself, so there is
+  // nothing here to write to. Snoozing or resolving one would hide the row
+  // without touching the thing it is about, which is the one outcome the queue
+  // must never allow.
+  if (isDerivedSettlementItem(itemId)) {
+    throw new Error(
+      "This item is worked out from the settlement itself. Open the settlement and fix what it is asking for — it clears on its own.",
+    );
+  }
   ensureInvoiceNeedsYou(ctx.organizationId);
   const item = isInsuranceNeedsYouId(itemId) || isMaintenanceNeedsYouId(itemId)
     ? allItems(ctx).find((n) => n.id === itemId)

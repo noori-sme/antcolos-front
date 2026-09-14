@@ -37,6 +37,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "loads:status:update",
       "proposals:view", "proposals:respond", "trips:execute",
       "documents:view", "documents:upload",
+      // A driver sees their own settlements and may say one looks wrong. They
+      // cannot approve, correct or pay one — including their own.
+      "settlements:view", "settlements:dispute",
       "settlements:view",
       // Their own assigned truck, and the ability to report a fault on it.
       "trucks:view", "maintenance:view", "maintenance:defects:report",
@@ -49,6 +52,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     permissions: [
       "loads:view", "rates:view", "revenue:view", "expenses:view",
       "settlements:view", "settlements:create", "settlements:export",
+      "settlements:dispute:resolve", "settlements:pay",
       "invoices:view", "invoices:create", "customers:view", "documents:view",
       "insurance:view", "insurance:sensitive:view", "claims:view", "claims:financials:view",
     ],

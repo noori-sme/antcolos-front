@@ -39,6 +39,7 @@ files rather than a copy. `npm test` runs both.
 | 1. Foundation and shell | Design tokens, theme and density, identity and membership switching, permissions, responsive navigation, shared states |
 | 2. Home + Needs You | `/home` (adapts to the membership), `/needs-you`, `/driver/home` |
 | Canonical Load slice | `/loads`, `/loads/[loadId]` — read-only |
+| Settlement foundation | `/finance/settlements`, `/finance/settlements/[id]`, and the payee statement |
 | Permanent Truck | `/fleet/trucks`, `/fleet/trucks/[truckId]`, `/fleet/trucks/new` |
 | Permanent Trailer | `/fleet/trailers`, `/fleet/trailers/[trailerId]`, `/fleet/trailers/new` |
 | Maintenance foundation | `/maintenance`, `/maintenance/[kind]/[id]`, `/driver/defects` |
@@ -274,6 +275,7 @@ src/
     layout/             AppShell, Sidebar, Topbar, OrgSwitcher, AccountMenu
     auth/               Can, PermissionBadge, ActorLabel
     data/               loading / empty / error states
+  features/             home, needs-you, loads, settlements
   features/             home, needs-you, loads, fleet, trailers, insurance
   features/             home, needs-you, loads, directory, driver-workflow
   features/             home, needs-you, loads, directory, documents
@@ -292,6 +294,7 @@ src/
     permissions/        ★ catalog, can(), templates, effective, scope, routes
     maintenance/        trigger evaluation, labels, integration extension points
     session/            ★ permanent User, Membership[], active membership
+    settlements/        pure pay engine: money, agreements, status, breakdown
     query/              org-namespaced query keys
   types/                ★ canonical entities
   config/               nav, statuses, documents, brand
@@ -383,6 +386,40 @@ Where a canonical record already exists in this repository — Load, Driver,
 Assignment, Document — the adapter reads and writes THAT record. Uploads and
 OCR are honest mocks: picking a file records its name, type and size and throws
 the file away; extraction returns typed fixtures and says so on screen.
+
+## Settlements
+
+A settlement is what one carrier owes one payee for a period of work — a company
+driver, an owner-operator, an individual dispatcher, a dispatch organization, or
+any other approved payee. Everything a settlement is *about* is built elsewhere,
+so the module owns none of it: it takes typed references and, when the money is
+worked out, a **snapshot**.
+
+That snapshot is the whole design. A settlement records what was agreed at a
+moment in time, so a driver's percentage changing next month cannot rewrite last
+month's pay. Loads are priced under the compensation agreement that was in force
+**when the work was performed**, never the current one, and the arithmetic is
+frozen on approval and read thereafter rather than recomputed.
+
+Three things the module will not do:
+
+- **It never silently edits a settlement that has been signed off.** Corrections
+  are new records with their own UUID, linked to the original in both
+  directions. Both stay on the books.
+- **Nobody approves, pays or corrects a settlement they are the payee of**, no
+  matter how broad their permissions.
+- **It moves no money.** There is no ACH, banking, payroll, tax filing,
+  accounting integration or payment execution anywhere in it. Recording a
+  payment writes down that one happened somewhere else.
+
+Payee privacy is a different list, not a redacted one: a membership scoped to its
+own financials gets its own settlements in full and nobody else's at all — no
+carrier roll-up, no other payees in the filters. Switch to **Cascade Haul** to
+see that side.
+
+Needs You items for missing data, disputes and overdue payments are *derived*
+from settlement state rather than stored, so they cannot go stale and cannot be
+snoozed away without fixing what they are about.
 
 ## Branding
 
