@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { beforeEach, describe, it } from "node:test";
 import { services } from "@/lib/api";
 import { NotFoundError, PermissionDeniedError } from "@/lib/api/contracts/context";
 import {
@@ -13,7 +14,7 @@ import {
 import {
   CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER, STONEBRIDGE_DRIVER,
   contextFor, resetWorld,
-} from "@/lib/driver-workflow/__tests__/harness";
+} from "./driver-workflow-harness";
 
 /**
  * Regression cover for the behaviour that was already here before this branch.
@@ -27,21 +28,21 @@ import {
 describe("the permission catalog stays coherent", () => {
   it("has no duplicate keys", () => {
     const keys = PERMISSION_CATALOG.map((p) => p.key);
-    expect(new Set(keys).size).toBe(keys.length);
+    assert.equal(new Set(keys).size, keys.length);
   });
 
   it("gives every group a label and a place in the reading order", () => {
     for (const permission of PERMISSION_CATALOG) {
-      expect(PERMISSION_GROUP_LABELS[permission.group]).toBeTruthy();
-      expect(PERMISSION_GROUP_ORDER).toContain(permission.group);
+      assert.ok(PERMISSION_GROUP_LABELS[permission.group]);
+      assert.ok(PERMISSION_GROUP_ORDER.includes(permission.group));
     }
-    expect(new Set(PERMISSION_GROUP_ORDER).size).toBe(PERMISSION_GROUP_ORDER.length);
+    assert.equal(new Set(PERMISSION_GROUP_ORDER).size, PERMISSION_GROUP_ORDER.length);
   });
 
   it("keeps the owner-only powers out of the catalog entirely", () => {
     const keys = new Set<string>(PERMISSION_CATALOG.map((p) => p.key));
     for (const reserved of NEVER_GRANTABLE) {
-      expect(keys.has(reserved.id)).toBe(false);
+      assert.equal(keys.has(reserved.id), false);
     }
   });
 
@@ -51,44 +52,44 @@ describe("the permission catalog stays coherent", () => {
     const effective = effectivePermissions(membership, organization, MOCK_TEMPLATES);
 
     for (const key of availablePermissionKeys(organization.type)) {
-      expect(effective.has(key)).toBe(true);
+      assert.equal(effective.has(key), true);
     }
     // Including the ones this branch added.
-    expect(effective.has("proposals:respond")).toBe(true);
-    expect(effective.has("trips:execute")).toBe(true);
+    assert.equal(effective.has("proposals:respond"), true);
+    assert.equal(effective.has("trips:execute"), true);
   });
 
   it("still withholds rates:view from the Meridian dispatcher", () => {
     const ctx = contextFor(MERIDIAN_DISPATCHER);
-    expect(ctx.permissions.has("rates:view")).toBe(false);
-    expect(ctx.permissions.has("loads:delete")).toBe(false);
-    expect(ctx.permissions.has("customers:edit")).toBe(true);
+    assert.equal(ctx.permissions.has("rates:view"), false);
+    assert.equal(ctx.permissions.has("loads:delete"), false);
+    assert.equal(ctx.permissions.has("customers:edit"), true);
   });
 
   it("routes both driver memberships through the same driver template", () => {
     for (const id of [CASCADE_DRIVER, STONEBRIDGE_DRIVER]) {
       const ctx = contextFor(id);
-      expect(ctx.permissions.has("proposals:view")).toBe(true);
-      expect(ctx.permissions.has("trips:execute")).toBe(true);
+      assert.equal(ctx.permissions.has("proposals:view"), true);
+      assert.equal(ctx.permissions.has("trips:execute"), true);
       // A driver still sees no money through the permission system.
-      expect(ctx.permissions.has("rates:view")).toBe(false);
-      expect(ctx.scope.loads).toBe("assigned");
+      assert.equal(ctx.permissions.has("rates:view"), false);
+      assert.equal(ctx.scope.loads, "assigned");
     }
   });
 });
 
 describe("route gating still matches the nav", () => {
   it("gates the new driver routes and inherits on nested paths", () => {
-    expect(requiredPermissionsForPath("/driver/proposals")).toEqual(["proposals:view"]);
-    expect(requiredPermissionsForPath("/driver/proposals/prop_1")).toEqual(["proposals:view"]);
-    expect(requiredPermissionsForPath("/driver/loads/load_1")).toEqual(["loads:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/driver/proposals"), ["proposals:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/driver/proposals/prop_1"), ["proposals:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/driver/loads/load_1"), ["loads:view"]);
   });
 
   it("leaves the existing routes where they were", () => {
-    expect(requiredPermissionsForPath("/loads")).toEqual(["loads:view"]);
-    expect(requiredPermissionsForPath("/loads/abc")).toEqual(["loads:view"]);
-    expect(requiredPermissionsForPath("/dispatch")).toEqual(["loads:view", "loads:assign"]);
-    expect(requiredPermissionsForPath("/account/profile")).toEqual([]);
+    assert.deepEqual(requiredPermissionsForPath("/loads"), ["loads:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/loads/abc"), ["loads:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/dispatch"), ["loads:view", "loads:assign"]);
+    assert.deepEqual(requiredPermissionsForPath("/account/profile"), []);
   });
 });
 
@@ -99,25 +100,25 @@ describe("the existing load service is unaffected", () => {
     const ctx = contextFor(CASCADE_DRIVER);
     const page = await services.loads.list(ctx);
 
-    expect(page.items.length).toBeGreaterThan(0);
-    expect(page.items.every((l) => l.assignment?.driverId === ctx.driverProfileId)).toBe(true);
-    expect(page.items.every((l) => l.financials === undefined)).toBe(true);
+    assert.ok(page.items.length > 0);
+    assert.equal(page.items.every((l) => l.assignment?.driverId === ctx.driverProfileId), true);
+    assert.equal(page.items.every((l) => l.financials === undefined), true);
   });
 
   it("still gives an owner every load with its financials", async () => {
     const ctx = contextFor(NORTHLINE_OWNER);
     const page = await services.loads.list(ctx);
 
-    expect(page.items.length).toBeGreaterThan(0);
-    expect(page.items.some((l) => l.financials !== undefined)).toBe(true);
+    assert.ok(page.items.length > 0);
+    assert.equal(page.items.some((l) => l.financials !== undefined), true);
   });
 
   it("serves the organization this branch added like any other", async () => {
     const ctx = contextFor(STONEBRIDGE_DRIVER);
     const page = await services.loads.list(ctx);
 
-    expect(page.items.every((l) => l.organizationId === "org_stonebridge")).toBe(true);
-    expect(page.items.map((l) => l.reference).sort()).toEqual(["SB-1036", "SB-1042", "SB-1048"]);
+    assert.equal(page.items.every((l) => l.organizationId === "org_stonebridge"), true);
+    assert.deepEqual(page.items.map((l) => l.reference).sort(), ["SB-1036", "SB-1042", "SB-1048"]);
   });
 
   it("reports a load in another organization as not found", async () => {
@@ -125,7 +126,8 @@ describe("the existing load service is unaffected", () => {
     const driver = contextFor(STONEBRIDGE_DRIVER);
     const theirs = await services.loads.list(owner);
 
-    await expect(services.loads.get(driver, theirs.items[0].id)).rejects.toBeInstanceOf(
+    await assert.rejects(
+      services.loads.get(driver, theirs.items[0].id),
       NotFoundError,
     );
   });
@@ -137,15 +139,15 @@ describe("Needs You and Home still work in every organization", () => {
   it("serves the home summary for each membership", async () => {
     for (const id of [NORTHLINE_OWNER, MERIDIAN_DISPATCHER, CASCADE_DRIVER, STONEBRIDGE_DRIVER]) {
       const summary = await services.home.summary(contextFor(id));
-      expect(summary).toBeTruthy();
-      expect(Array.isArray(summary.activeLoads)).toBe(true);
+      assert.ok(summary);
+      assert.equal(Array.isArray(summary.activeLoads), true);
     }
   });
 
   it("serves Needs You in the organization this branch added", async () => {
     const ctx = contextFor(STONEBRIDGE_DRIVER);
     const items = await services.needsYou.list(ctx);
-    expect(items.every((i) => i.organizationId === "org_stonebridge")).toBe(true);
+    assert.equal(items.every((i) => i.organizationId === "org_stonebridge"), true);
   });
 
   it("still refuses a list call from a membership without the permission", async () => {
@@ -154,6 +156,9 @@ describe("Needs You and Home still work in every organization", () => {
       ...ctx,
       permissions: new Set([...ctx.permissions].filter((p) => p !== "loads:view")),
     };
-    await expect(services.loads.list(stripped)).rejects.toBeInstanceOf(PermissionDeniedError);
+    await assert.rejects(
+      services.loads.list(stripped),
+      PermissionDeniedError,
+    );
   });
 });

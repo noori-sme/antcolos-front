@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { beforeEach, describe, it } from "node:test";
 import { services } from "@/lib/api";
 import { integrations, integrationsAreMocked } from "@/lib/integrations";
 import type { UploadDescriptor } from "@/types";
 import {
   CASCADE_DRIVER, STONEBRIDGE_DRIVER, contextFor, key, resetWorld,
-} from "./harness";
+} from "./driver-workflow-harness";
 
 /**
  * The boundary's own invariants. Not "does the feature work", but "is this
@@ -23,14 +24,14 @@ describe("the integration boundary", () => {
   beforeEach(resetWorld);
 
   it("says out loud that every port is a placeholder", async () => {
-    expect(integrationsAreMocked()).toBe(true);
+    assert.equal(integrationsAreMocked(), true);
     const status = await services.driverWorkflow.integrationStatus(contextFor(CASCADE_DRIVER));
 
-    expect(status.length).toBeGreaterThan(0);
-    expect(status.every((s) => s.mock)).toBe(true);
-    expect(status.every((s) => s.adapter.startsWith("mock:"))).toBe(true);
+    assert.ok(status.length > 0);
+    assert.equal(status.every((s) => s.mock), true);
+    assert.equal(status.every((s) => s.adapter.startsWith("mock:")), true);
     // Each one names the branch that owns the real thing.
-    expect(status.every((s) => s.ownedBy.length > 0)).toBe(true);
+    assert.equal(status.every((s) => s.ownedBy.length > 0), true);
   });
 
   it("never claims a handoff was delivered", async () => {
@@ -43,11 +44,11 @@ describe("the integration boundary", () => {
       idempotencyKey: key(),
     });
 
-    expect(handoff?.state).toBe("pending_integration");
-    expect(handoff?.stateReason).toMatch(/nothing has been sent, stored, verified or processed/i);
+    assert.equal(handoff?.state, "pending_integration");
+    assert.match(handoff?.stateReason ?? "", /nothing has been sent, stored, verified or processed/i);
 
     const pending = await services.driverWorkflow.pendingHandoffs(ctx);
-    expect(pending.every((p) => p.state === "pending_integration")).toBe(true);
+    assert.equal(pending.every((p) => p.state === "pending_integration"), true);
   });
 
   it("tells Dispatch explicitly that an approval is not booking consent", async () => {
@@ -60,8 +61,8 @@ describe("the integration boundary", () => {
       idempotencyKey: key(),
     });
 
-    expect(handoff?.operation).toBe("driver.approved");
-    expect(handoff?.payload.bookingConsent).toBe("not_granted");
+    assert.equal(handoff?.operation, "driver.approved");
+    assert.equal(handoff?.payload.bookingConsent, "not_granted");
   });
 
   it("keeps the other module's own identifier on everything that crosses", async () => {
@@ -75,9 +76,9 @@ describe("the integration boundary", () => {
     });
 
     const ref = handoff!.refs[0];
-    expect(ref.module).toBe("opportunity");
+    assert.equal(ref.module, "opportunity");
     // Dispatch's own id, kept verbatim rather than re-minted here.
-    expect(ref.externalId).toMatch(/^opp_/);
+    assert.match(ref.externalId, /^opp_/);
   });
 
   it("does not double-write when the same handoff key arrives twice", async () => {
@@ -101,8 +102,8 @@ describe("the integration boundary", () => {
       payload: { n: 2 },
     });
 
-    expect(second.id).toBe(first.id);
-    expect(second.payload.n).toBe(1);
+    assert.equal(second.id, first.id);
+    assert.equal(second.payload.n, 1);
   });
 
   it("links a trip document back to the canonical load record", async () => {
@@ -121,10 +122,10 @@ describe("the integration boundary", () => {
 
     const scale = handoffs.find((h) => h.target === "scale")!;
     const modules = scale.refs.map((r) => r.module);
-    expect(modules).toContain("load");
-    expect(modules).toContain("document_center");
+    assert.ok(modules.includes("load"));
+    assert.ok(modules.includes("document_center"));
     // The entity UUID, so the destination links rather than duplicates.
-    expect(scale.refs.find((r) => r.module === "load")?.entityId).toBe(fresh.loadId);
+    assert.equal(scale.refs.find((r) => r.module === "load")?.entityId, fresh.loadId);
   });
 
   it("stamps provenance on inferred milestones, marked as coming from a mock", async () => {
@@ -135,10 +136,10 @@ describe("the integration boundary", () => {
     const view = await services.driverWorkflow.ingestSignals(ctx, active.workflowId);
     const inferred = view.timeline.find((e) => e.type === "milestone.inferred")!;
 
-    expect(inferred.inference?.provenance.mock).toBe(true);
-    expect(inferred.inference?.provenance.module).toBe("geofencing");
-    expect(inferred.inference?.signalId).toBeDefined();
-    expect(inferred.inference?.observedAt).toBeDefined();
+    assert.equal(inferred.inference?.provenance.mock, true);
+    assert.equal(inferred.inference?.provenance.module, "geofencing");
+    assert.notEqual(inferred.inference?.signalId, undefined);
+    assert.notEqual(inferred.inference?.observedAt, undefined);
   });
 
   it("does not let one organization read another's queued handoffs", async () => {
@@ -153,6 +154,6 @@ describe("the integration boundary", () => {
     });
 
     const theirs = await services.driverWorkflow.pendingHandoffs(stonebridge);
-    expect(theirs.every((h) => h.organizationId === "org_stonebridge")).toBe(true);
+    assert.equal(theirs.every((h) => h.organizationId === "org_stonebridge"), true);
   });
 });

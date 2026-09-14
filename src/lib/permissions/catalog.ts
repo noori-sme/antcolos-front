@@ -67,6 +67,8 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "customers:create", label: "Add customers", description: "Add a new broker or shipper.", group: "customers" },
   { key: "customers:edit", label: "Edit customers", description: "Change customer details and contacts.", group: "customers" },
   { key: "customers:delete", label: "Delete customers", description: "Permanently remove a customer record.", group: "customers", sensitive: true },
+  { key: "customers:private:manage", label: "Manage private notes and ratings", description: "Write your own notes, ratings, payment experience and blocked or preferred status. Only your organization ever sees them.", group: "customers" },
+  { key: "customers:resolve", label: "Confirm customer matches", description: "Decide whether a broker, shipper or receiver on a rate confirmation is one you already have, or a new profile.", group: "customers", sensitive: true },
 
   // ---- Documents ---------------------------------------------------------
   { key: "documents:view", label: "View documents", description: "Open uploaded paperwork such as BOLs and PODs.", group: "documents" },

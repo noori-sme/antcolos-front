@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import { services } from "@/lib/api";
 import { NotFoundError, PermissionDeniedError } from "@/lib/api/contracts/context";
 import {
@@ -10,11 +11,11 @@ import type { DriverProposalView } from "@/types";
 import {
   CASCADE_DRIVER, MERIDIAN_DISPATCHER, STONEBRIDGE_DRIVER, contextFor, key,
   resetWorld,
-} from "./harness";
+} from "./driver-workflow-harness";
 
 async function openProposal(ctx: ServiceContext): Promise<DriverProposalView> {
   const open = await services.driverWorkflow.listProposals(ctx, { view: "open" });
-  expect(open.length).toBeGreaterThan(0);
+  assert.ok(open.length > 0);
   return open[0];
 }
 
@@ -32,12 +33,12 @@ describe("driver decisions on a proposal", () => {
       idempotencyKey: key(),
     });
 
-    expect(next.status).toBe("approved");
+    assert.equal(next.status, "approved");
     // The distinction the whole feature turns on.
-    expect(next.approval?.bookingConsent).toBe("not_granted");
-    expect(next.approval?.policyLabelSnapshot).toBe(proposal.policyLabel);
-    expect(events[0].type).toBe("proposal.approved");
-    expect(events[0].payload?.reason).toMatch(/not consent to be booked/i);
+    assert.equal(next.approval?.bookingConsent, "not_granted");
+    assert.equal(next.approval?.policyLabelSnapshot, proposal.policyLabel);
+    assert.equal(events[0].type, "proposal.approved");
+    assert.match(events[0].payload?.reason ?? "", /not consent to be booked/i);
   });
 
   it("records which channel the decision came from", async () => {
@@ -52,7 +53,7 @@ describe("driver decisions on a proposal", () => {
 
     // Same service, same command, same rules — only the source differs. This is
     // the seam the Telegram bot will arrive through.
-    expect(events[0].source).toBe("telegram");
+    assert.equal(events[0].source, "telegram");
   });
 
   it("accepts a rejection with no reason given", async () => {
@@ -65,8 +66,8 @@ describe("driver decisions on a proposal", () => {
       idempotencyKey: key(),
     });
 
-    expect(next.status).toBe("rejected");
-    expect(next.rejection?.reason).toBeUndefined();
+    assert.equal(next.status, "rejected");
+    assert.equal(next.rejection?.reason, undefined);
   });
 
   it("keeps a rejection reason when one is given", async () => {
@@ -80,7 +81,7 @@ describe("driver decisions on a proposal", () => {
       idempotencyKey: key(),
     });
 
-    expect(next.rejection?.reason).toMatch(/over on hours/);
+    assert.match(next.rejection?.reason ?? "", /over on hours/);
   });
 
   it("refuses any further command on a closed proposal, keeping its history", async () => {
@@ -99,20 +100,21 @@ describe("driver decisions on a proposal", () => {
       idempotencyKey: key(),
     });
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "comment",
         proposalId: proposal.id,
         body: "Actually...",
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(InvalidTransitionError);
+      InvalidTransitionError,
+    );
 
     const after = await services.driverWorkflow.getProposal(ctx, proposal.id);
     // Closed, but nothing was thrown away.
-    expect(after.comments).toHaveLength(1);
+    assert.equal(after.comments.length, 1);
     const events = await services.driverWorkflow.proposalEvents(ctx, proposal.id);
-    expect(events.map((e) => e.type)).toContain("proposal.comment_added");
+    assert.ok(events.map((e) => e.type).includes("proposal.comment_added"));
   });
 
   it("refuses to approve twice", async () => {
@@ -125,13 +127,14 @@ describe("driver decisions on a proposal", () => {
       idempotencyKey: key(),
     });
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "approve",
         proposalId: proposal.id,
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(DuplicateSubmissionError);
+      DuplicateSubmissionError,
+    );
   });
 
   it("treats a replayed idempotency key as the same submission, not a new one", async () => {
@@ -152,11 +155,11 @@ describe("driver decisions on a proposal", () => {
       idempotencyKey: sameKey,
     });
 
-    expect(first.replayed).toBe(false);
-    expect(second.replayed).toBe(true);
-    expect(second.events.map((e) => e.id)).toEqual(first.events.map((e) => e.id));
+    assert.equal(first.replayed, false);
+    assert.equal(second.replayed, true);
+    assert.deepEqual(second.events.map((e) => e.id), first.events.map((e) => e.id));
     // One comment, not two, however many times the phone retried.
-    expect(second.proposal.comments).toHaveLength(1);
+    assert.equal(second.proposal.comments.length, 1);
   });
 
   it("refuses a command built against a version that has moved on", async () => {
@@ -170,7 +173,7 @@ describe("driver decisions on a proposal", () => {
       idempotencyKey: key(),
     });
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "comment",
         proposalId: proposal.id,
@@ -178,18 +181,19 @@ describe("driver decisions on a proposal", () => {
         idempotencyKey: key(),
         expectedVersion: proposal.version,
       }),
-    ).rejects.toBeInstanceOf(StaleVersionError);
+      StaleVersionError,
+    );
   });
 });
 
 describe("pausing a proposal", () => {
   beforeEach(resetWorld);
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => mock.timers.reset());
 
   it("pauses for a duration the carrier allows and refuses one it does not", async () => {
     const ctx = contextFor(CASCADE_DRIVER);
     const proposal = await openProposal(ctx);
-    expect(proposal.policy.pauseDurationsMinutes).toContain(5);
+    assert.ok(proposal.policy.pauseDurationsMinutes.includes(5));
 
     const { proposal: paused } = await services.driverWorkflow.executeProposalCommand(ctx, {
       type: "pause",
@@ -199,22 +203,23 @@ describe("pausing a proposal", () => {
       idempotencyKey: key(),
     });
 
-    expect(paused.status).toBe("paused");
-    expect(paused.activePause?.minutes).toBe(5);
+    assert.equal(paused.status, "paused");
+    assert.equal(paused.activePause?.minutes, 5);
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "pause",
         proposalId: proposal.id,
         minutes: 7,
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(PolicyDeniedError);
+      PolicyDeniedError,
+    );
   });
 
   it("returns to Awaiting Driver Response when the pause runs out — never approved, never rejected", async () => {
     // Only the clock is faked — the adapters still await real timers.
-    vi.useFakeTimers({ toFake: ["Date"] });
+    mock.timers.enable({ apis: ["Date"] });
     const ctx = contextFor(CASCADE_DRIVER);
     const proposal = await openProposal(ctx);
 
@@ -225,23 +230,23 @@ describe("pausing a proposal", () => {
       idempotencyKey: key(),
     });
 
-    vi.setSystemTime(Date.now() + 6 * 60_000);
+    mock.timers.tick(6 * 60_000);
 
     const after = await services.driverWorkflow.getProposal(ctx, proposal.id);
-    expect(after.status).toBe("awaiting_driver_response");
-    expect(after.approval).toBeUndefined();
-    expect(after.rejection).toBeUndefined();
-    expect(after.activePause).toBeUndefined();
+    assert.equal(after.status, "awaiting_driver_response");
+    assert.equal(after.approval, undefined);
+    assert.equal(after.rejection, undefined);
+    assert.equal(after.activePause, undefined);
 
     const events = await services.driverWorkflow.proposalEvents(ctx, proposal.id);
     const expiry = events.find((e) => e.type === "proposal.pause_expired");
-    expect(expiry?.payload?.newStatus).toBe("awaiting_driver_response");
+    assert.equal(expiry?.payload?.newStatus, "awaiting_driver_response");
     // Said out loud, because silence being read as consent is the failure mode.
-    expect(expiry?.payload?.note).toMatch(/not treated as approved or rejected/i);
+    assert.match(expiry?.payload?.note ?? "", /not treated as approved or rejected/i);
   });
 
   it("refuses a resume that names a pause which already ran out", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    mock.timers.enable({ apis: ["Date"] });
     const ctx = contextFor(CASCADE_DRIVER);
     const proposal = await openProposal(ctx);
 
@@ -253,16 +258,17 @@ describe("pausing a proposal", () => {
     });
     const pauseId = paused.activePause!.id;
 
-    vi.setSystemTime(Date.now() + 6 * 60_000);
+    mock.timers.tick(6 * 60_000);
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "resume",
         proposalId: proposal.id,
         pauseId,
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(StalePauseError);
+      StalePauseError,
+    );
   });
 
   it("refuses a resume that names a pause from another proposal", async () => {
@@ -277,14 +283,15 @@ describe("pausing a proposal", () => {
       idempotencyKey: key(),
     });
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "resume",
         proposalId: second.id,
         pauseId: paused.activePause!.id,
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(StalePauseError);
+      StalePauseError,
+    );
   });
 
   it("lets the driver resume early, and counts the pause against the carrier's limit", async () => {
@@ -307,17 +314,18 @@ describe("pausing a proposal", () => {
         pauseId: activeId,
         idempotencyKey: key(),
       });
-      expect(resumed.status).toBe("awaiting_driver_response");
+      assert.equal(resumed.status, "awaiting_driver_response");
     }
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "pause",
         proposalId: proposal.id,
         minutes: 5,
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(PolicyDeniedError);
+      PolicyDeniedError,
+    );
   });
 });
 
@@ -330,9 +338,10 @@ describe("who may act on a proposal", () => {
     const mine = await openProposal(cascade);
 
     // Not "forbidden": a 403 would confirm the record exists.
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.getProposal(stonebridge, mine.id),
-    ).rejects.toBeInstanceOf(NotFoundError);
+      NotFoundError,
+    );
   });
 
   it("refuses a command from a membership without proposals:respond", async () => {
@@ -340,16 +349,17 @@ describe("who may act on a proposal", () => {
     const proposal = await openProposal(driver);
     const dispatcher = contextFor(MERIDIAN_DISPATCHER);
 
-    expect(dispatcher.permissions.has("proposals:view")).toBe(true);
-    expect(dispatcher.permissions.has("proposals:respond")).toBe(false);
+    assert.equal(dispatcher.permissions.has("proposals:view"), true);
+    assert.equal(dispatcher.permissions.has("proposals:respond"), false);
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(dispatcher, {
         type: "approve",
         proposalId: proposal.id,
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(PermissionDeniedError);
+      PermissionDeniedError,
+    );
   });
 
   it("refuses a command on a proposal that belongs to another driver", async () => {
@@ -363,12 +373,13 @@ describe("who may act on a proposal", () => {
       scope: { loads: "all", financials: "all" },
     };
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(impostor, {
         type: "approve",
         proposalId: proposal.id,
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(NotYourRecordError);
+      NotYourRecordError,
+    );
   });
 });

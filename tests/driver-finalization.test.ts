@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { beforeEach, describe, it } from "node:test";
 import { services } from "@/lib/api";
 import { canonicalLoad } from "@/lib/api/mock/driver-workflow-finalize";
 import {
@@ -7,7 +8,7 @@ import {
 import type { ServiceContext } from "@/lib/api/contracts/context";
 import {
   CASCADE_DRIVER, STONEBRIDGE_DRIVER, contextFor, key, resetWorld,
-} from "./harness";
+} from "./driver-workflow-harness";
 
 /**
  * A load is not final until its rate confirmation has been reviewed and
@@ -38,22 +39,25 @@ describe("the finalization gate", () => {
     // CS-3324: reviewed and signed, but not sent. Two out of three is not final.
     const load = canonicalLoad("org_cascade", "CS-3324")!;
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.finalize(ctx, { loadId: load.id, idempotencyKey: key() }),
-    ).rejects.toThrow(FinalizationBlockedError);
+      FinalizationBlockedError,
+    );
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.finalize(ctx, { loadId: load.id, idempotencyKey: key() }),
-    ).rejects.toThrow(/sent back to the broker/);
+      /sent back to the broker/,
+    );
   });
 
   it("refuses a load whose rate confirmation is unreviewed and unsigned", async () => {
     const ctx = dispatcherIn(CASCADE_DRIVER);
     const load = canonicalLoad("org_cascade", "CS-3321")!;
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.finalize(ctx, { loadId: load.id, idempotencyKey: key() }),
-    ).rejects.toThrow(/reviewed and approved/);
+      /reviewed and approved/,
+    );
   });
 
   it("produces the authorized post once all three conditions are met", async () => {
@@ -62,12 +66,12 @@ describe("the finalization gate", () => {
     const active = trips.find((t) => t.loadReference === "CS-3318")!;
     const view = await services.driverWorkflow.getTrip(ctx, active.workflowId);
 
-    expect(view.post.rateConfirmationRef.module).toBe("rate_confirmation");
-    expect(view.post.stops.length).toBeGreaterThanOrEqual(2);
-    expect(view.post.stops[0].kind).toBe("pickup");
+    assert.equal(view.post.rateConfirmationRef.module, "rate_confirmation");
+    assert.ok(view.post.stops.length >= 2);
+    assert.equal(view.post.stops[0].kind, "pickup");
     // Every reference the destination modules will need to link back up.
-    expect(view.post.externalRefs.map((r) => r.module)).toContain("load");
-    expect(view.post.externalRefs.map((r) => r.module)).toContain("assignment");
+    assert.ok(view.post.externalRefs.map((r) => r.module).includes("load"));
+    assert.ok(view.post.externalRefs.map((r) => r.module).includes("assignment"));
   });
 
   it("returns the same post when the same load is finalized twice", async () => {
@@ -82,17 +86,18 @@ describe("the finalization gate", () => {
     const trips = await services.driverWorkflow.listTrips(contextFor(CASCADE_DRIVER));
 
     // No second post, no second workflow, no duplicated timeline.
-    expect(trips.filter((t) => t.loadReference === "CS-3318")).toHaveLength(1);
-    expect(again.workflowId).toBe(trips.find((t) => t.loadReference === "CS-3318")!.workflowId);
+    assert.equal(trips.filter((t) => t.loadReference === "CS-3318").length, 1);
+    assert.equal(again.workflowId, trips.find((t) => t.loadReference === "CS-3318")!.workflowId);
   });
 
   it("requires dispatch authority, not a driver's", async () => {
     const driver = contextFor(CASCADE_DRIVER);
     const load = canonicalLoad("org_cascade", "CS-3318")!;
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.finalize(driver, { loadId: load.id, idempotencyKey: key() }),
-    ).rejects.toThrow(/Missing permission/);
+      /Missing permission/,
+    );
   });
 });
 
@@ -131,16 +136,16 @@ describe("overlapping proposals when a load is finalized", () => {
     });
 
     const after = await services.driverWorkflow.getProposal(driver, loser.id);
-    expect(after.status).toBe("unavailable");
-    expect(after.unavailability?.conflictKind).toBe("driver");
-    expect(after.unavailability?.conflictingLoadId).toBe(load.id);
+    assert.equal(after.status, "unavailable");
+    assert.equal(after.unavailability?.conflictKind, "driver");
+    assert.equal(after.unavailability?.conflictingLoadId, load.id);
     // Preserved in full. Becoming unavailable deletes nothing.
-    expect(after.comments).toHaveLength(1);
-    expect(after.counteroffers).toHaveLength(1);
+    assert.equal(after.comments.length, 1);
+    assert.equal(after.counteroffers.length, 1);
 
     const events = await services.driverWorkflow.proposalEvents(driver, loser.id);
-    expect(events.map((e) => e.type)).toContain("proposal.counteroffer_submitted");
-    expect(events.map((e) => e.type)).toContain("proposal.marked_unavailable");
+    assert.ok(events.map((e) => e.type).includes("proposal.counteroffer_submitted"));
+    assert.ok(events.map((e) => e.type).includes("proposal.marked_unavailable"));
   });
 
   it("refuses any further answer on an unavailable proposal", async () => {
@@ -154,13 +159,14 @@ describe("overlapping proposals when a load is finalized", () => {
       idempotencyKey: key(),
     });
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(driver, {
         type: "approve",
         proposalId: loser.id,
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(InvalidTransitionError);
+      InvalidTransitionError,
+    );
   });
 
   it("closes the winning proposal as finalized rather than unavailable", async () => {
@@ -176,7 +182,7 @@ describe("overlapping proposals when a load is finalized", () => {
     });
 
     const after = await services.driverWorkflow.getProposal(driver, winner.id);
-    expect(after.status).toBe("finalized");
+    assert.equal(after.status, "finalized");
   });
 
   it("leaves proposals outside the finalized load's hours alone", async () => {
@@ -185,8 +191,8 @@ describe("overlapping proposals when a load is finalized", () => {
     const driver = contextFor(CASCADE_DRIVER);
     const all = await services.driverWorkflow.listProposals(driver);
 
-    expect(all.length).toBeGreaterThan(0);
-    expect(all.every((p) => p.status === "awaiting_driver_response")).toBe(true);
+    assert.ok(all.length > 0);
+    assert.equal(all.every((p) => p.status === "awaiting_driver_response"), true);
   });
 });
 
@@ -198,13 +204,13 @@ describe("one finalized load, one workflow", () => {
     const trips = await services.driverWorkflow.listTrips(ctx);
     const [a, b] = trips;
 
-    expect(a.workflowId).not.toBe(b.workflowId);
-    expect(a.loadId).not.toBe(b.loadId);
+    assert.notEqual(a.workflowId, b.workflowId);
+    assert.notEqual(a.loadId, b.loadId);
 
     const viewA = await services.driverWorkflow.getTrip(ctx, a.workflowId);
     const viewB = await services.driverWorkflow.getTrip(ctx, b.workflowId);
-    expect(viewA.timeline.every((e) => e.workflowId === a.workflowId)).toBe(true);
-    expect(viewB.timeline.every((e) => e.workflowId === b.workflowId)).toBe(true);
+    assert.equal(viewA.timeline.every((e) => e.workflowId === a.workflowId), true);
+    assert.equal(viewB.timeline.every((e) => e.workflowId === b.workflowId), true);
   });
 
   it("keeps a completed workflow's record intact", async () => {
@@ -213,11 +219,11 @@ describe("one finalized load, one workflow", () => {
     const done = trips.find((t) => t.status === "completed")!;
     const view = await services.driverWorkflow.getTrip(ctx, done.workflowId);
 
-    expect(view.workflow.completedAt).toBeDefined();
-    expect(view.timeline.length).toBeGreaterThan(5);
-    expect(view.documents.length).toBeGreaterThan(0);
-    expect(view.milestones.find((m) => m.kind === "trip_completed")?.state).toBe("recorded");
+    assert.notEqual(view.workflow.completedAt, undefined);
+    assert.ok(view.timeline.length > 5);
+    assert.ok(view.documents.length > 0);
+    assert.equal(view.milestones.find((m) => m.kind === "trip_completed")?.state, "recorded");
     // Closed means closed for writing, not gone.
-    expect(view.suggestedMilestones).toHaveLength(0);
+    assert.equal(view.suggestedMilestones.length, 0);
   });
 });

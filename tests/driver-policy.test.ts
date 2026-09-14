@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { beforeEach, describe, it } from "node:test";
 import { services } from "@/lib/api";
 import { PolicyDeniedError } from "@/lib/driver-workflow/errors";
 import { discloseRate, resolvePolicy } from "@/lib/driver-workflow/policy";
@@ -6,7 +7,7 @@ import type { FullRate } from "@/lib/driver-workflow/policy";
 import {
   CASCADE_DRIVER, NORTHLINE_OWNER, STONEBRIDGE_DRIVER, contextFor, key,
   resetWorld,
-} from "./harness";
+} from "./driver-workflow-harness";
 
 const FULL: FullRate = {
   currency: "USD",
@@ -24,21 +25,21 @@ describe("carrier policy — what each engagement type may see", () => {
     const oo = resolvePolicy("org_stonebridge", "owner_operator");
     const cd = resolvePolicy("org_cascade", "company_driver");
 
-    expect(oo.proposals.disclosedRateFields).toContain("linehaul");
-    expect(cd.proposals.disclosedRateFields).not.toContain("linehaul");
-    expect(cd.proposals.disclosedRateFields).toContain("loaded_miles");
+    assert.ok(oo.proposals.disclosedRateFields.includes("linehaul"));
+    assert.ok(!cd.proposals.disclosedRateFields.includes("linehaul"));
+    assert.ok(cd.proposals.disclosedRateFields.includes("loaded_miles"));
   });
 
   it("names every withheld field instead of silently omitting it", () => {
     const cd = resolvePolicy("org_cascade", "company_driver");
     const disclosed = discloseRate(FULL, cd.proposals.disclosedRateFields, cd.label)!;
 
-    expect(disclosed.linehaulCents).toBeUndefined();
-    expect(disclosed.totalRateCents).toBeUndefined();
-    expect(disclosed.loadedMiles).toBe(239);
+    assert.equal(disclosed.linehaulCents, undefined);
+    assert.equal(disclosed.totalRateCents, undefined);
+    assert.equal(disclosed.loadedMiles, 239);
     // The driver is told what is not being shown, and under which rulebook.
-    expect(disclosed.withheld.map((w) => w.field)).toContain("the linehaul");
-    expect(disclosed.withheld.every((w) => w.reason.includes(cd.label))).toBe(true);
+    assert.ok(disclosed.withheld.map((w) => w.field).includes("the linehaul"));
+    assert.equal(disclosed.withheld.every((w) => w.reason.includes(cd.label)), true);
   });
 
   it("does not report a field the carrier simply does not have as withheld", () => {
@@ -46,13 +47,13 @@ describe("carrier policy — what each engagement type may see", () => {
     const noShare: FullRate = { ...FULL, driverShareCents: undefined, accessorials: [] };
     const disclosed = discloseRate(noShare, ["loaded_miles"], cd.label)!;
 
-    expect(disclosed.withheld.map((w) => w.field)).not.toContain("your share");
-    expect(disclosed.withheld.map((w) => w.field)).not.toContain("accessorial charges");
+    assert.ok(!disclosed.withheld.map((w) => w.field).includes("your share"));
+    assert.ok(!disclosed.withheld.map((w) => w.field).includes("accessorial charges"));
   });
 
   it("never treats approval as booking consent by default, for either type", () => {
-    expect(resolvePolicy("org_stonebridge", "owner_operator").proposals.approvalGrantsBookingConsent).toBe(false);
-    expect(resolvePolicy("org_cascade", "company_driver").proposals.approvalGrantsBookingConsent).toBe(false);
+    assert.equal(resolvePolicy("org_stonebridge", "owner_operator").proposals.approvalGrantsBookingConsent, false);
+    assert.equal(resolvePolicy("org_cascade", "company_driver").proposals.approvalGrantsBookingConsent, false);
   });
 });
 
@@ -63,18 +64,18 @@ describe("policy at the service, not in the UI", () => {
     const ctx = contextFor(CASCADE_DRIVER);
     const [proposal] = await services.driverWorkflow.listProposals(ctx, { view: "open" });
 
-    expect(proposal.rate?.linehaulCents).toBeUndefined();
-    expect(proposal.rate?.totalRateCents).toBeUndefined();
+    assert.equal(proposal.rate?.linehaulCents, undefined);
+    assert.equal(proposal.rate?.totalRateCents, undefined);
     // Cascade's own override does publish the rate per mile.
-    expect(proposal.rate?.ratePerMileCents).toBeGreaterThan(0);
+    assert.ok((proposal.rate?.ratePerMileCents ?? 0) > 0);
   });
 
   it("gives an owner-operator the full picture on the same kind of record", async () => {
     const ctx = contextFor(STONEBRIDGE_DRIVER);
     const [proposal] = await services.driverWorkflow.listProposals(ctx, { view: "open" });
 
-    expect(proposal.rate?.linehaulCents).toBeGreaterThan(0);
-    expect(proposal.rate?.totalRateCents).toBeGreaterThan(0);
+    assert.ok((proposal.rate?.linehaulCents ?? 0) > 0);
+    assert.ok((proposal.rate?.totalRateCents ?? 0) > 0);
   });
 
   it("refuses a rate counteroffer from a company driver even when asked directly", async () => {
@@ -83,12 +84,13 @@ describe("policy at the service, not in the UI", () => {
 
     // The dashboard never offers this. The service refuses it anyway, which is
     // the only version of the rule that means anything.
-    expect(
+    assert.equal(
       proposal.availableActions.find((a) => a.kind === "counteroffer")?.enabled,
-    ).toBe(true);
-    expect(proposal.policy.allowedCounterofferKinds).not.toContain("rate");
+      true,
+    );
+    assert.ok(!proposal.policy.allowedCounterofferKinds.includes("rate"));
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "counteroffer",
         proposalId: proposal.id,
@@ -97,7 +99,8 @@ describe("policy at the service, not in the UI", () => {
         message: "I want more for this.",
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(PolicyDeniedError);
+      PolicyDeniedError,
+    );
   });
 
   it("accepts an operational counteroffer from the same company driver", async () => {
@@ -112,8 +115,8 @@ describe("policy at the service, not in the UI", () => {
       idempotencyKey: key(),
     });
 
-    expect(result.proposal.counteroffers).toHaveLength(1);
-    expect(result.proposal.counteroffers[0].kind).toBe("home_time");
+    assert.equal(result.proposal.counteroffers.length, 1);
+    assert.equal(result.proposal.counteroffers[0].kind, "home_time");
   });
 
   it("accepts a rate counteroffer from an owner-operator", async () => {
@@ -129,7 +132,7 @@ describe("policy at the service, not in the UI", () => {
       idempotencyKey: key(),
     });
 
-    expect(result.proposal.counteroffers[0].proposedAmountCents).toBe(135_000);
+    assert.equal(result.proposal.counteroffers[0].proposedAmountCents, 135_000);
   });
 
   it("lets an owner-operator stack several counteroffers, up to the carrier's limit", async () => {
@@ -147,7 +150,7 @@ describe("policy at the service, not in the UI", () => {
       });
     }
 
-    await expect(
+    await assert.rejects(
       services.driverWorkflow.executeProposalCommand(ctx, {
         type: "counteroffer",
         proposalId: proposal.id,
@@ -155,7 +158,8 @@ describe("policy at the service, not in the UI", () => {
         message: "One more.",
         idempotencyKey: key(),
       }),
-    ).rejects.toBeInstanceOf(PolicyDeniedError);
+      PolicyDeniedError,
+    );
   });
 
   it("shows an owner with rates:view the full rate on a driver's proposal", async () => {
@@ -163,9 +167,9 @@ describe("policy at the service, not in the UI", () => {
     // that permission and policy are different mechanisms, and holding
     // rates:view is not the same as being an owner-operator.
     const owner = contextFor(NORTHLINE_OWNER);
-    expect(owner.permissions.has("rates:view")).toBe(true);
+    assert.equal(owner.permissions.has("rates:view"), true);
 
     const driver = contextFor(CASCADE_DRIVER);
-    expect(driver.permissions.has("rates:view")).toBe(false);
+    assert.equal(driver.permissions.has("rates:view"), false);
   });
 });

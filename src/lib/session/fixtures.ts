@@ -9,9 +9,11 @@ import type {
  * swapping in the real API is a service-layer change, not a UI change.
  *
  * One permanent user with several memberships, chosen to prove the model: the
- * same person is an Owner in two different carriers, a rate-blind Dispatcher in
- * a dispatch agency, an Owner in another, a company Driver in a fifth and an
- * owner-operator in a sixth. Nothing about the profile changes when they switch.
+ * same person is an Owner in two carriers, an Owner of a dispatch organization
+ * with a team, a rate-blind Dispatcher employed by another, a lone dispatcher
+ * in a workspace of one, a company Driver in a carrier and an owner-operator in
+ * another. Nothing about the profile changes when they switch, and every one of
+ * those produces a different dashboard from the same code.
  */
 
 export const MOCK_USER: User = {
@@ -56,6 +58,18 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     displayName: "Summit Dispatch",
     timeZone: "America/Denver",
     createdAt: "2026-08-11T15:10:00.000Z",
+  },
+  {
+    // The individual-dispatcher workspace: a real dispatch organization with
+    // exactly one person in it. `soloDispatcher` is the only stored difference;
+    // everything else about the dashboard is derived from it.
+    id: "org_solo",
+    type: "DISPATCH_AGENCY",
+    legalName: "Sam Murtaza",
+    displayName: "Sam Murtaza — Dispatch",
+    soloDispatcher: true,
+    timeZone: "America/Los_Angeles",
+    createdAt: "2026-09-02T17:40:00.000Z",
   },
   {
     // A SECOND carrier, so the truck side of the product can be reviewed from
@@ -161,6 +175,21 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     scope: DEFAULT_SCOPE,
     isOwner: true,
     joinedAt: "2026-03-09T13:30:00.000Z",
+  },
+  {
+    // Working alone. Owner of a workspace that has no team in it, which is a
+    // different thing from being an owner who happens to be the only member.
+    id: "mem_solo_dispatcher",
+    userId: MOCK_USER.id,
+    organizationId: "org_solo",
+    status: "active",
+    title: "Individual dispatcher",
+    templateIds: [],
+    grants: [],
+    revocations: [],
+    scope: DEFAULT_SCOPE,
+    isOwner: true,
+    joinedAt: "2026-09-02T17:40:00.000Z",
   },
   {
     id: "mem_cascade_driver",

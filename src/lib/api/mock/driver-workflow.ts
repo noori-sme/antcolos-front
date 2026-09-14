@@ -52,7 +52,7 @@ import { ensureSeeded } from "./driver-workflow-seed";
  */
 
 /** Simulated network delay. Off under test so the suite is not mostly sleep. */
-const LATENCY_MS = process.env.NODE_ENV === "test" ? 0 : 140;
+const LATENCY_MS = process.env.ANTCOLOS_TEST === "1" ? 0 : 140;
 const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
 
 function require(ctx: ServiceContext, ...keys: PermissionKey[]): void {

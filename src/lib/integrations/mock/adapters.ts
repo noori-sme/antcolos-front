@@ -28,7 +28,7 @@ import {
  */
 
 /** Simulated network delay. Off under test so the suite is not mostly sleep. */
-const LATENCY_MS = process.env.NODE_ENV === "test" ? 0 : 90;
+const LATENCY_MS = process.env.ANTCOLOS_TEST === "1" ? 0 : 90;
 
 /**
  * Seeding an organization makes dozens of port calls in a row, and charging
