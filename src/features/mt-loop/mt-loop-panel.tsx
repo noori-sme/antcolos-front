@@ -150,9 +150,10 @@ export function MtLoopPanel({
       </div>
 
       <p className="mt-3 text-[0.75rem] leading-relaxed text-fg-subtle">
-        Finding loads, contacting brokers and negotiating rates are not built yet. What is real here
-        is the cycle itself: who is responsible, what is standing in the way, and what happened to
-        it — all of it kept on the loop and none of it overwritten.
+        Open a truck to search for a load for it. Contacting brokers and negotiating rates are not
+        built yet: messages can be prepared and read, but nothing is sent. What is real here is the
+        cycle itself — who is responsible, what is standing in the way, and what happened to it —
+        all of it kept on the loop and none of it overwritten.
       </p>
     </section>
   );

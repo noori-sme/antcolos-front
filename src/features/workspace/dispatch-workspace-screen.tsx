@@ -394,9 +394,10 @@ export function DispatchWorkspaceScreen() {
 
       {/* The honest floor of this milestone. */}
       <p className="rounded-md border border-dashed border-border px-3.5 py-2.5 text-[0.75rem] leading-relaxed text-fg-subtle">
-        Finding loads, contacting brokers and negotiating rates are not built yet. This dashboard is
-        the foundation they will sit on: the work lists, the carriers and the equipment scope are
-        real and permission-checked, and nothing here is a placeholder pretending to be finished.
+        Contacting brokers and negotiating rates are not built yet, and no load board is connected.
+        This dashboard is the foundation they sit on: the work lists, the carriers and the equipment
+        scope are real and permission-checked, and nothing here is a placeholder pretending to be
+        finished.
       </p>
     </div>
   );
