@@ -98,8 +98,8 @@ export function ChecklistBody({
   const byKey = new Map(data.documents.map((d) => [d.requirementKey, d]));
   const progress = completion(requirements, data.documents);
 
-  const driverDocs = requirements.filter((r) => r.category === "driver");
-  const ownerDocs = requirements.filter((r) => r.category === "owner_operator");
+  const driverDocs = requirements.filter((r) => r.setId === "driver");
+  const ownerDocs = requirements.filter((r) => r.setId === "owner_operator");
 
   function patch(next: DriverDocument) {
     const others = data.documents.filter((d) => d.requirementKey !== next.requirementKey);
@@ -109,7 +109,8 @@ export function ChecklistBody({
   async function upload(key: string, file: File) {
     patch({
       requirementKey: key,
-      status: "uploading",
+      status: "selected_local",
+      uploading: true,
       fileName: file.name,
       fileType: file.type,
       sizeBytes: file.size,
@@ -121,7 +122,8 @@ export function ChecklistBody({
       (percent) =>
         patch({
           requirementKey: key,
-          status: "uploading",
+          status: "selected_local",
+          uploading: true,
           fileName: file.name,
           fileType: file.type,
           sizeBytes: file.size,
