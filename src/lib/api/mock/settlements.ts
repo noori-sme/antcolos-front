@@ -23,6 +23,7 @@ import { money } from "@/lib/utils/format";
 import {
   acceptsPayment,
   assertTransition,
+  canBeOverdue,
   attentionItemsFor,
   blockingDataGaps,
   buildSnapshot,
@@ -302,12 +303,20 @@ function toSummary(settlement: Settlement): SettlementSummary {
   };
 }
 
+/**
+ * One overdue rule for the whole module — the list views, the chips and the
+ * Needs You items all read it, so they cannot disagree.
+ *
+ * `canBeOverdue` deliberately excludes a disputed settlement: the dispute is
+ * WHY it has not been paid, chasing the payment is the wrong next action, and
+ * the dispute already has an item of its own. Counting it twice would put the
+ * same settlement in two queues for two different people.
+ */
 function isOverdue(settlement: Settlement, now: number): boolean {
   return Boolean(
     settlement.paymentDueAt &&
       settlement.amountOutstandingCents > 0 &&
-      settlement.status !== "voided" &&
-      settlement.status !== "draft" &&
+      canBeOverdue(settlement.status) &&
       new Date(settlement.paymentDueAt).getTime() < now,
   );
 }

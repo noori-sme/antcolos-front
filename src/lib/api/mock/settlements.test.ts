@@ -355,6 +355,30 @@ describe("audit trail", () => {
     expect(end.some((e) => e.action === "marked_ready_for_payment")).toBe(true);
   });
 
+  it("never carries an entry dated in the future", async () => {
+    const ctx = northlineOwner();
+    const now = Date.now();
+    const page = await service.list(ctx, {}, undefined, { limit: 100 });
+    for (const row of page.items) {
+      for (const entry of await service.audit(ctx, row.id)) {
+        expect(new Date(entry.at).getTime()).toBeLessThanOrEqual(now + 1_000);
+      }
+    }
+  });
+
+  it("reads in order, oldest first", async () => {
+    const ctx = northlineOwner();
+    const page = await service.list(ctx, {}, undefined, { limit: 100 });
+    for (const row of page.items) {
+      // `audit` returns newest first, so reversing gives the true sequence.
+      const times = (await service.audit(ctx, row.id))
+        .slice()
+        .reverse()
+        .map((e) => new Date(e.at).getTime());
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+    }
+  });
+
   it("records who did what, from the caller's own actor", async () => {
     const ctx = northlineOwner();
     const row = await findByNumber(ctx, "NL-STL-1042");
@@ -710,6 +734,35 @@ describe("the seeded data itself", () => {
       expect(totals.netPayCents).toBe(
         totals.grossEarningsCents + totals.totalAdditionsCents - totals.totalSubtractionsCents,
       );
+    }
+  });
+
+  it("never says paid while money is still outstanding", async () => {
+    // A row reading "Paid", "Paid in full" and "still owed $10.08" at once is
+    // the exact contradiction this module exists to prevent.
+    for (const ctx of [northlineOwner(), cascadeOffice(), baxterOwner()]) {
+      const page = await service.list(ctx, {}, undefined, { limit: 100 });
+      for (const row of page.items) {
+        if (row.status === "paid") {
+          expect(row.amountOutstandingCents).toBe(0);
+          expect(row.amountPaidCents).toBe(row.netPayCents);
+        }
+        if (row.amountOutstandingCents > 0) expect(row.status).not.toBe("paid");
+      }
+    }
+  });
+
+  it("gives a voided settlement no payment due date", async () => {
+    const ctx = northlineOwner();
+    const row = await findByNumber(ctx, "NL-STL-1044");
+    expect(row.paymentDueAt).toBeUndefined();
+  });
+
+  it("keeps paid and voided settlements out of the overdue view", async () => {
+    const ctx = northlineOwner();
+    const overdue = await service.list(ctx, { view: "overdue" }, undefined, { limit: 100 });
+    for (const row of overdue.items) {
+      expect(["approved", "ready_for_payment", "partially_paid"]).toContain(row.status);
     }
   });
 

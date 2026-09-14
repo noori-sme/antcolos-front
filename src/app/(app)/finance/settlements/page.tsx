@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { SettlementsScreen } from "@/features/settlements/settlements-screen";
 
 export const metadata = { title: "Settlements" };
 
 export default function Page() {
-  return <ModulePlaceholder title="Settlements" description="Pay periods, deductions, advances and statements." />;
+  return <SettlementsScreen />;
 }

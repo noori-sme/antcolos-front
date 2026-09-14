@@ -65,9 +65,11 @@ let seq = 0;
 const rowId = (prefix: string) => `${prefix}_${(++seq).toString(36).padStart(4, "0")}`;
 
 /**
- * A settlement's permanent id is a UUID and nothing else. It is never derived
- * from the number, the payee or the period, so nothing can reach a settlement
- * by guessing one.
+ * A settlement created at runtime gets a fresh random UUID — the real thing.
+ *
+ * Seeded settlements use `stableSettlementUuid` below instead, because a mock
+ * that reissued its ids on every page load would break every link into it the
+ * moment anyone refreshed or shared one.
  */
 export function settlementUuid(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -81,6 +83,36 @@ export function settlementUuid(): string {
     else out += hex[Math.floor(Math.random() * 16)];
   }
   return out;
+}
+
+/**
+ * A UUID that is stable for a given seed key, for FIXTURES ONLY.
+ *
+ * A real settlement id is random and means nothing. These are shaped like a
+ * v4 UUID and are just as opaque to read, but they come out the same on every
+ * page load — so a settlement URL survives a refresh, and a link to one can be
+ * shared with somebody reviewing the preview. The real backend issues random
+ * ones; nothing in the app may derive an id from anything.
+ */
+function stableSettlementUuid(seedKey: string): string {
+  // FNV-1a, run over four salted passes to fill 32 hex digits.
+  const digest = (salt: string) => {
+    let h = 0x811c9dc5;
+    for (const ch of `${salt}:${seedKey}`) {
+      h ^= ch.charCodeAt(0);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  };
+  const hex = `${digest("a")}${digest("b")}${digest("c")}${digest("d")}`;
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    // Shaped as a v4 UUID, so nothing downstream treats it as a special case.
+    `4${hex.slice(13, 16)}`,
+    `${((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join("-");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -475,7 +507,15 @@ interface AdjustmentSeed {
 }
 
 interface PaymentSeed {
-  cents: Cents;
+  /**
+   * Omit to pay off whatever is left of the net.
+   *
+   * Hand-written amounts drift from the engine's answer the moment a rate or a
+   * deduction changes, and a settlement that says "paid in full" while still
+   * showing a balance is exactly the kind of thing this module exists to
+   * prevent. So a full payment is derived, never typed.
+   */
+  cents?: Cents;
   method: PaymentMethod;
   reference?: string;
   paidDaysAgo: number;
@@ -603,10 +643,26 @@ export function buildSettlement(
   seed: SettlementSeed,
   resolveLoadId: (ref: string) => string | undefined,
 ): Settlement {
-  const id = settlementUuid();
+  const id = stableSettlementUuid(`${carrierOrganizationId}/${seed.number}`);
   const payee = PAYEES[seed.payeeKey];
   const period = weeklyPeriod(carrierOrganizationId, seed.weeksAgo);
-  const createdAt = daysAgo(seed.weeksAgo * 7);
+  /**
+   * A settlement's own clock.
+   *
+   * A settlement is opened when its period closes — for the period still
+   * running, that is now — and every step after it moves forward in time from
+   * there, never past the present. Deriving the offsets from `weeksAgo` alone
+   * put "sent for review" a day into the future on current-period settlements,
+   * and left the history reading out of order.
+   */
+  const periodEndMs = weekStartMs(seed.weeksAgo) + 7 * DAY_MS;
+  let clockMs = Math.min(periodEndMs, BASE);
+  /** Advances the clock by `hours`, stopping at the present. */
+  const tick = (hours: number) => {
+    clockMs = Math.min(BASE, clockMs + hours * 3_600_000);
+    return iso(clockMs);
+  };
+  const createdAt = iso(clockMs);
 
   const adjustments = (seed.adjustments ?? []).map((a) =>
     toAdjustment(a, createdAt, BOOKKEEPER_ACTOR),
@@ -647,14 +703,14 @@ export function buildSettlement(
 
   if (reached("needs_review")) {
     entries.push(
-      audit(id, daysAgo(seed.weeksAgo * 7 - 1), SYSTEM_ACTOR, "submitted_for_review",
+      audit(id, tick(4), SYSTEM_ACTOR, "submitted_for_review",
         "Ready for a human to look at.", { fromStatus: "draft", toStatus: "needs_review" }),
     );
   }
 
   let approvedAt: string | undefined;
   if (reached("approved")) {
-    approvedAt = daysAgo(Math.max(0, seed.weeksAgo * 7 - 2));
+    approvedAt = tick(20);
     snapshot.frozen = true;
     snapshot.frozenAt = approvedAt;
     entries.push(
@@ -669,23 +725,28 @@ export function buildSettlement(
 
   if (reached("ready_for_payment")) {
     entries.push(
-      audit(id, daysAgo(Math.max(0, seed.weeksAgo * 7 - 3)), BOOKKEEPER_ACTOR,
+      audit(id, tick(6), BOOKKEEPER_ACTOR,
         "marked_ready_for_payment", "Queued for payment outside Antcolos.",
         { fromStatus: "approved", toStatus: "ready_for_payment" }),
     );
   }
 
   // --- Payments -------------------------------------------------------------
-  const payments = (seed.payments ?? []).map((p) => ({
-    id: rowId("pay"),
-    settlementId: id,
-    amountCents: p.cents,
-    method: p.method,
-    referenceNumber: p.reference,
-    paidAt: daysAgo(p.paidDaysAgo),
-    recordedAt: daysAgo(p.paidDaysAgo),
-    recordedBy: BOOKKEEPER_ACTOR,
-  }));
+  let remaining = result.totals.netPayCents;
+  const payments = (seed.payments ?? []).map((p) => {
+    const amountCents = p.cents ?? Math.max(0, remaining);
+    remaining -= amountCents;
+    return {
+      id: rowId("pay"),
+      settlementId: id,
+      amountCents,
+      method: p.method,
+      referenceNumber: p.reference,
+      paidAt: daysAgo(p.paidDaysAgo),
+      recordedAt: daysAgo(p.paidDaysAgo),
+      recordedBy: BOOKKEEPER_ACTOR,
+    };
+  });
   for (const p of payments) {
     entries.push(
       audit(id, p.recordedAt, BOOKKEEPER_ACTOR, "payment_recorded",
@@ -743,7 +804,7 @@ export function buildSettlement(
   }
 
   // --- Void -----------------------------------------------------------------
-  const voidedAt = seed.status === "voided" ? daysAgo(Math.max(0, seed.weeksAgo * 7 - 3)) : undefined;
+  const voidedAt = seed.status === "voided" ? tick(2) : undefined;
   if (voidedAt) {
     entries.push(
       audit(id, voidedAt, OWNER_ACTOR, "voided", seed.voidReason ?? "Voided.", {
@@ -790,7 +851,12 @@ export function buildSettlement(
     correctsSettlementId: undefined,
     amountPaidCents,
     amountOutstandingCents: Math.max(0, netPayCents - amountPaidCents),
-    paymentDueAt: seed.dueInDays === undefined ? period.payDate : daysAhead(seed.dueInDays),
+    paymentDueAt:
+      seed.status === "voided"
+        ? undefined
+        : seed.dueInDays === undefined
+          ? period.payDate
+          : daysAhead(seed.dueInDays),
     createdAt,
     createdBy: SYSTEM_ACTOR,
     updatedAt: entries[entries.length - 1].at,

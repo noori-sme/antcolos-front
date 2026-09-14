@@ -390,7 +390,7 @@ const NORTHLINE_SEEDS: SettlementSeed[] = [
         installment: { number: 1, of: 6 },
       },
     ],
-    payments: [{ cents: 50_012, method: "ach", reference: "ACH-87744", paidDaysAgo: 17 }],
+    payments: [{ method: "ach", reference: "ACH-87744", paidDaysAgo: 17 }],
     dueInDays: -17,
   },
 
@@ -405,7 +405,7 @@ const NORTHLINE_SEEDS: SettlementSeed[] = [
       { ref: "NL-24742", lane: "Chicago, IL → Pittsburgh, PA", performedDaysAgo: 16, linehaul: 62_700, loaded: 461, deadhead: 22 },
       { ref: "NL-24733", lane: "Cleveland, OH → Chicago, IL", performedDaysAgo: 18, linehaul: 44_900, loaded: 345, deadhead: 9 },
     ],
-    payments: [{ cents: 15_000, method: "check", reference: "CHK-2041", paidDaysAgo: 9 }],
+    payments: [{ method: "check", reference: "CHK-2041", paidDaysAgo: 9 }],
     dueInDays: -9,
   },
 
@@ -459,7 +459,7 @@ const CASCADE_SEEDS: SettlementSeed[] = [
       { ref: "CS-3294", lane: "Portland, OR → Boise, ID", performedDaysAgo: 9, linehaul: 46_800, loaded: 430, deadhead: 9 },
       { ref: "CS-3288", lane: "Boise, ID → Seattle, WA", performedDaysAgo: 11, linehaul: 52_100, loaded: 501, deadhead: 14 },
     ],
-    payments: [{ cents: 53_212, method: "ach", reference: "ACH-CS-1180", paidDaysAgo: 4 }],
+    payments: [{ method: "ach", reference: "ACH-CS-1180", paidDaysAgo: 4 }],
     dueInDays: -4,
   },
   {
