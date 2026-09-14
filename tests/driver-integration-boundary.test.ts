@@ -1,0 +1,203 @@
+import assert from "node:assert/strict";
+import { beforeEach, describe, it } from "node:test";
+import { services } from "@/lib/api";
+import { integrations, integrationsAreMocked } from "@/lib/integrations";
+import type { UploadDescriptor } from "@/types";
+import {
+  CASCADE_DRIVER, STONEBRIDGE_DRIVER, contextFor, key, resetWorld,
+} from "./driver-workflow-harness";
+
+/**
+ * The boundary's own invariants. Not "does the feature work", but "is this
+ * branch still honest about what it is standing in for, and will the real
+ * modules be able to recognise their own records when they arrive".
+ */
+
+const RECEIPT: UploadDescriptor = {
+  fileName: "scale-ticket.jpg",
+  mimeType: "image/jpeg",
+  sizeBytes: 900_000,
+  capture: "camera",
+};
+
+describe("the integration boundary", () => {
+  beforeEach(resetWorld);
+
+  it("says out loud that every port is a placeholder", async () => {
+    assert.equal(integrationsAreMocked(), true);
+    const status = await services.driverWorkflow.integrationStatus(contextFor(CASCADE_DRIVER));
+
+    assert.ok(status.length > 0);
+    assert.equal(status.every((s) => s.mock), true);
+    assert.equal(status.every((s) => s.adapter.startsWith("mock:")), true);
+    // Each one names the branch that owns the real thing.
+    assert.equal(status.every((s) => s.ownedBy.length > 0), true);
+  });
+
+  it("never claims a handoff was delivered", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const proposals = await services.driverWorkflow.listProposals(ctx, { view: "open" });
+
+    const { handoff } = await services.driverWorkflow.executeProposalCommand(ctx, {
+      type: "approve",
+      proposalId: proposals[0].id,
+      idempotencyKey: key(),
+    });
+
+    assert.equal(handoff?.state, "pending_integration");
+    assert.match(handoff?.stateReason ?? "", /nothing has been sent, stored, verified or processed/i);
+
+    const pending = await services.driverWorkflow.pendingHandoffs(ctx);
+    assert.equal(pending.every((p) => p.state === "pending_integration"), true);
+  });
+
+  it("tells Dispatch explicitly that an approval is not booking consent", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const proposals = await services.driverWorkflow.listProposals(ctx, { view: "open" });
+
+    const { handoff } = await services.driverWorkflow.executeProposalCommand(ctx, {
+      type: "approve",
+      proposalId: proposals[0].id,
+      idempotencyKey: key(),
+    });
+
+    assert.equal(handoff?.operation, "driver.approved");
+    assert.equal(handoff?.payload.bookingConsent, "not_granted");
+  });
+
+  it("keeps the other module's own identifier on everything that crosses", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const proposals = await services.driverWorkflow.listProposals(ctx);
+    const { handoff } = await services.driverWorkflow.executeProposalCommand(ctx, {
+      type: "comment",
+      proposalId: proposals[0].id,
+      body: "Looking now.",
+      idempotencyKey: key(),
+    });
+
+    const ref = handoff!.refs[0];
+    assert.equal(ref.module, "opportunity");
+    // Dispatch's own id, kept verbatim rather than re-minted here.
+    assert.match(ref.externalId, /^opp_/);
+  });
+
+  it("does not double-write when the same handoff key arrives twice", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const sameKey = key("dup");
+
+    const first = await integrations.downstream.emit({
+      organizationId: ctx.organizationId,
+      target: "accounting",
+      operation: "test.emit",
+      idempotencyKey: sameKey,
+      refs: [],
+      payload: { n: 1 },
+    });
+    const second = await integrations.downstream.emit({
+      organizationId: ctx.organizationId,
+      target: "accounting",
+      operation: "test.emit",
+      idempotencyKey: sameKey,
+      refs: [],
+      payload: { n: 2 },
+    });
+
+    assert.equal(second.id, first.id);
+    assert.equal(second.payload.n, 1);
+  });
+
+  it("links a trip document back to the canonical load record", async () => {
+    const ctx = contextFor(STONEBRIDGE_DRIVER);
+    const trips = await services.driverWorkflow.listTrips(ctx);
+    const fresh = trips.find((t) => t.loadReference === "SB-1042")!;
+
+    const { handoffs } = await services.driverWorkflow.executeWorkflowCommand(ctx, {
+      type: "record_activity",
+      workflowId: fresh.workflowId,
+      activity: "scale",
+      payload: { weightLbs: 31_220 },
+      upload: RECEIPT,
+      idempotencyKey: key(),
+    });
+
+    const scale = handoffs.find((h) => h.target === "scale")!;
+    const modules = scale.refs.map((r) => r.module);
+    assert.ok(modules.includes("load"));
+    assert.ok(modules.includes("document_center"));
+    // The entity UUID, so the destination links rather than duplicates.
+    assert.equal(scale.refs.find((r) => r.module === "load")?.entityId, fresh.loadId);
+  });
+
+  it("stamps provenance on inferred milestones, marked as coming from a mock", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const trips = await services.driverWorkflow.listTrips(ctx);
+    const active = trips.find((t) => t.loadReference === "CS-3318")!;
+
+    const view = await services.driverWorkflow.ingestSignals(ctx, active.workflowId);
+    const inferred = view.timeline.find((e) => e.type === "milestone.inferred")!;
+
+    assert.equal(inferred.inference?.provenance.mock, true);
+    assert.equal(inferred.inference?.provenance.module, "geofencing");
+    assert.notEqual(inferred.inference?.signalId, undefined);
+    assert.notEqual(inferred.inference?.observedAt, undefined);
+  });
+
+  it("does not let one organization read another's queued handoffs", async () => {
+    const cascade = contextFor(CASCADE_DRIVER);
+    const stonebridge = contextFor(STONEBRIDGE_DRIVER);
+
+    const proposals = await services.driverWorkflow.listProposals(cascade, { view: "open" });
+    await services.driverWorkflow.executeProposalCommand(cascade, {
+      type: "approve",
+      proposalId: proposals[0].id,
+      idempotencyKey: key(),
+    });
+
+    const theirs = await services.driverWorkflow.pendingHandoffs(stonebridge);
+    assert.equal(theirs.every((h) => h.organizationId === "org_stonebridge"), true);
+  });
+});
+
+describe("verification stays a human act in the Document Center", () => {
+  beforeEach(resetWorld);
+
+  it("asks for a person on the paperwork the load is billed on", async () => {
+    const ctx = contextFor(STONEBRIDGE_DRIVER);
+    const trips = await services.driverWorkflow.listTrips(ctx);
+    const fresh = trips.find((t) => t.loadReference === "SB-1042")!;
+
+    const { workflow, handoffs } = await services.driverWorkflow.executeWorkflowCommand(ctx, {
+      type: "attach_document",
+      workflowId: fresh.workflowId,
+      documentKind: "proof_of_delivery",
+      upload: { ...RECEIPT, fileName: "pod.jpg" },
+      idempotencyKey: key(),
+    });
+
+    const request = handoffs.find((h) => h.operation === "document.verification_requested")!;
+    assert.equal(request.payload.reason, "required_for_billing");
+    assert.equal(request.state, "pending_integration");
+    // Nothing on this side may call a document verified.
+    assert.equal(workflow.documents[0].extractionState, "succeeded");
+  });
+
+  it("asks again after a driver corrects an extracted value", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const trips = await services.driverWorkflow.listTrips(ctx);
+    const active = trips.find((t) => t.loadReference === "CS-3318")!;
+    const view = await services.driverWorkflow.getTrip(ctx, active.workflowId);
+    const bol = view.documents.find((d) => d.kind === "bill_of_lading")!;
+
+    const { handoffs } = await services.driverWorkflow.executeWorkflowCommand(ctx, {
+      type: "correct_extraction",
+      workflowId: active.workflowId,
+      documentId: bol.documentId,
+      fieldKey: "bol_number",
+      correctedValue: "BOL-449121",
+      idempotencyKey: key(),
+    });
+
+    const request = handoffs.find((h) => h.operation === "document.verification_requested")!;
+    assert.equal(request.payload.reason, "driver_corrected");
+  });
+});

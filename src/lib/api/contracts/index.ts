@@ -3,10 +3,12 @@ export type * from "./needs-you";
 export type * from "./home";
 export type * from "./directory";
 export type * from "./loads";
+export type * from "./driver-workflow";
 export type * from "./invoices";
 export type * from "./documents";
 
 import type { DirectoryService } from "./directory";
+import type { DriverWorkflowService } from "./driver-workflow";
 import type { InvoicesService } from "./invoices";
 import type { DocumentsService } from "./documents";
 import type { HomeService } from "./home";
@@ -19,6 +21,8 @@ export interface AntcolosServices {
   home: HomeService;
   directory: DirectoryService;
   loads: LoadsService;
+  /** Driver proposals, finalized load posts and the trip workflow. */
+  driverWorkflow: DriverWorkflowService;
   invoices: InvoicesService;
   documents: DocumentsService;
 }

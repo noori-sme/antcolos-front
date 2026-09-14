@@ -4,6 +4,7 @@ import { ArrowRight, CircleCheck, FileText } from "lucide-react";
 import Link from "next/link";
 import { completion, documentRequirements } from "./mock-driver";
 import { currentRelationship, useDriverData } from "./use-driver-data";
+import { useActiveMembership } from "@/lib/session/hooks";
 import { cn } from "@/lib/utils";
 
 /**
@@ -15,9 +16,16 @@ import { cn } from "@/lib/utils";
  */
 export function ProfileChecklistBanner() {
   const data = useDriverData();
+  const { organization } = useActiveMembership();
   if (data.loading || !data.profile) return null;
 
-  const relationship = currentRelationship(data.relationships.filter((r) => r.status !== "ended"));
+  // This banner sits on an ORGANIZATION-scoped screen, so it must be about the
+  // carrier the driver is currently looking at. The same person drives for
+  // several, and naming the wrong one tells them to chase paperwork that a
+  // different carrier asked for.
+  const workable = data.relationships.filter((r) => r.status !== "ended");
+  const relationship =
+    workable.find((r) => r.carrierId === organization?.id) ?? currentRelationship(workable);
   if (!relationship) return null;
 
   const progress = completion(

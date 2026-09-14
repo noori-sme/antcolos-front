@@ -19,6 +19,10 @@ export type * from "./trailer";
 export type * from "./party";
 export type * from "./rate-confirmation";
 export type * from "./workspace";
+export type * from "./integration";
+export type * from "./driver-policy";
+export type * from "./driver-proposal";
+export type * from "./driver-workflow";
 export type * from "./mt-loop";
 export type * from "./carrier";
 export type * from "./opportunity";
@@ -60,6 +64,8 @@ export {
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";
+export { FINANCIAL_COUNTEROFFER_KINDS } from "./driver-policy";
+export { CLOSED_PROPOSAL_STATUSES } from "./driver-proposal";
 export {
   INVOICE_OPEN_STATUSES, INVOICE_TERMINAL_STATUSES, accessorialLineItems,
   invoiceAgeDays, invoiceAmountPaidCents, invoiceBalanceCents, invoiceDaysPastDue,

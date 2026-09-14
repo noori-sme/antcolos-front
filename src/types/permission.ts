@@ -5,6 +5,8 @@ export type PermissionKey =
   | "loads:delete" | "loads:status:update" | "loads:export"
   // Dispatch
   | "dispatch:view" | "loads:assign"
+  // Driver decision and trip workflow
+  | "proposals:view" | "proposals:respond" | "trips:execute"
   // Drivers
   | "drivers:view" | "drivers:create" | "drivers:edit" | "drivers:delete"
   // Trucks
@@ -46,7 +48,7 @@ export type PermissionKey =
  * work first, then the money, then who is allowed in.
  */
 export type PermissionGroup =
-  | "loads" | "dispatch" | "drivers" | "trucks" | "trailers"
+  | "loads" | "dispatch" | "driver_workflow" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
   | "accounting" | "compliance"
   | "members" | "invitations" | "organization";

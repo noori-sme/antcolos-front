@@ -11,9 +11,9 @@ import type {
  * One permanent user with several memberships, chosen to prove the model: the
  * same person is an Owner in two carriers, an Owner of a dispatch organization
  * with a team, a rate-blind Dispatcher employed by another, a lone dispatcher
- * in a workspace of one, and a scoped Driver in a carrier. Nothing about the
- * profile changes when they switch, and every one of those produces a different
- * dashboard from the same code.
+ * in a workspace of one, a company Driver in a carrier and an owner-operator in
+ * another. Nothing about the profile changes when they switch, and every one of
+ * those produces a different dashboard from the same code.
  */
 
 export const MOCK_USER: User = {
@@ -96,6 +96,20 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     dotNumber: "2910446",
     timeZone: "America/Los_Angeles",
     createdAt: "2026-05-30T19:45:00.000Z",
+  },
+  {
+    // The second driver seat, and the reason it exists: Sam is a COMPANY
+    // DRIVER at Cascade and an OWNER-OPERATOR here. Same person, same product,
+    // two engagements — which is the only way to see that the proposal view and
+    // the actions on it are decided by carrier policy and not by the screen.
+    id: "org_stonebridge",
+    type: "CARRIER",
+    legalName: "Stonebridge Carriers LLC",
+    displayName: "Stonebridge Carriers",
+    dotNumber: "3620118",
+    mcNumber: "MC-1203774",
+    timeZone: "America/New_York",
+    createdAt: "2026-06-22T12:15:00.000Z",
   },
 ];
 
@@ -195,6 +209,20 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     driverProfileId: "drv_cascade_0192",
     isOwner: false,
     joinedAt: "2026-05-30T19:45:00.000Z",
+  },
+  {
+    id: "mem_stonebridge_driver",
+    userId: MOCK_USER.id,
+    organizationId: "org_stonebridge",
+    status: "active",
+    title: "Owner-operator",
+    templateIds: [tpl("org_stonebridge", "driver")],
+    grants: [],
+    revocations: [],
+    scope: OWN_RECORDS_SCOPE,
+    driverProfileId: "drv_sb_0044",
+    isOwner: false,
+    joinedAt: "2026-06-22T12:15:00.000Z",
   },
 ];
 
