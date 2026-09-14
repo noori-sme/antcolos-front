@@ -1,4 +1,6 @@
 import type { IsoDateTime } from "./common";
+import type { MtLoopBoard } from "./mt-loop";
+import type { WorkspaceKind } from "./organization";
 
 /**
  * The shape of the place somebody is working in.
@@ -21,15 +23,17 @@ import type { IsoDateTime } from "./common";
  * It is derived, never stored as a role name. Two people in the same
  * organization are in the same workspace and can still see completely different
  * dashboards, because their memberships differ.
+ *
+ * The surface kind reuses `WorkspaceKind`'s spellings rather than inventing
+ * parallel ones, so "carrier_organization" means the same thing here as it does
+ * to the document requirements. The one extra member is the surface that is not
+ * a kind of organization at all: a driver membership is a portal wherever it
+ * sits, including inside a dispatch agency.
  */
-export type WorkspaceKind =
-  | "individual_dispatcher"
-  | "dispatch_organization"
-  | "carrier"
-  | "driver";
+export type WorkspaceSurfaceKind = WorkspaceKind | "driver";
 
 export interface Workspace {
-  kind: WorkspaceKind;
+  kind: WorkspaceSurfaceKind;
   /** The organization this workspace belongs to. Always exactly one. */
   organizationId: string;
   displayName: string;
@@ -135,6 +139,15 @@ export interface WorkspaceActivityItem {
  */
 export interface DispatchWorkspaceSummary {
   workspace: Workspace;
+  /**
+   * The MT Loop board: every truck this workspace is responsible for that is
+   * empty or about to be.
+   *
+   * Always present and always FIRST, because an empty truck is the most
+   * expensive thing on this screen. It comes back with no loops in it for a
+   * workspace that dispatches nothing — an empty board, not a missing one.
+   */
+  mtLoop: MtLoopBoard;
   /** Always present. The viewer's own assigned work. */
   myWork: WorkspaceWorkItem[];
   /** Present only in a team workspace, for somebody who may see other people's work. */

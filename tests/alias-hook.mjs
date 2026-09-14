@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { register } from "node:module";
@@ -28,13 +28,10 @@ const CANDIDATE_SUFFIXES = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"];
 function firstExisting(basePath) {
   for (const suffix of CANDIDATE_SUFFIXES) {
     const candidate = `${basePath}${suffix}`;
-    // A bare directory exists but cannot be loaded, so `@/lib/api` has to fall
-    // through to `@/lib/api/index.ts` rather than resolving to the folder.
-    try {
-      if (statSync(candidate).isFile()) return candidate;
-    } catch {
-      // Not there. Try the next suffix.
-    }
+    // isFile() rather than existsSync alone: with the "" suffix, a specifier
+    // naming a directory that has an index (`@/types`) would otherwise resolve
+    // to the directory itself and fail to read.
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
   }
   return undefined;
 }

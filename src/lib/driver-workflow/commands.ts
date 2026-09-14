@@ -1,5 +1,5 @@
 import type {
-  ActivityKind, CounterofferKind, Cents, ExtractedField, GeoPoint,
+  ActivityKind, CounterofferKind, Cents, DriverExtractedField, GeoPoint,
   IdempotencyKey, IsoDateTime, MilestoneKind, UploadDescriptor,
 } from "@/types";
 
@@ -157,6 +157,6 @@ export type WorkflowCommandType = WorkflowCommand["type"];
 /** What extraction produced, handed in by the document adapter. */
 export interface ExtractionResult {
   state: "not_applicable" | "pending" | "succeeded" | "failed";
-  fields: ExtractedField[];
+  fields: DriverExtractedField[];
   note: string;
 }

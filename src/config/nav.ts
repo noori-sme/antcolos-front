@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Building2, ClipboardList, Container, FileText, Gauge,
-  Handshake, Home, IdCard, Inbox, Link2, MailPlus, Package, Palette, Receipt,
+  Handshake, Home, IdCard, Inbox, Layers, Link2, MailPlus, Package, Palette, Receipt,
   Route, ScrollText, Settings2, Shield, Truck, UserCircle, Users, UsersRound,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
@@ -35,6 +35,7 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Home", href: "/home", icon: Home, requires: [], primaryMobile: true },
       { label: "Needs You", href: "/needs-you", icon: Inbox, requires: [], primaryMobile: true, showsNeedsYouCount: true },
       { label: "Dispatch", href: "/dispatch", icon: Route, requires: ["loads:view", "loads:assign"], primaryMobile: true },
+      { label: "Opportunities", href: "/dispatch/opportunities", icon: Layers, requires: ["loads:view", "trucks:view"] },
       { label: "Loads", href: "/loads", icon: Package, requires: ["loads:view"], primaryMobile: true },
     ],
   },

@@ -28,6 +28,15 @@ export interface FleetTruck {
   unit: string;
   /** For dispatch organizations: the carrier that actually operates it. */
   carrierName?: string;
+  /**
+   * That carrier's organization id.
+   *
+   * Carried alongside the name because a name is not an identity: the same
+   * carrier appears as "Northline Freight" on a load and "Northline Freight
+   * LLC" on a dispatch grant, and grouping by what is printed puts one carrier
+   * in two rows.
+   */
+  carrierOrganizationId?: string;
   equipment: TruckEquipmentType;
   status: TruckStatus;
   currentDriverId?: string;
@@ -79,6 +88,8 @@ export interface FleetTrailer {
   unit: string;
   /** For dispatch organizations: the carrier whose freight it moves. */
   carrierName?: string;
+  /** That carrier's organization id. See FleetTruck for why both travel. */
+  carrierOrganizationId?: string;
   trailerType: TrailerType;
   status: TrailerOperatingStatus;
   attachmentState: TrailerAttachmentState;

@@ -1,5 +1,5 @@
 import type {
-  EngagementType, ExtractedField, IsoDateTime, ProposalStop,
+  EngagementType, DriverExtractedField, IsoDateTime, ProposalStop,
 } from "@/types";
 import type { InboundLoadProposal, RateConfirmationState } from "../ports";
 import {
@@ -321,8 +321,8 @@ export function inboundProposals(): InboundLoadProposal[] {
  * driver can disagree with an extracted value today and both values are kept
  * with who changed it and when.
  */
-export function extractionFixture(kind: string, at: IsoDateTime): ExtractedField[] {
-  const base = (key: string, label: string, value: string, confidence: number): ExtractedField => ({
+export function extractionFixture(kind: string, at: IsoDateTime): DriverExtractedField[] {
+  const base = (key: string, label: string, value: string, confidence: number): DriverExtractedField => ({
     key,
     label,
     extractedValue: value,

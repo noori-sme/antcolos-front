@@ -1,5 +1,5 @@
 import type {
-  ActorRef, ExtractedField, IsoDateTime, LoadProposal, MilestoneKind,
+  ActorRef, DriverExtractedField, IsoDateTime, LoadProposal, MilestoneKind,
 } from "@/types";
 import { integrations, seedSignal, withoutLatency } from "@/lib/integrations";
 import type { InboundLoadProposal } from "@/lib/integrations/ports";
@@ -191,7 +191,7 @@ async function seedTrip(
     const at = ago(step.hoursAgo);
     const drafts: WorkflowEventDraft[] = [];
     let documentId: string | undefined;
-    let fields: ExtractedField[] = [];
+    let fields: DriverExtractedField[] = [];
 
     if (step.document) {
       const attached = await integrations.documents.attach({

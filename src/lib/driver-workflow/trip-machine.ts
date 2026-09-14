@@ -1,6 +1,6 @@
 import type {
   ActivityEntry, ActorRef, ConfirmationState, DriverWorkflow,
-  DriverWorkflowEvent, EventSource, ExtractedField, IdempotencyKey,
+  DriverWorkflowEvent, EventSource, DriverExtractedField, IdempotencyKey,
   IsoDateTime, MilestoneKind, MilestoneProgress, MilestoneState,
   TripPolicy, WorkflowDocument, WorkflowEventType, WorkflowWarning,
 } from "@/types";
@@ -455,6 +455,6 @@ export function currentMilestone(
 }
 
 /** Fields an extractor produced, normalised so corrections can find them. */
-export function normaliseFields(fields: readonly ExtractedField[]): ExtractedField[] {
+export function normaliseFields(fields: readonly DriverExtractedField[]): DriverExtractedField[] {
   return fields.map((f) => ({ ...f, key: f.key.trim() }));
 }

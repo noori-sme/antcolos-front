@@ -114,7 +114,15 @@ export interface InferenceDetail {
  * addition, so the audit trail can always show what the machine read and what
  * the human said instead.
  */
-export interface ExtractedField {
+/**
+ * A field extraction produced for the DRIVER workflow.
+ *
+ * Distinct from the rate confirmation's ExtractedField, which is keyed by
+ * RateConFieldKey and carries the page region a reviewer checks it against.
+ * This one is keyed by a plain string and records a correction rather than a
+ * side-by-side review.
+ */
+export interface DriverExtractedField {
   key: string;
   label: string;
   /** Exactly what extraction produced. Immutable once written. */
@@ -199,7 +207,7 @@ export interface DriverWorkflowEvent {
     location?: GeoPoint;
     locationLabel?: string;
     /** For extraction events. */
-    fields?: ExtractedField[];
+    fields?: DriverExtractedField[];
     fieldKey?: string;
     extractedValue?: string;
     correctedValue?: string;
@@ -343,7 +351,7 @@ export interface WorkflowDocument {
   source: EventSource;
   /** "not_applicable" until an extractor exists; honest about being a mock. */
   extractionState: string;
-  fields: ExtractedField[];
+  fields: DriverExtractedField[];
   provenance: Provenance;
   /** The activity or milestone this document belongs to, when any. */
   relatedMilestone?: MilestoneKind;

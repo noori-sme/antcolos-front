@@ -6,7 +6,7 @@ import type { ServiceContext } from "@/lib/api/contracts/context";
 import { driverWorkflowStore } from "@/lib/api/mock/driver-workflow-store";
 import { mockStore } from "@/lib/api/mock/store";
 import { resetIntegrationMocks } from "@/lib/integrations";
-import type { EventSource } from "@/types";
+import { workspaceKindOf, type EventSource } from "@/types";
 
 /**
  * Builds a real `ServiceContext` from the real fixtures, so a test exercises
@@ -24,6 +24,10 @@ export function contextFor(
 
   return {
     organizationId: organization.id,
+    // Taken from the same fixture organization as everything else here, so the
+    // context a test runs under is the one the product would build.
+    organizationName: organization.displayName,
+    workspaceKind: workspaceKindOf(organization),
     membershipId: membership.id,
     permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
     scope: membership.scope,

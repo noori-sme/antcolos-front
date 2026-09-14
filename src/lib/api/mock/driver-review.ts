@@ -1,0 +1,481 @@
+import type {
+  DriverDecisionKind, DriverGate, DriverReview, DriverReviewStatus,
+  EngagementType, OutgoingOpportunity, OutgoingProgressUpdate,
+} from "@/types";
+import { driverWorkflowPort } from "../contracts/driver-workflow";
+import { carrierViewSync } from "./carrier-registry";
+import { driverViewSync } from "./driver-registry";
+import { mtLoopById } from "./mt-loop";
+import type { MtLoopContext } from "./mt-loop";
+import { allMatches, estimateProfit } from "./opportunity-matching";
+import { effectiveVisibility, redact, sendsAnyMoney } from "./driver-visibility";
+import { recordDriverAnswer } from "./driver-workflow-adapter";
+import { truckContextFrom } from "./truck-registry";
+
+/**
+ * ███ MOCK ONLY — NOT A BACKEND ███
+ *
+ * Asking the driver before anybody negotiates.
+ *
+ * The rule, in one sentence: if the dispatcher sends an opportunity to the
+ * driver, the negotiation waits for the answer. Not "is discouraged from
+ * starting" — waits. A dispatcher who has asked a driver and then agrees a
+ * price anyway has not asked them anything.
+ *
+ * Sending is OPTIONAL by default, because a dispatcher who knows their driver
+ * does not need to send every load to them, and a system that forces it slows
+ * down the thing it is trying to help. A carrier that wants it compulsory sets
+ * a rule and then it cannot be skipped — that decision belongs to the carrier,
+ * not to us and not to the dispatcher.
+ *
+ * Nothing here reaches a driver. Everything crosses the Driver Workflow port,
+ * whose only implementation today is a stand-in that delivers nothing and says
+ * so. What the driver "said" is recorded by a dispatcher, exactly as a phone
+ * call would be, and carries its source everywhere it is shown.
+ */
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const LATENCY_MS = 220;
+
+let seq = 0;
+const rowId = (p: string) => `${p}_${(++seq).toString(36)}${Date.now().toString(36)}`;
+const nowIso = () => new Date().toISOString();
+
+/* -------------------------------------------------------------------------- */
+/* State                                                                       */
+/* -------------------------------------------------------------------------- */
+
+const byOrg = new Map<string, DriverReview[]>();
+
+function bucket(organizationId: string): DriverReview[] {
+  let rows = byOrg.get(organizationId);
+  if (!rows) {
+    rows = [];
+    byOrg.set(organizationId, rows);
+  }
+  return rows;
+}
+
+export function resetDriverReviews() {
+  byOrg.clear();
+  seq = 0;
+}
+
+function mayAct(ctx: MtLoopContext): boolean {
+  return ctx.permissions.has("loads:view") && ctx.scope.loads !== "assigned";
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reading                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export function reviewById(reviewId: string, ctx: MtLoopContext): DriverReview | undefined {
+  if (!mayAct(ctx)) return undefined;
+  return bucket(ctx.organizationId).find((r) => r.reviewId === reviewId);
+}
+
+/** The live review for one match, if there is one. */
+export function reviewForMatch(matchId: string, ctx: MtLoopContext): DriverReview | undefined {
+  if (!mayAct(ctx)) return undefined;
+  const rows = bucket(ctx.organizationId).filter((r) => r.matchId === matchId);
+  return rows.find((r) => r.status !== "withdrawn") ?? rows[rows.length - 1];
+}
+
+export function reviewsForCycle(dispatchCycleId: string, ctx: MtLoopContext): DriverReview[] {
+  if (!mayAct(ctx)) return [];
+  return bucket(ctx.organizationId)
+    .filter((r) => r.dispatchCycleId === dispatchCycleId)
+    .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+}
+
+export function reviewsFor(ctx: MtLoopContext): DriverReview[] {
+  if (!mayAct(ctx)) return [];
+  return [...bucket(ctx.organizationId)].sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+}
+
+/** What the port says about itself, for every screen that shows its output. */
+export function portDescription() {
+  return driverWorkflowPort().describe();
+}
+
+/* -------------------------------------------------------------------------- */
+/* The gate                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Does the carrier insist the driver is asked first?
+ *
+ * A carrier rule, like the rate floor and the consent requirement. Carriers
+ * that run owner-operators very often do insist, because the driver is a
+ * business deciding whether to take work rather than an employee being
+ * assigned it.
+ */
+export function reviewRequiredBy(carrierOrganizationId: string, ctx: MtLoopContext): boolean {
+  const carrier = carrierViewSync(carrierOrganizationId, truckContextFrom(ctx));
+  return carrier?.rules.some((r) => r.kind === "driver_review_required") === true;
+}
+
+/**
+ * Whether a negotiation may be opened on this match yet.
+ *
+ * Called by the negotiation service AND by the screen, so the button and the
+ * rule cannot disagree. Three answers:
+ *
+ *   clear            nothing is in the way
+ *   waiting          it was sent and the driver has not answered
+ *   required         the carrier says it must be sent, and it has not been
+ */
+export function driverGate(matchId: string, ctx: MtLoopContext): DriverGate {
+  const row = allMatches(ctx).find((r) => r.match.matchId === matchId);
+  if (!row) return { clear: true, reviewRequired: false, hasDriver: false };
+
+  const required = reviewRequiredBy(row.match.carrierOrganizationId, ctx);
+  const review = reviewForMatch(matchId, ctx);
+  const loop = mtLoopById(row.match.dispatchCycleId, ctx);
+  const hasDriver = Boolean(loop?.driverProfileId);
+  const driverName = review?.driverName ?? loop?.driverName;
+  const base = { reviewRequired: required, hasDriver, driverName };
+
+  if (!review) {
+    if (!required) return { ...base, clear: true };
+    if (!hasDriver) {
+      // A carrier can require driver review and still have an empty truck with
+      // nobody on it. Blocking the negotiation would leave the truck
+      // unworkable; saying so lets a dispatcher fix the real problem.
+      return {
+        ...base,
+        clear: true,
+        reason: "This carrier asks for driver review, but there is no driver on this truck to ask.",
+      };
+    }
+    return {
+      ...base,
+      clear: false,
+      reason: `${row.match.carrierName ?? "This carrier"} asks that the driver sees a load before it is negotiated.`,
+    };
+  }
+
+  switch (review.status) {
+    case "waiting":
+      return {
+        ...base, clear: false, status: review.status,
+        reason: `${review.driverName} has not answered yet. You sent it ${ago(review.sentAt)}.`,
+      };
+    case "approved":
+      return { ...base, clear: true, status: review.status };
+    case "countered":
+      // A counter is a yes with a number on it, so the negotiation may start —
+      // the dispatcher now knows what they have to beat.
+      return { ...base, clear: true, status: review.status };
+    case "declined":
+      return {
+        ...base, clear: false, status: review.status,
+        reason: `${review.driverName} said no: ${lastComment(review) ?? "no reason given"}.`,
+      };
+    case "paused":
+      return {
+        ...base, clear: false, status: review.status,
+        reason: `${review.driverName} wants something answered first: ${lastComment(review) ?? "no question recorded"}.`,
+      };
+    case "withdrawn":
+      return required && hasDriver
+        ? {
+          ...base, clear: false, status: review.status,
+          reason: "This was pulled back, and the carrier asks for driver review.",
+        }
+        : { ...base, clear: true, status: review.status };
+  }
+}
+
+function lastComment(review: DriverReview): string | undefined {
+  return [...review.decisions].reverse().find((d) => d.comment)?.comment;
+}
+
+function ago(iso: string): string {
+  const mins = Math.max(1, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.round(mins / 60);
+  return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Sending                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export type ReviewOutcome =
+  | { status: "ok"; review: DriverReview }
+  | { status: "not_permitted" }
+  | { status: "not_found" }
+  | { status: "no_driver" }
+  | { status: "already_sent"; review: DriverReview }
+  | { status: "needs_reason" }
+  | { status: "closed" }
+  | { status: "undeliverable"; reason: string };
+
+/**
+ * Send one opportunity to the driver on that truck.
+ *
+ * Everything the driver will see is built HERE, once, through the redaction the
+ * visibility policy decides, and handed to the port already redacted. The port
+ * never receives a load and a policy and decides for itself, because a
+ * boundary that can see the unredacted record is a boundary that will one day
+ * forward it.
+ */
+export async function sendOpportunityToDriver(
+  matchId: string,
+  ctx: MtLoopContext,
+  note?: string,
+): Promise<ReviewOutcome> {
+  await sleep(LATENCY_MS);
+  if (!mayAct(ctx)) return { status: "not_permitted" };
+
+  const row = allMatches(ctx).find((r) => r.match.matchId === matchId);
+  if (!row) return { status: "not_found" };
+  if (row.listing.status !== "open") return { status: "closed" };
+
+  const existing = reviewForMatch(matchId, ctx);
+  if (existing && existing.status !== "withdrawn" && existing.status !== "declined") {
+    return { status: "already_sent", review: existing };
+  }
+
+  const loop = mtLoopById(row.match.dispatchCycleId, ctx);
+  if (!loop) return { status: "not_found" };
+  if (!loop.driverProfileId) return { status: "no_driver" };
+
+  const truckCtx = truckContextFrom(ctx);
+  const carrier = carrierViewSync(row.match.carrierOrganizationId, truckCtx);
+  // Narrowed to THIS carrier's engagement: a person who drives for two carriers
+  // has two pay models, and the wrong one shows the wrong money.
+  const driver = driverViewSync(loop.driverProfileId, truckCtx, carrier?.organizationId);
+  if (!driver || !carrier) return { status: "not_found" };
+
+  const engagementType: EngagementType = driver.engagementType;
+  const visibility = effectiveVisibility(carrier.organizationId, engagementType, ctx);
+
+  const listing = row.listing;
+  const profit = estimateProfit(listing, row.match.deadheadMiles);
+  const facts = {
+    originCity: listing.origin.city,
+    originState: listing.origin.state,
+    destinationCity: listing.destination.city,
+    destinationState: listing.destination.state,
+    equipmentLabel: listing.equipment.replace(/_/g, " "),
+    pickupAt: listing.pickupAt,
+    deliverBy: listing.deliverBy,
+    loadedMiles: row.match.loadedMiles,
+    deadheadMiles: row.match.deadheadMiles,
+    commodity: listing.commodity,
+    weightLbs: listing.weightLbs,
+    brokerName: listing.broker.name,
+    brokerContact: [listing.broker.contactName, listing.broker.phone].filter(Boolean).join(" · ") || undefined,
+    totalRateCents: listing.offeredRateCents,
+    ratePerMileCents: listing.ratePerMileCents,
+    estimatedProfitCents: profit,
+    // A company driver's own pay is theirs to see even where the load's rate is
+    // not. Estimated from the load, and labelled an estimate wherever shown.
+    driverPayEstimateCents: listing.offeredRateCents === undefined
+      ? undefined
+      : Math.round(listing.offeredRateCents * (engagementType === "owner_operator" ? 0.88 : 0.27)),
+    accessorialTerms: undefined,
+  };
+
+  const reviewId = rowId("rev");
+  const payload: OutgoingOpportunity = {
+    reviewId,
+    dispatchCycleId: row.match.dispatchCycleId,
+    carrierOrganizationId: carrier.organizationId,
+    carrierName: carrier.displayName,
+    driverProfileId: driver.driverProfileId,
+    truckUnit: row.match.truckUnit,
+    ...redact(facts, visibility),
+    note: note?.trim() || undefined,
+    sentAt: nowIso(),
+    sentByName: ctx.actor.displayNameSnapshot,
+    isMockDelivery: true,
+  };
+
+  const receipt = await driverWorkflowPort().sendOpportunity(ctx, payload);
+  if (!receipt.ok) {
+    return { status: "undeliverable", reason: receipt.reason ?? "The driver's side did not take it." };
+  }
+
+  const review: DriverReview = {
+    reviewId,
+    organizationId: ctx.organizationId,
+    carrierOrganizationId: carrier.organizationId,
+    dispatchCycleId: row.match.dispatchCycleId,
+    matchId,
+    listingId: listing.listingId,
+    driverProfileId: driver.driverProfileId,
+    driverName: driver.legalName,
+    truckUnit: row.match.truckUnit,
+    status: "waiting",
+    sentAt: payload.sentAt,
+    sentByName: payload.sentByName,
+    sent: payload,
+    visibility,
+    decisions: [],
+    updates: [],
+  };
+  bucket(ctx.organizationId).push(review);
+  return { status: "ok", review };
+}
+
+/**
+ * Tell a driver how it is going, while they are waiting or after they said yes.
+ *
+ * Allowed at any stage until the load is booked, which is what the roadmap
+ * asks for and what a driver deciding whether to hold their evening actually
+ * needs. The number is included only where the driver may see money at all —
+ * an update that leaks a rate the policy hides would be a hole straight
+ * through the policy.
+ */
+export async function sendProgressUpdate(
+  reviewId: string,
+  note: string,
+  ctx: MtLoopContext,
+  onTheTableCents?: number,
+): Promise<ReviewOutcome> {
+  await sleep(LATENCY_MS);
+  if (!mayAct(ctx)) return { status: "not_permitted" };
+  const review = reviewById(reviewId, ctx);
+  if (!review) return { status: "not_found" };
+  if (!note.trim()) return { status: "needs_reason" };
+  if (review.status === "withdrawn") return { status: "closed" };
+
+  const update: OutgoingProgressUpdate = {
+    updateId: rowId("upd"),
+    reviewId,
+    dispatchCycleId: review.dispatchCycleId,
+    at: nowIso(),
+    byName: ctx.actor.displayNameSnapshot,
+    note: note.trim(),
+    onTheTableCents: sendsAnyMoney(review.visibility) ? onTheTableCents : undefined,
+    isMockDelivery: true,
+  };
+
+  const receipt = await driverWorkflowPort().sendProgressUpdate(ctx, update);
+  if (!receipt.ok) {
+    return { status: "undeliverable", reason: receipt.reason ?? "The driver's side did not take it." };
+  }
+  review.updates.push(update);
+  return { status: "ok", review };
+}
+
+export async function withdrawReview(
+  reviewId: string,
+  reason: string,
+  ctx: MtLoopContext,
+): Promise<ReviewOutcome> {
+  await sleep(LATENCY_MS);
+  if (!mayAct(ctx)) return { status: "not_permitted" };
+  const review = reviewById(reviewId, ctx);
+  if (!review) return { status: "not_found" };
+  if (!reason.trim()) return { status: "needs_reason" };
+
+  await driverWorkflowPort().withdrawOpportunity(ctx, reviewId, reason.trim());
+  review.status = "withdrawn";
+  review.withdrawnReason = reason.trim();
+  review.answeredAt = nowIso();
+  return { status: "ok", review };
+}
+
+/* -------------------------------------------------------------------------- */
+/* What comes back                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Take down what the driver said.
+ *
+ * Goes through the adapter rather than writing the decision here, so that the
+ * day the real Driver Workflow produces them this function reads them instead
+ * of inventing them, and every screen already knows to show where an answer
+ * came from.
+ */
+export async function recordDriverDecision(
+  reviewId: string,
+  kind: DriverDecisionKind,
+  ctx: MtLoopContext,
+  input: { comment?: string; wantedRateCents?: number } = {},
+): Promise<ReviewOutcome> {
+  if (!mayAct(ctx)) return { status: "not_permitted" };
+  const review = reviewById(reviewId, ctx);
+  if (!review) return { status: "not_found" };
+  if (review.status === "withdrawn") return { status: "closed" };
+  if ((kind === "declined" || kind === "paused") && !input.comment?.trim()) {
+    return { status: "needs_reason" };
+  }
+
+  const decision = await recordDriverAnswer({
+    reviewId,
+    kind,
+    comment: input.comment,
+    wantedRateCents: input.wantedRateCents,
+  });
+  if (!decision) return { status: "not_found" };
+
+  review.decisions.push(decision);
+  review.status = kind as DriverReviewStatus;
+  review.answeredAt = decision.at;
+  return { status: "ok", review };
+}
+
+/**
+ * Pull the current answers from the port.
+ *
+ * A no-op against the stand-in, which Dispatch has already been told about
+ * directly. It exists because the real Driver Workflow will answer on its own
+ * schedule, and the call site for that has to be here rather than invented
+ * later next to a screen.
+ */
+export async function refreshFromDriverWorkflow(
+  reviewId: string,
+  ctx: MtLoopContext,
+): Promise<DriverReview | undefined> {
+  const review = reviewById(reviewId, ctx);
+  if (!review) return undefined;
+  const port = driverWorkflowPort();
+  const decisions = await port.decisionsFor(ctx, reviewId);
+  const status = await port.statusFor(ctx, reviewId);
+  const known = new Set(review.decisions.map((d) => d.decisionId));
+  for (const decision of decisions) {
+    if (!known.has(decision.decisionId)) review.decisions.push(decision);
+  }
+  if (status) review.status = status;
+  return review;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Closing them out                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The load went, so there is nothing left to ask about.
+ *
+ * Called by the same stand-down that closes matches, drafts and conversations.
+ * A driver left holding a question about a load somebody else booked is the
+ * same failure as a broker left waiting for a truck that is gone.
+ */
+export function closeReviewsForListing(
+  organizationId: string,
+  listingId: string,
+  reason: string,
+  exceptReviewId?: string,
+): string[] {
+  const closed: string[] = [];
+  for (const review of bucket(organizationId)) {
+    if (review.listingId !== listingId) continue;
+    if (review.reviewId === exceptReviewId) continue;
+    if (review.status === "withdrawn") continue;
+    review.status = "withdrawn";
+    review.withdrawnReason = reason;
+    review.answeredAt = nowIso();
+    closed.push(review.reviewId);
+  }
+  return closed;
+}
+
+/** Test seam only. */
+export function reviewsForTests(organizationId: string): DriverReview[] {
+  return bucket(organizationId);
+}
