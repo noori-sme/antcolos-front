@@ -11,6 +11,10 @@ import type {
 } from "../contracts/needs-you";
 import { ensureInvoiceNeedsYou } from "./invoice-registry";
 import { mockStore } from "./store";
+import {
+  insuranceContextFrom, insuranceNeedsYou, isInsuranceNeedsYouId,
+  replaceInsuranceNeedsYou,
+} from "./insurance-registry";
 import { syncDerivedNeedsYouFor } from "./needs-you-derive";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
@@ -59,7 +63,14 @@ export function urgencyScore(item: NeedsYouItem): number {
  */
 function allItems(ctx: ServiceContext): NeedsYouItem[] {
   const org = mockStore.org(ctx.organizationId);
-  return [...org.needsYou, ...documentNeedsYouItems(ctx)];
+  return [
+    ...org.needsYou,
+    ...documentNeedsYouItems(ctx),
+    // Insurance items are derived the same way documents are: an expiring
+    // policy appears the moment it slips inside the window and a renewed one
+    // stops appearing without anybody tidying up after it.
+    ...insuranceNeedsYou(insuranceContextFrom(ctx)),
+  ];
 }
 
 function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
@@ -125,9 +136,11 @@ function appendHistory(
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
   ensureInvoiceNeedsYou(ctx.organizationId);
-  const item = isDocumentNeedsYouId(itemId)
-    ? findDocumentNeedsYouItem(ctx, itemId)
-    : mockStore.org(ctx.organizationId).needsYou.find((n) => n.id === itemId);
+  const item = isInsuranceNeedsYouId(itemId)
+    ? allItems(ctx).find((n) => n.id === itemId)
+    : isDocumentNeedsYouId(itemId)
+      ? findDocumentNeedsYouItem(ctx, itemId)
+      : mockStore.org(ctx.organizationId).needsYou.find((n) => n.id === itemId);
   if (!item) throw new NotFoundError("Needs You item");
   mockStore.assertOwned(ctx.organizationId, item.organizationId);
   if (!visibleTo(ctx, item)) throw new PermissionDeniedError(item.requires);
@@ -146,6 +159,10 @@ function persist(
   item: NeedsYouItem,
   next: NeedsYouItem,
 ): NeedsYouItem {
+  if (isInsuranceNeedsYouId(item.id)) {
+    replaceInsuranceNeedsYou(next);
+    return next;
+  }
   if (!isDocumentNeedsYouId(item.id)) {
     mockStore.replaceNeedsYou(ctx.organizationId, next);
     return next;

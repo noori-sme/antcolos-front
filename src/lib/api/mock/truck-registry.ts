@@ -1226,7 +1226,8 @@ const ORG_NAMES: Record<string, string> = {
   org_crosswind: "Crosswind Freight",
   org_halberd: "Halberd Leasing LLC",
 };
-function organizationNameFor(id: string): string {
+/** The one place mock organization names live. Shared, never re-typed. */
+export function organizationNameFor(id: string): string {
   return ORG_NAMES[id] ?? id;
 }
 

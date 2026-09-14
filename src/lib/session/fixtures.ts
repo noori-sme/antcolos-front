@@ -140,9 +140,12 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     status: "active",
     title: "Senior dispatcher",
     templateIds: [tpl("org_meridian", "dispatcher")],
-    // Template plus one extra grant, minus one explicit revocation — the exact
-    // case that fixed roles cannot express.
-    grants: ["customers:edit", "documents:approve"],
+    // Template plus extra grants, minus one explicit revocation — the exact
+    // case that fixed roles cannot express. `insurance:view` is here so the
+    // dispatch side of insurance disclosure can actually be looked at: it
+    // shows only what a carrier has deliberately shared, with the premium,
+    // the deductibles and every claim figure absent.
+    grants: ["customers:edit", "documents:approve", "insurance:view"],
     revocations: ["loads:delete"],
     scope: DEFAULT_SCOPE,
     isOwner: false,

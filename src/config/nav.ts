@@ -1,8 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BadgeCheck, Bell, Building2, ClipboardList, Container, FileText, Gauge,
+  BadgeCheck, Bell, Building2, ClipboardList, Container, FileBadge, FileText, Gauge,
   Handshake, Home, IdCard, Inbox, Layers, Link2, MailPlus, Package, Palette, Receipt,
-  Route, ScrollText, Settings2, Shield, Truck, UserCircle, Users, UsersRound,
+  Route, ScrollText, Settings2, Shield, ShieldCheck, TriangleAlert, Truck, UserCircle,
+  Users, UsersRound,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
 
@@ -46,6 +47,16 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
+    ],
+  },
+  {
+    id: "risk",
+    label: "Insurance & claims",
+    items: [
+      { label: "Overview", href: "/insurance", icon: ShieldCheck, requires: ["insurance:view"] },
+      { label: "Policies", href: "/insurance/policies", icon: Shield, requires: ["insurance:view"] },
+      { label: "Certificates", href: "/insurance/certificates", icon: FileBadge, requires: ["insurance:view"] },
+      { label: "Claims", href: "/insurance/claims", icon: TriangleAlert, requires: ["claims:view"] },
     ],
   },
   {

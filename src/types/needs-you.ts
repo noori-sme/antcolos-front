@@ -25,6 +25,16 @@ export type NeedsYouCategory =
   | "invoice_overdue"
   | "customer_response"
   | "truck_going_empty"
+  // Insurance and claims. Derived from the insurance registry rather than
+  // seeded, so an item disappears when the underlying policy or claim is
+  // actually sorted out and never because somebody ticked it off.
+  | "missing_coverage"
+  | "expiring_policy"
+  | "expired_policy"
+  | "unresolved_claim"
+  | "missing_claim_evidence"
+  | "critical_insurance_gap"
+
   /* ---- MT Loop conditions. Derived from live state, never seeded. ---- */
   /** An open MT Loop that nobody has taken responsibility for. */
   | "unassigned_loop"
@@ -74,6 +84,9 @@ export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 
 export type NeedsYouEntityKind =
+  | "load" | "truck" | "trailer" | "driver" | "document" | "customer"
+  | "settlement" | "invoice" | "policy" | "claim" | "carrier"
+
   | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice"
   /** One MT Loop — a single truck's cycle between loads. */
   | "mt_loop"
@@ -105,6 +118,8 @@ export interface NeedsYouEntityRef {
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
   | "review" | "confirm_status" | "start_search" | "contact_customer"
+  | "renew_policy" | "add_coverage" | "advance_claim" | "collect_evidence"
+
   /** Take, or hand out, responsibility for an MT Loop. */
   | "assign_loop"
   /** Record when and where a truck goes empty. */
@@ -211,6 +226,12 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invoice_overdue: "Invoice overdue",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
+  missing_coverage: "Missing coverage",
+  expiring_policy: "Expiring policy",
+  expired_policy: "Expired policy",
+  unresolved_claim: "Unresolved claim",
+  missing_claim_evidence: "Missing claim evidence",
+  critical_insurance_gap: "Critical insurance gap",
   unassigned_loop: "MT Loop with nobody on it",
   missing_availability: "Missing availability",
   operating_authority: "Operating Authority conflict",

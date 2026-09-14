@@ -2,8 +2,9 @@
 
 import {
   BellOff, CheckCircle2, ChevronRight, FileText, Package, Truck, User,
-  Building2, Receipt, ArrowUpCircle, RefreshCw, Radar, Mail, Handshake,
-  ClipboardCheck, MailQuestion, FileSignature, UserCheck, type LucideIcon,
+  ArrowUpCircle, Building2, ClipboardCheck, Container, FileSignature, Handshake, Mail,
+  MailQuestion, Radar, Receipt, RefreshCw, ShieldCheck, TriangleAlert, UserCheck,
+  type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORY_LABEL, type NeedsYouEntityKind, type NeedsYouItem } from "@/types";
@@ -12,11 +13,11 @@ import { DueLabel } from "./due-label";
 import { SeverityBar } from "./severity";
 
 const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
-  load: Package, truck: Truck, driver: User, document: FileText,
-  customer: Building2, settlement: Receipt, invoice: Receipt, mt_loop: RefreshCw,
-  carrier: Building2, listing: Radar, draft: Mail, negotiation: Handshake,
-  booking: ClipboardCheck, message: MailQuestion, rate_confirmation: FileSignature,
-  driver_review: UserCheck,
+  load: Package, truck: Truck, trailer: Container, driver: User, document: FileText,
+  customer: Building2, settlement: Receipt, invoice: Receipt, policy: ShieldCheck,
+  claim: TriangleAlert, carrier: Building2, mt_loop: RefreshCw, listing: Radar,
+  draft: Mail, negotiation: Handshake, booking: ClipboardCheck, message: MailQuestion,
+  rate_confirmation: FileSignature, driver_review: UserCheck,
 };
 
 export function NeedsYouCard({
