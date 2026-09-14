@@ -6,12 +6,11 @@ import { authorityAllowsDispatch } from "@/types";
 import { listingById } from "./listing-registry";
 import { markLoopBooked, mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
-import { allMatches, truckMatchContext } from "./opportunity-matching";
-import { bookAndStandDown } from "./opportunity-service";
+import { allMatches, bookMatch, truckMatchContext, type BookingOutcome } from "./opportunity-matching";
 import {
   closeNegotiationsForListing, markBooked, negotiationById,
 } from "./negotiation";
-import { draftsFor } from "./outreach-drafts";
+import { draftsFor, supersedeDraftsForListing } from "./outreach-drafts";
 import { mockStore } from "./store";
 
 /**
@@ -211,6 +210,35 @@ function standDownCounts(negotiation: Negotiation, ctx: MtLoopContext) {
       && (d.status === "ready" || d.status === "approved"),
   ).length;
   return { matches, drafts };
+}
+
+export interface CloseoutResult extends BookingOutcome {
+  supersededDraftIds: string[];
+}
+
+/**
+ * One truck got it. Everything else about that load stands down.
+ *
+ * Two things have to happen together and neither is optional: competing MATCHES
+ * close, and competing DRAFTS are superseded. Closing the matches alone leaves
+ * a prepared email about a load that is gone sitting in somebody's review
+ * queue, which is how a broker gets offered a truck that is already loaded.
+ */
+export function bookAndStandDown(
+  matchId: string,
+  ctx: MtLoopContext,
+  actorName: string,
+): CloseoutResult {
+  const outcome = bookMatch(matchId, ctx, actorName);
+  if (outcome.status !== "ok" || !outcome.match) {
+    return { ...outcome, supersededDraftIds: [] };
+  }
+  const supersededDraftIds = supersedeDraftsForListing(
+    ctx.organizationId,
+    outcome.match.listingId,
+    `Unit ${outcome.match.truckUnit} got this load.`,
+  );
+  return { ...outcome, supersededDraftIds };
 }
 
 /* -------------------------------------------------------------------------- */

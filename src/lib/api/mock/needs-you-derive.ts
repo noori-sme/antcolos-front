@@ -1,5 +1,5 @@
 import {
-  missingRequiredDocuments,
+  missingRequiredDocuments, TEMPLATE_LABEL,
   type Load, type Membership, type MtLoop, type NeedsYouCategory,
   type NeedsYouEntityRef, type NeedsYouItem, type NeedsYouRecommendedAction,
   type NeedsYouSeverity, type NeedsYouSource, type Organization,
@@ -21,6 +21,8 @@ import { sessionForCycle } from "./search-session";
 import { draftsFor } from "./outreach-drafts";
 import { openNegotiations } from "./negotiation";
 import { bookingsForWorkspace } from "./booking";
+import { threadsFor } from "./communications";
+import { progressOf, rateConsFor } from "./rate-confirmation";
 import { driversForWorkspaceSync, driverDocumentProblems } from "./driver-registry";
 import { nowIso } from "./time";
 
@@ -1080,6 +1082,135 @@ const money = (cents: number) => `$${(cents / 100).toLocaleString("en-US", {
   minimumFractionDigits: 0, maximumFractionDigits: 0,
 })}`;
 
+/**
+ * Messages nobody has read, and rate confirmations nobody has checked.
+ *
+ * Both are the same kind of problem: Antcolos has done the preparing and is now
+ * waiting on a person, and until that person acts, a broker is waiting on
+ * silence. The rate confirmation rules are the sharper of the two — an unsigned
+ * confirmation means the load is not really confirmed, and a confirmation that
+ * disagrees with the booking is money about to be lost.
+ */
+function messageRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("loads:view")) return [];
+  const out: Derived[] = [];
+
+  for (const thread of threadsFor(ctx as MtLoopContext)) {
+    for (const message of thread.messages) {
+      if (message.status !== "draft") continue;
+      // The opening inquiry has its own queue item already, from the drafts
+      // service. Raising it twice would put the same job on the list twice.
+      if (message.templateKey === "load_inquiry") continue;
+      out.push({
+        key: `message-${message.messageId}`,
+        category: "message_waiting",
+        severity: message.blockedReason ? "high" : "medium",
+        title: message.blockedReason
+          ? `The ${TEMPLATE_LABEL[message.templateKey].toLowerCase()} to ${thread.brokerName} cannot go out`
+          : `A ${TEMPLATE_LABEL[message.templateKey].toLowerCase()} for ${thread.brokerName} is waiting for you`,
+        reason: message.blockedReason
+          ?? message.preparedBecause
+          ?? `${message.subject} — nothing is sent until you have read it.`,
+        detail: `From ${thread.carrierName}${thread.loadReference ? ` · ${thread.loadReference}` : ""}`,
+        entity: {
+          kind: "message",
+          id: message.messageId,
+          label: `${thread.brokerName} · ${TEMPLATE_LABEL[message.templateKey]}`,
+          href: "/dispatch/opportunities",
+        },
+        recommendedAction: {
+          kind: "read_message", label: "Read it", requires: ["loads:view"],
+        },
+        source: "system",
+        requires: ["loads:view"],
+      });
+    }
+  }
+  return out;
+}
+
+function rateConRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("loads:view")) return [];
+  const out: Derived[] = [];
+  const workflows = rateConsFor(ctx as MtLoopContext);
+
+  for (const w of workflows) {
+    if (w.status === "returned" || w.status === "rejected") continue;
+    const progress = progressOf(w);
+
+    if (progress.disagreements > 0) {
+      out.push({
+        key: `ratecon-diff-${w.rateConId}`,
+        category: "ratecon_disagrees",
+        severity: "critical",
+        title: `${w.brokerName}'s rate confirmation does not match ${w.loadReference}`,
+        reason: `${progress.disagreements} thing${progress.disagreements === 1 ? "" : "s"} on the document disagree${progress.disagreements === 1 ? "s" : ""} with what was booked. Signing it as it stands agrees to their version.`,
+        entity: {
+          kind: "rate_confirmation",
+          id: w.rateConId,
+          label: `${w.loadReference} · ${w.brokerName}`,
+          href: `/dispatch/rate-confirmations/${w.rateConId}`,
+        },
+        recommendedAction: {
+          kind: "check_ratecon", label: "Check it", requires: ["loads:view"],
+        },
+        source: "ocr",
+        requires: ["loads:view"],
+      });
+    }
+
+    out.push({
+      key: `ratecon-${w.rateConId}`,
+      category: "ratecon_waiting",
+      severity: progress.canConfirm ? "high" : "medium",
+      title: progress.canConfirm
+        ? `${w.loadReference} is checked and waiting for your confirmation`
+        : `${w.loadReference} has a rate confirmation nobody has checked`,
+      reason: progress.canConfirm
+        ? `Every field has been looked at. ${w.carrierName}'s signature goes on only when you confirm.`
+        : `${progress.reviewed} of ${progress.required} fields checked. Nothing is signed until all of them are.`,
+      entity: {
+        kind: "rate_confirmation",
+        id: w.rateConId,
+        label: `${w.loadReference} · ${w.brokerName}`,
+        href: `/dispatch/rate-confirmations/${w.rateConId}`,
+      },
+      recommendedAction: {
+        kind: "check_ratecon",
+        label: progress.canConfirm ? "Confirm and sign" : "Check it",
+        requires: ["loads:view"],
+      },
+      source: "ocr",
+      requires: ["loads:view"],
+    });
+  }
+
+  /* ---- Booked, and nothing has arrived ---- */
+  for (const booking of bookingsForWorkspace(ctx as MtLoopContext)) {
+    if (workflows.some((w) => w.bookingId === booking.bookingId && w.status !== "rejected")) continue;
+    out.push({
+      key: `ratecon-missing-${booking.bookingId}`,
+      category: "ratecon_missing",
+      severity: "medium",
+      title: `No rate confirmation yet for ${booking.loadReference}`,
+      reason: `${booking.brokerName} has not sent one. A load without a signed confirmation is not a confirmed load, whatever was agreed on the phone.`,
+      entity: {
+        kind: "booking",
+        id: booking.bookingId,
+        label: `${booking.loadReference} · ${booking.brokerName}`,
+        href: "/dispatch/opportunities",
+      },
+      recommendedAction: {
+        kind: "contact_customer", label: "Chase the broker", requires: ["loads:view"],
+      },
+      source: "system",
+      requires: ["loads:view"],
+    });
+  }
+
+  return out;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Reconciliation                                                              */
 /* -------------------------------------------------------------------------- */
@@ -1103,6 +1234,8 @@ function derive(ctx: DeriveContext): Derived[] {
     items.push(...opportunityRules(ctx));
     items.push(...negotiationRules(ctx));
     items.push(...bookingRules(ctx));
+    items.push(...messageRules(ctx));
+    items.push(...rateConRules(ctx));
   }
   items.push(...loadRules(ctx));
 

@@ -14,6 +14,7 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   // these two entries the longest-prefix rule would apply /dispatch's
   // requirements and lock out a dispatcher who may search but not assign.
   "/dispatch/trucks": ["loads:view", "trucks:view"],
+  "/dispatch/rate-confirmations": ["loads:view"],
   "/dispatch/opportunities": ["loads:view", "trucks:view"],
   "/rate-cons/new": ["loads:create", "documents:upload"],
   // Confirming who a broker is is a stronger power than reading the directory,

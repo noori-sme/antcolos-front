@@ -22,6 +22,8 @@ export type * from "./mt-loop";
 export type * from "./carrier";
 export type * from "./opportunity";
 export type * from "./negotiation";
+export type * from "./communication";
+export type * from "./rate-confirmation";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
@@ -36,6 +38,12 @@ export {
   NEGOTIATION_OPEN_STATUSES, isNegotiationOpen, UNARGUABLE_CHECKS,
   CONSENT_LABEL, BOOKING_BLOCK_LABEL,
 } from "./negotiation";
+export {
+  TEMPLATE_LABEL, MESSAGE_STATUS_LABEL, SEND_METHOD_LABEL,
+} from "./communication";
+export {
+  RATECON_FIELD_LABEL, RATECON_STATUS_LABEL,
+} from "./rate-confirmation";
 export {
   AUTHORITY_STATUS_LABEL, CONTACT_ROLE_LABEL, RULE_KIND_LABEL,
   CARRIER_DOCUMENT_LABEL, authorityAllowsDispatch,

@@ -1,21 +1,29 @@
 import type {
   BookingRecord, LearningSummary, Listing, MatchWithListing, NegotiationSummary,
-  OutreachDraft, RankingPreferences, SearchSession,
+  OutreachDraft, RankingPreferences, RateConWorkflow, SearchSession,
 } from "@/types";
 import { expireStaleListings, listingsFor } from "./listing-registry";
 import {
-  allMatches, bookMatch, listingTakenElsewhere, matchesForCycle, rankMatches,
-  reconcileMatches, type BookingOutcome,
+  allMatches, listingTakenElsewhere, matchesForCycle, rankMatches,
+  reconcileMatches,
 } from "./opportunity-matching";
 import {
-  draftIdForMatch, draftsFor, draftsForCycle, reconcileDrafts,
-  supersedeDraftsForListing,
+  approveDraft, draftIdForMatch, draftsFor, draftsForCycle, reconcileDrafts,
+  supersedeDraftsForListing, type DraftOutcome,
 } from "./outreach-drafts";
+import {
+  cycleCommunicationsSync, recordInquiryFromDraft, reconcileMessages,
+  type CycleCommunications,
+} from "./communications";
 import {
   closeNegotiationsForListing, expireStaleOffers, negotiationsForCycle,
   openNegotiations, summarizeAll,
 } from "./negotiation";
-import { bookingForCycle, bookingsForWorkspace } from "./booking";
+import { threadsFor } from "./communications";
+import { rateConForCycle, rateConsFor } from "./rate-confirmation";
+import {
+  bookAndStandDown, bookingForCycle, bookingsForWorkspace, type CloseoutResult,
+} from "./booking";
 import { learningFor, rankingPreferences } from "./ranking";
 import { sessionForCycle, sessionsFor } from "./search-session";
 import { openLoopsFor, type MtLoopContext } from "./mt-loop";
@@ -62,6 +70,12 @@ export interface OpportunityInbox {
   negotiations: NegotiationSummary[];
   /** Loads booked out of this inbox, newest first. */
   bookings: BookingRecord[];
+  /** Messages nobody has read yet, across every conversation. */
+  messagesWaiting: number;
+  /** Rate confirmations still waiting to be checked and signed. */
+  rateConsWaiting: number;
+  /** Every rate confirmation in the workspace, newest first. */
+  rateCons: RateConWorkflow[];
   ranking: RankingPreferences;
   learning: LearningSummary;
   counts: {
@@ -119,6 +133,12 @@ export function opportunityInboxSync(ctx: MtLoopContext): OpportunityInbox {
   const loops = openLoopsFor(ctx);
   const bookings = bookingsForWorkspace(ctx);
   const negotiations = withBookings(summarizeAll(openNegotiations(ctx), ctx), bookings);
+  reconcileMessages(ctx);
+  const waiting = messagesWaitingCount(ctx);
+  const rateCons = rateConsFor(ctx);
+  const rateConsWaiting = rateCons.filter(
+    (w) => w.status === "reviewing" || w.status === "ready_to_confirm",
+  ).length;
 
   // Only genuinely eligible work can be "the best". A short list with an
   // ineligible load in it is not a short list, it is a trap.
@@ -142,6 +162,9 @@ export function opportunityInboxSync(ctx: MtLoopContext): OpportunityInbox {
     sessions,
     negotiations,
     bookings,
+    messagesWaiting: waiting,
+    rateConsWaiting,
+    rateCons,
     ranking: rankingPreferences(ctx.organizationId),
     learning: learningFor(ctx.organizationId),
     counts: {
@@ -184,6 +207,10 @@ export interface TruckOpportunities {
   negotiations: NegotiationSummary[];
   /** The load booked onto this cycle, once there is one. */
   booking?: BookingRecord;
+  /** Every message about this cycle, and the templates that can be picked. */
+  communications: CycleCommunications;
+  /** The rate confirmation for this cycle's load, once one has arrived. */
+  rateCon?: RateConWorkflow;
   ranking: RankingPreferences;
   counts: { considered: number; eligible: number; ineligible: number; shortlisted: number };
 }
@@ -210,6 +237,8 @@ export function truckOpportunitiesSync(
       bookingsForWorkspace(ctx),
     ),
     booking: bookingForCycle(dispatchCycleId, ctx),
+    communications: cycleCommunicationsSync(dispatchCycleId, ctx),
+    rateCon: rateConForCycle(dispatchCycleId, ctx),
     ranking: rankingPreferences(ctx.organizationId),
     counts: {
       considered: matches.length,
@@ -254,38 +283,44 @@ function attachDrafts(rows: MatchWithListing[], ctx: MtLoopContext): MatchWithLi
   );
 }
 
+function messagesWaitingCount(ctx: MtLoopContext): number {
+  let n = 0;
+  for (const thread of threadsFor(ctx)) {
+    n += thread.messages.filter((m) => m.status === "draft").length;
+  }
+  return n;
+}
+
+/**
+ * Approve the opening inquiry, and put it in the conversation it opens.
+ *
+ * Two services own half of this each and neither may own both: the drafts
+ * service owns the grouping rule that stops one carrier writing to a broker
+ * twice about one load, and the communications service owns the thread that
+ * everything said afterwards hangs off. Joining them anywhere but here would
+ * mean one of them importing the other, and they are deliberately unaware of
+ * each other.
+ */
+export async function approveDraftAndOpenThread(
+  draftId: string,
+  ctx: MtLoopContext,
+): Promise<DraftOutcome> {
+  const outcome = await approveDraft(draftId, ctx);
+  if (outcome.status === "ok" && outcome.draft) {
+    recordInquiryFromDraft(outcome.draft, ctx);
+  }
+  return outcome;
+}
+
 /* -------------------------------------------------------------------------- */
 /* A load going somewhere                                                      */
 /* -------------------------------------------------------------------------- */
 
-export interface CloseoutResult extends BookingOutcome {
-  supersededDraftIds: string[];
-}
-
-/**
- * One truck got it. Everything else about that load stands down.
- *
- * The booking service calls this as part of committing a truck. Two things have
- * to happen together and neither is optional: competing MATCHES close, and
- * competing DRAFTS are superseded. Closing the matches alone leaves a prepared
- * email about a load that is gone sitting in somebody's review queue.
- */
-export function bookAndStandDown(
-  matchId: string,
-  ctx: MtLoopContext,
-  actorName: string,
-): CloseoutResult {
-  const outcome = bookMatch(matchId, ctx, actorName);
-  if (outcome.status !== "ok" || !outcome.match) {
-    return { ...outcome, supersededDraftIds: [] };
-  }
-  const supersededDraftIds = supersedeDraftsForListing(
-    ctx.organizationId,
-    outcome.match.listingId,
-    `Unit ${outcome.match.truckUnit} got this load.`,
-  );
-  return { ...outcome, supersededDraftIds };
-}
+// `bookAndStandDown` lives in the booking service, which owns committing a
+// truck. It is re-exported here because this is the door the screens come
+// through and because the tests written against it predate that move.
+export type { CloseoutResult };
+export { bookAndStandDown };
 
 /**
  * Somebody else got it, or the broker pulled it.

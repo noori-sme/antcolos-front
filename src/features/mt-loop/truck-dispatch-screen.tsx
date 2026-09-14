@@ -24,6 +24,8 @@ import { OpportunitiesPanel } from "@/features/opportunities/opportunities-panel
 import { useTruckOpportunities } from "@/features/opportunities/use-opportunities";
 import { useOpportunityRefresh } from "@/features/opportunities/use-opportunity-refresh";
 import { NegotiationPanel } from "@/features/opportunities/negotiation-panel";
+import { CommunicationsPanel } from "@/features/communications/communications-panel";
+import { RateConAwaiting, RateConSummary } from "@/features/rate-confirmations/ratecon-panel";
 import { useMtLoopContext } from "./use-mt-loop";
 import { useTruckDispatchWorkspace } from "./use-truck-dispatch";
 
@@ -147,6 +149,25 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
             ctx={ctx}
             onChanged={refreshEverything}
           />
+          {/* The rate confirmation sits between the conversation that produced
+              it and the messages that carry it back. */}
+          {opportunities.data?.rateCon ? (
+            <RateConSummary rateCon={opportunities.data.rateCon} />
+          ) : opportunities.data?.booking ? (
+            <RateConAwaiting
+              booking={opportunities.data.booking}
+              ctx={ctx}
+              onChanged={refreshEverything}
+            />
+          ) : null}
+          {opportunities.data?.communications ? (
+            <CommunicationsPanel
+              dispatchCycleId={dispatchCycleId}
+              communications={opportunities.data.communications}
+              ctx={ctx}
+              onChanged={refreshEverything}
+            />
+          ) : null}
         </>
       ) : null}
 

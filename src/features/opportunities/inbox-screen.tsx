@@ -11,8 +11,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   CONNECTION_IS_PLANNED, CONNECTION_LABEL, DRAFT_STATUS_LABEL, FACTOR_DESCRIPTION,
   FACTOR_LABEL, SOURCE_LABEL,
+  RATECON_STATUS_LABEL,
   type BookingRecord, type LearningSummary, type Listing, type RankingFactorKey,
-  type RankingPreferences,
+  type RankingPreferences, type RateConWorkflow,
 } from "@/types";
 import { money } from "@/lib/utils/format";
 import {
@@ -124,11 +125,19 @@ export function OpportunityInboxScreen() {
         </p>
       ) : null}
 
-      <section aria-label="Inbox overview" className="grid grid-cols-2 gap-stack xl:grid-cols-6">
+      <section aria-label="Inbox overview" className="grid grid-cols-2 gap-stack lg:grid-cols-4 xl:grid-cols-7">
         <Tile label="Loads" value={s.counts.listings} hint={`${s.counts.duplicatesFolded} were the same load twice`} />
         <Tile label="Eligible" value={s.counts.eligible} hint="Pass every hard check" />
         <Tile label="Short-listed" value={s.counts.shortlisted} hint="You picked these out" />
         <Tile label="Drafts to read" value={s.counts.draftsWaiting} hint="Nothing is sent" tone={s.counts.draftsWaiting > 0 ? "warning" : "default"} />
+        <Tile
+          label="Waiting to be read"
+          value={s.messagesWaiting + s.rateConsWaiting}
+          hint={s.rateConsWaiting > 0
+            ? `${s.rateConsWaiting} rate confirmation${s.rateConsWaiting === 1 ? "" : "s"} to check`
+            : "Messages and rate confirmations"}
+          tone={s.messagesWaiting + s.rateConsWaiting > 0 ? "warning" : "default"}
+        />
         <Tile
           label="Brokers waiting on you"
           value={s.counts.negotiationsWaitingOnYou}
@@ -251,6 +260,7 @@ export function OpportunityInboxScreen() {
             onOpen={setOpenDraftId}
           />
           <BookedPanel bookings={s.bookings} />
+          <RateConsPanel rateCons={s.rateCons} />
           <SourcesPanel listings={s.listings} />
           <SearchesPanel sessions={s.sessions} />
         </div>
@@ -261,8 +271,9 @@ export function OpportunityInboxScreen() {
         market so the parts that are real — one listing per load however many sources have it, a
         separate match per truck, the ranking, the draft grouping, and standing the competition down
         when a load goes — can be used and argued with. Conversations with brokers are recorded by
-        you or produced by the sample market, and every round says which. Sending mail, rate
-        confirmations and signing are later milestones and none of them is built.
+        you or produced by the sample market, and every round says which. Messages are written as
+        the carrier and never sent by Antcolos; rate confirmations are generated samples read by a
+        mock reader, and the signature is a name on a line rather than a credential.
       </p>
     </div>
   );
@@ -517,6 +528,52 @@ function SourcesPanel({ listings }: { listings: Listing[] }) {
           and folded into a single row, so nobody emails the same broker twice about it.
         </p>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * Rate confirmations, across every truck.
+ *
+ * On the inbox as well as on each truck because "what is waiting on me" is a
+ * question about the whole desk, and an unsigned confirmation is the most
+ * expensive thing on it to forget.
+ */
+function RateConsPanel({ rateCons }: { rateCons: RateConWorkflow[] }) {
+  return (
+    <section className="rounded-lg border border-border bg-surface p-4 shadow-e1">
+      <h2 className="text-[0.875rem] font-semibold text-fg">Rate confirmations</h2>
+      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+        Checked field by field against what was booked, and signed only when you say so.
+      </p>
+      {rateCons.length === 0 ? (
+        <p className="mt-3 text-[0.75rem] text-fg-muted">None have arrived.</p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {rateCons.slice(0, 8).map((w) => (
+            <li key={w.rateConId} className="text-[0.8125rem]">
+              <Link
+                href={`/dispatch/rate-confirmations/${w.rateConId}`}
+                className="flex flex-wrap items-center gap-2 text-fg underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                {w.loadReference}
+                <Badge tone={
+                  w.status === "returned" ? "success"
+                    : w.status === "rejected" ? "danger" : "warning"
+                }
+                >
+                  {RATECON_STATUS_LABEL[w.status]}
+                </Badge>
+              </Link>
+              <span className="mt-0.5 block text-[0.75rem] text-fg-subtle">{w.brokerName}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-[0.6875rem] leading-relaxed text-fg-subtle">
+        No mailbox is connected. Each one is a generated sample, and the signature is a name on a
+        line rather than a credential.
+      </p>
     </section>
   );
 }
