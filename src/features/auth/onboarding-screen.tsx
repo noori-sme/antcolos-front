@@ -1,29 +1,18 @@
 "use client";
 
-import { Building2, CircleCheck, Link2, Plus, Truck, UserRound } from "lucide-react";
+import { Building2, Headset, Plus, Truck, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { AuthShell } from "./shell";
 import { BackLink, ChoiceCard } from "./controls";
 import { CarrierVerification } from "./carrier-verification";
 import { DispatchCreation } from "./dispatch-creation";
-import { FormAlert } from "./form-alert";
-import { InvitationPanel } from "./invitation-panel";
+import { IndividualDispatcherSetup } from "./individual-dispatcher";
 import { DriverNeedsInvitationScreen } from "@/features/driver/needs-invitation-screen";
 import { useStageFocus } from "./use-stage-focus";
 
-type Stage = "role" | "carrier" | "driver" | "dispatch-fork" | "create-org" | "join" | "done";
+type Stage = "role" | "carrier" | "driver" | "dispatch-fork" | "create-org" | "individual";
 type Role = "carrier-owner" | "driver" | "dispatch";
-type Outcome = "dispatch-joined";
-
-const DONE_COPY: Record<Outcome, { title: string; description: string }> = {
-  "dispatch-joined": {
-    title: "You've joined the dispatch organization",
-    description:
-      "Your access follows the role your administrator gave you, so you will only see the carriers and loads that role covers.",
-  },
-};
 
 /**
  * Onboarding — asked once, right after the account is created.
@@ -31,16 +20,22 @@ const DONE_COPY: Record<Outcome, { title: string; description: string }> = {
  * A returning user never lands here: Sign In goes straight to the product,
  * because their role and organization were settled the first time.
  *
- * Two of the three paths are more than a choice, so they own their own screens:
- * a carrier owner has to prove the carrier is theirs, and a new dispatch
- * organization has to confirm the address carriers will hear from. Driver and
- * "join by invitation" finish here.
+ * Three of the paths are more than a choice, so they own their own screens: a
+ * carrier owner has to prove the carrier is theirs, a new dispatch organization
+ * has to confirm the address carriers will hear from, and an individual
+ * dispatcher has to confirm their work address. Only the driver path finishes
+ * here, and it finishes by saying an invitation is needed rather than by
+ * claiming anything is set up.
+ *
+ * Joining an existing dispatch organization is not offered here any more. It
+ * was never something this screen could do on its own — an invitation link
+ * carries the authorization — so it lives entirely in the invitation flow at
+ * /invite/[code], which is unchanged and still works.
  */
 export function OnboardingScreen() {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("role");
   const [role, setRole] = useState<Role | null>(null);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
   const enterWorkspace = () => router.push("/home");
@@ -75,6 +70,14 @@ export function OnboardingScreen() {
       />
     );
   }
+  if (stage === "individual") {
+    return (
+      <IndividualDispatcherSetup
+        onEnterWorkspace={enterWorkspace}
+        onBack={() => setStage("dispatch-fork")}
+      />
+    );
+  }
 
   const heading: Record<string, { title: string; description: React.ReactNode }> = {
     role: {
@@ -87,16 +90,8 @@ export function OnboardingScreen() {
       description: "Drivers join a carrier through the carrier's invitation.",
     },
     "dispatch-fork": {
-      title: "Dispatch organization",
-      description: "Are you starting a new dispatch organization, or joining one that already exists?",
-    },
-    join: {
-      title: "Join a dispatch organization",
-      description: "Joining is by invitation only.",
-    },
-    done: {
-      title: outcome ? DONE_COPY[outcome].title : "You're all set",
-      description: outcome ? DONE_COPY[outcome].description : null,
+      title: "How do you dispatch?",
+      description: "On your own, or as an organization with a team of dispatchers.",
     },
   };
 
@@ -139,50 +134,20 @@ export function OnboardingScreen() {
       {stage === "dispatch-fork" ? (
         <div className="space-y-2.5">
           <ChoiceCard
+            icon={Headset}
+            title="Work as an individual dispatcher"
+            description="I dispatch on my own. Confirm a work email and start straight away."
+            onSelect={() => setStage("individual")}
+          />
+          <ChoiceCard
             icon={Plus}
             title="Create your dispatch organization"
             description="Start a new organization. You become its owner and invite your dispatchers."
             onSelect={() => setStage("create-org")}
           />
-          <ChoiceCard
-            icon={Link2}
-            title="Join a dispatch organization"
-            description="Use the invitation link an administrator sent you. Invitation required."
-            onSelect={() => setStage("join")}
-          />
           <div className="pt-1.5">
             <BackLink onClick={() => setStage("role")} />
           </div>
-        </div>
-      ) : null}
-
-      {stage === "join" ? (
-        <div className="space-y-4">
-          <FormAlert tone="info" title="You need an invitation to join." role="none">
-            Ask an administrator of the dispatch organization to send you an invitation link.
-            Organizations are not listed publicly and cannot be joined by name.
-          </FormAlert>
-          <InvitationPanel
-            onJoined={() => {
-              setOutcome("dispatch-joined");
-              setStage("done");
-            }}
-          />
-          <div className="pt-1">
-            <BackLink onClick={() => setStage("dispatch-fork")} />
-          </div>
-        </div>
-      ) : null}
-
-      {stage === "done" ? (
-        <div className="space-y-5">
-          <div className="flex items-center gap-3 rounded-lg border border-st-success/35 bg-st-success-bg/50 px-4 py-3.5">
-            <CircleCheck className="size-5 shrink-0 text-st-success" aria-hidden />
-            <p className="text-[0.8125rem] font-medium text-fg">Your account is ready to use.</p>
-          </div>
-          <Button variant="primary" size="lg" className="w-full" onClick={enterWorkspace}>
-            Go to Antcolos
-          </Button>
         </div>
       ) : null}
     </AuthShell>

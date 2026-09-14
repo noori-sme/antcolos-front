@@ -10,7 +10,7 @@ import { services } from "@/lib/api";
 import type {
   CreateAdjustmentInput,
   RaiseDisputeInput,
-  RecordPaymentInput,
+  RecordSettlementPaymentInput,
   ResolveDisputeInput,
   SettlementView,
 } from "@/lib/api/contracts/settlements";
@@ -113,7 +113,7 @@ export type SettlementAction =
   | { kind: "addDisputeMessage"; disputeId: string; body: string }
   | { kind: "resolveDispute"; disputeId: string; input: ResolveDisputeInput }
   | { kind: "markReadyForPayment" }
-  | { kind: "recordPayment"; input: RecordPaymentInput }
+  | { kind: "recordPayment"; input: RecordSettlementPaymentInput }
   | { kind: "createAdjustment"; input: CreateAdjustmentInput }
   | { kind: "void"; reason: string }
   | { kind: "generateStatement" };

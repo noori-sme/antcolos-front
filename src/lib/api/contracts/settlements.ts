@@ -7,7 +7,7 @@ import type {
   PayeeKind,
   PayeePrivacy,
   PayeeRef,
-  PaymentMethod,
+  SettlementPaymentMethod,
   Settlement,
   SettlementAdjustmentKind,
   SettlementAttentionItem,
@@ -89,9 +89,9 @@ export interface CreateAdjustmentInput {
   lines: AdjustmentLineInput[];
 }
 
-export interface RecordPaymentInput {
+export interface RecordSettlementPaymentInput {
   amountCents: Cents;
-  method: PaymentMethod;
+  method: SettlementPaymentMethod;
   /** Check number or transfer reference. Never an account number. */
   referenceNumber?: string;
   paidAt: string;
@@ -232,7 +232,7 @@ export interface SettlementsService {
   recordPayment(
     ctx: ServiceContext,
     settlementId: string,
-    input: RecordPaymentInput,
+    input: RecordSettlementPaymentInput,
   ): Promise<SettlementView>;
 
   // --- Corrections ---------------------------------------------------------

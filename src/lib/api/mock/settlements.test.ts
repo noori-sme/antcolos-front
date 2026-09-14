@@ -28,6 +28,11 @@ function ctxFor(
 ): ServiceContext {
   return {
     organizationId,
+    // Required on ServiceContext since the Document Center; the `...over`
+    // Partial spread below widens the literal enough that tsc will not
+    // flag them as missing.
+    organizationName: `Org ${organizationId}`,
+    workspaceKind: "carrier_organization",
     membershipId,
     permissions: new Set(permissions),
     scope: DEFAULT_SCOPE,

@@ -1,6 +1,7 @@
 import {
   MAX_SNOOZE_HOURS, SEVERITY_ORDER,
   type NeedsYouFilters, type NeedsYouHistoryEntry, type NeedsYouItem,
+  type PermissionKey,
 } from "@/types";
 import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
@@ -9,9 +10,23 @@ import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
 import { isDerivedSettlementItem, settlementNeedsYouItems } from "./settlement-needs-you";
+import { ensureInvoiceNeedsYou } from "./invoice-registry";
 import { mockStore } from "./store";
+import {
+  insuranceContextFrom, insuranceNeedsYou, isInsuranceNeedsYouId,
+  replaceInsuranceNeedsYou,
+} from "./insurance-registry";
+import { syncDerivedNeedsYouFor } from "./needs-you-derive";
 import { fleetSync, truckContextFrom } from "./truck-registry";
+import {
+  isMaintenanceNeedsYouId, maintenanceContextFrom, maintenanceNeedsYouItems,
+  putMaintenanceNeedsYouItem, withOverlayContext,
+} from "./maintenance-registry";
 import { nowIso } from "./time";
+import {
+  applyDocumentItemAction, documentNeedsYouItems, findDocumentNeedsYouItem,
+  isDocumentNeedsYouId,
+} from "./document-needs-you";
 
 const LATENCY_MS = 180;
 const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
@@ -21,21 +36,63 @@ const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
  * that renders a forbidden button still fails at this seam — which is exactly
  * the expectation the real API must meet.
  */
-function require(ctx: ServiceContext, ...keys: Parameters<ServiceContext["permissions"]["has"]>[0][]) {
+function requirePermissions(ctx: ServiceContext, ...keys: PermissionKey[]) {
   const missing = keys.filter((k) => !ctx.permissions.has(k));
   if (missing.length > 0) throw new PermissionDeniedError(missing);
 }
 
-/** Urgency = severity first, then how close the deadline is. */
+/**
+ * Urgency = severity first, then how close the deadline is.
+ *
+ * Severity has to dominate ABSOLUTELY, and making that true takes some care:
+ * epoch milliseconds are around 1.8e12, so any modest multiplier on severity
+ * lets a low item with a deadline this afternoon sort above a critical one with
+ * no deadline at all. The severity band is therefore far wider than the whole
+ * range a due time can contribute, and the due time only ever breaks ties
+ * inside one band.
+ */
 export function urgencyScore(item: NeedsYouItem): number {
-  const severity = SEVERITY_ORDER[item.severity] * 1_000_000;
-  const due = item.dueAt ? new Date(item.dueAt).getTime() : Number.MAX_SAFE_INTEGER / 2;
-  return severity + due / 1_000_000;
+  /** Well past any real due date, so "no deadline" sorts last within its band. */
+  const NO_DEADLINE = Date.UTC(2100, 0, 1);
+  const due = item.dueAt ? new Date(item.dueAt).getTime() : NO_DEADLINE;
+  return SEVERITY_ORDER[item.severity] * 1e13 + due / 1e3;
+}
+
+/**
+ * The queue is two sources, not one.
+ *
+ * Seeded operational items live in the organization's partition. Document items
+ * are DERIVED from live document state every time the queue is read, so a
+ * missing certificate appears without a fixture and a replaced one disappears
+ * without anybody resolving it.
+ */
+function allItems(ctx: ServiceContext): NeedsYouItem[] {
+  const org = mockStore.org(ctx.organizationId);
+  return [
+    ...org.needsYou,
+    ...documentNeedsYouItems(ctx),
+    // Insurance items are derived the same way documents are: an expiring
+    // policy appears the moment it slips inside the window and a renewed one
+    // stops appearing without anybody tidying up after it.
+    ...insuranceNeedsYou(insuranceContextFrom(ctx)),
+    // Maintenance is derived the same way: a defect or an overdue service
+    // shows up while it is true and stops showing when it is dealt with.
+    ...maintenanceNeedsYouItems(maintenanceContextFrom(ctx)),
+    // Settlement items are derived too. Their own module has already applied
+    // carrier isolation and payee privacy, so they arrive ready to show.
+    ...settlementNeedsYouItems(ctx),
+  ];
 }
 
 function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // Item-level permission gate.
   if (!item.requires.every((k) => ctx.permissions.has(k))) return false;
+
+  // Maintenance items are DERIVED from the maintenance registry, which has
+  // already applied the caller's permissions, their relationship with the
+  // equipment and their responsibility scope. Re-narrowing them by entity kind
+  // here would second-guess a stricter check with a weaker one.
+  if (isMaintenanceNeedsYouId(item.id)) return true;
 
   // Record scope: a driver sees only items about their own loads and record.
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
@@ -45,6 +102,9 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
       return load?.assignment?.driverId === ctx.driverProfileId;
     }
     if (item.entity.kind === "driver") return item.entity.id === ctx.driverProfileId;
+    // A document item is already scoped by the document service, which will not
+    // return another person's paperwork to a driver membership at all.
+    if (item.entity.kind === "document") return isDocumentNeedsYouId(item.id);
     if (item.entity.kind === "truck") {
       // Visibility of a truck is a registry question, not an org-data one.
       const mine = fleetSync(truckContextFrom(ctx));
@@ -92,49 +152,97 @@ function appendHistory(
 }
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
-  // A derived item is computed from another module's state, so there is nothing
-  // here to write to. Snoozing or resolving one would hide the row without
-  // touching the thing it is about, which is the one outcome the queue must
-  // never allow.
+  // A settlement item is computed from the settlement itself, so there is
+  // nothing here to write to. Snoozing or resolving one would hide the row
+  // without touching the thing it is about, which is the one outcome the queue
+  // must never allow.
   if (isDerivedSettlementItem(itemId)) {
     throw new Error(
       "This item is worked out from the settlement itself. Open the settlement and fix what it is asking for — it clears on its own.",
     );
   }
-  const org = mockStore.org(ctx.organizationId);
-  const item = org.needsYou.find((n) => n.id === itemId);
+  ensureInvoiceNeedsYou(ctx.organizationId);
+  const item = isInsuranceNeedsYouId(itemId) || isMaintenanceNeedsYouId(itemId)
+    ? allItems(ctx).find((n) => n.id === itemId)
+    : isDocumentNeedsYouId(itemId)
+      ? findDocumentNeedsYouItem(ctx, itemId)
+      : mockStore.org(ctx.organizationId).needsYou.find((n) => n.id === itemId);
   if (!item) throw new NotFoundError("Needs You item");
   mockStore.assertOwned(ctx.organizationId, item.organizationId);
   if (!visibleTo(ctx, item)) throw new PermissionDeniedError(item.requires);
   return item;
 }
 
+/**
+ * Persists a change to whichever source the item came from.
+ *
+ * Seeded items are replaced in the store. Derived items keep only what a person
+ * did to them, because everything else about them is a function of the
+ * documents and must stay that way.
+ */
+function persist(
+  ctx: ServiceContext,
+  item: NeedsYouItem,
+  next: NeedsYouItem,
+): NeedsYouItem {
+  if (isInsuranceNeedsYouId(item.id)) {
+    replaceInsuranceNeedsYou(next);
+    return next;
+  }
+  if (isMaintenanceNeedsYouId(item.id)) {
+    withOverlayContext(maintenanceContextFrom(ctx), () => putMaintenanceNeedsYouItem(next));
+    return next;
+  }
+  if (!isDocumentNeedsYouId(item.id)) {
+    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    return next;
+  }
+  return applyDocumentItemAction(item, {
+    status: next.status,
+    assigneeMembershipId: next.assigneeMembershipId,
+    snoozedUntil: next.snoozedUntil,
+    snoozeReason: next.snoozeReason,
+    resolvedAt: next.resolvedAt,
+    resolutionNote: next.resolutionNote,
+    historyEntry: next.history[next.history.length - 1],
+  });
+}
+
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
-    const org = mockStore.org(ctx.organizationId);
-    // Settlement items are derived rather than stored, so they join the queue
-    // here on every read. Their own module has already applied carrier
-    // isolation and payee privacy to them.
-    const stored = org.needsYou.map(autoUnsnooze).filter((i) => visibleTo(ctx, i));
-    return [...stored, ...settlementNeedsYouItems(ctx)]
+    // Regenerate first: the queue is a view of live state, so what it holds is
+    // decided here rather than by whatever happened to be written down earlier.
+    syncDerivedNeedsYouFor(ctx);
+    // The invoice module contributes its own items — missing documents,
+    // disputes and overdue receivables — into THIS queue rather than keeping
+    // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above
+    // leaves them alone.
+    ensureInvoiceNeedsYou(ctx.organizationId);
+    return allItems(ctx)
+      .map(autoUnsnooze)
+      .filter((i) => visibleTo(ctx, i))
       .filter((i) => matches(ctx, i, filters))
       .sort((a, b) => urgencyScore(a) - urgencyScore(b));
   },
 
   async get(ctx, itemId) {
     await wait();
+    syncDerivedNeedsYouFor(ctx);
     return autoUnsnooze(find(ctx, itemId));
   },
 
   async openCount(ctx) {
-    const org = mockStore.org(ctx.organizationId);
-    const stored = org.needsYou
+    syncDerivedNeedsYouFor(ctx);
+    // The invoice module contributes its own items — missing documents,
+    // disputes and overdue receivables — into THIS queue rather than keeping
+    // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above
+    // leaves them alone.
+    ensureInvoiceNeedsYou(ctx.organizationId);
+    return allItems(ctx)
       .map(autoUnsnooze)
       .filter((i) => visibleTo(ctx, i))
       .filter((i) => i.status === "open" || i.status === "escalated").length;
-    // Derived items are always open, so they all count.
-    return stored + settlementNeedsYouItems(ctx).length;
   },
 
   async assign(ctx, itemId, membershipId) {
@@ -149,8 +257,7 @@ export const mockNeedsYouService: NeedsYouService = {
         note: `Assigned to ${membershipId}`,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async snooze(ctx, itemId, input: SnoozeInput) {
@@ -174,8 +281,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "snoozed", note: input.reason.trim(), until,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async unsnooze(ctx, itemId) {
@@ -188,8 +294,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozeReason: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "unsnoozed" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async escalate(ctx, itemId, input: EscalateInput) {
@@ -205,15 +310,14 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "escalated", note: input.note.trim(),
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async resolve(ctx, itemId, note) {
     await wait();
     const item = find(ctx, itemId);
     // Acting on an item needs the permission its recommended action declares.
-    require(ctx, ...item.recommendedAction.requires);
+    requirePermissions(ctx, ...item.recommendedAction.requires);
     const next: NeedsYouItem = {
       ...item,
       status: "resolved",
@@ -222,8 +326,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozedUntil: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "resolved", note }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async reopen(ctx, itemId) {
@@ -236,7 +339,6 @@ export const mockNeedsYouService: NeedsYouService = {
       resolutionNote: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "reopened" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 };

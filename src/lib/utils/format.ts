@@ -21,6 +21,13 @@ export function timeIn(iso: string, timeZone: string): string {
   }).format(new Date(iso));
 }
 
+/** Issue dates, due dates and delivery dates are days, not moments. */
+export function dateIn(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short", day: "numeric", year: "numeric", timeZone,
+  }).format(new Date(iso));
+}
+
 export function dateTimeIn(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone,

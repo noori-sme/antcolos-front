@@ -3,7 +3,7 @@ import type {
   DisputeReason,
   DisputeResolution,
   MileageBasis,
-  PaymentMethod,
+  SettlementPaymentMethod,
   PercentageBasis,
   SettlementAdjustmentKind,
   SettlementAuditAction,
@@ -70,7 +70,7 @@ export const DISPUTE_RESOLUTION_LABEL: Record<DisputeResolution, string> = {
   withdrawn: "Withdrawn",
 };
 
-export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+export const PAYMENT_METHOD_LABEL: Record<SettlementPaymentMethod, string> = {
   ach: "ACH",
   check: "Check",
   wire: "Wire",

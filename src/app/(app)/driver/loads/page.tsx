@@ -1,12 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { TripsScreen } from "@/features/driver-workflow/trips-screen";
 
 export const metadata = { title: "My loads" };
 
 export default function Page() {
-  return (
-    <ModulePlaceholder
-      title="My loads"
-      description="Assigned and past loads, stop instructions, status actions and document upload."
-    />
-  );
+  return <TripsScreen />;
 }

@@ -536,14 +536,16 @@ export interface SettlementDispute {
  * payment execution here, and this record deliberately holds no account
  * details. It is a bookkeeping note that a payment happened elsewhere.
  */
-export type PaymentMethod = "ach" | "check" | "wire" | "fuel_card" | "cash" | "other";
+/** How a settlement is paid out. Distinct from the invoice module's
+ * PaymentMethod, which is how an invoice is paid IN. */
+export type SettlementPaymentMethod = "ach" | "check" | "wire" | "fuel_card" | "cash" | "other";
 
 export interface SettlementPayment {
   id: string;
   settlementId: string;
   amountCents: Cents;
   /** How it was paid, outside Antcolos. No account numbers, ever. */
-  method: PaymentMethod;
+  method: SettlementPaymentMethod;
   /** Check number, transfer reference — whatever the carrier wants to keep. */
   referenceNumber?: string;
   /** When the money actually moved, per the person recording it. */

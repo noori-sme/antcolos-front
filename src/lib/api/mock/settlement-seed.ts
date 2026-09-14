@@ -5,7 +5,7 @@ import type {
   DisputeReason,
   DisputeResolution,
   PayeeRef,
-  PaymentMethod,
+  SettlementPaymentMethod,
   Settlement,
   SettlementAdjustment,
   SettlementAdjustmentKind,
@@ -516,7 +516,7 @@ interface PaymentSeed {
    * prevent. So a full payment is derived, never typed.
    */
   cents?: Cents;
-  method: PaymentMethod;
+  method: SettlementPaymentMethod;
   reference?: string;
   paidDaysAgo: number;
 }

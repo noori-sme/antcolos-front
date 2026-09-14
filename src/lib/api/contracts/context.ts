@@ -1,4 +1,4 @@
-import type { ActorRef, PermissionKey } from "@/types";
+import type { ActorRef, PermissionKey, WorkspaceKind } from "@/types";
 
 /**
  * Every service call carries the organization it acts in and the permissions of
@@ -7,6 +7,17 @@ import type { ActorRef, PermissionKey } from "@/types";
  */
 export interface ServiceContext {
   organizationId: string;
+  /** Display name, snapshotted onto records the membership creates. */
+  organizationName: string;
+  /**
+   * What kind of workspace this is.
+   *
+   * Derived from the active organization, never supplied by a screen, because
+   * it decides which document requirements exist. A dispatch organization that
+   * could ask for the carrier checklist would be a dispatch organization that
+   * could be shown carrier-only requirements.
+   */
+  workspaceKind: WorkspaceKind;
   membershipId: string;
   permissions: ReadonlySet<PermissionKey>;
   actor: ActorRef;

@@ -1,15 +1,16 @@
 import { defineConfig } from "vitest/config";
-import { fileURLToPath } from "node:url";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 /**
- * Unit tests for the parts of Antcolos that must be right rather than merely
- * look right: money arithmetic, the settlement status machine, and the service
- * layer's isolation, privacy and immutability rules.
+ * Tests run against the SERVICE LAYER, not the screens.
+ *
+ * The rules worth protecting — versioning, organization isolation, permissions,
+ * relationship scope, which requirements each workspace type is asked for — are
+ * all enforced below the UI. A test that clicked a button would prove the
+ * button; these prove the boundary.
  */
 export default defineConfig({
-  resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
-  },
+  plugins: [tsconfigPaths()],
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],

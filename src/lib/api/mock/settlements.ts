@@ -44,7 +44,7 @@ import type {
   CreateAdjustmentInput,
   DisputeMessageInput,
   RaiseDisputeInput,
-  RecordPaymentInput,
+  RecordSettlementPaymentInput,
   ResolveDisputeInput,
   SettlementListTotals,
   SettlementsService,
@@ -851,7 +851,7 @@ export const mockSettlementsService: SettlementsService = {
     );
   },
 
-  async recordPayment(ctx, settlementId, input: RecordPaymentInput): Promise<SettlementView> {
+  async recordPayment(ctx, settlementId, input: RecordSettlementPaymentInput): Promise<SettlementView> {
     await wait();
     requirePermissions(ctx, "settlements:pay");
     assertCarrierAdministrator(ctx);

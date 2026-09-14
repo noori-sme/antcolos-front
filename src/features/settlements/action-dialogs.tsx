@@ -7,7 +7,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { money } from "@/lib/utils/format";
-import type { DisputeReason, PaymentMethod, Settlement } from "@/types";
+import type { DisputeReason, SettlementPaymentMethod, Settlement } from "@/types";
 import { DISPUTE_REASON_LABEL, PAYMENT_METHOD_LABEL } from "./settlement-labels";
 import type { SettlementMutation } from "./hooks";
 
@@ -317,7 +317,7 @@ export function ResolveDisputeDialog({
 export function RecordPaymentDialog({ settlement, open, onOpenChange, action }: DialogProps) {
   const outstanding = settlement.amountOutstandingCents;
   const [amount, setAmount] = useState((outstanding / 100).toFixed(2));
-  const [method, setMethod] = useState<PaymentMethod>("ach");
+  const [method, setMethod] = useState<SettlementPaymentMethod>("ach");
   const [reference, setReference] = useState("");
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
   const run = useRun(action, onOpenChange);
@@ -354,10 +354,10 @@ export function RecordPaymentDialog({ settlement, open, onOpenChange, action }: 
             <select
               id="payment-method"
               value={method}
-              onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+              onChange={(e) => setMethod(e.target.value as SettlementPaymentMethod)}
               className={SELECT}
             >
-              {(Object.keys(PAYMENT_METHOD_LABEL) as PaymentMethod[]).map((m) => (
+              {(Object.keys(PAYMENT_METHOD_LABEL) as SettlementPaymentMethod[]).map((m) => (
                 <option key={m} value={m}>{PAYMENT_METHOD_LABEL[m]}</option>
               ))}
             </select>
