@@ -17,6 +17,10 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/dispatch/rate-confirmations": ["loads:view"],
   "/dispatch/opportunities": ["loads:view", "trucks:view"],
   "/rate-cons/new": ["loads:create", "documents:upload"],
+  // Confirming who a broker is is a stronger power than reading the directory,
+  // so the review screen is gated above its parent rather than inheriting it.
+  "/directory/review": ["customers:view", "customers:resolve"],
+  "/customers": ["customers:view"],
   "/fleet/trucks/new": ["trucks:create"],
   "/rate-cons": ["loads:view"],
   "/settings": ["members:view"],

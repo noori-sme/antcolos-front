@@ -1,6 +1,6 @@
 import type {
   ActorRef, Assignment, BookingBlockKind, BookingRecord, ConsentRequirement,
-  DocumentRequirement, Load, LoadEvent, Negotiation, Stop,
+  Load, LoadDocumentRequirement, LoadEvent, Negotiation, Stop,
 } from "@/types";
 import { authorityAllowsDispatch } from "@/types";
 import { listingById } from "./listing-registry";
@@ -319,7 +319,7 @@ export async function bookNegotiation(
 
   // The rate confirmation has NOT arrived. Requiring it and leaving it
   // unsatisfied is the honest state, and it is what the next milestone fills.
-  const documentRequirements: DocumentRequirement[] = [
+  const documentRequirements: LoadDocumentRequirement[] = [
     { kind: "rate_confirmation", required: true },
     { kind: "bill_of_lading", required: true },
     { kind: "proof_of_delivery", required: true },

@@ -358,6 +358,11 @@ export interface TruckDocument {
   sizeBytes?: number;
   expiresAt?: string;
   rejectionReason?: string;
+  /**
+   * Set when the document was added for one carrier's onboarding rather than
+   * for the truck itself. Only that carrier sees it.
+   */
+  carrierOrganizationId?: string;
   /** Set when a newer document replaced this one. The old record survives. */
   supersededByDocumentId?: string;
   addedByOrganizationId: string;

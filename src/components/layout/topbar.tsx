@@ -3,6 +3,7 @@
 import { Bell, Inbox, Search } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { WORKSPACE_KIND_LABEL, workspaceKindOf } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Logo } from "@/components/brand/logo";
@@ -42,8 +43,10 @@ export function Topbar() {
         <span className="truncate text-[0.875rem] font-medium text-fg">
           {organization?.displayName}
         </span>
+        {/* Three workspace kinds, not two: a one-person dispatch workspace is
+            not a dispatch organization, and is never labelled as one. */}
         <Badge tone="outline">
-          {organization?.type === "CARRIER" ? "Carrier" : "Dispatch agency"}
+          {organization ? WORKSPACE_KIND_LABEL[workspaceKindOf(organization)] : null}
         </Badge>
         {membership?.scope.loads === "assigned" ? (
           <Badge tone="info">Assigned loads only</Badge>
