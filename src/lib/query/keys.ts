@@ -18,4 +18,6 @@ export const queryKeys = {
     [...orgKey(organizationId), "members"] as const,
   loads: (organizationId: string, filters?: unknown) =>
     [...orgKey(organizationId), "loads", filters ?? null] as const,
+  invoices: (organizationId: string, membershipId: string, scope: unknown) =>
+    [...orgKey(organizationId), "invoices", membershipId, scope ?? null] as const,
 } as const;

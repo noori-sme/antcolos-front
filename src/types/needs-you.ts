@@ -21,6 +21,8 @@ export type NeedsYouCategory =
   | "expiring_document"
   | "settlement_review"
   | "invoice_review"
+  | "invoice_dispute"
+  | "invoice_overdue"
   | "customer_response"
   | "truck_going_empty"
   /* ---- MT Loop conditions. Derived from live state, never seeded. ---- */
@@ -205,6 +207,8 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   expiring_document: "Document expiry",
   settlement_review: "Settlement review",
   invoice_review: "Invoice review",
+  invoice_dispute: "Invoice disputed",
+  invoice_overdue: "Invoice overdue",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
   unassigned_loop: "MT Loop with nobody on it",

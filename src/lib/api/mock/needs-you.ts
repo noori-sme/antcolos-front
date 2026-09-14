@@ -9,6 +9,7 @@ import {
 import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
+import { ensureInvoiceNeedsYou } from "./invoice-registry";
 import { mockStore } from "./store";
 import { syncDerivedNeedsYouFor } from "./needs-you-derive";
 import { fleetSync, truckContextFrom } from "./truck-registry";
@@ -123,6 +124,7 @@ function appendHistory(
 }
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
+  ensureInvoiceNeedsYou(ctx.organizationId);
   const item = isDocumentNeedsYouId(itemId)
     ? findDocumentNeedsYouItem(ctx, itemId)
     : mockStore.org(ctx.organizationId).needsYou.find((n) => n.id === itemId);
@@ -165,6 +167,11 @@ export const mockNeedsYouService: NeedsYouService = {
     // Regenerate first: the queue is a view of live state, so what it holds is
     // decided here rather than by whatever happened to be written down earlier.
     syncDerivedNeedsYouFor(ctx);
+    // The invoice module contributes its own items — missing documents,
+    // disputes and overdue receivables — into THIS queue rather than keeping
+    // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above
+    // leaves them alone.
+    ensureInvoiceNeedsYou(ctx.organizationId);
     return allItems(ctx)
       .map(autoUnsnooze)
       .filter((i) => visibleTo(ctx, i))
@@ -180,6 +187,11 @@ export const mockNeedsYouService: NeedsYouService = {
 
   async openCount(ctx) {
     syncDerivedNeedsYouFor(ctx);
+    // The invoice module contributes its own items — missing documents,
+    // disputes and overdue receivables — into THIS queue rather than keeping
+    // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above
+    // leaves them alone.
+    ensureInvoiceNeedsYou(ctx.organizationId);
     return allItems(ctx)
       .map(autoUnsnooze)
       .filter((i) => visibleTo(ctx, i))
