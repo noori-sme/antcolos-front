@@ -15,7 +15,7 @@ export function ModulePlaceholder({
       <PageHeader title={title} description={description} />
       <EmptyState
         icon={Construction}
-        title="Not built yet"
+        title="Not built yet — preview test"
         description="The design system and app shell are the first milestone. This module is next in the queue and will be designed with you before it is built."
       />
     </div>
