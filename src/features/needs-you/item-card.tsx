@@ -3,7 +3,7 @@
 import {
   BellOff, CheckCircle2, ChevronRight, FileText, Package, Truck, User,
   Building2, Receipt, ArrowUpCircle, RefreshCw, Radar, Mail, Handshake,
-  ClipboardCheck, MailQuestion, FileSignature, type LucideIcon,
+  ClipboardCheck, MailQuestion, FileSignature, UserCheck, type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORY_LABEL, type NeedsYouEntityKind, type NeedsYouItem } from "@/types";
@@ -16,6 +16,7 @@ const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   customer: Building2, settlement: Receipt, invoice: Receipt, mt_loop: RefreshCw,
   carrier: Building2, listing: Radar, draft: Mail, negotiation: Handshake,
   booking: ClipboardCheck, message: MailQuestion, rate_confirmation: FileSignature,
+  driver_review: UserCheck,
 };
 
 export function NeedsYouCard({

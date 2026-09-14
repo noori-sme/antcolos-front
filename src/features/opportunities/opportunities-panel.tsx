@@ -5,10 +5,11 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { MatchWithListing, OutreachDraft } from "@/types";
-import { DRAFT_STATUS_LABEL } from "@/types";
+import { DRAFT_STATUS_LABEL, UNARGUABLE_CHECKS } from "@/types";
 import { dismissMatch, restoreMatch, shortlistMatch } from "@/lib/api/mock/opportunity-matching";
 import { approveDraft, cancelDraft } from "@/lib/api/mock/outreach-drafts";
-import { canOpen, openNegotiation } from "@/lib/api/mock/negotiation";
+import { openNegotiation } from "@/lib/api/mock/negotiation";
+import { sendOpportunityToDriver } from "@/lib/api/mock/driver-review";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
 import { MatchCard } from "./match-card";
 
@@ -44,6 +45,8 @@ export function OpportunitiesPanel({
     else if (outcome.status === "not_permitted") setError("You are not allowed to do that.");
     else if (outcome.status === "needs_reason") setError("That needs a reason.");
     else if (outcome.status === "not_found") setError("That is no longer here.");
+    else if (outcome.status === "no_driver") setError("There is no driver on this truck to send it to.");
+    else if (outcome.status === "undeliverable") setError("The driver's side did not take it.");
     onChanged();
   }
 
@@ -55,18 +58,40 @@ export function OpportunitiesPanel({
    * Asked of the service rather than guessed from the match's status, so the
    * button and the rule can never disagree: the same function decides both.
    */
-  function ask(matchId: string): { onAskForIt?: () => void; askBlockedBecause?: string } {
+  /**
+   * What this row offers, read from the row.
+   *
+   * Everything here comes off the data the service already resolved. Asking a
+   * module during render is what made this note go stale: the card's props had
+   * not changed, so nothing re-rendered when the driver answered.
+   */
+  function ask(row: MatchWithListing) {
     if (!ctx) return {};
-    const gate = canOpen(matchId, ctx);
-    if (gate.status === "ok") {
-      return { onAskForIt: () => void act(() => openNegotiation(matchId, ctx)) };
+    const matchId = row.match.matchId;
+    const driver = row.driver;
+    const negotiable = row.match.status !== "closed_listing_gone"
+      && row.match.status !== "booked"
+      && row.listing.status === "open";
+
+    const unarguable = row.match.checks.filter(
+      (c) => c.outcome === "fail" && UNARGUABLE_CHECKS.includes(c.key),
+    );
+    if (unarguable.length > 0) {
+      return { askBlockedBecause: `No conversation will fix this: ${unarguable.map((c) => c.detail).join(" ")}` };
     }
-    if (gate.status === "unarguable") {
-      return {
-        askBlockedBecause: `No conversation will fix this: ${gate.reasons.join(" ")}`,
-      };
-    }
-    return {};
+
+    const send = driver?.canSend && negotiable
+      ? { onSendToDriver: () => void act(() => sendOpportunityToDriver(matchId, ctx)) }
+      : {};
+    const blockedByDriver = Boolean(driver && !driverClear(driver));
+
+    return {
+      ...send,
+      onAskForIt: negotiable && !blockedByDriver
+        ? () => void act(() => openNegotiation(matchId, ctx))
+        : undefined,
+      driverNote: driver?.note,
+    };
   }
 
   return (
@@ -122,7 +147,7 @@ export function OpportunitiesPanel({
                     onDismiss={(reason) => void act(() => dismissMatch(row.match.matchId, reason, ctx!))}
                     onRestore={() => void act(() => restoreMatch(row.match.matchId, ctx!))}
                     onOpenDraft={setOpenDraftId}
-                    {...ask(row.match.matchId)}
+                    {...ask(row)}
                   />
                 ))}
               </ul>
@@ -154,7 +179,7 @@ export function OpportunitiesPanel({
                         onDismiss={(reason) => void act(() => dismissMatch(row.match.matchId, reason, ctx!))}
                         onRestore={() => void act(() => restoreMatch(row.match.matchId, ctx!))}
                         onOpenDraft={setOpenDraftId}
-                        {...ask(row.match.matchId)}
+                        {...ask(row)}
                       />
                     ))}
                   </ul>
@@ -176,6 +201,21 @@ export function OpportunitiesPanel({
       ) : null}
     </section>
   );
+}
+
+/**
+ * Whether the driver's side is out of the way.
+ *
+ * Mirrors the service's own gate rather than second-guessing it: waiting,
+ * paused and declined hold a negotiation up; approved, countered and nothing
+ * sent at all do not.
+ */
+export function driverClear(driver: { status?: string; reviewRequired: boolean; hasDriver: boolean }): boolean {
+  if (driver.status === "waiting" || driver.status === "paused" || driver.status === "declined") {
+    return false;
+  }
+  if (driver.status) return true;
+  return !driver.reviewRequired || !driver.hasDriver;
 }
 
 /* -------------------------------------------------------------------------- */

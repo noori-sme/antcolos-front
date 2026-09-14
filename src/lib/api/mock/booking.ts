@@ -10,6 +10,7 @@ import { allMatches, bookMatch, truckMatchContext, type BookingOutcome } from ".
 import {
   closeNegotiationsForListing, markBooked, negotiationById,
 } from "./negotiation";
+import { closeReviewsForListing, reviewForMatch } from "./driver-review";
 import { draftsFor, supersedeDraftsForListing } from "./outreach-drafts";
 import { mockStore } from "./store";
 
@@ -409,6 +410,14 @@ export async function bookNegotiation(
     negotiation.listingId,
     `Unit ${loop.truckUnit} got this load.`,
     negotiation.negotiationId,
+  );
+  // A driver left holding a question about a load somebody else booked is the
+  // same failure as a broker left waiting for a truck that is gone.
+  closeReviewsForListing(
+    ctx.organizationId,
+    negotiation.listingId,
+    `Unit ${loop.truckUnit} got this load.`,
+    reviewForMatch(negotiation.matchId, ctx)?.reviewId,
   );
   markBooked(negotiation);
 

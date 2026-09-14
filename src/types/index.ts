@@ -24,6 +24,7 @@ export type * from "./opportunity";
 export type * from "./negotiation";
 export type * from "./communication";
 export type * from "./rate-confirmation";
+export type * from "./driver-review";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
@@ -44,6 +45,10 @@ export {
 export {
   RATECON_FIELD_LABEL, RATECON_STATUS_LABEL,
 } from "./rate-confirmation";
+export {
+  VISIBILITY_FIELD_LABEL, FINANCIAL_FIELDS, DRIVER_DECISION_LABEL,
+  DRIVER_REVIEW_STATUS_LABEL,
+} from "./driver-review";
 export {
   AUTHORITY_STATUS_LABEL, CONTACT_ROLE_LABEL, RULE_KIND_LABEL,
   CARRIER_DOCUMENT_LABEL, authorityAllowsDispatch,

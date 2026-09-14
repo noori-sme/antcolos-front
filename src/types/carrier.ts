@@ -149,6 +149,8 @@ export type CarrierRuleKind =
   | "max_weight_lbs"
   /** The driver must accept before the load is dispatched. */
   | "driver_consent_required"
+  /** The driver must see a load and approve it before anybody negotiates it. */
+  | "driver_review_required"
   /** No hazardous materials, whatever the truck is rated for. */
   | "no_hazmat"
   /** States the carrier will not enter. */
@@ -165,6 +167,7 @@ export const RULE_KIND_LABEL: Record<CarrierRuleKind, string> = {
   max_deadhead_miles: "Maximum deadhead",
   max_weight_lbs: "Maximum weight",
   driver_consent_required: "Driver must accept",
+  driver_review_required: "Driver reviews first",
   no_hazmat: "No hazmat",
   refused_states: "States refused",
   refused_brokers: "Brokers refused",

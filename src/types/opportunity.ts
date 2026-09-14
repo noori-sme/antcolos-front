@@ -457,10 +457,33 @@ export interface OpportunityMatch {
   history: MatchEvent[];
 }
 
+/**
+ * Where the driver's review of this match has got to.
+ *
+ * Carried as DATA on the row rather than read from a service while a screen
+ * renders. A screen that asks a module "what is the state of this" mid-render
+ * is asking something React cannot see, and a memoized component will happily
+ * keep showing the answer from two minutes ago.
+ */
+export interface MatchDriverState {
+  /** True when there is a driver on the truck to send anything to. */
+  hasDriver: boolean;
+  /** True when the carrier will not have it negotiated before the driver sees it. */
+  reviewRequired: boolean;
+  /** True when this may be sent right now. */
+  canSend: boolean;
+  status?: string;
+  driverName?: string;
+  /** Why the negotiation is waiting, or where the review got to. */
+  note?: string;
+}
+
 /** A match with the listing it is about, for a screen that needs both. */
 export interface MatchWithListing {
   match: OpportunityMatch;
   listing: Listing;
+  /** The driver review on it, if the workspace runs them. */
+  driver?: MatchDriverState;
   /** Present when a draft covers this match. */
   draftId?: string;
 }
