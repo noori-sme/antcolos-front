@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Check, ChevronsUpDown, Plus, Truck } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, Plus, Truck, UserRound } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useActiveMembership, useSession } from "@/lib/session/hooks";
+import { workspaceKindOf, type Organization } from "@/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -32,9 +33,7 @@ export function OrgSwitcher({ collapsed = false }: { collapsed?: boolean }) {
         aria-label="Switch organization"
       >
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
-          {organization?.type === "CARRIER" ? (
-            <Truck aria-hidden className="size-4" />
-          ) : (
+          {organization ? <WorkspaceIcon organization={organization} className="size-4" /> : (
             <Building2 aria-hidden className="size-4" />
           )}
         </span>
@@ -65,9 +64,7 @@ export function OrgSwitcher({ collapsed = false }: { collapsed?: boolean }) {
               className="items-start"
             >
               <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-sunken text-fg-muted">
-                {org?.type === "CARRIER" ? (
-                  <Truck aria-hidden className="size-3.5" />
-                ) : (
+                {org ? <WorkspaceIcon organization={org} className="size-3.5" /> : (
                   <Building2 aria-hidden className="size-3.5" />
                 )}
               </span>
@@ -100,4 +97,21 @@ export function OrgSwitcher({ collapsed = false }: { collapsed?: boolean }) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/**
+ * A carrier, a dispatch company and one person working for themselves are three
+ * different things, and the switcher says which at a glance.
+ */
+function WorkspaceIcon({
+  organization,
+  className,
+}: {
+  organization: Pick<Organization, "type" | "individual">;
+  className?: string;
+}) {
+  const kind = workspaceKindOf(organization);
+  if (kind === "carrier_organization") return <Truck aria-hidden className={className} />;
+  if (kind === "individual_dispatcher") return <UserRound aria-hidden className={className} />;
+  return <Building2 aria-hidden className={className} />;
 }

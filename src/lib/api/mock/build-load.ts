@@ -1,5 +1,5 @@
 import type {
-  ActorRef, Assignment, Document, DocumentKind, DocumentRequirement,
+  ActorRef, Assignment, Document, DocumentKind, LoadDocumentRequirement,
   EquipmentType, EventSource, Load, LoadEvent, LoadEventKind, LoadStatus, Stop,
 } from "@/types";
 import { hoursFromNow } from "./time";
@@ -186,7 +186,7 @@ export function buildLoad(organizationId: string, seed: LoadSeed): BuiltLoad {
     version: 1,
   }));
 
-  const documentRequirements: DocumentRequirement[] = requiredKinds.map((kind) => ({
+  const documentRequirements: LoadDocumentRequirement[] = requiredKinds.map((kind) => ({
     kind,
     required: true,
     satisfiedByDocumentId: documents.find(

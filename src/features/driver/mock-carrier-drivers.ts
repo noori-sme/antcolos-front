@@ -106,7 +106,7 @@ function seed(): CarrierDriver[] {
       sharedDocuments: [
         { key: "cdl_front", label: "Driver license / CDL — front", status: "approved", fileName: "licence-front.jpg", sharedAt: daysAgo(7), expiresAt: daysFromNow(35) },
         { key: "cdl_back", label: "Driver license / CDL — back", status: "approved", fileName: "licence-back.jpg", sharedAt: daysAgo(7) },
-        { key: "medical_front", label: "Medical card — front", status: "under_review", fileName: "med-card.pdf", sharedAt: daysAgo(2), expiresAt: daysFromNow(300) },
+        { key: "medical_front", label: "Medical card — front", status: "pending_review", fileName: "med-card.pdf", sharedAt: daysAgo(2), expiresAt: daysFromNow(300) },
         { key: "w9", label: "W-9", status: "rejected", fileName: "w9-2025.pdf", sharedAt: daysAgo(3) },
       ],
       invitationHistory: [

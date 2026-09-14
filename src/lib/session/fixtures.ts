@@ -72,6 +72,19 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     createdAt: "2026-03-09T13:30:00.000Z",
   },
   {
+    // An INDIVIDUAL dispatch workspace: one person booking freight for
+    // carriers, with no company behind them yet. It is a dispatch workspace,
+    // not a dispatch organization, and the paperwork asked of it differs —
+    // which is the whole reason it exists in the fixtures.
+    id: "org_solo",
+    type: "DISPATCH_AGENCY",
+    individual: true,
+    legalName: "Sam Murtaza",
+    displayName: "Sam Murtaza Dispatch",
+    timeZone: "America/Los_Angeles",
+    createdAt: "2026-09-01T17:00:00.000Z",
+  },
+  {
     id: "org_cascade",
     type: "CARRIER",
     legalName: "Cascade Haul Co.",
@@ -147,6 +160,21 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     scope: DEFAULT_SCOPE,
     isOwner: true,
     joinedAt: "2026-03-09T13:30:00.000Z",
+  },
+  {
+    // Owner of their own one-person dispatch workspace. The same human being as
+    // every other membership here, with different paperwork obligations.
+    id: "mem_solo_owner",
+    userId: MOCK_USER.id,
+    organizationId: "org_solo",
+    status: "active",
+    title: "Owner",
+    templateIds: [],
+    grants: [],
+    revocations: [],
+    scope: DEFAULT_SCOPE,
+    isOwner: true,
+    joinedAt: "2026-09-01T17:00:00.000Z",
   },
   {
     id: "mem_cascade_driver",
