@@ -6,7 +6,7 @@ import {
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { DriverDocument, DriverDocumentRequirement } from "@/types";
+import type { DocumentRequirement, DriverDocument } from "@/types";
 import { DocumentStatusChip } from "./status-chips";
 import {
   expiryState, formatDate, formatFileSize, todayIsoDate, validateExpiryDate,
@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 
 /** Statuses where the driver has nothing left to do right now. */
-const SETTLED = new Set(["under_review", "approved"]);
+const SETTLED = new Set(["pending_review", "approved"]);
 
 /**
  * One line of the checklist.
@@ -34,7 +34,7 @@ export function DocumentItem({
   onSubmit,
   onExpiryChange,
 }: {
-  requirement: DriverDocumentRequirement;
+  requirement: DocumentRequirement;
   document?: DriverDocument;
   onUpload: (file: File) => void;
   onRemove: () => void;
@@ -47,14 +47,14 @@ export function DocumentItem({
   const [dragging, setDragging] = useState(false);
   const [expiryTouched, setExpiryTouched] = useState(false);
 
-  const status = document?.status ?? "not_started";
-  const uploading = status === "uploading";
+  const status = document?.status ?? "missing";
+  const uploading = Boolean(document?.uploading);
   const hasFile = Boolean(document?.fileName) && !uploading;
   const settled = SETTLED.has(status);
   const needsExpiry = requirement.expires && hasFile && !settled;
   const expiryError =
     needsExpiry && expiryTouched ? validateExpiryDate(document?.expiresAt?.slice(0, 10) ?? "") : null;
-  const readyToSubmit = hasFile && status !== "under_review" && status !== "approved"
+  const readyToSubmit = hasFile && status !== "pending_review" && status !== "approved"
     && (!requirement.expires || Boolean(document?.expiresAt));
 
   function pick(files: FileList | null) {
@@ -86,10 +86,10 @@ export function DocumentItem({
           <p className="flex flex-wrap items-center gap-2">
             <span className="text-[0.875rem] font-semibold text-fg">{requirement.label}</span>
             <DocumentStatusChip status={status} />
-            {!requirement.required ? (
+            {requirement.applicability !== "required" ? (
               <span className="text-[0.6875rem] text-fg-subtle">Optional</span>
             ) : null}
-            {requirement.carrierSpecific ? (
+            {requirement.addedByOrganizationId ? (
               <span className="rounded-full bg-st-info-bg px-1.5 py-0.5 text-[0.6875rem] font-medium text-st-info">
                 Asked for by this carrier
               </span>
@@ -190,7 +190,7 @@ export function DocumentItem({
         </p>
       ) : null}
 
-      {status === "under_review" ? (
+      {status === "pending_review" ? (
         <p className="mt-2 text-[0.75rem] text-fg-muted">
           Sent to the carrier{document?.submittedAt ? ` on ${formatDate(document.submittedAt)}` : ""}.
           Nothing more to do until they look at it.

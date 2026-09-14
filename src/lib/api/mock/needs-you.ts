@@ -11,6 +11,10 @@ import type {
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
+import {
+  applyDocumentItemAction, documentNeedsYouItems, findDocumentNeedsYouItem,
+  isDocumentNeedsYouId,
+} from "./document-needs-you";
 
 const LATENCY_MS = 180;
 const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
@@ -32,6 +36,19 @@ export function urgencyScore(item: NeedsYouItem): number {
   return severity + due / 1_000_000;
 }
 
+/**
+ * The queue is two sources, not one.
+ *
+ * Seeded operational items live in the organization's partition. Document items
+ * are DERIVED from live document state every time the queue is read, so a
+ * missing certificate appears without a fixture and a replaced one disappears
+ * without anybody resolving it.
+ */
+function allItems(ctx: ServiceContext): NeedsYouItem[] {
+  const org = mockStore.org(ctx.organizationId);
+  return [...org.needsYou, ...documentNeedsYouItems(ctx)];
+}
+
 function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // Item-level permission gate.
   if (!item.requires.every((k) => ctx.permissions.has(k))) return false;
@@ -44,6 +61,9 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
       return load?.assignment?.driverId === ctx.driverProfileId;
     }
     if (item.entity.kind === "driver") return item.entity.id === ctx.driverProfileId;
+    // A document item is already scoped by the document service, which will not
+    // return another person's paperwork to a driver membership at all.
+    if (item.entity.kind === "document") return isDocumentNeedsYouId(item.id);
     if (item.entity.kind === "truck") {
       // Visibility of a truck is a registry question, not an org-data one.
       const mine = fleetSync(truckContextFrom(ctx));
@@ -91,19 +111,46 @@ function appendHistory(
 }
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
-  const org = mockStore.org(ctx.organizationId);
-  const item = org.needsYou.find((n) => n.id === itemId);
+  const item = isDocumentNeedsYouId(itemId)
+    ? findDocumentNeedsYouItem(ctx, itemId)
+    : mockStore.org(ctx.organizationId).needsYou.find((n) => n.id === itemId);
   if (!item) throw new NotFoundError("Needs You item");
   mockStore.assertOwned(ctx.organizationId, item.organizationId);
   if (!visibleTo(ctx, item)) throw new PermissionDeniedError(item.requires);
   return item;
 }
 
+/**
+ * Persists a change to whichever source the item came from.
+ *
+ * Seeded items are replaced in the store. Derived items keep only what a person
+ * did to them, because everything else about them is a function of the
+ * documents and must stay that way.
+ */
+function persist(
+  ctx: ServiceContext,
+  item: NeedsYouItem,
+  next: NeedsYouItem,
+): NeedsYouItem {
+  if (!isDocumentNeedsYouId(item.id)) {
+    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    return next;
+  }
+  return applyDocumentItemAction(item, {
+    status: next.status,
+    assigneeMembershipId: next.assigneeMembershipId,
+    snoozedUntil: next.snoozedUntil,
+    snoozeReason: next.snoozeReason,
+    resolvedAt: next.resolvedAt,
+    resolutionNote: next.resolutionNote,
+    historyEntry: next.history[next.history.length - 1],
+  });
+}
+
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
-    const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
+    return allItems(ctx)
       .map(autoUnsnooze)
       .filter((i) => visibleTo(ctx, i))
       .filter((i) => matches(ctx, i, filters))
@@ -116,8 +163,7 @@ export const mockNeedsYouService: NeedsYouService = {
   },
 
   async openCount(ctx) {
-    const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
+    return allItems(ctx)
       .map(autoUnsnooze)
       .filter((i) => visibleTo(ctx, i))
       .filter((i) => i.status === "open" || i.status === "escalated").length;
@@ -135,8 +181,7 @@ export const mockNeedsYouService: NeedsYouService = {
         note: `Assigned to ${membershipId}`,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async snooze(ctx, itemId, input: SnoozeInput) {
@@ -160,8 +205,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "snoozed", note: input.reason.trim(), until,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async unsnooze(ctx, itemId) {
@@ -174,8 +218,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozeReason: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "unsnoozed" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async escalate(ctx, itemId, input: EscalateInput) {
@@ -191,8 +234,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "escalated", note: input.note.trim(),
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async resolve(ctx, itemId, note) {
@@ -208,8 +250,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozedUntil: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "resolved", note }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 
   async reopen(ctx, itemId) {
@@ -222,7 +263,6 @@ export const mockNeedsYouService: NeedsYouService = {
       resolutionNote: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "reopened" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
-    return next;
+    return persist(ctx, item, next);
   },
 };

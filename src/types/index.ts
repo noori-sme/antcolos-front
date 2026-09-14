@@ -7,6 +7,7 @@ export type * from "./session";
 export type * from "./load";
 export type * from "./event";
 export type * from "./document";
+export type * from "./document-center";
 export type * from "./fleet";
 export type * from "./needs-you";
 export type * from "./access";
@@ -23,3 +24,4 @@ export {
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";
+export { workspaceKindOf, WORKSPACE_KIND_LABEL } from "./organization";

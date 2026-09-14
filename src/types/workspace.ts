@@ -1,4 +1,5 @@
 import type { IsoDateTime } from "./common";
+import type { WorkspaceKind } from "./organization";
 
 /**
  * The shape of the place somebody is working in.
@@ -21,15 +22,17 @@ import type { IsoDateTime } from "./common";
  * It is derived, never stored as a role name. Two people in the same
  * organization are in the same workspace and can still see completely different
  * dashboards, because their memberships differ.
+ *
+ * The surface kind reuses `WorkspaceKind`'s spellings rather than inventing
+ * parallel ones, so "carrier_organization" means the same thing here as it does
+ * to the document requirements. The one extra member is the surface that is not
+ * a kind of organization at all: a driver membership is a portal wherever it
+ * sits, including inside a dispatch agency.
  */
-export type WorkspaceKind =
-  | "individual_dispatcher"
-  | "dispatch_organization"
-  | "carrier"
-  | "driver";
+export type WorkspaceSurfaceKind = WorkspaceKind | "driver";
 
 export interface Workspace {
-  kind: WorkspaceKind;
+  kind: WorkspaceSurfaceKind;
   /** The organization this workspace belongs to. Always exactly one. */
   organizationId: string;
   displayName: string;

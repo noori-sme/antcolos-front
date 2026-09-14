@@ -123,7 +123,7 @@ export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
       roleName: invitation.roleName,
       permissions: invitation.permissions,
       // Only what the driver just agreed to hand over.
-      sharedDocumentKeys: requirements.filter((r) => r.required).map((r) => r.key),
+      sharedDocumentKeys: requirements.filter((r) => r.applicability === "required").map((r) => r.key),
     });
     setSaving(false);
     setStage("done");
