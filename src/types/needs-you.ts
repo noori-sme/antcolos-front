@@ -51,7 +51,15 @@ export type NeedsYouCategory =
   /** A booked load the driver has not accepted yet. */
   | "driver_consent"
   /** A booked load whose broker is not linked to a permanent profile. */
-  | "broker_profile_unlinked";
+  | "broker_profile_unlinked"
+  /** A prepared message nobody has read. */
+  | "message_waiting"
+  /** A rate confirmation has arrived and nobody has checked it. */
+  | "ratecon_waiting"
+  /** A rate confirmation disagrees with what was booked. */
+  | "ratecon_disagrees"
+  /** A booked load with no rate confirmation at all. */
+  | "ratecon_missing";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
@@ -70,7 +78,11 @@ export type NeedsYouEntityKind =
   /** One conversation with a broker about one load for one truck. */
   | "negotiation"
   /** A load that was booked out of the Opportunity Inbox. */
-  | "booking";
+  | "booking"
+  /** One prepared message to a broker, in a conversation. */
+  | "message"
+  /** A rate confirmation being checked. */
+  | "rate_confirmation";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -98,7 +110,11 @@ export type NeedsYouActionKind =
   /** Turn an agreed price into a load. */
   | "book_load"
   /** Ask the driver whether they will take it. */
-  | "ask_driver";
+  | "ask_driver"
+  /** Read a prepared message and decide whether it goes. */
+  | "read_message"
+  /** Check a rate confirmation against what was booked. */
+  | "check_ratecon";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -195,6 +211,10 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   agreed_not_booked: "Agreed, not booked",
   driver_consent: "Driver has not accepted",
   broker_profile_unlinked: "Broker profile not linked",
+  message_waiting: "Message waiting to be read",
+  ratecon_waiting: "Rate confirmation to check",
+  ratecon_disagrees: "Rate confirmation disagrees",
+  ratecon_missing: "No rate confirmation yet",
 };
 
 /**

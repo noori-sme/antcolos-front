@@ -14,6 +14,7 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   // these two entries the longest-prefix rule would apply /dispatch's
   // requirements and lock out a dispatcher who may search but not assign.
   "/dispatch/trucks": ["loads:view", "trucks:view"],
+  "/dispatch/rate-confirmations": ["loads:view"],
   "/dispatch/opportunities": ["loads:view", "trucks:view"],
   "/rate-cons/new": ["loads:create", "documents:upload"],
   "/fleet/trucks/new": ["trucks:create"],
