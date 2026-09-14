@@ -15,7 +15,10 @@ import {
   truckOperatingCarrier,
 } from "./truck-registry";
 import { openLoopsFor, type MtLoopContext } from "./mt-loop";
+import { allMatches } from "./opportunity-matching";
 import { carriersForWorkspaceSync } from "./carrier-registry";
+import { sessionForCycle } from "./search-session";
+import { draftsFor } from "./outreach-drafts";
 import { driversForWorkspaceSync, driverDocumentProblems } from "./driver-registry";
 import { nowIso } from "./time";
 
@@ -792,6 +795,128 @@ function driverRules(ctx: DeriveContext): Derived[] {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Search and outreach rules                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Nobody is looking for a load for a truck that is empty.
+ *
+ * The single most expensive thing this system can catch. A truck with an open
+ * cycle, somebody responsible for it, and no search running is a truck that is
+ * costing money while everyone assumes somebody else has it. Deliberately NOT
+ * raised for a loop nobody holds — that already has its own item, and two cards
+ * about one truck is how a queue stops being read.
+ */
+function searchRules(ctx: DeriveContext, loops: MtLoop[]): Derived[] {
+  const out: Derived[] = [];
+  for (const loop of loops) {
+    if (loop.status === "closed" || loop.status === "paused" || loop.status === "blocked") continue;
+    if (loop.status === "covered" || loop.status === "running") continue;
+    // A loop with nobody on it is a different problem, already reported.
+    if (!loop.responsibleMembershipId) continue;
+    if (sessionForCycle(loop.loopId, ctx as MtLoopContext)) continue;
+
+    const emptyIn = hoursUntil(loop.expectedEmptyAt);
+    out.push({
+      key: `no-search-${loop.truckId}`,
+      category: "no_search",
+      severity: emptyIn <= 0 ? "high" : emptyIn <= 8 ? "medium" : "low",
+      title: `Nobody is looking for a load for unit ${loop.truckUnit}`,
+      reason: `${loop.responsibleName ?? "Somebody"} is responsible for this cycle and no search has been started.`,
+      detail: `Running under ${loop.carrierName}.`,
+      entity: loopEntity(loop),
+      recommendedAction: {
+        kind: "start_search", label: "Open the truck and start looking", requires: ["loads:view"],
+      },
+      dueAt: loop.respondBy,
+      source: "system",
+      requires: LOOP_PERMS,
+    });
+  }
+  return out;
+}
+
+/**
+ * A prepared message nobody has read.
+ *
+ * Drafts are only worth preparing if somebody reads them, and a load does not
+ * wait. The severity follows the PICKUP, not the age of the draft: a message
+ * about a load picking up in three hours is urgent however recently it was
+ * written.
+ */
+function draftRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("loads:view")) return [];
+  const out: Derived[] = [];
+
+  for (const draft of draftsFor(ctx as MtLoopContext)) {
+    if (draft.status !== "ready") continue;
+    out.push({
+      key: `draft-${draft.draftId}`,
+      category: draft.blockedReason ? "missing_availability" : "draft_waiting",
+      severity: draft.blockedReason ? "high" : "medium",
+      title: draft.blockedReason
+        ? `The message to ${draft.toName ?? "the broker"} for ${draft.carrierName} cannot go out`
+        : `A message for ${draft.carrierName} is waiting for you to read it`,
+      reason: draft.blockedReason
+        ?? `${draft.subject} — covering ${draft.truckUnits.length === 1 ? "unit" : "units"} ${draft.truckUnits.join(", ")}. Nothing is sent until you approve it.`,
+      entity: {
+        kind: "draft",
+        id: draft.draftId,
+        label: `${draft.carrierName} · ${draft.truckUnits.join(", ")}`,
+        href: "/dispatch/opportunities",
+      },
+      recommendedAction: {
+        kind: "review_draft", label: "Read it", requires: ["loads:view"],
+      },
+      source: "system",
+      requires: ["loads:view"],
+    });
+  }
+  return out;
+}
+
+/**
+ * A load worth having that is about to become unbookable.
+ *
+ * Only ever raised for something a dispatcher actually picked out. Every
+ * eligible load is eventually about to expire, and saying so about all of them
+ * would bury the ones somebody has already decided they want.
+ */
+function opportunityRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("loads:view")) return [];
+  const out: Derived[] = [];
+
+  for (const row of allMatches(ctx as MtLoopContext)) {
+    if (row.match.status !== "shortlisted") continue;
+    if (row.listing.status !== "open") continue;
+    const hours = hoursUntil(row.listing.pickupAt);
+    if (hours > 6) continue;
+
+    out.push({
+      key: `expiring-${row.match.matchId}`,
+      category: "expiring_opportunity",
+      severity: hours <= 2 ? "high" : "medium",
+      title: `${row.listing.origin.city} → ${row.listing.destination.city} picks up in ${Math.max(0, Math.round(hours))}h`,
+      reason: `You short-listed this for unit ${row.match.truckUnit} and it has not been booked.`,
+      detail: `${row.listing.broker.name}${row.listing.broker.phone ? ` · ${row.listing.broker.phone}` : ""}`,
+      entity: {
+        kind: "listing",
+        id: row.listing.listingId,
+        label: `${row.listing.origin.city}, ${row.listing.origin.state} → ${row.listing.destination.city}, ${row.listing.destination.state}`,
+        href: "/dispatch/opportunities",
+      },
+      recommendedAction: {
+        kind: "contact_customer", label: "Ring the broker", requires: ["loads:view"],
+      },
+      dueAt: row.listing.pickupAt,
+      source: "system",
+      requires: ["loads:view"],
+    });
+  }
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Reconciliation                                                              */
 /* -------------------------------------------------------------------------- */
 
@@ -804,10 +929,14 @@ function derive(ctx: DeriveContext): Derived[] {
   // dispatching its own trucks. A driver has none, and neither does anybody
   // scoped to their own records — `openLoopsFor` returns nothing for them.
   if (workspace && workspace.kind !== "driver" && ctx.scope.loads !== "assigned") {
-    items.push(...loopRules(openLoopsFor(ctx as MtLoopContext)));
+    const loops = openLoopsFor(ctx as MtLoopContext);
+    items.push(...loopRules(loops));
     items.push(...equipmentRules(ctx));
     items.push(...carrierRules(ctx));
     items.push(...driverRules(ctx));
+    items.push(...searchRules(ctx, loops));
+    items.push(...draftRules(ctx));
+    items.push(...opportunityRules(ctx));
   }
   items.push(...loadRules(ctx));
 

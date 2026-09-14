@@ -199,12 +199,9 @@ function buildFixtures(): CarrierProfile[] {
       organizationId: "org_cascade",
       legalName: "Cascade Haul Co.",
       displayName: "Cascade Haul",
+      mcNumber: "MC-1044921",
       dotNumber: "2910446",
-      // No MC number recorded at all, and nobody has checked the authority.
-      // Not knowing is a state of its own, and it is not the same as fine.
-      authority: authority("not_recorded", undefined, {
-        note: "Nobody has recorded Cascade's operating authority in Antcolos yet.",
-      }),
+      authority: authority("active", "common", { grantedDaysAgo: 690, verifiedDaysAgo: 17 }),
       contacts: [
         contact("Rhea Doss", "dispatch", { phone: "+1 (503) 555-0133", email: "dispatch@cascadehaul.example", primary: true, hours: "Mon–Fri 06:00–18:00 PT" }),
         contact("Owen Fitz", "after_hours", { phone: "+1 (503) 555-0134" }),
@@ -216,7 +213,10 @@ function buildFixtures(): CarrierProfile[] {
       ],
       documents: [
         doc("org_cascade", "certificate_of_insurance", "approved", "cascade-coi.pdf", daysFromNow(95)),
-        // Never provided. The dispatcher cannot prove the carrier may haul.
+        // The authority is active on the record, but nobody has ever put the
+        // letter on file. Worth chasing, and NOT the same thing as the carrier
+        // being unable to haul — which is why it is a document problem here and
+        // Crosswind's lapsed authority is a different problem entirely.
         doc("org_cascade", "operating_authority", "missing"),
         doc("org_cascade", "w9", "approved", "cascade-w9.pdf"),
       ],

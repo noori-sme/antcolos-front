@@ -354,10 +354,7 @@ const CARRIER_DOC: Record<string, string> = {
  * greyed-out button that looks like it might work.
  */
 const PLANNED_SECTIONS: PlannedSection[] = [
-  { key: "search", milestone: 2, title: "Load search", description: "Start, pause and resume a search for this truck, and keep a record of which sources were searched." },
-  { key: "opportunities", milestone: 3, title: "Opportunities", description: "Possible loads gathered against this loop, with duplicates removed and the source of each one kept." },
-  { key: "matching", milestone: 4, title: "Filtering and matching", description: "Each opportunity checked against equipment, capacity, pickup feasibility, deadhead, rate, the carrier's rules, the driver's rules and broker eligibility." },
-  { key: "outreach", milestone: 5, title: "Outreach", description: "Emails, calls and follow-ups to brokers, with the whole contact history in one thread." },
+  { key: "outreach", milestone: 5, title: "Outreach", description: "Actually sending the prepared messages, plus calls and follow-ups, with the whole contact history in one thread. Drafts are prepared today; nothing is sent." },
   { key: "negotiation", milestone: 6, title: "Negotiation", description: "Offers, counteroffers, rate per mile, estimated profit, conditions and expiry." },
   { key: "ratecon", milestone: 7, title: "Rate confirmation", description: "The rate confirmation received, read, checked field by field, and turned into the confirmed load." },
   { key: "booking", milestone: 8, title: "Booking and consent", description: "The driver's acceptance, the truck and trailer locked to the load, and every document and authority checked first." },

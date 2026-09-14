@@ -35,7 +35,13 @@ export type NeedsYouCategory =
   /** Two workspaces, or two loads, laying claim to the same thing. */
   | "assignment_conflict"
   /** The truck goes empty sooner than the loop is being worked. */
-  | "sla_deadline";
+  | "sla_deadline"
+  /** A truck is empty and nobody has started looking for a load for it. */
+  | "no_search"
+  /** A prepared message is sitting unread. */
+  | "draft_waiting"
+  /** A load worth having is about to be unbookable. */
+  | "expiring_opportunity";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
@@ -46,7 +52,11 @@ export type NeedsYouEntityKind =
   /** One MT Loop — a single truck's cycle between loads. */
   | "mt_loop"
   /** A carrier organization. Not a customer: a carrier moves the freight. */
-  | "carrier";
+  | "carrier"
+  /** One load on offer, from whatever source. */
+  | "listing"
+  /** A prepared message to a broker. */
+  | "draft";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -64,7 +74,11 @@ export type NeedsYouActionKind =
   /** Record when and where a truck goes empty. */
   | "update_availability"
   /** Look at who is actually entitled to run or dispatch the truck. */
-  | "review_authority";
+  | "review_authority"
+  /** Begin looking for a load for a truck. */
+  | "start_search"
+  /** Read a prepared message before it can go anywhere. */
+  | "review_draft";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -153,6 +167,9 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   blocked_loop: "Blocked MT Loop",
   assignment_conflict: "Assignment conflict",
   sla_deadline: "Deadline approaching",
+  no_search: "Nobody is looking",
+  draft_waiting: "Message waiting for you",
+  expiring_opportunity: "Load about to go",
 };
 
 /**

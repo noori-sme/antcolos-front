@@ -19,6 +19,11 @@ import type {
   DispatchBlocker, PlannedSection, TruckDispatchWorkspace,
 } from "@/lib/api/mock/truck-dispatch-workspace";
 import { cn } from "@/lib/utils";
+import { SearchPanel } from "@/features/opportunities/search-panel";
+import { OpportunitiesPanel } from "@/features/opportunities/opportunities-panel";
+import { useTruckOpportunities } from "@/features/opportunities/use-opportunities";
+import { useOpportunityRefresh } from "@/features/opportunities/use-opportunity-refresh";
+import { useMtLoopContext } from "./use-mt-loop";
 import { useTruckDispatchWorkspace } from "./use-truck-dispatch";
 
 /**
@@ -40,6 +45,21 @@ import { useTruckDispatchWorkspace } from "./use-truck-dispatch";
  */
 export function TruckDispatchScreen({ truckId }: { truckId: string }) {
   const query = useTruckDispatchWorkspace(truckId);
+  const ctx = useMtLoopContext();
+  // The cycle id is the MT Loop's own id — the roadmap's dispatchCycleId. One
+  // id from the truck going empty to the load being delivered and released.
+  const dispatchCycleId = query.data?.loop?.loopId;
+  const opportunities = useTruckOpportunities(dispatchCycleId);
+
+  const refreshWorkspace = useOpportunityRefresh();
+
+  function refreshEverything() {
+    void query.refetch();
+    void opportunities.refetch();
+    // And every other screen that reads the same store: the Inbox, the board
+    // and the Needs You queue all change when a search runs here.
+    refreshWorkspace();
+  }
 
   if (query.isPending) {
     return (
@@ -100,6 +120,26 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
       />
 
       <BlockerPanel blockers={w.blockers} />
+
+      {/* Finding the next load is the work this page exists for, so it sits
+          above the reference material about the truck and the carrier. */}
+      {dispatchCycleId ? (
+        <>
+          <SearchPanel
+            dispatchCycleId={dispatchCycleId}
+            session={opportunities.data?.session}
+            ctx={ctx}
+            onChanged={refreshEverything}
+          />
+          <OpportunitiesPanel
+            top={opportunities.data?.top ?? []}
+            rest={opportunities.data?.rest ?? []}
+            drafts={opportunities.data?.drafts ?? []}
+            ctx={ctx}
+            onChanged={refreshEverything}
+          />
+        </>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
         {/* The cycle, then the equipment, then the person on it. The carrier
@@ -606,8 +646,8 @@ function CarrierPanel({ carrier, withheld }: { carrier?: CarrierView; withheld: 
           </ul>
         )}
         <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
-          These are recorded so a load can be checked against them. Checking happens in milestone 4;
-          today they are here to read.
+          Every load found for this truck is checked against these. A rule that fails is named on
+          the load, in these words.
         </p>
       </div>
 
