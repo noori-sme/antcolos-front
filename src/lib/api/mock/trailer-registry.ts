@@ -401,6 +401,10 @@ function buildFixtures(): RegistryState {
   const dispatchAccess: TrailerDispatchAccess[] = [
     dispatch(T.bx810, "org_meridian", "Meridian Dispatch", "org_baxter", "Baxter Transit LLC", "BX-810", daysAgo(100)),
     dispatch(T.ch950, "org_meridian", "Meridian Dispatch", "org_baxter", "Baxter Transit LLC", "BX-950", daysAgo(80)),
+    // The same two carriers seen by a second dispatch agency, scoped to what
+    // Northline granted Summit and nothing else.
+    dispatch(T.dv220, "org_summit", "Summit Dispatch", "org_northline", "Northline Freight LLC", "V-220", daysAgo(45)),
+    dispatch(T.mc701, "org_summit", "Summit Dispatch", "org_northline", "Northline Freight LLC", "V-701", daysAgo(30)),
   ];
 
   const attachments: TrailerAttachment[] = [
