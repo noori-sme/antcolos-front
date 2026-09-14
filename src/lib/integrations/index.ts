@@ -43,6 +43,7 @@ const httpIntegrationPorts: IntegrationPorts = {
   documents: {
     attach: notWired("documents.attach"),
     extract: notWired("documents.extract"),
+    requestVerification: notWired("documents.requestVerification"),
     reportCorrection: notWired("documents.reportCorrection"),
   },
   signals: { poll: notWired("signals.poll") },

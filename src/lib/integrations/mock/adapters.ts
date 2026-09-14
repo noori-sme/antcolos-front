@@ -204,6 +204,25 @@ const documents: DocumentCenterPort = {
     };
   },
 
+  async requestVerification(input) {
+    await wait();
+    // Queued for a person in the Document Center. Nothing here can, or does,
+    // decide that a document is verified.
+    return downstream.emit({
+      organizationId: input.organizationId,
+      target: "document_center",
+      operation: "document.verification_requested",
+      idempotencyKey: input.idempotencyKey,
+      refs: [
+        externalRef("document_center", input.documentId, {
+          entityId: input.documentId,
+          entityKind: "document",
+        }),
+      ],
+      payload: { kind: input.kind, reason: input.reason, requestedBy: input.actor },
+    });
+  },
+
   async reportCorrection(input) {
     await wait();
     return downstream.emit({

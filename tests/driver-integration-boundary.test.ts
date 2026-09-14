@@ -157,3 +157,47 @@ describe("the integration boundary", () => {
     assert.equal(theirs.every((h) => h.organizationId === "org_stonebridge"), true);
   });
 });
+
+describe("verification stays a human act in the Document Center", () => {
+  beforeEach(resetWorld);
+
+  it("asks for a person on the paperwork the load is billed on", async () => {
+    const ctx = contextFor(STONEBRIDGE_DRIVER);
+    const trips = await services.driverWorkflow.listTrips(ctx);
+    const fresh = trips.find((t) => t.loadReference === "SB-1042")!;
+
+    const { workflow, handoffs } = await services.driverWorkflow.executeWorkflowCommand(ctx, {
+      type: "attach_document",
+      workflowId: fresh.workflowId,
+      documentKind: "proof_of_delivery",
+      upload: { ...RECEIPT, fileName: "pod.jpg" },
+      idempotencyKey: key(),
+    });
+
+    const request = handoffs.find((h) => h.operation === "document.verification_requested")!;
+    assert.equal(request.payload.reason, "required_for_billing");
+    assert.equal(request.state, "pending_integration");
+    // Nothing on this side may call a document verified.
+    assert.equal(workflow.documents[0].extractionState, "succeeded");
+  });
+
+  it("asks again after a driver corrects an extracted value", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const trips = await services.driverWorkflow.listTrips(ctx);
+    const active = trips.find((t) => t.loadReference === "CS-3318")!;
+    const view = await services.driverWorkflow.getTrip(ctx, active.workflowId);
+    const bol = view.documents.find((d) => d.kind === "bill_of_lading")!;
+
+    const { handoffs } = await services.driverWorkflow.executeWorkflowCommand(ctx, {
+      type: "correct_extraction",
+      workflowId: active.workflowId,
+      documentId: bol.documentId,
+      fieldKey: "bol_number",
+      correctedValue: "BOL-449121",
+      idempotencyKey: key(),
+    });
+
+    const request = handoffs.find((h) => h.operation === "document.verification_requested")!;
+    assert.equal(request.payload.reason, "driver_corrected");
+  });
+});

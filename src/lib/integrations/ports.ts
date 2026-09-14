@@ -188,6 +188,23 @@ export interface DocumentCenterPort {
   }): Promise<ExtractionResult>;
 
   /**
+   * Ask the Document Center to put this document in front of a person.
+   *
+   * Verification is a human act and it belongs to that module — nothing here
+   * may mark a document verified, which is why this returns a queued handoff
+   * rather than a state. Typed now so the real adapter is a drop-in.
+   */
+  requestVerification(input: {
+    organizationId: string;
+    documentId: string;
+    kind: DocumentKind;
+    /** Why a person needs to look: low confidence, a correction, a dispute. */
+    reason: "low_confidence" | "driver_corrected" | "required_for_billing";
+    actor: ActorRef;
+    idempotencyKey: IdempotencyKey;
+  }): Promise<PendingIntegrationEvent>;
+
+  /**
    * Human verification lives in the Document Center, not here. Recording a
    * driver's correction produces a handoff for it to pick up.
    */

@@ -705,6 +705,28 @@ export const mockDriverWorkflowService: DriverWorkflowService = {
             },
           }),
         );
+
+        // A person still has to accept the paperwork the load is billed on, and
+        // that person works in the Document Center. Asking is all this module
+        // may do — it cannot mark anything verified.
+        const billable =
+          command.documentKind === "bill_of_lading" ||
+          command.documentKind === "proof_of_delivery";
+        const unsure = extraction.fields.some(
+          (f) => (f.extractionConfidence ?? 1) < 0.7,
+        );
+        if (billable || unsure) {
+          handoffs.push(
+            await integrations.documents.requestVerification({
+              organizationId: ctx.organizationId,
+              documentId: attached.documentId,
+              kind: command.documentKind,
+              reason: billable ? "required_for_billing" : "low_confidence",
+              actor: ctx.actor,
+              idempotencyKey: `${command.idempotencyKey}:verify`,
+            }),
+          );
+        }
         break;
       }
 
@@ -738,6 +760,15 @@ export const mockDriverWorkflowService: DriverWorkflowService = {
             correctedValue: command.correctedValue,
             actor: ctx.actor,
             idempotencyKey: `${command.idempotencyKey}:dc`,
+          }),
+          // A corrected document is one a person should look at again.
+          await integrations.documents.requestVerification({
+            organizationId: ctx.organizationId,
+            documentId: command.documentId,
+            kind: doc.kind as never,
+            reason: "driver_corrected",
+            actor: ctx.actor,
+            idempotencyKey: `${command.idempotencyKey}:verify`,
           }),
         );
         break;
