@@ -23,6 +23,8 @@ export type PermissionKey =
   | "documents:approve" | "documents:delete"
   // Settlements
   | "settlements:view" | "settlements:create" | "settlements:approve" | "settlements:export"
+  | "settlements:dispute" | "settlements:dispute:resolve" | "settlements:adjust"
+  | "settlements:pay" | "settlements:void"
   // Invoices
   | "invoices:view" | "invoices:create" | "invoices:edit"
   | "invoices:send" | "invoices:export"

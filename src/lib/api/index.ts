@@ -3,6 +3,7 @@ import { httpServices } from "./http";
 import { mockDirectoryService, mockHomeService } from "./mock/home";
 import { mockLoadsService } from "./mock/loads";
 import { mockNeedsYouService } from "./mock/needs-you";
+import { mockSettlementsService } from "./mock/settlements";
 
 /**
  * Service registry. Today every call resolves to the mock adapter; when Taqi
@@ -14,6 +15,7 @@ const mockServices: AntcolosServices = {
   home: mockHomeService,
   directory: mockDirectoryService,
   loads: mockLoadsService,
+  settlements: mockSettlementsService,
 };
 
 export const API_MODE =

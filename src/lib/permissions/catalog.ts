@@ -75,6 +75,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "settlements:create", label: "Create settlements", description: "Build pay periods and add pay lines.", group: "settlements" },
   { key: "settlements:approve", label: "Approve settlements", description: "Sign off a settlement so it can be paid.", group: "settlements", sensitive: true, financial: true },
   { key: "settlements:export", label: "Download settlements", description: "Export pay statements out of Antcolos.", group: "settlements", sensitive: true, financial: true },
+  { key: "settlements:dispute", label: "Raise a settlement dispute", description: "Tell the carrier a pay statement looks wrong, and say why.", group: "settlements" },
+  { key: "settlements:dispute:resolve", label: "Resolve settlement disputes", description: "Answer a disputed pay statement and decide whether it stands or gets corrected.", group: "settlements", sensitive: true, financial: true },
+  { key: "settlements:adjust", label: "Correct settlements", description: "Raise a correction against a settlement that is already approved or paid. The original is never edited.", group: "settlements", sensitive: true, financial: true },
+  { key: "settlements:pay", label: "Record settlement payments", description: "Queue a settlement for payment and record what was paid. Antcolos does not move the money.", group: "settlements", sensitive: true, financial: true },
+  { key: "settlements:void", label: "Void settlements", description: "Cancel a settlement. It stays on the record with its reason.", group: "settlements", sensitive: true, financial: true },
 
   // ---- Invoices ----------------------------------------------------------
   { key: "invoices:view", label: "View invoices", description: "See customer invoices and what is unpaid.", group: "invoices" },

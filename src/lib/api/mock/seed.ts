@@ -269,14 +269,10 @@ function northline(): OrgData {
       recommendedAction: { kind: "contact_customer", label: "Reply to Tandem", requires: ["customers:view"] },
       dueAt: hoursFromNow(12), source: "manual", requires: ["customers:view"],
     }),
-    needsYou(org, {
-      category: "settlement_review", severity: "low",
-      title: "Weekly settlements ready for review",
-      reason: "6 drivers, 19 loads, period closes tonight. Nothing approved yet.",
-      entity: { kind: "settlement", id: "stl_nl_w37", label: "Week 37 settlement period", href: "/finance/settlements" },
-      recommendedAction: { kind: "review", label: "Review settlement period", requires: ["settlements:view"], deferred: true },
-      dueAt: hoursFromNow(9), source: "system", requires: ["settlements:view"],
-    }),
+    // Settlement items used to be hand-written here, pointing at a settlement
+    // id that did not exist. They are now DERIVED from the settlement registry
+    // itself — see settlement-needs-you.ts — so the queue shows the real pay
+    // periods, with real numbers, and clears itself when they are dealt with.
   ];
 
   return { loads, events, documents, drivers, customers, needsYou: items };

@@ -8,6 +8,7 @@ import {
 import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
+import { isDerivedSettlementItem, settlementNeedsYouItems } from "./settlement-needs-you";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
@@ -91,6 +92,15 @@ function appendHistory(
 }
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
+  // A derived item is computed from another module's state, so there is nothing
+  // here to write to. Snoozing or resolving one would hide the row without
+  // touching the thing it is about, which is the one outcome the queue must
+  // never allow.
+  if (isDerivedSettlementItem(itemId)) {
+    throw new Error(
+      "This item is worked out from the settlement itself. Open the settlement and fix what it is asking for — it clears on its own.",
+    );
+  }
   const org = mockStore.org(ctx.organizationId);
   const item = org.needsYou.find((n) => n.id === itemId);
   if (!item) throw new NotFoundError("Needs You item");
@@ -103,9 +113,11 @@ export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
     const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
-      .map(autoUnsnooze)
-      .filter((i) => visibleTo(ctx, i))
+    // Settlement items are derived rather than stored, so they join the queue
+    // here on every read. Their own module has already applied carrier
+    // isolation and payee privacy to them.
+    const stored = org.needsYou.map(autoUnsnooze).filter((i) => visibleTo(ctx, i));
+    return [...stored, ...settlementNeedsYouItems(ctx)]
       .filter((i) => matches(ctx, i, filters))
       .sort((a, b) => urgencyScore(a) - urgencyScore(b));
   },
@@ -117,10 +129,12 @@ export const mockNeedsYouService: NeedsYouService = {
 
   async openCount(ctx) {
     const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
+    const stored = org.needsYou
       .map(autoUnsnooze)
       .filter((i) => visibleTo(ctx, i))
       .filter((i) => i.status === "open" || i.status === "escalated").length;
+    // Derived items are always open, so they all count.
+    return stored + settlementNeedsYouItems(ctx).length;
   },
 
   async assign(ctx, itemId, membershipId) {
