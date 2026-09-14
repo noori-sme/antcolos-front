@@ -18,6 +18,7 @@ export type PermissionKey =
   | "trailers:status:manage"
   // Customers
   | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
+  | "customers:private:manage" | "customers:resolve"
   // Documents
   | "documents:view" | "documents:upload" | "documents:download"
   | "documents:approve" | "documents:delete"
