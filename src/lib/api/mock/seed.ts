@@ -527,6 +527,7 @@ export function buildSeed(): Record<string, OrgData> {
     org_northline: northline(),
     org_meridian: meridian(),
     org_summit: empty(),
+    org_baxter: empty(),
     org_cascade: cascade(),
   };
 }

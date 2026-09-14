@@ -22,14 +22,21 @@ export type NeedsYouCategory =
   | "settlement_review"
   | "invoice_review"
   | "customer_response"
-  | "truck_going_empty";
+  | "truck_going_empty"
+  // Maintenance. Raised from the maintenance registry, not stored as fixtures.
+  | "overdue_service"
+  | "critical_defect"
+  | "unresolved_repair"
+  | "equipment_out_of_service";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
 export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 
 export type NeedsYouEntityKind =
-  | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice";
+  | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice"
+  // Maintenance records. A trailer is its own kind, never a truck.
+  | "trailer" | "maintenance_requirement" | "defect" | "repair_order";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -41,7 +48,9 @@ export interface NeedsYouEntityRef {
 
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
-  | "review" | "confirm_status" | "start_search" | "contact_customer";
+  | "review" | "confirm_status" | "start_search" | "contact_customer"
+  // Maintenance
+  | "schedule_service" | "open_repair_order" | "review_defect" | "return_to_service";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -124,6 +133,10 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invoice_review: "Invoice review",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
+  overdue_service: "Overdue service",
+  critical_defect: "Critical defect",
+  unresolved_repair: "Unresolved repair",
+  equipment_out_of_service: "Equipment out of service",
 };
 
 /**

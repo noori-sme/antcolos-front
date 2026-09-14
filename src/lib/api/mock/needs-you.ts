@@ -10,6 +10,10 @@ import type {
 } from "../contracts/needs-you";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
+import {
+  isMaintenanceNeedsYouId, maintenanceContextFrom, maintenanceNeedsYouItems,
+  putMaintenanceNeedsYouItem, withOverlayContext,
+} from "./maintenance-registry";
 import { nowIso } from "./time";
 
 const LATENCY_MS = 180;
@@ -25,16 +29,34 @@ function require(ctx: ServiceContext, ...keys: Parameters<ServiceContext["permis
   if (missing.length > 0) throw new PermissionDeniedError(missing);
 }
 
-/** Urgency = severity first, then how close the deadline is. */
+/**
+ * Urgency = severity first, then how close the deadline is.
+ *
+ * The deadline only ever orders items WITHIN a severity band. It is expressed
+ * as hours from now and clamped, so it cannot grow large enough to outweigh
+ * severity itself — an item with no deadline at all sorts last inside its own
+ * band rather than below every item that has one.
+ */
+const BAND = 1_000_000;
+
 export function urgencyScore(item: NeedsYouItem): number {
-  const severity = SEVERITY_ORDER[item.severity] * 1_000_000;
-  const due = item.dueAt ? new Date(item.dueAt).getTime() : Number.MAX_SAFE_INTEGER / 2;
-  return severity + due / 1_000_000;
+  const severity = SEVERITY_ORDER[item.severity] * BAND;
+  if (!item.dueAt) return severity + (BAND - 1);
+  const hoursOut = (new Date(item.dueAt).getTime() - Date.now()) / 3_600_000;
+  // Centre on the midpoint so overdue items (negative) lead their band.
+  const within = Math.max(0, Math.min(BAND - 2, hoursOut + BAND / 2));
+  return severity + within;
 }
 
 function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // Item-level permission gate.
   if (!item.requires.every((k) => ctx.permissions.has(k))) return false;
+
+  // Maintenance items are DERIVED from the maintenance registry, which has
+  // already applied the caller's permissions, their relationship with the
+  // equipment and their responsibility scope. Re-narrowing them by entity kind
+  // here would second-guess a stricter check with a weaker one.
+  if (isMaintenanceNeedsYouId(item.id)) return true;
 
   // Record scope: a driver sees only items about their own loads and record.
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
@@ -90,9 +112,26 @@ function appendHistory(
   ];
 }
 
-function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
+/** Every item the caller may see: the organization's own, plus maintenance's. */
+function allItems(ctx: ServiceContext): NeedsYouItem[] {
   const org = mockStore.org(ctx.organizationId);
-  const item = org.needsYou.find((n) => n.id === itemId);
+  return [
+    ...org.needsYou.map(autoUnsnooze),
+    ...maintenanceNeedsYouItems(maintenanceContextFrom(ctx)),
+  ];
+}
+
+/** Routes a mutated item back to whichever store owns it. */
+function persist(ctx: ServiceContext, next: NeedsYouItem): void {
+  if (isMaintenanceNeedsYouId(next.id)) {
+    withOverlayContext(maintenanceContextFrom(ctx), () => putMaintenanceNeedsYouItem(next));
+    return;
+  }
+  mockStore.replaceNeedsYou(ctx.organizationId, next);
+}
+
+function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
+  const item = allItems(ctx).find((n) => n.id === itemId);
   if (!item) throw new NotFoundError("Needs You item");
   mockStore.assertOwned(ctx.organizationId, item.organizationId);
   if (!visibleTo(ctx, item)) throw new PermissionDeniedError(item.requires);
@@ -102,9 +141,7 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
-    const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
-      .map(autoUnsnooze)
+    return allItems(ctx)
       .filter((i) => visibleTo(ctx, i))
       .filter((i) => matches(ctx, i, filters))
       .sort((a, b) => urgencyScore(a) - urgencyScore(b));
@@ -116,9 +153,7 @@ export const mockNeedsYouService: NeedsYouService = {
   },
 
   async openCount(ctx) {
-    const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
-      .map(autoUnsnooze)
+    return allItems(ctx)
       .filter((i) => visibleTo(ctx, i))
       .filter((i) => i.status === "open" || i.status === "escalated").length;
   },
@@ -135,7 +170,7 @@ export const mockNeedsYouService: NeedsYouService = {
         note: `Assigned to ${membershipId}`,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -160,7 +195,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "snoozed", note: input.reason.trim(), until,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -174,7 +209,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozeReason: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "unsnoozed" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -191,7 +226,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "escalated", note: input.note.trim(),
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -208,7 +243,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozedUntil: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "resolved", note }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -222,7 +257,7 @@ export const mockNeedsYouService: NeedsYouService = {
       resolutionNote: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "reopened" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 };

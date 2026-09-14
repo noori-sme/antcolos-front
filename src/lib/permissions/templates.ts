@@ -21,6 +21,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
       "drivers:view", "trucks:view", "trailers:view", "customers:view",
       "documents:view", "documents:upload", "compliance:view",
+      "maintenance:view",
     ],
   },
   {
@@ -31,6 +32,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "loads:status:update",
       "documents:view", "documents:upload",
       "settlements:view",
+      // Their own assigned truck, and the ability to report a fault on it.
+      "trucks:view", "maintenance:view", "maintenance:defects:report",
     ],
   },
   {
@@ -51,6 +54,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "drivers:view", "trucks:view", "trailers:view", "compliance:view", "compliance:manage",
       "trucks:documents:manage", "trailers:documents:manage",
       "documents:view", "documents:upload", "documents:approve", "loads:view",
+      "maintenance:view", "maintenance:manage", "maintenance:defects:manage",
+      "maintenance:outofservice:manage",
     ],
   },
   {
@@ -72,6 +77,10 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "trailers:view", "trailers:edit", "trailers:documents:manage",
       "trailers:status:manage", "trailers:attachments:manage",
       "documents:view", "documents:upload",
+      "maintenance:view", "maintenance:manage",
+      "maintenance:defects:report", "maintenance:defects:manage",
+      "maintenance:repairs:manage", "maintenance:service:record",
+      "maintenance:costs:view", "maintenance:outofservice:manage",
     ],
   },
 ] as const;

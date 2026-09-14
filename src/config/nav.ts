@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Building2, ClipboardList, Container, FileText, Gauge,
   Home, IdCard, Inbox, Link2, MailPlus, Package, Palette, Receipt, Route, ScrollText, Settings2,
-  Shield, Truck, UserCircle, Users, UsersRound,
+  Shield, TriangleAlert, Truck, UserCircle, Users, UsersRound, Wrench,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
 
@@ -45,6 +45,7 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
+      { label: "Maintenance", href: "/maintenance", icon: Wrench, requires: ["maintenance:view"] },
     ],
   },
   {
@@ -69,6 +70,7 @@ export const DRIVER_NAV: NavSection[] = [
       { label: "Home", href: "/driver/home", icon: Home, requires: [], driverOnly: true, primaryMobile: true },
       { label: "My loads", href: "/driver/loads", icon: ClipboardList, requires: ["loads:view"], driverOnly: true, primaryMobile: true },
       { label: "My documents", href: "/driver/documents", icon: FileText, requires: [], driverOnly: true, primaryMobile: true },
+      { label: "Report a defect", href: "/driver/defects", icon: TriangleAlert, requires: ["maintenance:defects:report"], driverOnly: true },
       { label: "My profile", href: "/driver/profile", icon: IdCard, requires: [], driverOnly: true },
       { label: "Notifications", href: "/driver/notifications", icon: Bell, requires: [], driverOnly: true },
     ],

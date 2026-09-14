@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit && tsc -p tests --noEmit",
+    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./tests/register.mjs --test tests/*.test.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

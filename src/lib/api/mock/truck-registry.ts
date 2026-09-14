@@ -384,7 +384,7 @@ function buildFixtures(): RegistryState {
     // History on 121: a driver who has moved on. The profile is untouched.
     assign(T.nl121, "org_northline", "dp_kelsey", "Kelsey Nguyen", daysAgo(180), daysAgo(60), "Left the carrier."),
     assign(T.claimed, "org_northline", "dp_ray", "Ray Bell", daysAgo(150), daysAgo(20), "Reassigned to another truck."),
-    assign(T.cs47, "org_cascade", "dp_sam", "Sam Murtaza", daysAgo(108)),
+    assign(T.cs47, "org_cascade", "drv_cascade_0192", "Sam Murtaza", daysAgo(108)),
   ];
 
   const documents: TruckDocument[] = [
