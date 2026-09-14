@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../placeholder";
+import { DocumentCenterScreen } from "@/features/documents/document-center-screen";
 
 export const metadata = { title: "Documents" };
 
 export default function Page() {
-  return <ModulePlaceholder title="Documents" description="BOLs, PODs, scale tickets and expiring paperwork." />;
+  return <DocumentCenterScreen />;
 }

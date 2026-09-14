@@ -19,9 +19,14 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
-      "drivers:view", "trucks:view", "trailers:view", "customers:view",
+      "proposals:view",
+      "drivers:view", "trucks:view", "trailers:view",
+      "customers:view", "customers:create", "customers:private:manage", "customers:resolve",
       "documents:view", "documents:upload", "compliance:view",
       "maintenance:view",
+      // A dispatcher is usually the first to hear about a wreck, so they can
+      // open a claim. They are not given the policy, and never the money.
+      "claims:view", "claims:create",
     ],
   },
   {
@@ -30,6 +35,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "loads:view", "loads:status:update",
+      "proposals:view", "proposals:respond", "trips:execute",
       "documents:view", "documents:upload",
       "settlements:view",
       // Their own assigned truck, and the ability to report a fault on it.
@@ -44,6 +50,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "rates:view", "revenue:view", "expenses:view",
       "settlements:view", "settlements:create", "settlements:export",
       "invoices:view", "invoices:create", "customers:view", "documents:view",
+      "insurance:view", "insurance:sensitive:view", "claims:view", "claims:financials:view",
     ],
   },
   {
@@ -56,6 +63,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "documents:view", "documents:upload", "documents:approve", "loads:view",
       "maintenance:view", "maintenance:manage", "maintenance:defects:manage",
       "maintenance:outofservice:manage",
+      "insurance:view", "claims:view", "claims:create", "claims:manage",
     ],
   },
   {
@@ -66,6 +74,19 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "compliance:view", "compliance:manage",
       "documents:view", "documents:approve", "drivers:view", "trucks:view", "trailers:view",
       "trailers:documents:manage",
+      "insurance:view", "insurance:manage", "claims:view",
+    ],
+  },
+  {
+    name: "Risk and insurance",
+    description: "Policies, coverage, certificates and claims, including the money on a claim.",
+    seeded: true,
+    permissions: [
+      "insurance:view", "insurance:manage", "insurance:sensitive:view",
+      "insurance:share:manage",
+      "claims:view", "claims:create", "claims:manage", "claims:financials:view",
+      "trucks:view", "trailers:view", "drivers:view", "loads:view",
+      "documents:view", "documents:upload", "compliance:view",
     ],
   },
   {

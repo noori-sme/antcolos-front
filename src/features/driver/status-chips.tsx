@@ -3,14 +3,14 @@ import { DOCUMENT_STATUS_LABEL, RELATIONSHIP_LABEL } from "./driver-rules";
 import { cn } from "@/lib/utils";
 
 const DOCUMENT_TONE: Record<DocumentStatus, string> = {
-  not_started: "bg-st-neutral-bg text-st-neutral",
-  uploading: "bg-st-info-bg text-st-info",
-  uploaded: "bg-st-info-bg text-st-info",
-  under_review: "bg-st-progress-bg text-st-progress",
+  missing: "bg-st-neutral-bg text-st-neutral",
+  selected_local: "bg-st-info-bg text-st-info",
+  pending_review: "bg-st-progress-bg text-st-progress",
   approved: "bg-st-success-bg text-st-success",
   rejected: "bg-st-danger-bg text-st-danger",
   expired: "bg-st-danger-bg text-st-danger",
   expiring_soon: "bg-st-warning-bg text-st-warning",
+  superseded: "bg-st-neutral-bg text-st-neutral",
 };
 
 export function DocumentStatusChip({ status, className }: { status: DocumentStatus; className?: string }) {

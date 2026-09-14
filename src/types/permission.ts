@@ -5,6 +5,8 @@ export type PermissionKey =
   | "loads:delete" | "loads:status:update" | "loads:export"
   // Dispatch
   | "dispatch:view" | "loads:assign"
+  // Driver decision and trip workflow
+  | "proposals:view" | "proposals:respond" | "trips:execute"
   // Drivers
   | "drivers:view" | "drivers:create" | "drivers:edit" | "drivers:delete"
   // Trucks
@@ -18,6 +20,7 @@ export type PermissionKey =
   | "trailers:status:manage"
   // Customers
   | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
+  | "customers:private:manage" | "customers:resolve"
   // Documents
   | "documents:view" | "documents:upload" | "documents:download"
   | "documents:approve" | "documents:delete"
@@ -39,6 +42,10 @@ export type PermissionKey =
   | "maintenance:repairs:manage" | "maintenance:service:record"
   | "maintenance:costs:view" | "maintenance:outofservice:manage"
   | "maintenance:share:manage"
+  // Insurance and claims — a module of its own, never folded into compliance
+  | "insurance:view" | "insurance:manage"
+  | "insurance:sensitive:view" | "insurance:share:manage"
+  | "claims:view" | "claims:create" | "claims:manage" | "claims:financials:view"
   // Organization members
   | "members:view" | "members:edit" | "members:suspend" | "permissions:manage"
   // Invitations
@@ -51,9 +58,9 @@ export type PermissionKey =
  * work first, then the money, then who is allowed in.
  */
 export type PermissionGroup =
-  | "loads" | "dispatch" | "drivers" | "trucks" | "trailers"
+  | "loads" | "dispatch" | "driver_workflow" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
-  | "accounting" | "compliance" | "maintenance"
+  | "accounting" | "compliance" | "maintenance" | "insurance" | "claims"
   | "members" | "invitations" | "organization";
 
 export interface PermissionMeta {

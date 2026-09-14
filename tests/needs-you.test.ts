@@ -35,7 +35,9 @@ test("maintenance items appear in the one Needs You queue", async () => {
 
   // And the pre-existing operational items are still there — one queue, not two.
   assert.ok(categories.has("rate_con_verification"));
-  assert.ok(categories.has("truck_going_empty"));
+  // A truck going empty is now the derived missing_availability rule rather
+  // than the seeded truck_going_empty card it replaced.
+  assert.ok(categories.has("missing_availability"));
 });
 
 test("every maintenance item points at a record that actually exists", async () => {

@@ -30,6 +30,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "dispatch:view", label: "Open the dispatch board", description: "See the planning board of trucks and available freight.", group: "dispatch" },
   { key: "loads:assign", label: "Assign loads", description: "Put a driver, truck and trailer on a load.", group: "dispatch" },
 
+  // ---- Driver decision and trip workflow ---------------------------------
+  { key: "proposals:view", label: "See load proposals", description: "See load opportunities dispatch sends you before they are booked.", group: "driver_workflow" },
+  { key: "proposals:respond", label: "Answer load proposals", description: "Approve, reject, pause, comment on or counter a load proposal.", group: "driver_workflow" },
+  { key: "trips:execute", label: "Run the trip workflow", description: "Record trip milestones, fuel, rest and other operational updates, and attach the paperwork they produce.", group: "driver_workflow" },
+
   // ---- Drivers -----------------------------------------------------------
   { key: "drivers:view", label: "View drivers", description: "See driver records, contact details and availability.", group: "drivers" },
   { key: "drivers:create", label: "Add drivers", description: "Create a new driver record.", group: "drivers" },
@@ -62,6 +67,8 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "customers:create", label: "Add customers", description: "Add a new broker or shipper.", group: "customers" },
   { key: "customers:edit", label: "Edit customers", description: "Change customer details and contacts.", group: "customers" },
   { key: "customers:delete", label: "Delete customers", description: "Permanently remove a customer record.", group: "customers", sensitive: true },
+  { key: "customers:private:manage", label: "Manage private notes and ratings", description: "Write your own notes, ratings, payment experience and blocked or preferred status. Only your organization ever sees them.", group: "customers" },
+  { key: "customers:resolve", label: "Confirm customer matches", description: "Decide whether a broker, shipper or receiver on a rate confirmation is one you already have, or a new profile.", group: "customers", sensitive: true },
 
   // ---- Documents ---------------------------------------------------------
   { key: "documents:view", label: "View documents", description: "Open uploaded paperwork such as BOLs and PODs.", group: "documents" },
@@ -108,6 +115,17 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "maintenance:costs:view", label: "See maintenance costs", description: "See what repairs cost and how long equipment was down. Without this, repair orders show the work but no money.", group: "maintenance", sensitive: true, financial: true },
   { key: "maintenance:outofservice:manage", label: "Place equipment out of service", description: "Park a truck or trailer so nobody can load it, and put it back on the road afterwards.", group: "maintenance", sensitive: true },
   { key: "maintenance:share:manage", label: "Share maintenance with dispatch", description: "Decide which dispatch organizations may see that a piece of equipment is unavailable. They never see cost, vendor or notes.", group: "maintenance", sensitive: true, orgTypes: ["CARRIER"] },
+  // ---- Insurance ---------------------------------------------------------
+  { key: "insurance:view", label: "View insurance", description: "See policies, what they cover, when they expire and which certificates have gone out.", group: "insurance" },
+  { key: "insurance:manage", label: "Manage insurance", description: "Record policies and coverage, renew or replace them, and issue certificates of insurance.", group: "insurance" },
+  { key: "insurance:sensitive:view", label: "See private policy details", description: "See premiums and the private notes on a policy. Without this, coverage and dates are visible but the money is not.", group: "insurance", sensitive: true, financial: true },
+  { key: "insurance:share:manage", label: "Share insurance with others", description: "Decide which dispatch organizations and partners may see a policy, and take that access away again.", group: "insurance", sensitive: true },
+
+  // ---- Claims ------------------------------------------------------------
+  { key: "claims:view", label: "View claims", description: "See accidents, cargo damage and other claims, and where each one has got to.", group: "claims" },
+  { key: "claims:create", label: "Report claims", description: "Report an accident or a loss and open a claim against a policy.", group: "claims" },
+  { key: "claims:manage", label: "Manage claims", description: "Move a claim along, record evidence, third parties and who was responsible.", group: "claims" },
+  { key: "claims:financials:view", label: "See claim money", description: "See reserves, repair costs, what the insurer paid and what the deductible cost you.", group: "claims", sensitive: true, financial: true },
 
   // ---- Organization members ----------------------------------------------
   { key: "members:view", label: "View members", description: "See everyone who belongs to this organization.", group: "members" },
@@ -131,6 +149,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   loads: "Loads",
   dispatch: "Dispatch",
+  driver_workflow: "Driver proposals and trips",
   drivers: "Drivers",
   trucks: "Trucks",
   trailers: "Trailers",
@@ -142,6 +161,8 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   accounting: "Accounting and financial information",
   compliance: "Compliance & safety",
   maintenance: "Maintenance",
+  insurance: "Insurance",
+  claims: "Claims",
   members: "Organization members",
   invitations: "Invitations",
   organization: "Organization settings",
@@ -149,9 +170,10 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 
 /** The reading order of the modules in every permission list. */
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
-  "loads", "dispatch", "drivers", "trucks", "trailers", "customers",
+  "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers", "customers",
   "documents", "settlements", "invoices", "reports", "accounting",
-  "compliance", "maintenance", "members", "invitations", "organization",
+  "compliance", "maintenance", "insurance", "claims",
+  "members", "invitations", "organization",
 ] as const;
 
 /**
