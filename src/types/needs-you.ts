@@ -22,14 +22,24 @@ export type NeedsYouCategory =
   | "settlement_review"
   | "invoice_review"
   | "customer_response"
-  | "truck_going_empty";
+  | "truck_going_empty"
+  // Insurance and claims. Derived from the insurance registry rather than
+  // seeded, so an item disappears when the underlying policy or claim is
+  // actually sorted out and never because somebody ticked it off.
+  | "missing_coverage"
+  | "expiring_policy"
+  | "expired_policy"
+  | "unresolved_claim"
+  | "missing_claim_evidence"
+  | "critical_insurance_gap";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
 export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 
 export type NeedsYouEntityKind =
-  | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice";
+  | "load" | "truck" | "trailer" | "driver" | "document" | "customer"
+  | "settlement" | "invoice" | "policy" | "claim" | "carrier";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -41,7 +51,8 @@ export interface NeedsYouEntityRef {
 
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
-  | "review" | "confirm_status" | "start_search" | "contact_customer";
+  | "review" | "confirm_status" | "start_search" | "contact_customer"
+  | "renew_policy" | "add_coverage" | "advance_claim" | "collect_evidence";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -124,6 +135,12 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invoice_review: "Invoice review",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
+  missing_coverage: "Missing coverage",
+  expiring_policy: "Expiring policy",
+  expired_policy: "Expired policy",
+  unresolved_claim: "Unresolved claim",
+  missing_claim_evidence: "Missing claim evidence",
+  critical_insurance_gap: "Critical insurance gap",
 };
 
 /**

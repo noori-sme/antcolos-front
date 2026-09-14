@@ -18,4 +18,16 @@ export const queryKeys = {
     [...orgKey(organizationId), "members"] as const,
   loads: (organizationId: string, filters?: unknown) =>
     [...orgKey(organizationId), "loads", filters ?? null] as const,
+  insuranceDashboard: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "insurance", membershipId, "dashboard"] as const,
+  policies: (organizationId: string, membershipId: string, filters?: unknown) =>
+    [...orgKey(organizationId), "insurance", membershipId, "policies", filters ?? null] as const,
+  policy: (organizationId: string, membershipId: string, policyId: string) =>
+    [...orgKey(organizationId), "insurance", membershipId, "policy", policyId] as const,
+  certificates: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "insurance", membershipId, "certificates"] as const,
+  claims: (organizationId: string, membershipId: string, filters?: unknown) =>
+    [...orgKey(organizationId), "insurance", membershipId, "claims", filters ?? null] as const,
+  claim: (organizationId: string, membershipId: string, claimId: string) =>
+    [...orgKey(organizationId), "insurance", membershipId, "claim", claimId] as const,
 } as const;

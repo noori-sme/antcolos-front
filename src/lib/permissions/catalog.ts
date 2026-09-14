@@ -98,6 +98,18 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "compliance:view", label: "View compliance", description: "See licences, inspections and what is about to expire.", group: "compliance" },
   { key: "compliance:manage", label: "Manage compliance", description: "Record and clear compliance items.", group: "compliance" },
 
+  // ---- Insurance ---------------------------------------------------------
+  { key: "insurance:view", label: "View insurance", description: "See policies, what they cover, when they expire and which certificates have gone out.", group: "insurance" },
+  { key: "insurance:manage", label: "Manage insurance", description: "Record policies and coverage, renew or replace them, and issue certificates of insurance.", group: "insurance" },
+  { key: "insurance:sensitive:view", label: "See private policy details", description: "See premiums and the private notes on a policy. Without this, coverage and dates are visible but the money is not.", group: "insurance", sensitive: true, financial: true },
+  { key: "insurance:share:manage", label: "Share insurance with others", description: "Decide which dispatch organizations and partners may see a policy, and take that access away again.", group: "insurance", sensitive: true },
+
+  // ---- Claims ------------------------------------------------------------
+  { key: "claims:view", label: "View claims", description: "See accidents, cargo damage and other claims, and where each one has got to.", group: "claims" },
+  { key: "claims:create", label: "Report claims", description: "Report an accident or a loss and open a claim against a policy.", group: "claims" },
+  { key: "claims:manage", label: "Manage claims", description: "Move a claim along, record evidence, third parties and who was responsible.", group: "claims" },
+  { key: "claims:financials:view", label: "See claim money", description: "See reserves, repair costs, what the insurer paid and what the deductible cost you.", group: "claims", sensitive: true, financial: true },
+
   // ---- Organization members ----------------------------------------------
   { key: "members:view", label: "View members", description: "See everyone who belongs to this organization.", group: "members" },
   { key: "members:edit", label: "Edit members", description: "Change someone's job title and which role they hold.", group: "members", sensitive: true },
@@ -130,6 +142,8 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   reports: "Reports",
   accounting: "Accounting and financial information",
   compliance: "Compliance & safety",
+  insurance: "Insurance",
+  claims: "Claims",
   members: "Organization members",
   invitations: "Invitations",
   organization: "Organization settings",
@@ -139,7 +153,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "loads", "dispatch", "drivers", "trucks", "trailers", "customers",
   "documents", "settlements", "invoices", "reports", "accounting",
-  "compliance", "members", "invitations", "organization",
+  "compliance", "insurance", "claims", "members", "invitations", "organization",
 ] as const;
 
 /**

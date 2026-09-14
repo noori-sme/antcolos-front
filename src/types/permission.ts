@@ -33,6 +33,10 @@ export type PermissionKey =
   | "revenue:view" | "expenses:view" | "profitability:view"
   // Compliance & safety
   | "compliance:view" | "compliance:manage"
+  // Insurance and claims — a module of its own, never folded into compliance
+  | "insurance:view" | "insurance:manage"
+  | "insurance:sensitive:view" | "insurance:share:manage"
+  | "claims:view" | "claims:create" | "claims:manage" | "claims:financials:view"
   // Organization members
   | "members:view" | "members:edit" | "members:suspend" | "permissions:manage"
   // Invitations
@@ -47,7 +51,7 @@ export type PermissionKey =
 export type PermissionGroup =
   | "loads" | "dispatch" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
-  | "accounting" | "compliance"
+  | "accounting" | "compliance" | "insurance" | "claims"
   | "members" | "invitations" | "organization";
 
 export interface PermissionMeta {

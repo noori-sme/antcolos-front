@@ -9,6 +9,10 @@ import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
 import { mockStore } from "./store";
+import {
+  insuranceContextFrom, insuranceNeedsYou, isInsuranceNeedsYouId,
+  replaceInsuranceNeedsYou,
+} from "./insurance-registry";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
 
@@ -25,11 +29,41 @@ function require(ctx: ServiceContext, ...keys: Parameters<ServiceContext["permis
   if (missing.length > 0) throw new PermissionDeniedError(missing);
 }
 
-/** Urgency = severity first, then how close the deadline is. */
+/**
+ * Everything in the queue for this membership, from both sources.
+ *
+ * Most items are records in the organization's own store. Insurance items are
+ * DERIVED on every read from live policy and claim state, so an expiring
+ * policy appears the moment it slips inside the window and a renewed one stops
+ * appearing without anybody tidying up after it. They merge here rather than
+ * in a screen, so the count in the nav, the Home preview and the workspace are
+ * always the same number.
+ */
+function allItems(ctx: ServiceContext): NeedsYouItem[] {
+  return [...mockStore.org(ctx.organizationId).needsYou, ...insuranceNeedsYou(insuranceContextFrom(ctx))];
+}
+
+/** Sends a changed item back to whichever source it came from. */
+function persist(ctx: ServiceContext, next: NeedsYouItem) {
+  if (isInsuranceNeedsYouId(next.id)) replaceInsuranceNeedsYou(next);
+  else persist(ctx, next);
+}
+
+/**
+ * Urgency = severity first, then how close the deadline is.
+ *
+ * Severity genuinely dominates: the deadline only ever separates two items of
+ * the same severity, and an item with no deadline sorts after one that has a
+ * deadline rather than jumping the queue. An epoch timestamp is a very large
+ * number, so it is folded in as a fraction rather than added to a rank.
+ */
 export function urgencyScore(item: NeedsYouItem): number {
-  const severity = SEVERITY_ORDER[item.severity] * 1_000_000;
-  const due = item.dueAt ? new Date(item.dueAt).getTime() : Number.MAX_SAFE_INTEGER / 2;
-  return severity + due / 1_000_000;
+  const severity = SEVERITY_ORDER[item.severity];
+  if (!item.dueAt) return severity + 0.999;
+  const hoursOut = (new Date(item.dueAt).getTime() - Date.now()) / 3_600_000;
+  // Maps any deadline into (0, 1): overdue nearest to 0, far future nearest 1.
+  const closeness = 1 / (1 + Math.exp(-hoursOut / 48));
+  return severity + closeness * 0.998;
 }
 
 function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
@@ -91,8 +125,7 @@ function appendHistory(
 }
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
-  const org = mockStore.org(ctx.organizationId);
-  const item = org.needsYou.find((n) => n.id === itemId);
+  const item = allItems(ctx).find((n) => n.id === itemId);
   if (!item) throw new NotFoundError("Needs You item");
   mockStore.assertOwned(ctx.organizationId, item.organizationId);
   if (!visibleTo(ctx, item)) throw new PermissionDeniedError(item.requires);
@@ -102,8 +135,7 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
-    const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
+    return allItems(ctx)
       .map(autoUnsnooze)
       .filter((i) => visibleTo(ctx, i))
       .filter((i) => matches(ctx, i, filters))
@@ -116,8 +148,7 @@ export const mockNeedsYouService: NeedsYouService = {
   },
 
   async openCount(ctx) {
-    const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
+    return allItems(ctx)
       .map(autoUnsnooze)
       .filter((i) => visibleTo(ctx, i))
       .filter((i) => i.status === "open" || i.status === "escalated").length;
@@ -135,7 +166,7 @@ export const mockNeedsYouService: NeedsYouService = {
         note: `Assigned to ${membershipId}`,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -160,7 +191,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "snoozed", note: input.reason.trim(), until,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -174,7 +205,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozeReason: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "unsnoozed" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -191,7 +222,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "escalated", note: input.note.trim(),
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -208,7 +239,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozedUntil: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "resolved", note }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 
@@ -222,7 +253,7 @@ export const mockNeedsYouService: NeedsYouService = {
       resolutionNote: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "reopened" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    persist(ctx, next);
     return next;
   },
 };
