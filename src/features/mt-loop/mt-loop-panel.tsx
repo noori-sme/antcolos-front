@@ -1,6 +1,7 @@
 "use client";
 
-import { MapPin, RefreshCw, Truck, User } from "lucide-react";
+import { ChevronRight, MapPin, RefreshCw, Truck, User } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -234,10 +235,16 @@ function LoopRow({
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium text-fg">
-            <span className="inline-flex items-center gap-1.5">
+            {/* The unit opens this truck's dispatch workspace. The carrier
+                context comes from the records there — nothing to switch. */}
+            <Link
+              href={`/dispatch/trucks/${loop.truckId}`}
+              className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
               <Truck className="size-3.5 text-fg-subtle" aria-hidden />
               Unit {loop.truckUnit}
-            </span>
+              <ChevronRight className="size-3.5 text-fg-subtle" aria-hidden />
+            </Link>
             <Badge tone={STATUS_TONE[loop.status] ?? "neutral"}>
               {MT_LOOP_STATUS_LABEL[loop.status]}
             </Badge>

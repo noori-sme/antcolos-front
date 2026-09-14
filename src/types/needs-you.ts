@@ -44,7 +44,9 @@ export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 export type NeedsYouEntityKind =
   | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice"
   /** One MT Loop — a single truck's cycle between loads. */
-  | "mt_loop";
+  | "mt_loop"
+  /** A carrier organization. Not a customer: a carrier moves the freight. */
+  | "carrier";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;

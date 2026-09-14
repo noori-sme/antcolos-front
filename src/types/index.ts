@@ -16,9 +16,15 @@ export type * from "./truck";
 export type * from "./trailer";
 export type * from "./workspace";
 export type * from "./mt-loop";
+export type * from "./carrier";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
+export { DRIVER_AVAILABILITY_LABEL } from "./driver-profile";
+export {
+  AUTHORITY_STATUS_LABEL, CONTACT_ROLE_LABEL, RULE_KIND_LABEL,
+  CARRIER_DOCUMENT_LABEL, authorityAllowsDispatch,
+} from "./carrier";
 export {
   MT_LOOP_STATUS_LABEL, MT_LOOP_ACTION_LABEL, MT_LOOP_OPEN_STATUSES, isMtLoopOpen,
 } from "./mt-loop";

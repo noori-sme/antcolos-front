@@ -3,7 +3,7 @@ import {
   type Load, type Membership, type MtLoop, type NeedsYouCategory,
   type NeedsYouEntityRef, type NeedsYouItem, type NeedsYouRecommendedAction,
   type NeedsYouSeverity, type NeedsYouSource, type Organization,
-  type PermissionKey,
+  type PermissionKey, type CarrierView, type DriverView,
 } from "@/types";
 import { DOCUMENT_KIND_LABEL } from "@/config/documents";
 import { resolveWorkspace } from "@/lib/workspace/resolve";
@@ -15,6 +15,8 @@ import {
   truckOperatingCarrier,
 } from "./truck-registry";
 import { openLoopsFor, type MtLoopContext } from "./mt-loop";
+import { carriersForWorkspaceSync } from "./carrier-registry";
+import { driversForWorkspaceSync, driverDocumentProblems } from "./driver-registry";
 import { nowIso } from "./time";
 
 /**
@@ -605,6 +607,191 @@ function loadRules(ctx: DeriveContext): Derived[] {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Carrier rules                                                               */
+/* -------------------------------------------------------------------------- */
+
+const CARRIER_DOC_NAME: Record<string, string> = {
+  operating_authority: "Operating authority letter",
+  certificate_of_insurance: "Certificate of insurance",
+  w9: "W-9",
+  carrier_packet: "Carrier packet",
+  safety_rating: "Safety rating",
+  other: "Document",
+};
+
+function carrierEntity(carrier: CarrierView): NeedsYouEntityRef {
+  return {
+    kind: "carrier",
+    id: carrier.organizationId,
+    label: carrier.displayName,
+    href: "/home",
+  };
+}
+
+/**
+ * What is wrong with the carriers this workspace dispatches for.
+ *
+ * The most consequential rule in the file is the first one: a carrier without
+ * active operating authority cannot legally haul, so every truck it owns is
+ * unbookable no matter how good it looks on the board. That is a critical item
+ * about the CARRIER rather than one repeated on each of its trucks — five
+ * copies of one problem is five times the noise and no extra information.
+ */
+function carrierRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("trucks:view")) return [];
+  const out: Derived[] = [];
+
+  for (const carrier of carriersForWorkspaceSync(truckContextFrom(ctx))) {
+    const trucks = carrier.truckCount;
+    const unit = trucks === 1 ? "truck" : "trucks";
+
+    /* ---- Cannot legally haul ---- */
+    if (!carrier.canHaul) {
+      const unrecorded = carrier.authority.status === "not_recorded";
+      out.push({
+        key: `carrier-authority-${carrier.organizationId}`,
+        category: "operating_authority",
+        severity: "critical",
+        title: unrecorded
+          ? `${carrier.displayName}'s operating authority has never been recorded`
+          : `${carrier.displayName} cannot legally haul`,
+        reason: unrecorded
+          ? `Nothing confirms ${carrier.displayName} may run freight, and ${trucks} ${unit} of theirs are on your board.`
+          : `${carrier.displayName}'s authority is ${carrier.authority.status === "inactive" ? "not active" : carrier.authority.status}. Nothing should be booked on their ${trucks} ${unit}.`,
+        detail: carrier.authority.note,
+        entity: carrierEntity(carrier),
+        recommendedAction: {
+          kind: "review_authority",
+          label: "Open a truck of theirs",
+          requires: ["trucks:view"],
+        },
+        source: "system",
+        requires: ["trucks:view"],
+      });
+    }
+
+    /* ---- The carrier's own paperwork ---- */
+    for (const document of carrier.documents) {
+      const name = CARRIER_DOC_NAME[document.kind] ?? "Document";
+      if (document.status === "expired" || document.status === "missing") {
+        out.push({
+          key: `carrier-doc-${document.id}`,
+          category: document.status === "missing" ? "missing_document" : "expiring_document",
+          // Insurance is the one that stops freight outright.
+          severity: document.kind === "certificate_of_insurance" ? "critical" : "high",
+          title: document.status === "missing"
+            ? `${carrier.displayName} has no ${name.toLowerCase()} on file`
+            : `${carrier.displayName}'s ${name.toLowerCase()} has expired`,
+          reason: document.status === "missing"
+            ? `Nobody has provided it, so there is nothing to check ${carrier.displayName} against.`
+            : `Lapsed ${document.expiresAt ? new Date(document.expiresAt).toLocaleDateString() : "some time ago"}.`,
+          entity: carrierEntity(carrier),
+          recommendedAction: {
+            kind: "request_document", label: "Open a truck of theirs", requires: ["trucks:view"],
+          },
+          dueAt: document.expiresAt,
+          source: "system",
+          requires: ["trucks:view"],
+        });
+      } else if (document.status === "expiring_soon") {
+        out.push({
+          key: `carrier-doc-${document.id}`,
+          category: "expiring_document",
+          severity: "medium",
+          title: `${carrier.displayName}'s ${name.toLowerCase()} expires soon`,
+          reason: `Lapses ${document.expiresAt ? new Date(document.expiresAt).toLocaleDateString() : "shortly"}. Freight stops when it does.`,
+          entity: carrierEntity(carrier),
+          recommendedAction: {
+            kind: "request_document", label: "Open a truck of theirs", requires: ["trucks:view"],
+          },
+          dueAt: document.expiresAt,
+          source: "system",
+          requires: ["trucks:view"],
+        });
+      }
+    }
+
+    /* ---- Nobody to call ---- */
+    if (carrier.contacts.length === 0) {
+      out.push({
+        key: `carrier-contact-${carrier.organizationId}`,
+        category: "missing_availability",
+        severity: "medium",
+        title: `There is nobody to call at ${carrier.displayName}`,
+        reason: `No contact is recorded, so there is no way to reach them about their ${trucks} ${unit}.`,
+        entity: carrierEntity(carrier),
+        recommendedAction: {
+          kind: "contact_customer", label: "Open a truck of theirs", requires: ["trucks:view"],
+        },
+        source: "system",
+        requires: ["trucks:view"],
+      });
+    }
+  }
+
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Driver rules                                                                */
+/* -------------------------------------------------------------------------- */
+
+function driverEntity(driver: DriverView): NeedsYouEntityRef {
+  return {
+    kind: "driver",
+    id: driver.driverProfileId,
+    label: `${driver.legalName} · ${driver.carrierName}`,
+    href: "/people/drivers",
+  };
+}
+
+/**
+ * What is wrong with the people.
+ *
+ * Only ever about documents the driver actually SHARED with the carrier. A
+ * document they kept to themselves is not a gap in the carrier's file and must
+ * never be reported as one — the driver registry already refuses to call it
+ * missing, and this rule inherits that.
+ */
+function driverRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("drivers:view")) return [];
+  const out: Derived[] = [];
+
+  for (const driver of driversForWorkspaceSync(truckContextFrom(ctx))) {
+    for (const problem of driverDocumentProblems(driver)) {
+      const severity: NeedsYouSeverity =
+        problem.status === "expired" || problem.status === "rejected" || problem.status === "missing"
+          ? "high"
+          : "medium";
+      out.push({
+        key: `driver-doc-${driver.driverProfileId}-${problem.requirementKey}`,
+        category: problem.status === "expiring_soon" ? "expiring_document" : "missing_document",
+        severity,
+        title: `${driver.legalName}'s ${problem.label.toLowerCase()} ${
+          problem.status === "rejected" ? "was rejected"
+            : problem.status === "expired" ? "has expired"
+              : problem.status === "missing" ? "has not been provided"
+                : "expires soon"
+        }`,
+        reason: problem.rejectionReason
+          ?? (problem.expiresAt
+            ? `Dated ${new Date(problem.expiresAt).toLocaleDateString()}. They cannot run once it lapses.`
+            : `${driver.carrierName} needs it before ${driver.legalName} can be dispatched.`),
+        entity: driverEntity(driver),
+        recommendedAction: {
+          kind: "contact_driver", label: "Call the driver", requires: ["drivers:view"],
+        },
+        dueAt: problem.expiresAt,
+        source: "system",
+        requires: ["drivers:view"],
+      });
+    }
+  }
+
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Reconciliation                                                              */
 /* -------------------------------------------------------------------------- */
 
@@ -619,6 +806,8 @@ function derive(ctx: DeriveContext): Derived[] {
   if (workspace && workspace.kind !== "driver" && ctx.scope.loads !== "assigned") {
     items.push(...loopRules(openLoopsFor(ctx as MtLoopContext)));
     items.push(...equipmentRules(ctx));
+    items.push(...carrierRules(ctx));
+    items.push(...driverRules(ctx));
   }
   items.push(...loadRules(ctx));
 

@@ -13,6 +13,7 @@ import { SeverityBar } from "./severity";
 const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   load: Package, truck: Truck, driver: User, document: FileText,
   customer: Building2, settlement: Receipt, invoice: Receipt, mt_loop: RefreshCw,
+  carrier: Building2,
 };
 
 export function NeedsYouCard({

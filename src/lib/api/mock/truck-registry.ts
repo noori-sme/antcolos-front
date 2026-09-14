@@ -1938,6 +1938,24 @@ export function truckApprovedCarriers(
 }
 
 /**
+ * Every document on a truck, for a viewer entitled to see the truck.
+ *
+ * Deliberately NOT filtered by carrier, matching the truck profile service: a
+ * registration, a title and an annual inspection are facts about the VEHICLE,
+ * and any carrier running it needs them. The things that are one carrier's own
+ * — its unit number, its lease dates, its insurance evidence — live on the
+ * relationship, and those the profile service does filter.
+ *
+ * Returns nothing at all for a viewer with no access reason, so this cannot be
+ * used to read documents off somebody else's truck.
+ */
+export function truckDocumentsFor(truckId: string, ctx: TruckContext): TruckDocument[] {
+  if (!ctx.permissions.has("trucks:view")) return [];
+  if (accessReason(truckId, ctx) === null) return [];
+  return db().documents.filter((d) => d.truckId === truckId);
+}
+
+/**
  * The paperwork problems on a truck, in the operator's language.
  *
  * Returned as records rather than a count so a Needs You item can say WHICH

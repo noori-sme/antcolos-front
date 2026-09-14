@@ -107,3 +107,130 @@ export interface DriverDocument {
   submittedAt?: string;
   updatedAt?: string;
 }
+
+/* -------------------------------------------------------------------------- */
+/* What a dispatcher sees of a driver                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether the person can take a load right now, and when they cannot.
+ *
+ * Separate from the truck's status on purpose: a truck can be sitting empty
+ * while the driver on it is out of hours, at home, or has simply not been asked
+ * yet. Collapsing the two is how a dispatcher books a load nobody can run.
+ */
+export interface DriverAvailability {
+  status: DriverAvailabilityStatus;
+  /** When they come back, for a driver who is not available now. */
+  availableAt?: string;
+  /** Hours-of-service in the driver's own words. Never computed here. */
+  hoursNote?: string;
+  homeTerminal?: string;
+  /** Where the person actually is, when anybody has recorded it. */
+  currentCity?: string;
+  currentState?: string;
+}
+
+export type DriverAvailabilityStatus =
+  | "available"
+  | "driving"
+  | "off_duty"
+  | "time_off"
+  | "inactive";
+
+export const DRIVER_AVAILABILITY_LABEL: Record<DriverAvailabilityStatus, string> = {
+  available: "Available",
+  driving: "Driving",
+  off_duty: "Off duty",
+  time_off: "Time off",
+  inactive: "Not working",
+};
+
+/**
+ * What the driver has asked for.
+ *
+ * Preferences are not rules: a carrier rule stops a load, a driver preference
+ * is something a dispatcher should know before they pick up the phone. Keeping
+ * them apart is what lets milestone 4 refuse a load on a rule and merely warn
+ * on a preference.
+ */
+export interface DriverPreferences {
+  /** States the driver would rather run. Not a refusal. */
+  preferredStates?: string[];
+  /** States the driver has asked not to be sent to. */
+  avoidStates?: string[];
+  /** The longest they want to be away from home, in days. */
+  maxDaysOut?: number;
+  /** A day of the week they want to be home by, in the driver's words. */
+  homeBy?: string;
+  /** Endorsements the driver actually holds. */
+  endorsements?: string[];
+  runsTeam?: boolean;
+  notes?: string;
+}
+
+/**
+ * One workspace's view of one driver, right now.
+ *
+ * A projection, like FleetTruck and CarrierView: derived from the relationship
+ * the viewer holds and never stored. The driver is a permanent person with one
+ * profile that follows them between carriers; this is what a particular
+ * workspace is entitled to see of them today.
+ *
+ * The narrowing that matters: documents travel only as far as the driver agreed
+ * when they joined the carrier, and a dispatch agency working for that carrier
+ * sees what the carrier sees and no more. The licence NUMBER is withheld from a
+ * dispatch workspace outright — dispatch needs to know the licence is valid and
+ * where it is from, never the number itself.
+ */
+export interface DriverView {
+  driverProfileId: string;
+  legalName: string;
+  phone?: string;
+  email?: string;
+  /** Present only for the carrier that engaged the driver. */
+  cdlNumber?: string;
+  cdlState: string;
+  cdlExpiresAt: string;
+  medicalCardExpiresAt?: string;
+  /**
+   * Whether the medical card reached this viewer at all.
+   *
+   * Absent-because-withheld and absent-because-nobody-has-one look identical in
+   * a date field, and they are not the same thing: one is the driver's choice
+   * and the other is a gap somebody has to close. This says which.
+   */
+  medicalCardShared: boolean;
+  availability: DriverAvailability;
+  preferences: DriverPreferences;
+  /** The carrier this view is through, and on what basis. */
+  carrierOrganizationId: string;
+  carrierName: string;
+  engagementType: EngagementType;
+  engagementStatus: RelationshipStatus;
+  engagedSince?: string;
+  /**
+   * What the driver may do in Antcolos under this engagement.
+   *
+   * Snapshotted onto the engagement when the carrier invited them, so a later
+   * role edit does not rewrite what they were given. A dispatcher needs it to
+   * know what to expect of the person: whether they can mark themselves arrived,
+   * whether they can upload a proof of delivery, or whether somebody else has
+   * to do it for them.
+   */
+  permissions: PermissionKey[];
+  /** Only the documents the driver agreed to share with that carrier. */
+  documents: DriverDocument[];
+  /** Requirements behind those documents, so a gap can be named. */
+  requirements: DriverDocumentRequirement[];
+  /** Why this viewer may see the driver at all. */
+  reason: DriverAccessReason;
+}
+
+export type DriverAccessReason =
+  /** The viewer is the carrier that engaged the driver. */
+  | "engaging_carrier"
+  /** The viewer dispatches for that carrier. */
+  | "dispatch_access"
+  /** The viewer is the driver. */
+  | "self";
