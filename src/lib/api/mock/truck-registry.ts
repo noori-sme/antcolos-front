@@ -93,6 +93,8 @@ export const TRUCK_IDS = {
   mdC31: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2003",
   mdA18: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2004",
   cs47: "c3d2e4f6-3333-4c30-7e03-2d2f7a9b3001",
+  cs52: "c3d2e4f6-3333-4c30-7e03-2d2f7a9b3002",
+  cs58: "c3d2e4f6-3333-4c30-7e03-2d2f7a9b3003",
   crosswind: "d4c3f5a7-4444-4d40-6f04-3e3a8b1c4001",
   claimed: "e5b4a6c8-5555-4e50-5a05-4f4b9c2d5001",
 } as const;
@@ -330,6 +332,16 @@ function buildFixtures(): RegistryState {
     truck(T.cs47, "1FTYE2CM1LKA99887", "sprinter_van", 2020, "Mercedes-Benz", "Sprinter 3500", "available",
       plate("OR-1120S", "OR", 260, "Cascade Haul Co."), SPRINTER_SPECS,
       { city: "Portland", state: "OR" }, "org_cascade", "White"),
+    // Empty, and nobody has recorded WHERE. A real gap rather than a tidy
+    // fixture: the MT Loop cannot be worked without it, and Needs You says so.
+    truck(T.cs52, "1FDWE3FL7MDC10022", "box_truck", 2021, "Ford", "E-450", "available",
+      plate("OR-8845B", "OR", 190, "Cascade Haul Co."), BOX_SPECS,
+      { homeTerminal: "Portland, OR" }, "org_cascade", "White"),
+    // A tractor about to go empty with no trailer under it.
+    truck(T.cs58, "1XKYD49X8NJ458812", "tractor", 2022, "Kenworth", "T680", "expected_available",
+      plate("OR-2207T", "OR", 280, "Cascade Haul Co."), TRACTOR_SPECS,
+      { city: "Salem", state: "OR", expectedAvailableAt: hoursFromNow(6), homeTerminal: "Portland, OR" },
+      "org_cascade", "Blue"),
   ];
 
   const ownership: TruckOwnershipRecord[] = [
@@ -348,6 +360,8 @@ function buildFixtures(): RegistryState {
     own(T.claimed, "organization", "Northline Freight LLC", daysAgo(260), "active", undefined, "org_northline"),
     own(T.mdA18, "organization", "Baxter Transit LLC", daysAgo(280), "active", undefined, "org_baxter"),
     own(T.cs47, "organization", "Cascade Haul Co.", daysAgo(340), "active", undefined, "org_cascade"),
+    own(T.cs52, "organization", "Cascade Haul Co.", daysAgo(250), "active", undefined, "org_cascade"),
+    own(T.cs58, "organization", "Cascade Haul Co.", daysAgo(190), "active", undefined, "org_cascade"),
   ];
 
   const relationships: TruckCarrierRelationship[] = [
@@ -366,6 +380,8 @@ function buildFixtures(): RegistryState {
     rel(T.claimed, "org_northline", "Northline Freight", "carrier_owned", "127", "approved", daysAgo(260), 120, 45),
     rel(T.mdA18, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-18", "approved", daysAgo(280), 100, 30),
     rel(T.cs47, "org_cascade", "Cascade Haul", "carrier_owned", "47", "approved", daysAgo(340), 105, 30),
+    rel(T.cs52, "org_cascade", "Cascade Haul", "carrier_owned", "52", "approved", daysAgo(250), 110, 35),
+    rel(T.cs58, "org_cascade", "Cascade Haul", "carrier_owned", "58", "approved", daysAgo(190), 145, 60),
   ];
 
   // Meridian dispatches for carriers it neither owns nor operates for.
@@ -378,6 +394,17 @@ function buildFixtures(): RegistryState {
     // the same carrier, so "scoped equipment" is visibly per-workspace.
     dispatch(T.nl111, "org_summit", "Summit Dispatch", "org_northline", "Northline Freight LLC", "111", daysAgo(45)),
     dispatch(T.nl131, "org_summit", "Summit Dispatch", "org_northline", "Northline Freight LLC", "131", daysAgo(30)),
+    // Baxter handed Summit a truck that is currently running under NORTHLINE's
+    // operating lease. Both records are genuine and they disagree, which is
+    // exactly what an Operating Authority conflict is.
+    dispatch(T.nl107, "org_summit", "Summit Dispatch", "org_baxter", "Baxter Transit LLC", "BX-07", daysAgo(10)),
+    // Cascade dispatches through one person working alone.
+    dispatch(T.cs47, "org_solo", "Sam Murtaza — Dispatch", "org_cascade", "Cascade Haul Co.", "47", daysAgo(50)),
+    dispatch(T.cs52, "org_solo", "Sam Murtaza — Dispatch", "org_cascade", "Cascade Haul Co.", "52", daysAgo(50)),
+    dispatch(T.cs58, "org_solo", "Sam Murtaza — Dispatch", "org_cascade", "Cascade Haul Co.", "58", daysAgo(20)),
+    // Crosswind granted a SECOND agency access to a truck Meridian already has.
+    // Two workspaces, one truck, one MT Loop: a conflict both of them must see.
+    dispatch(T.crosswind, "org_solo", "Sam Murtaza — Dispatch", "org_crosswind", "Crosswind Freight", "C-31", daysAgo(5)),
   ];
 
   const assignments: TruckDriverAssignment[] = [
@@ -389,6 +416,7 @@ function buildFixtures(): RegistryState {
     assign(T.nl121, "org_northline", "dp_kelsey", "Kelsey Nguyen", daysAgo(180), daysAgo(60), "Left the carrier."),
     assign(T.claimed, "org_northline", "dp_ray", "Ray Bell", daysAgo(150), daysAgo(20), "Reassigned to another truck."),
     assign(T.cs47, "org_cascade", "dp_sam", "Sam Murtaza", daysAgo(108)),
+    assign(T.cs58, "org_cascade", "dp_owen", "Owen Fitz", daysAgo(60)),
   ];
 
   const documents: TruckDocument[] = [
@@ -412,6 +440,13 @@ function buildFixtures(): RegistryState {
     doc(T.nl131, "title", "approved", "org_northline", "title-131.pdf"),
     doc(T.nl131, "insurance", "approved", "org_northline", "coi-131.pdf", daysFromNow(190)),
     doc(T.nl131, "annual_inspection", "approved", "org_northline", "inspection-131.pdf", daysFromNow(240)),
+    doc(T.cs47, "registration", "approved", "org_cascade", "reg-47.pdf", daysFromNow(260)),
+    doc(T.cs47, "insurance", "approved", "org_cascade", "coi-47.pdf", daysFromNow(150)),
+    doc(T.cs52, "registration", "approved", "org_cascade", "reg-52.pdf", daysFromNow(190)),
+    // Lapses inside the month. Not yet a stoppage; worth knowing before it is.
+    doc(T.cs52, "insurance", "expiring_soon", "org_cascade", "coi-52.pdf", daysFromNow(16)),
+    doc(T.cs58, "registration", "approved", "org_cascade", "reg-58.pdf", daysFromNow(280)),
+    doc(T.cs58, "annual_inspection", "approved", "org_cascade", "inspection-58.pdf", daysFromNow(120)),
   ];
 
   const claims: TruckOwnershipClaim[] = [
@@ -726,9 +761,15 @@ function project(truck: Truck, ctx: TruckContext): FleetTruck {
   const visible = visibleCarrierOrgIds(truck.truckId, ctx);
   // The operating carrier's driver belongs to that carrier. Another approved
   // carrier waiting for the truck is not entitled to know who is on it.
-  const assignedFor = canSeeCarrier(visible, operator?.organizationId)
-    ? operator?.organizationId ?? ctx.organizationId
-    : ctx.organizationId;
+  //
+  // With nobody holding the lease there is no operating carrier to ask, so a
+  // dispatch workspace falls back to the carrier that granted it access: that
+  // carrier's driver assignment is precisely what it was given the truck to
+  // dispatch. A carrier has no grant and falls back to itself, exactly as
+  // before.
+  const assignedFor = operator
+    ? (canSeeCarrier(visible, operator.organizationId) ? operator.organizationId : ctx.organizationId)
+    : (dispatchGrant?.grantedByCarrierOrganizationId ?? ctx.organizationId);
   const assignment = activeAssignment(truck.truckId, assignedFor);
   const state = activationStateFor(truck.truckId, ctx.organizationId);
   const mine = leaseFor(truck.truckId, ctx.organizationId);
@@ -742,6 +783,7 @@ function project(truck: Truck, ctx: TruckContext): FleetTruck {
     // A dispatcher's "runs under" is the carrier that granted it access — the
     // one whose freight it moves — which is true whether or not a lease is live.
     carrierName: dispatchGrant?.grantedByCarrierName,
+    carrierOrganizationId: dispatchGrant?.grantedByCarrierOrganizationId,
     equipment: truck.equipmentType,
     status: truck.status,
     currentDriverId: assignment?.driverProfileId,
@@ -1820,4 +1862,99 @@ export async function approveCarrierRelationship(
     organizationId: ctx.organizationId, actorName: ctx.actorName,
   });
   return { ...approved };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Read-only helpers for the MT Loop and Needs You services                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The carrier whose authority this organization sees a truck under.
+ *
+ * Two different answers for two different kinds of workspace, and the
+ * difference matters. A carrier sees itself: it runs the truck under its own
+ * authority. A dispatch workspace sees the carrier that GRANTED it access —
+ * whose freight it moves, and who carries the operating authority. Neither one
+ * is ever inferred from the other.
+ */
+export function truckCarrierFor(
+  truckId: string,
+  organizationId: string,
+): { organizationId: string; name: string } | undefined {
+  const grant = activeDispatchAccess(truckId, organizationId);
+  if (grant) {
+    return {
+      organizationId: grant.grantedByCarrierOrganizationId,
+      name: grant.grantedByCarrierName,
+    };
+  }
+  const relationship = approvedRelationship(truckId, organizationId);
+  if (relationship) {
+    return { organizationId: relationship.organizationId, name: relationship.organizationName };
+  }
+  return undefined;
+}
+
+/**
+ * Every dispatch workspace a carrier has handed this truck to, oldest grant
+ * first.
+ *
+ * More than one is not a bug in the data — carriers really do grant two
+ * agencies access to the same unit, usually by accident — so it is reported
+ * rather than silently collapsed. The MT Loop makes the OLDEST grant
+ * responsible and the conflict is surfaced to everybody involved.
+ */
+export function truckDispatchGrants(truckId: string): TruckDispatchAccess[] {
+  return db().dispatchAccess
+    .filter((d) => d.truckId === truckId && d.status === "active")
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+
+/** The carrier that currently operates the truck under its own authority. */
+export function truckOperatingCarrier(
+  truckId: string,
+): { organizationId: string; name: string } | undefined {
+  const carrier = operatingCarrier(truckId);
+  if (!carrier) return undefined;
+  return { organizationId: carrier.organizationId, name: carrier.organizationName };
+}
+
+/**
+ * Every carrier onboarded on the truck, oldest relationship first.
+ *
+ * The order matters: with nobody holding a lease, the carrier whose
+ * relationship started first is the truck's home carrier, and that is a stable
+ * answer rather than whatever the array happened to be built in.
+ */
+export function truckApprovedCarriers(
+  truckId: string,
+): Array<{ organizationId: string; name: string; startedAt: string }> {
+  return db().relationships
+    .filter((r) => r.truckId === truckId && r.status === "approved")
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+    .map((r) => ({
+      organizationId: r.organizationId, name: r.organizationName, startedAt: r.startedAt,
+    }));
+}
+
+/**
+ * The paperwork problems on a truck, in the operator's language.
+ *
+ * Returned as records rather than a count so a Needs You item can say WHICH
+ * document is wrong and when it lapsed, which is the difference between an
+ * actionable card and a number.
+ */
+export function truckDocumentProblems(truckId: string): Array<{
+  id: string;
+  kind: TruckDocumentKind;
+  status: TruckDocument["status"];
+  expiresAt?: string;
+  rejectionReason?: string;
+}> {
+  return db().documents
+    .filter((d) => d.truckId === truckId && DOC_WARNING_STATUSES.has(d.status))
+    .map((d) => ({
+      id: d.id, kind: d.kind, status: d.status,
+      expiresAt: d.expiresAt, rejectionReason: d.rejectionReason,
+    }));
 }

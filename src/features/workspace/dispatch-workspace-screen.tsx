@@ -15,6 +15,7 @@ import { useActiveMembership, useSession } from "@/lib/session/hooks";
 import { WORKSPACE_KIND_DESCRIPTION, WORKSPACE_KIND_LABEL } from "@/lib/workspace/resolve";
 import { claimWork, releaseWork, upgradeToOrganization } from "@/lib/api/mock/dispatch-workspace";
 import { NeedsYouPreview } from "@/features/home/needs-you-preview";
+import { MtLoopPanel } from "@/features/mt-loop/mt-loop-panel";
 import { useHomeSummary } from "@/features/home/hooks";
 import { WorkList, WorkspacePanel } from "./work-panels";
 import { useDispatchWorkspaceSummary, useWorkspaceContext } from "./use-workspace";
@@ -118,7 +119,20 @@ export function DispatchWorkspaceScreen() {
         {WORKSPACE_KIND_DESCRIPTION[workspace.kind]}
       </p>
 
-      {/* Needs You leads, in every workspace. */}
+      {/* MT Loop leads. An empty truck costs money every hour it stays empty,
+          so it sits above everything else on this screen, always. */}
+      <MtLoopPanel
+        board={s.mtLoop}
+        ctx={ctx}
+        onChanged={() => {
+          // The loops and the queue are two views of the same state: taking a
+          // loop clears the item that said nobody had it, so both refresh.
+          void query.refetch();
+          void needsYou.refetch();
+        }}
+      />
+
+      {/* Then Needs You: everything actionable that is yours, across the system. */}
       {needsYou.data ? (
         <NeedsYouPreview
           items={needsYou.data.needsYouPreview}

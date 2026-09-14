@@ -1,4 +1,5 @@
 import type { IsoDateTime } from "./common";
+import type { MtLoopBoard } from "./mt-loop";
 
 /**
  * The shape of the place somebody is working in.
@@ -135,6 +136,15 @@ export interface WorkspaceActivityItem {
  */
 export interface DispatchWorkspaceSummary {
   workspace: Workspace;
+  /**
+   * The MT Loop board: every truck this workspace is responsible for that is
+   * empty or about to be.
+   *
+   * Always present and always FIRST, because an empty truck is the most
+   * expensive thing on this screen. It comes back with no loops in it for a
+   * workspace that dispatches nothing — an empty board, not a missing one.
+   */
+  mtLoop: MtLoopBoard;
   /** Always present. The viewer's own assigned work. */
   myWork: WorkspaceWorkItem[];
   /** Present only in a team workspace, for somebody who may see other people's work. */

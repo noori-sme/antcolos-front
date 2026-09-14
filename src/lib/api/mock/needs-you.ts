@@ -1,6 +1,7 @@
 import {
   MAX_SNOOZE_HOURS, SEVERITY_ORDER,
   type NeedsYouFilters, type NeedsYouHistoryEntry, type NeedsYouItem,
+  type PermissionKey,
 } from "@/types";
 import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
@@ -9,6 +10,7 @@ import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
 import { mockStore } from "./store";
+import { syncDerivedNeedsYouFor } from "./needs-you-derive";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
 
@@ -20,16 +22,26 @@ const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
  * that renders a forbidden button still fails at this seam — which is exactly
  * the expectation the real API must meet.
  */
-function require(ctx: ServiceContext, ...keys: Parameters<ServiceContext["permissions"]["has"]>[0][]) {
+function requirePermissions(ctx: ServiceContext, ...keys: PermissionKey[]) {
   const missing = keys.filter((k) => !ctx.permissions.has(k));
   if (missing.length > 0) throw new PermissionDeniedError(missing);
 }
 
-/** Urgency = severity first, then how close the deadline is. */
+/**
+ * Urgency = severity first, then how close the deadline is.
+ *
+ * Severity has to dominate ABSOLUTELY, and making that true takes some care:
+ * epoch milliseconds are around 1.8e12, so any modest multiplier on severity
+ * lets a low item with a deadline this afternoon sort above a critical one with
+ * no deadline at all. The severity band is therefore far wider than the whole
+ * range a due time can contribute, and the due time only ever breaks ties
+ * inside one band.
+ */
 export function urgencyScore(item: NeedsYouItem): number {
-  const severity = SEVERITY_ORDER[item.severity] * 1_000_000;
-  const due = item.dueAt ? new Date(item.dueAt).getTime() : Number.MAX_SAFE_INTEGER / 2;
-  return severity + due / 1_000_000;
+  /** Well past any real due date, so "no deadline" sorts last within its band. */
+  const NO_DEADLINE = Date.UTC(2100, 0, 1);
+  const due = item.dueAt ? new Date(item.dueAt).getTime() : NO_DEADLINE;
+  return SEVERITY_ORDER[item.severity] * 1e13 + due / 1e3;
 }
 
 function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
@@ -102,6 +114,9 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
+    // Regenerate first: the queue is a view of live state, so what it holds is
+    // decided here rather than by whatever happened to be written down earlier.
+    syncDerivedNeedsYouFor(ctx);
     const org = mockStore.org(ctx.organizationId);
     return org.needsYou
       .map(autoUnsnooze)
@@ -112,10 +127,12 @@ export const mockNeedsYouService: NeedsYouService = {
 
   async get(ctx, itemId) {
     await wait();
+    syncDerivedNeedsYouFor(ctx);
     return autoUnsnooze(find(ctx, itemId));
   },
 
   async openCount(ctx) {
+    syncDerivedNeedsYouFor(ctx);
     const org = mockStore.org(ctx.organizationId);
     return org.needsYou
       .map(autoUnsnooze)
@@ -199,7 +216,7 @@ export const mockNeedsYouService: NeedsYouService = {
     await wait();
     const item = find(ctx, itemId);
     // Acting on an item needs the permission its recommended action declares.
-    require(ctx, ...item.recommendedAction.requires);
+    requirePermissions(ctx, ...item.recommendedAction.requires);
     const next: NeedsYouItem = {
       ...item,
       status: "resolved",

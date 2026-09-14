@@ -22,14 +22,29 @@ export type NeedsYouCategory =
   | "settlement_review"
   | "invoice_review"
   | "customer_response"
-  | "truck_going_empty";
+  | "truck_going_empty"
+  /* ---- MT Loop conditions. Derived from live state, never seeded. ---- */
+  /** An open MT Loop that nobody has taken responsibility for. */
+  | "unassigned_loop"
+  /** A truck is going empty and nobody has recorded when or where. */
+  | "missing_availability"
+  /** The truck runs under a different authority than the one that granted us access. */
+  | "operating_authority"
+  /** An MT Loop stopped by a problem rather than by a choice. */
+  | "blocked_loop"
+  /** Two workspaces, or two loads, laying claim to the same thing. */
+  | "assignment_conflict"
+  /** The truck goes empty sooner than the loop is being worked. */
+  | "sla_deadline";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
 export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 
 export type NeedsYouEntityKind =
-  | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice";
+  | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice"
+  /** One MT Loop — a single truck's cycle between loads. */
+  | "mt_loop";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -41,7 +56,13 @@ export interface NeedsYouEntityRef {
 
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
-  | "review" | "confirm_status" | "start_search" | "contact_customer";
+  | "review" | "confirm_status" | "start_search" | "contact_customer"
+  /** Take, or hand out, responsibility for an MT Loop. */
+  | "assign_loop"
+  /** Record when and where a truck goes empty. */
+  | "update_availability"
+  /** Look at who is actually entitled to run or dispatch the truck. */
+  | "review_authority";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -119,11 +140,17 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   eta_risk: "ETA risk",
   missing_document: "Missing document",
   detention: "Possible detention",
-  expiring_document: "Expiring document",
+  expiring_document: "Document expiry",
   settlement_review: "Settlement review",
   invoice_review: "Invoice review",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
+  unassigned_loop: "MT Loop with nobody on it",
+  missing_availability: "Missing availability",
+  operating_authority: "Operating Authority conflict",
+  blocked_loop: "Blocked MT Loop",
+  assignment_conflict: "Assignment conflict",
+  sla_deadline: "Deadline approaching",
 };
 
 /**

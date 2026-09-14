@@ -7,6 +7,8 @@ import { resolveWorkspace } from "@/lib/workspace/resolve";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
+import { mtLoopBoardSync } from "./mt-loop";
+import { syncDerivedNeedsYou } from "./needs-you-derive";
 import { trailerFleetSync } from "./trailer-registry";
 
 /**
@@ -231,17 +233,15 @@ export function dispatchWorkspaceSummarySync(ctx: WorkspaceContext): DispatchWor
       activeLoadCount: existing.activeLoadCount + (patch.activeLoadCount ?? 0),
     });
   };
+  // Grouped by organization id, never by the printed name. One carrier writes
+  // itself down as "Northline Freight" on a load and "Northline Freight LLC" on
+  // a dispatch grant; keying on what is printed gives it two rows and halves
+  // both counts.
   for (const t of trucks) {
-    if (t.carrierName) {
-      const id = Object.keys(CARRIER_NAMES).find((k) => CARRIER_NAMES[k] === t.carrierName) ?? t.carrierName;
-      bump(id, { truckCount: 1 });
-    }
+    if (t.carrierOrganizationId) bump(t.carrierOrganizationId, { truckCount: 1 });
   }
   for (const t of trailers) {
-    if (t.carrierName) {
-      const id = Object.keys(CARRIER_NAMES).find((k) => CARRIER_NAMES[k] === t.carrierName) ?? t.carrierName;
-      bump(id, { trailerCount: 1 });
-    }
+    if (t.carrierOrganizationId) bump(t.carrierOrganizationId, { trailerCount: 1 });
   }
   for (const load of active) {
     const raw = load.assignment?.carrierOrganizationId;
@@ -264,12 +264,23 @@ export function dispatchWorkspaceSummarySync(ctx: WorkspaceContext): DispatchWor
         }))
     : [];
 
-  // Needs You is already permission-filtered inside its own store accessor.
+  /* ---- MT Loop, first thing on the dashboard and first thing computed ---- */
+  // It runs before Needs You on purpose: the loops are reconciled against the
+  // trucks here, and the Needs You rules then read the reconciled loops. One
+  // direction, so the two can never disagree about the same truck.
+  const mtLoop = mtLoopBoardSync(ctx);
+
+  // Needs You is generated from live state rather than stored, so it is
+  // regenerated here too — otherwise the count on this dashboard could differ
+  // from the queue the person is about to open.
+  syncDerivedNeedsYou(ctx);
   const needsYou = mockStore.org(ctx.organizationId).needsYou
-    .filter((n) => n.status === "open" || n.status === "escalated");
+    .filter((n) => n.status === "open" || n.status === "escalated")
+    .filter((n) => n.requires.every((k) => ctx.permissions.has(k)));
 
   return {
     workspace,
+    mtLoop,
     myWork: mine,
     teamWork: maySeeTeamWork ? others : undefined,
     unassignedWork: maySeeQueue ? unassigned : undefined,
