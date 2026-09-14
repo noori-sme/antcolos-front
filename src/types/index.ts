@@ -16,6 +16,7 @@ export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
 export type * from "./trailer";
+export type * from "./maintenance";
 export type * from "./insurance";
 export type * from "./party";
 export type * from "./rate-confirmation";

@@ -36,6 +36,12 @@ export type PermissionKey =
   | "revenue:view" | "expenses:view" | "profitability:view"
   // Compliance & safety
   | "compliance:view" | "compliance:manage"
+  // Maintenance — equipment upkeep. Separate from compliance, which is paperwork.
+  | "maintenance:view" | "maintenance:manage"
+  | "maintenance:defects:report" | "maintenance:defects:manage"
+  | "maintenance:repairs:manage" | "maintenance:service:record"
+  | "maintenance:costs:view" | "maintenance:outofservice:manage"
+  | "maintenance:share:manage"
   // Insurance and claims — a module of its own, never folded into compliance
   | "insurance:view" | "insurance:manage"
   | "insurance:sensitive:view" | "insurance:share:manage"
@@ -54,7 +60,7 @@ export type PermissionKey =
 export type PermissionGroup =
   | "loads" | "dispatch" | "driver_workflow" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
-  | "accounting" | "compliance" | "insurance" | "claims"
+  | "accounting" | "compliance" | "maintenance" | "insurance" | "claims"
   | "members" | "invitations" | "organization";
 
 export interface PermissionMeta {

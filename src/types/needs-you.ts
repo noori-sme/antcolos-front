@@ -25,6 +25,12 @@ export type NeedsYouCategory =
   | "invoice_overdue"
   | "customer_response"
   | "truck_going_empty"
+  // Maintenance. Raised from the maintenance registry, not stored as fixtures.
+  | "overdue_service"
+  | "critical_defect"
+  | "unresolved_repair"
+  | "equipment_out_of_service"
+
   // Insurance and claims. Derived from the insurance registry rather than
   // seeded, so an item disappears when the underlying policy or claim is
   // actually sorted out and never because somebody ticked it off.
@@ -84,6 +90,10 @@ export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 
 export type NeedsYouEntityKind =
+  | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice"
+  // Maintenance records. A trailer is its own kind, never a truck.
+  | "trailer" | "maintenance_requirement" | "defect" | "repair_order"
+
   | "load" | "truck" | "trailer" | "driver" | "document" | "customer"
   | "settlement" | "invoice" | "policy" | "claim" | "carrier"
 
@@ -118,6 +128,9 @@ export interface NeedsYouEntityRef {
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
   | "review" | "confirm_status" | "start_search" | "contact_customer"
+  // Maintenance
+  | "schedule_service" | "open_repair_order" | "review_defect" | "return_to_service"
+
   | "renew_policy" | "add_coverage" | "advance_claim" | "collect_evidence"
 
   /** Take, or hand out, responsibility for an MT Loop. */
@@ -226,32 +239,27 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invoice_overdue: "Invoice overdue",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
-  missing_coverage: "Missing coverage",
-  expiring_policy: "Expiring policy",
-  expired_policy: "Expired policy",
-  unresolved_claim: "Unresolved claim",
+  overdue_service: "Overdue service", critical_defect: "Critical defect",
+  unresolved_repair: "Unresolved repair",
+  equipment_out_of_service: "Equipment out of service",
+  missing_coverage: "Missing coverage", expiring_policy: "Expiring policy",
+  expired_policy: "Expired policy", unresolved_claim: "Unresolved claim",
   missing_claim_evidence: "Missing claim evidence",
   critical_insurance_gap: "Critical insurance gap",
   unassigned_loop: "MT Loop with nobody on it",
   missing_availability: "Missing availability",
-  operating_authority: "Operating Authority conflict",
-  blocked_loop: "Blocked MT Loop",
-  assignment_conflict: "Assignment conflict",
-  sla_deadline: "Deadline approaching",
-  no_search: "Nobody is looking",
-  draft_waiting: "Message waiting for you",
-  expiring_opportunity: "Load about to go",
-  broker_replied: "Broker answered",
-  offer_expiring: "Offer about to lapse",
-  agreed_not_booked: "Agreed, not booked",
+  operating_authority: "Operating Authority conflict", blocked_loop: "Blocked MT Loop",
+  assignment_conflict: "Assignment conflict", sla_deadline: "Deadline approaching",
+  no_search: "Nobody is looking", draft_waiting: "Message waiting for you",
+  expiring_opportunity: "Load about to go", broker_replied: "Broker answered",
+  offer_expiring: "Offer about to lapse", agreed_not_booked: "Agreed, not booked",
   driver_consent: "Driver has not accepted",
   broker_profile_unlinked: "Broker profile not linked",
   message_waiting: "Message waiting to be read",
   ratecon_waiting: "Rate confirmation to check",
   ratecon_disagrees: "Rate confirmation disagrees",
   ratecon_missing: "No rate confirmation yet",
-  driver_review_waiting: "Waiting on the driver",
-  driver_blocked: "Driver said no",
+  driver_review_waiting: "Waiting on the driver", driver_blocked: "Driver said no",
   driver_countered: "Driver countered",
 };
 

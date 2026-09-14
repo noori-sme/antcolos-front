@@ -17,6 +17,10 @@ import {
 } from "./insurance-registry";
 import { syncDerivedNeedsYouFor } from "./needs-you-derive";
 import { fleetSync, truckContextFrom } from "./truck-registry";
+import {
+  isMaintenanceNeedsYouId, maintenanceContextFrom, maintenanceNeedsYouItems,
+  putMaintenanceNeedsYouItem, withOverlayContext,
+} from "./maintenance-registry";
 import { nowIso } from "./time";
 import {
   applyDocumentItemAction, documentNeedsYouItems, findDocumentNeedsYouItem,
@@ -70,12 +74,21 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // policy appears the moment it slips inside the window and a renewed one
     // stops appearing without anybody tidying up after it.
     ...insuranceNeedsYou(insuranceContextFrom(ctx)),
+    // Maintenance is derived the same way: a defect or an overdue service
+    // shows up while it is true and stops showing when it is dealt with.
+    ...maintenanceNeedsYouItems(maintenanceContextFrom(ctx)),
   ];
 }
 
 function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // Item-level permission gate.
   if (!item.requires.every((k) => ctx.permissions.has(k))) return false;
+
+  // Maintenance items are DERIVED from the maintenance registry, which has
+  // already applied the caller's permissions, their relationship with the
+  // equipment and their responsibility scope. Re-narrowing them by entity kind
+  // here would second-guess a stricter check with a weaker one.
+  if (isMaintenanceNeedsYouId(item.id)) return true;
 
   // Record scope: a driver sees only items about their own loads and record.
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
@@ -136,7 +149,7 @@ function appendHistory(
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
   ensureInvoiceNeedsYou(ctx.organizationId);
-  const item = isInsuranceNeedsYouId(itemId)
+  const item = isInsuranceNeedsYouId(itemId) || isMaintenanceNeedsYouId(itemId)
     ? allItems(ctx).find((n) => n.id === itemId)
     : isDocumentNeedsYouId(itemId)
       ? findDocumentNeedsYouItem(ctx, itemId)
@@ -161,6 +174,10 @@ function persist(
 ): NeedsYouItem {
   if (isInsuranceNeedsYouId(item.id)) {
     replaceInsuranceNeedsYou(next);
+    return next;
+  }
+  if (isMaintenanceNeedsYouId(item.id)) {
+    withOverlayContext(maintenanceContextFrom(ctx), () => putMaintenanceNeedsYouItem(next));
     return next;
   }
   if (!isDocumentNeedsYouId(item.id)) {

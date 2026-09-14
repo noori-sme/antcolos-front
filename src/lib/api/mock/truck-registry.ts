@@ -495,7 +495,11 @@ function buildFixtures(): RegistryState {
     // History on 121: a driver who has moved on. The profile is untouched.
     assign(T.nl121, "org_northline", "dp_kelsey", "Kelsey Nguyen", daysAgo(180), daysAgo(60), "Left the carrier."),
     assign(T.claimed, "org_northline", "dp_ray", "Ray Bell", daysAgo(150), daysAgo(20), "Reassigned to another truck."),
-    assign(T.cs47, "org_cascade", "dp_sam", "Sam Murtaza", daysAgo(108)),
+    // The id the Cascade driver MEMBERSHIP carries (see session fixtures), not
+    // the driver registry's dp_* profile id. Load scoping and the maintenance
+    // overlay both compare ctx.driverProfileId against this field, so a dp_*
+    // value here silently detaches the driver from their own truck.
+    assign(T.cs47, "org_cascade", "drv_cascade_0192", "Sam Murtaza", daysAgo(108)),
     assign(T.cs58, "org_cascade", "dp_owen", "Owen Fitz", daysAgo(60)),
   ];
 

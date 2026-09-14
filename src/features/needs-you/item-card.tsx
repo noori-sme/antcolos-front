@@ -1,10 +1,10 @@
 "use client";
 
 import {
-  BellOff, CheckCircle2, ChevronRight, FileText, Package, Truck, User,
-  ArrowUpCircle, Building2, ClipboardCheck, Container, FileSignature, Handshake, Mail,
-  MailQuestion, Radar, Receipt, RefreshCw, ShieldCheck, TriangleAlert, UserCheck,
-  type LucideIcon,
+  ArrowUpCircle, BellOff, Building2, CheckCircle2, ChevronRight, ClipboardCheck,
+  ClipboardList, Container, FileSignature, FileText, Handshake, Mail, MailQuestion,
+  Package, Radar, Receipt, RefreshCw, ShieldCheck, TriangleAlert, Truck, User,
+  UserCheck, Wrench, type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORY_LABEL, type NeedsYouEntityKind, type NeedsYouItem } from "@/types";
@@ -13,11 +13,12 @@ import { DueLabel } from "./due-label";
 import { SeverityBar } from "./severity";
 
 const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
-  load: Package, truck: Truck, trailer: Container, driver: User, document: FileText,
-  customer: Building2, settlement: Receipt, invoice: Receipt, policy: ShieldCheck,
-  claim: TriangleAlert, carrier: Building2, mt_loop: RefreshCw, listing: Radar,
-  draft: Mail, negotiation: Handshake, booking: ClipboardCheck, message: MailQuestion,
-  rate_confirmation: FileSignature, driver_review: UserCheck,
+  load: Package, truck: Truck, driver: User, document: FileText, customer: Building2,
+  settlement: Receipt, invoice: Receipt, trailer: Container,
+  maintenance_requirement: Wrench, defect: TriangleAlert, repair_order: ClipboardList,
+  policy: ShieldCheck, claim: TriangleAlert, carrier: Building2, mt_loop: RefreshCw,
+  listing: Radar, draft: Mail, negotiation: Handshake, booking: ClipboardCheck,
+  message: MailQuestion, rate_confirmation: FileSignature, driver_review: UserCheck,
 };
 
 export function NeedsYouCard({

@@ -82,7 +82,16 @@ export interface DeriveContext extends ServiceContext {
 }
 
 const ID_PREFIX = "ny_d_";
-const idFor = (key: string) => `${ID_PREFIX}${key}`;
+/**
+ * Derived ids are scoped to the organization.
+ *
+ * A rule's key names the thing the item is about — a truck, a document — and
+ * two organizations can legitimately both see the same one. Without the
+ * organization in the id they would produce the SAME id in two different
+ * buckets, which is not a data leak (every read is still scoped) but does
+ * break the invariant that an item id identifies one item.
+ */
+const idFor = (organizationId: string, key: string) => `${ID_PREFIX}${organizationId}-${key}`;
 const isDerived = (item: NeedsYouItem) => item.id.startsWith(ID_PREFIX);
 
 const HOUR = 3_600_000;
@@ -1346,7 +1355,7 @@ export function syncDerivedNeedsYou(ctx: DeriveContext): void {
 
   const seen = new Set<string>();
   for (const d of wanted) {
-    const id = idFor(d.key);
+    const id = idFor(ctx.organizationId, d.key);
     seen.add(id);
     const existing = bucket.find((n) => n.id === id);
 

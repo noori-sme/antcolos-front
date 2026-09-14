@@ -105,6 +105,16 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "compliance:view", label: "View compliance", description: "See licences, inspections and what is about to expire.", group: "compliance" },
   { key: "compliance:manage", label: "Manage compliance", description: "Record and clear compliance items.", group: "compliance" },
 
+  // ---- Maintenance -------------------------------------------------------
+  { key: "maintenance:view", label: "View maintenance", description: "See what equipment is due for service, what has been reported broken, and what has been done to it.", group: "maintenance" },
+  { key: "maintenance:manage", label: "Manage service schedules", description: "Add and change what a truck or trailer is due for, and defer something with a recorded reason.", group: "maintenance" },
+  { key: "maintenance:defects:report", label: "Report defects", description: "Report something wrong with a truck or trailer, including how badly it affects using it.", group: "maintenance" },
+  { key: "maintenance:defects:manage", label: "Handle reported defects", description: "Acknowledge, triage and close out defects other people reported.", group: "maintenance" },
+  { key: "maintenance:repairs:manage", label: "Manage repair orders", description: "Open repair orders, put a vendor and a person on them, and move them along.", group: "maintenance" },
+  { key: "maintenance:service:record", label: "Record completed service", description: "Write the permanent record of work that was done. Service history can never be edited or deleted afterwards.", group: "maintenance", sensitive: true },
+  { key: "maintenance:costs:view", label: "See maintenance costs", description: "See what repairs cost and how long equipment was down. Without this, repair orders show the work but no money.", group: "maintenance", sensitive: true, financial: true },
+  { key: "maintenance:outofservice:manage", label: "Place equipment out of service", description: "Park a truck or trailer so nobody can load it, and put it back on the road afterwards.", group: "maintenance", sensitive: true },
+  { key: "maintenance:share:manage", label: "Share maintenance with dispatch", description: "Decide which dispatch organizations may see that a piece of equipment is unavailable. They never see cost, vendor or notes.", group: "maintenance", sensitive: true, orgTypes: ["CARRIER"] },
   // ---- Insurance ---------------------------------------------------------
   { key: "insurance:view", label: "View insurance", description: "See policies, what they cover, when they expire and which certificates have gone out.", group: "insurance" },
   { key: "insurance:manage", label: "Manage insurance", description: "Record policies and coverage, renew or replace them, and issue certificates of insurance.", group: "insurance" },
@@ -150,6 +160,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   reports: "Reports",
   accounting: "Accounting and financial information",
   compliance: "Compliance & safety",
+  maintenance: "Maintenance",
   insurance: "Insurance",
   claims: "Claims",
   members: "Organization members",
@@ -161,7 +172,8 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers", "customers",
   "documents", "settlements", "invoices", "reports", "accounting",
-  "compliance", "insurance", "claims", "members", "invitations", "organization",
+  "compliance", "maintenance", "insurance", "claims",
+  "members", "invitations", "organization",
 ] as const;
 
 /**
