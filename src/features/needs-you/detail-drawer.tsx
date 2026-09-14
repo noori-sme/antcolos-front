@@ -188,7 +188,7 @@ export function NeedsYouDrawer({
             <p role="alert" className="text-[0.8125rem] text-st-danger">{errorMessage}</p>
           ) : null}
 
-          {!mayAct ? (
+          {!mayAct && !item.derived ? (
             <p className="flex items-start gap-2 rounded-md bg-st-warning-bg/60 px-3 py-2 text-[0.8125rem] text-fg-muted">
               <Lock aria-hidden className="mt-0.5 size-3.5 shrink-0 text-st-warning" />
               You can see this item but not act on it. It needs{" "}
@@ -199,8 +199,25 @@ export function NeedsYouDrawer({
             </p>
           ) : null}
 
+          {item.derived ? (
+            <p className="rounded-md bg-surface-sunken px-3 py-2 text-[0.8125rem] leading-relaxed text-fg-muted">
+              This one is worked out from the settlement itself, so there is
+              nothing here to snooze or tick off. Open the settlement, sort out
+              what it is asking for, and it clears on its own.
+            </p>
+          ) : null}
+
           <div className="flex flex-wrap gap-2">
-            {item.status === "resolved" ? (
+            {item.derived ? (
+              item.entity.href ? (
+                <Button variant="primary" asChild>
+                  <Link href={item.entity.href}>
+                    <ExternalLink aria-hidden />
+                    {item.recommendedAction.label}
+                  </Link>
+                </Button>
+              ) : null
+            ) : item.status === "resolved" ? (
               <Button
                 variant="secondary"
                 disabled={pending}
@@ -244,7 +261,7 @@ export function NeedsYouDrawer({
               </>
             )}
 
-            {members.length > 0 ? (
+            {members.length > 0 && !item.derived ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" disabled={pending}>
@@ -274,7 +291,7 @@ export function NeedsYouDrawer({
             ) : null}
           </div>
 
-          {item.recommendedAction.deferred && item.status !== "resolved" ? (
+          {item.recommendedAction.deferred && item.status !== "resolved" && !item.derived ? (
             <p className="text-[0.75rem] text-fg-subtle">
               The {item.recommendedAction.label.toLowerCase()} screen is a later
               milestone. Marking it handled records the decision now.

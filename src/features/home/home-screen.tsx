@@ -11,6 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Can } from "@/components/auth/can";
 import { useActiveMembership, useCan, useSession } from "@/lib/session/hooks";
 import { money, ratePerMile } from "@/lib/utils";
+import { MtLoopPanel } from "@/features/mt-loop/mt-loop-panel";
+import { useMtLoopBoard, useMtLoopContext } from "@/features/mt-loop/use-mt-loop";
 import { useHomeSummary } from "./hooks";
 import { NeedsYouPreview } from "./needs-you-preview";
 import {
@@ -34,6 +36,12 @@ export function HomeScreen() {
   const { user } = useSession();
   const { organization, membership } = useActiveMembership();
   const summary = useHomeSummary();
+  // A carrier owner who dispatches their own trucks is doing the dispatch job,
+  // so they get the same MT Loop board a dispatch workspace gets. Who that is
+  // is decided by the service, which hands back an empty board to everybody
+  // else — this screen asks no questions about roles or organization types.
+  const mtLoopCtx = useMtLoopContext();
+  const mtLoop = useMtLoopBoard();
 
   const canSeeEquipment = useCan("trucks:view");
   const canSeeTrailers = useCan("trailers:view");
@@ -99,7 +107,21 @@ export function HomeScreen() {
         }
       />
 
-      {/* Needs You first — before any analytics. */}
+      {/* MT Loop first, then Needs You, then anything analytical.
+          Hidden outright when there are no loops: this is a carrier's Home
+          rather than a dispatch board, and an empty panel here would be noise
+          on a screen that has plenty else to say. */}
+      {mtLoop.data && mtLoop.data.loops.length > 0 ? (
+        <MtLoopPanel
+          board={mtLoop.data}
+          ctx={mtLoopCtx}
+          onChanged={() => {
+            void mtLoop.refetch();
+            void summary.refetch();
+          }}
+        />
+      ) : null}
+
       <NeedsYouPreview
         items={s.needsYouPreview}
         openCount={s.counts.needsYouOpen}

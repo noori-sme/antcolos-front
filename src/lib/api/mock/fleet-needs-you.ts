@@ -59,8 +59,11 @@ interface ItemInput {
 
 function item(input: ItemInput): NeedsYouItem {
   return {
-    // Stable across reloads: same asset + same rule = same item.
-    id: `ny_fleet_${input.rule}_${input.row.assetKind}_${input.row.assetId}`,
+    // Stable across reloads: same organization + same asset + same rule = same
+    // item. The organization is part of the id because equipment is shared —
+    // a carrier and the dispatch organizations it grants access to all see the
+    // same asset, and without it they would mint one id between them.
+    id: `ny_fleet_${input.organizationId}_${input.rule}_${input.row.assetKind}_${input.row.assetId}`,
     organizationId: input.organizationId,
     category: input.rule,
     severity: input.severity,

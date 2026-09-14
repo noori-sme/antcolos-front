@@ -1,9 +1,14 @@
 import type { AntcolosServices } from "./contracts";
+import { API_MODE } from "./mode";
 import { httpServices } from "./http";
+import { mockDocumentsService } from "./mock/documents";
 import { mockDirectoryService, mockHomeService } from "./mock/home";
 import { mockFleetService } from "./mock/fleet-operations";
+import { mockDriverWorkflowService } from "./mock/driver-workflow";
+import { mockInvoicesService } from "./mock/invoices";
 import { mockLoadsService } from "./mock/loads";
 import { mockNeedsYouService } from "./mock/needs-you";
+import { mockSettlementsService } from "./mock/settlements";
 
 /**
  * Service registry. Today every call resolves to the mock adapter; when Taqi
@@ -16,12 +21,14 @@ const mockServices: AntcolosServices = {
   directory: mockDirectoryService,
   loads: mockLoadsService,
   fleet: mockFleetService,
+  settlements: mockSettlementsService,
+  driverWorkflow: mockDriverWorkflowService,
+  invoices: mockInvoicesService,
+  documents: mockDocumentsService,
 };
-
-export const API_MODE =
-  process.env.NEXT_PUBLIC_API_MODE === "http" ? "http" : "mock";
 
 export const services: AntcolosServices =
   API_MODE === "http" ? httpServices : mockServices;
 
 export * from "./contracts";
+export { API_MODE } from "./mode";

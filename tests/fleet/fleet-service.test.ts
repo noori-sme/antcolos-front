@@ -5,9 +5,9 @@ import { resetTruckRegistry } from "@/lib/api/mock/truck-registry";
 import { resetTrailerRegistry } from "@/lib/api/mock/trailer-registry";
 import { resetFleetTelemetry } from "@/lib/api/mock/fleet-telemetry";
 import {
-  BAXTER_OWNER, CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER, SUMMIT_OWNER,
+  BAXTER_OWNER, CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER, STONEBRIDGE,
   contextFor,
-} from "./helpers/context";
+} from "../helpers/context";
 
 beforeEach(() => {
   resetTruckRegistry();
@@ -90,9 +90,16 @@ describe("cross-organization isolation", () => {
   });
 
   it("returns an empty fleet, not an error, for an organization with no equipment", async () => {
-    const rows = await mockFleetService.equipment(contextFor(SUMMIT_OWNER));
+    // Summit is no longer the empty case: it is a dispatch organization and
+    // Northline and Baxter have since dispatched equipment to it, which the
+    // relationship-scope tests below cover. Stonebridge owns nothing and has
+    // nothing dispatched to it, so it is the workspace with a genuinely empty
+    // fleet. It is given fleet:view outright — what is under test is the empty
+    // result, not the permission gate.
+    const empty = () => contextFor(STONEBRIDGE, { permissions: ["fleet:view"] });
+    const rows = await mockFleetService.equipment(empty());
     expect(rows).toEqual([]);
-    const dashboard = await mockFleetService.dashboard(contextFor(SUMMIT_OWNER));
+    const dashboard = await mockFleetService.dashboard(empty());
     expect(dashboard.trucks.total).toBe(0);
     expect(dashboard.trailers.total).toBe(0);
     expect(dashboard.utilization.basis).toBe("No equipment to report on.");
@@ -278,7 +285,12 @@ describe("telemetry", () => {
     const northlineTruck = (await mockFleetService.equipment(
       contextFor(NORTHLINE_OWNER), { assetKind: "truck" },
     ))[0];
-    await expect(mockFleetService.recordTelemetry(contextFor(SUMMIT_OWNER), {
+    // Northline dispatches to Summit, so Summit CAN see this truck now. The
+    // organization that cannot is Stonebridge, which holds no grant over it.
+    const outsider = contextFor(STONEBRIDGE, {
+      permissions: ["fleet:view", "fleet:telemetry:record", "trucks:view"],
+    });
+    await expect(mockFleetService.recordTelemetry(outsider, {
       assetKind: "truck", assetId: northlineTruck.assetId, location: { city: "Denver" },
     })).rejects.toThrow("Equipment not found");
   });

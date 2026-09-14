@@ -2,7 +2,7 @@ import { effectivePermissions } from "@/lib/permissions/effective";
 import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
 } from "@/lib/session/fixtures";
-import type { PermissionKey } from "@/types";
+import { workspaceKindOf, type PermissionKey } from "@/types";
 import type { ServiceContext } from "@/lib/api/contracts/context";
 
 /**
@@ -28,6 +28,10 @@ export function contextFor(
 
   return {
     organizationId: organization.id,
+    // Required on ServiceContext since the Document Center; the workspace kind
+    // decides which document requirements exist, so it is never inferred.
+    organizationName: organization.displayName,
+    workspaceKind: workspaceKindOf(organization),
     membershipId: membership.id,
     permissions,
     scope: membership.scope,
@@ -47,3 +51,6 @@ export const MERIDIAN_DISPATCHER = "mem_meridian_dispatcher";
 export const BAXTER_OWNER = "mem_baxter_owner";
 export const CASCADE_DRIVER = "mem_cascade_driver";
 export const SUMMIT_OWNER = "mem_summit_owner";
+/** Stonebridge is the one workspace with no equipment of its own and none
+ *  dispatched to it, which is what an empty fleet has to be proven against. */
+export const STONEBRIDGE = "mem_stonebridge_driver";

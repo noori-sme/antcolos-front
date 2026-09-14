@@ -5,7 +5,7 @@ import {
 } from "@/lib/api/mock/truck-registry";
 import { resetTrailerRegistry } from "@/lib/api/mock/trailer-registry";
 import { resetFleetTelemetry } from "@/lib/api/mock/fleet-telemetry";
-import { NORTHLINE_OWNER, contextFor } from "./helpers/context";
+import { NORTHLINE_OWNER, contextFor } from "../helpers/context";
 
 beforeEach(() => {
   resetTruckRegistry();

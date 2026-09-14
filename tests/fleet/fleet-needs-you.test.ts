@@ -6,7 +6,7 @@ import { resetTruckRegistry } from "@/lib/api/mock/truck-registry";
 import { resetTrailerRegistry } from "@/lib/api/mock/trailer-registry";
 import { resetFleetTelemetry } from "@/lib/api/mock/fleet-telemetry";
 import { CATEGORY_LABEL, type NeedsYouCategory } from "@/types";
-import { BAXTER_OWNER, NORTHLINE_OWNER, contextFor } from "./helpers/context";
+import { BAXTER_OWNER, NORTHLINE_OWNER, contextFor } from "../helpers/context";
 
 const FLEET_CATEGORIES: NeedsYouCategory[] = [
   "stale_location", "invalid_assignment", "equipment_unavailable", "operational_blocker",
