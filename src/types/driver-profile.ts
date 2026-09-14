@@ -1,3 +1,4 @@
+import type { DocumentRequirement, DocumentStatus as UnifiedDocumentStatus } from "./document-center";
 import type { PermissionKey } from "./permission";
 
 /**
@@ -65,42 +66,40 @@ export interface CarrierRelationship {
 /* Documents                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export type DocumentStatus =
-  | "not_started"
-  | "uploading"
-  | "uploaded"
-  | "under_review"
-  | "approved"
-  | "rejected"
-  | "expired"
-  | "expiring_soon";
+/**
+ * A driver's paperwork uses THE document model, not one of its own.
+ *
+ * Driver documents used to have their own eight-value status vocabulary. They
+ * do not any more: `DocumentStatus` below is the shared one, so a medical card
+ * means the same thing on the driver's phone, in the carrier's Document Center
+ * and in the Needs You queue.
+ *
+ * `DriverDocument` survives as the driver screens' row shape — a projection of
+ * the unified record, carrying the browser-only upload progress the shared
+ * record has no business storing.
+ */
+export type { DocumentStatus } from "./document-center";
 
 /** Driver paperwork versus the paperwork only an owner-operator owes. */
 export type DriverDocumentCategory = "driver" | "owner_operator";
 
-/**
- * What a carrier asks for. Held as data rather than code so different carriers
- * can require different things without a release.
- */
-export interface DriverDocumentRequirement {
-  key: string;
-  label: string;
-  description: string;
-  category: DriverDocumentCategory;
-  required: boolean;
-  /** Whether the document carries an expiry the driver must supply. */
-  expires: boolean;
-  /** True when this carrier added it beyond the standard set. */
-  carrierSpecific?: boolean;
-}
-
 export interface DriverDocument {
   requirementKey: string;
-  status: DocumentStatus;
+  /** The unified record this row projects, once one exists. */
+  documentId?: string;
+  status: UnifiedDocumentStatus;
+  /**
+   * UI-only: the browser is reading the chosen file. There is no upload and no
+   * server, so this never reaches the shared record.
+   */
+  uploading?: boolean;
   fileName?: string;
   fileType?: string;
   sizeBytes?: number;
-  /** 0-100 while uploading. */
+  /**
+   * 0-100 while the browser reads the file. There is no upload and no server,
+   * so this is a local progress indicator and nothing else.
+   */
   progress?: number;
   expiresAt?: string;
   rejectionReason?: string;
@@ -222,7 +221,7 @@ export interface DriverView {
   /** Only the documents the driver agreed to share with that carrier. */
   documents: DriverDocument[];
   /** Requirements behind those documents, so a gap can be named. */
-  requirements: DriverDocumentRequirement[];
+  requirements: DocumentRequirement[];
   /** Why this viewer may see the driver at all. */
   reason: DriverAccessReason;
 }

@@ -52,7 +52,7 @@ export const PRODUCT_NAV: NavSection[] = [
     id: "business",
     label: "Business",
     items: [
-      { label: "Customers", href: "/customers", icon: Building2, requires: ["customers:view"] },
+      { label: "Directory", href: "/directory", icon: Building2, requires: ["customers:view"] },
       { label: "Documents", href: "/documents", icon: FileText, requires: ["documents:view"] },
       { label: "Settlements", href: "/finance/settlements", icon: Receipt, requires: ["settlements:view"] },
       { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, requires: ["invoices:view"] },
