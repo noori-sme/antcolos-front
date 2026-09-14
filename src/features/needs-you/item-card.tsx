@@ -13,8 +13,8 @@ import { DueLabel } from "./due-label";
 import { SeverityBar } from "./severity";
 
 const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
-  load: Package, truck: Truck, driver: User, document: FileText, customer: Building2,
-  settlement: Receipt, invoice: Receipt, trailer: Container,
+  load: Package, truck: Truck, trailer: Container, driver: User, document: FileText,
+  customer: Building2, settlement: Receipt, invoice: Receipt,
   maintenance_requirement: Wrench, defect: TriangleAlert, repair_order: ClipboardList,
   policy: ShieldCheck, claim: TriangleAlert, carrier: Building2, mt_loop: RefreshCw,
   listing: Radar, draft: Mail, negotiation: Handshake, booking: ClipboardCheck,

@@ -10,6 +10,7 @@ export type * from "./event";
 export type * from "./document";
 export type * from "./document-center";
 export type * from "./fleet";
+export type * from "./fleet-operations";
 export type * from "./needs-you";
 export type * from "./access";
 export type * from "./driver-profile";

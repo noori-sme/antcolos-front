@@ -44,6 +44,7 @@ export const PRODUCT_NAV: NavSection[] = [
     id: "fleet",
     label: "Fleet & people",
     items: [
+      { label: "Fleet", href: "/fleet", icon: Gauge, requires: ["fleet:view"] },
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },

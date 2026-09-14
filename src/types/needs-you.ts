@@ -28,6 +28,12 @@ export type NeedsYouCategory =
   | "invoice_overdue"
   | "customer_response"
   | "truck_going_empty"
+  // Fleet operations. Derived from the permanent records, never hand-written.
+  | "stale_location"
+  | "invalid_assignment"
+  | "equipment_unavailable"
+  | "operational_blocker"
+
   // Maintenance. Raised from the maintenance registry, not stored as fixtures.
   | "overdue_service"
   | "critical_defect"
@@ -93,6 +99,9 @@ export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 
 export type NeedsYouEntityKind =
+  | "load" | "truck" | "trailer" | "driver" | "document" | "customer"
+  | "settlement" | "invoice"
+
   | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice"
   // Maintenance records. A trailer is its own kind, never a truck.
   | "trailer" | "maintenance_requirement" | "defect" | "repair_order"
@@ -131,6 +140,8 @@ export interface NeedsYouEntityRef {
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
   | "review" | "confirm_status" | "start_search" | "contact_customer"
+  | "record_location" | "fix_assignment" | "review_equipment"
+
   | "approve_settlement" | "resolve_dispute" | "record_payment"
 
   // Maintenance
@@ -257,8 +268,10 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invoice_overdue: "Invoice overdue",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
-  overdue_service: "Overdue service", critical_defect: "Critical defect",
-  unresolved_repair: "Unresolved repair",
+  stale_location: "Stale location", invalid_assignment: "Invalid assignment",
+  equipment_unavailable: "Equipment unavailable",
+  operational_blocker: "Operational blocker", overdue_service: "Overdue service",
+  critical_defect: "Critical defect", unresolved_repair: "Unresolved repair",
   equipment_out_of_service: "Equipment out of service",
   missing_coverage: "Missing coverage", expiring_policy: "Expiring policy",
   expired_policy: "Expired policy", unresolved_claim: "Unresolved claim",

@@ -22,6 +22,7 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/directory/review": ["customers:view", "customers:resolve"],
   "/customers": ["customers:view"],
   "/fleet/trucks/new": ["trucks:create"],
+  "/fleet/equipment": ["fleet:view"],
   "/rate-cons": ["loads:view"],
   "/settings": ["members:view"],
   "/account": [],

@@ -30,6 +30,15 @@ export const httpServices: AntcolosServices = {
     events: notImplemented("loads.events"),
     documents: notImplemented("loads.documents"),
   },
+  fleet: {
+    dashboard: notImplemented("fleet.dashboard"),
+    equipment: notImplemented("fleet.equipment"),
+    asset: notImplemented("fleet.asset"),
+    assignmentHistory: notImplemented("fleet.assignmentHistory"),
+    recordTelemetry: notImplemented("fleet.recordTelemetry"),
+    integrations: notImplemented("fleet.integrations"),
+    needsYou: notImplemented("fleet.needsYou"),
+  },
   settlements: {
     list: notImplemented("settlements.list"),
     listTotals: notImplemented("settlements.listTotals"),

@@ -18,6 +18,11 @@ export type PermissionKey =
   | "trailers:documents:manage" | "trailers:attachments:manage"
   | "trailers:relationships:manage" | "trailers:ownership:review"
   | "trailers:status:manage"
+  // Fleet operations — the shared layer over trucks, trailers and drivers.
+  // Deliberately small: assigning and attaching already have their own keys in
+  // the modules that own those records, and duplicating them here would create
+  // two permissions that can disagree about one action.
+  | "fleet:view" | "fleet:telemetry:record"
   // Customers
   | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
   | "customers:private:manage" | "customers:resolve"
@@ -60,6 +65,7 @@ export type PermissionKey =
  * work first, then the money, then who is allowed in.
  */
 export type PermissionGroup =
+  | "loads" | "dispatch" | "drivers" | "trucks" | "trailers" | "fleet"
   | "loads" | "dispatch" | "driver_workflow" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
   | "accounting" | "compliance" | "maintenance" | "insurance" | "claims"

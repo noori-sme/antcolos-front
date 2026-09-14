@@ -18,6 +18,8 @@ import {
 } from "./insurance-registry";
 import { syncDerivedNeedsYouFor } from "./needs-you-derive";
 import { fleetSync, truckContextFrom } from "./truck-registry";
+import { fleetRowsFor } from "./fleet-operations";
+import { fleetNeedsYouItems } from "./fleet-needs-you";
 import {
   isMaintenanceNeedsYouId, maintenanceContextFrom, maintenanceNeedsYouItems,
   putMaintenanceNeedsYouItem, withOverlayContext,
@@ -151,6 +153,32 @@ function appendHistory(
   ];
 }
 
+/**
+ * Folds the fleet layer's derived exceptions into this organization's queue.
+ *
+ * They are registered rather than concatenated so they behave like every other
+ * item — assignable, snoozable, resolvable, with a history that survives a
+ * reload. Registration is idempotent on a stable id, so recomputing the same
+ * exception does not resurrect an item somebody already resolved.
+ *
+ * Failures here are swallowed on purpose. A fleet rule that cannot run is not a
+ * reason to withhold the rest of somebody's queue, and the operational picture
+ * is still available in full on the fleet dashboard.
+ */
+async function registerFleetItems(ctx: ServiceContext): Promise<void> {
+  if (!ctx.permissions.has("fleet:view")) return;
+  try {
+    const { rows, triads } = await fleetRowsFor(ctx);
+    if (!rows.length) return;
+    mockStore.registerNeedsYou(
+      ctx.organizationId,
+      fleetNeedsYouItems(rows, triads, ctx.organizationId),
+    );
+  } catch {
+    // Deliberately silent: see above.
+  }
+}
+
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
   // A settlement item is computed from the settlement itself, so there is
   // nothing here to write to. Snoozing or resolving one would hide the row
@@ -214,6 +242,10 @@ export const mockNeedsYouService: NeedsYouService = {
     // Regenerate first: the queue is a view of live state, so what it holds is
     // decided here rather than by whatever happened to be written down earlier.
     syncDerivedNeedsYouFor(ctx);
+    // Fleet writes its rows straight into the organization's bucket rather
+    // than returning them, so it runs alongside the sync above. Its ids are
+    // ny_fleet_*, which the ny_d_ prune leaves alone.
+    await registerFleetItems(ctx);
     // The invoice module contributes its own items — missing documents,
     // disputes and overdue receivables — into THIS queue rather than keeping
     // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above
@@ -234,6 +266,10 @@ export const mockNeedsYouService: NeedsYouService = {
 
   async openCount(ctx) {
     syncDerivedNeedsYouFor(ctx);
+    // Fleet writes its rows straight into the organization's bucket rather
+    // than returning them, so it runs alongside the sync above. Its ids are
+    // ny_fleet_*, which the ny_d_ prune leaves alone.
+    await registerFleetItems(ctx);
     // The invoice module contributes its own items — missing documents,
     // disputes and overdue receivables — into THIS queue rather than keeping
     // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above

@@ -23,6 +23,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "drivers:view", "trucks:view", "trailers:view",
       "customers:view", "customers:create", "customers:private:manage", "customers:resolve",
       "documents:view", "documents:upload", "compliance:view",
+      "fleet:view", "fleet:telemetry:record",
       "maintenance:view",
       // A dispatcher is usually the first to hear about a wreck, so they can
       // open a claim. They are not given the policy, and never the money.
@@ -40,7 +41,6 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // A driver sees their own settlements and may say one looks wrong. They
       // cannot approve, correct or pay one — including their own.
       "settlements:view", "settlements:dispute",
-      "settlements:view",
       // Their own assigned truck, and the ability to report a fault on it.
       "trucks:view", "maintenance:view", "maintenance:defects:report",
     ],
@@ -62,7 +62,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     description: "Driver and equipment compliance.",
     seeded: true,
     permissions: [
-      "drivers:view", "trucks:view", "trailers:view", "compliance:view", "compliance:manage",
+      "drivers:view", "trucks:view", "trailers:view", "fleet:view",
+      "compliance:view", "compliance:manage",
       "trucks:documents:manage", "trailers:documents:manage",
       "documents:view", "documents:upload", "documents:approve", "loads:view",
       "maintenance:view", "maintenance:manage", "maintenance:defects:manage",
@@ -98,7 +99,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     description: "Equipment upkeep.",
     seeded: true,
     permissions: [
-      "trucks:view", "trucks:edit", "trucks:documents:manage",
+      "trucks:view", "trucks:edit", "trucks:documents:manage", "fleet:view",
+      "fleet:telemetry:record",
       "trailers:view", "trailers:edit", "trailers:documents:manage",
       "trailers:status:manage", "trailers:attachments:manage",
       "documents:view", "documents:upload",

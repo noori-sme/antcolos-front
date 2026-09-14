@@ -62,6 +62,10 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "trailers:status:manage", label: "Change trailer status and availability", description: "Mark a trailer available, loaded, in maintenance or out of service, and set where it will be free.", group: "trailers" },
   { key: "trailers:ownership:review", label: "Review trailer ownership claims", description: "Decide who legally owns a trailer when somebody claims it. The strongest trailer permission there is.", group: "trailers", sensitive: true },
 
+  // ---- Fleet operations --------------------------------------------------
+  { key: "fleet:view", label: "Open the fleet dashboard", description: "See the operational picture across trucks, trailers and drivers — what is available, what is out, and what is stopping it.", group: "fleet" },
+  { key: "fleet:telemetry:record", label: "Record location and mileage", description: "Write down where a truck or trailer is, its odometer and its engine hours. Nothing is read from a device — somebody types it in.", group: "fleet" },
+
   // ---- Customers ---------------------------------------------------------
   { key: "customers:view", label: "View customers", description: "See the brokers and shippers you haul for.", group: "customers" },
   { key: "customers:create", label: "Add customers", description: "Add a new broker or shipper.", group: "customers" },
@@ -158,6 +162,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   drivers: "Drivers",
   trucks: "Trucks",
   trailers: "Trailers",
+  fleet: "Fleet operations",
   customers: "Customers",
   documents: "Documents",
   settlements: "Settlements",
@@ -175,9 +180,9 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 
 /** The reading order of the modules in every permission list. */
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
-  "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers", "customers",
-  "documents", "settlements", "invoices", "reports", "accounting",
-  "compliance", "maintenance", "insurance", "claims",
+  "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers",
+  "fleet", "customers", "documents", "settlements", "invoices", "reports",
+  "accounting", "compliance", "maintenance", "insurance", "claims",
   "members", "invitations", "organization",
 ] as const;
 

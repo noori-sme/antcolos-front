@@ -3,6 +3,7 @@ import { API_MODE } from "./mode";
 import { httpServices } from "./http";
 import { mockDocumentsService } from "./mock/documents";
 import { mockDirectoryService, mockHomeService } from "./mock/home";
+import { mockFleetService } from "./mock/fleet-operations";
 import { mockDriverWorkflowService } from "./mock/driver-workflow";
 import { mockInvoicesService } from "./mock/invoices";
 import { mockLoadsService } from "./mock/loads";
@@ -19,6 +20,7 @@ const mockServices: AntcolosServices = {
   home: mockHomeService,
   directory: mockDirectoryService,
   loads: mockLoadsService,
+  fleet: mockFleetService,
   settlements: mockSettlementsService,
   driverWorkflow: mockDriverWorkflowService,
   invoices: mockInvoicesService,
