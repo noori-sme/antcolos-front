@@ -384,7 +384,11 @@ function buildFixtures(): RegistryState {
     // History on 121: a driver who has moved on. The profile is untouched.
     assign(T.nl121, "org_northline", "dp_kelsey", "Kelsey Nguyen", daysAgo(180), daysAgo(60), "Left the carrier."),
     assign(T.claimed, "org_northline", "dp_ray", "Ray Bell", daysAgo(150), daysAgo(20), "Reassigned to another truck."),
-    assign(T.cs47, "org_cascade", "dp_sam", "Sam Murtaza", daysAgo(108)),
+    // The driver profile id the Cascade membership carries. The session, the
+    // loads, Home and the seed all know this person by that id; this row was
+    // the one place using the driver-side profile id instead, which meant the
+    // driver could not see the truck they are assigned to.
+    assign(T.cs47, "org_cascade", "drv_cascade_0192", "Sam Murtaza", daysAgo(108)),
   ];
 
   const documents: TruckDocument[] = [
@@ -408,6 +412,32 @@ function buildFixtures(): RegistryState {
     doc(T.nl131, "title", "approved", "org_northline", "title-131.pdf"),
     doc(T.nl131, "insurance", "approved", "org_northline", "coi-131.pdf", daysFromNow(190)),
     doc(T.nl131, "annual_inspection", "approved", "org_northline", "inspection-131.pdf", daysFromNow(240)),
+    // The rest of Northline's fleet paperwork. A fleet where only two units
+    // have an inspection on file is not a fleet, it is a fixture — and it makes
+    // every downstream count read as a crisis rather than as normal operation.
+    doc(T.nl107, "annual_inspection", "approved", "org_northline", "inspection-107.pdf", daysFromNow(170)),
+    doc(T.nl111, "insurance", "approved", "org_northline", "coi-111.pdf", daysFromNow(150)),
+    doc(T.nl111, "annual_inspection", "approved", "org_northline", "inspection-111.pdf", daysFromNow(220)),
+    doc(T.nl115, "insurance", "approved", "org_northline", "coi-115.pdf", daysFromNow(140)),
+    doc(T.nl118, "insurance", "approved", "org_northline", "coi-118.pdf", daysFromNow(200)),
+    doc(T.nl118, "annual_inspection", "approved", "org_northline", "inspection-118.pdf", daysFromNow(160)),
+    doc(T.claimed, "insurance", "approved", "org_northline", "coi-127.pdf", daysFromNow(130)),
+    doc(T.claimed, "annual_inspection", "approved", "org_northline", "inspection-127.pdf", daysFromNow(90)),
+    // Baxter runs 104 and 107 under its own authority, so it holds its OWN
+    // insurance evidence on them. Two carriers, one truck, two certificates.
+    doc(T.nl104, "insurance", "approved", "org_baxter", "baxter-coi-104.pdf", daysFromNow(165)),
+    doc(T.nl107, "insurance", "approved", "org_baxter", "baxter-coi-107.pdf", daysFromNow(155)),
+    // Baxter's own fleet.
+    doc(T.mdA12, "registration", "approved", "org_baxter", "reg-a12.pdf", daysFromNow(180)),
+    doc(T.mdA12, "insurance", "approved", "org_baxter", "coi-a12.pdf", daysFromNow(175)),
+    doc(T.mdA12, "annual_inspection", "approved", "org_baxter", "inspection-a12.pdf", daysFromNow(210)),
+    doc(T.mdA18, "registration", "approved", "org_baxter", "reg-a18.pdf", daysFromNow(200)),
+    doc(T.mdA18, "insurance", "approved", "org_baxter", "coi-a18.pdf", daysFromNow(175)),
+    // Submitted and not yet accepted — the state that is not the same as done.
+    doc(T.mdA18, "annual_inspection", "pending_review", "org_baxter", "inspection-a18.pdf"),
+    doc(T.cs47, "registration", "approved", "org_cascade", "reg-47.pdf", daysFromNow(260)),
+    doc(T.cs47, "insurance", "approved", "org_cascade", "coi-47.pdf", daysFromNow(120)),
+    doc(T.cs47, "annual_inspection", "approved", "org_cascade", "inspection-47.pdf", daysFromNow(190)),
   ];
 
   const claims: TruckOwnershipClaim[] = [
@@ -1507,6 +1537,32 @@ export function truckUnitNumber(truckId: string, organizationId: string): string
 /** This organization's own live lease on a truck, if it has one. */
 export function truckLeaseFor(truckId: string, organizationId: string) {
   return leaseFor(truckId, organizationId);
+}
+
+/**
+ * Read-only registry views for other modules.
+ *
+ * Safety & Compliance reads the truck's relationships and documents through
+ * these rather than keeping a second copy of them: a compliance requirement
+ * points at the document the registry already owns, and stops pointing at it
+ * when the registry says the relationship ended.
+ */
+export function truckRelationshipsFor(organizationId: string): TruckCarrierRelationship[] {
+  return db().relationships.filter((r) => r.organizationId === organizationId);
+}
+
+export function truckDocumentsFor(truckId: string): TruckDocument[] {
+  return db().documents.filter((d) => d.truckId === truckId);
+}
+
+export function truckDispatchAccessFor(dispatchOrganizationId: string): TruckDispatchAccess[] {
+  return db().dispatchAccess.filter(
+    (d) => d.dispatchOrganizationId === dispatchOrganizationId,
+  );
+}
+
+export function truckOwnerName(truckId: string): string | undefined {
+  return activeOwnership(truckId)?.ownerName;
 }
 
 /** Read-only helpers the screens use for counts, kept honest against the roster. */

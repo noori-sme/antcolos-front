@@ -22,14 +22,23 @@ export type NeedsYouCategory =
   | "settlement_review"
   | "invoice_review"
   | "customer_response"
-  | "truck_going_empty";
+  | "truck_going_empty"
+  // Safety & Compliance. These come from compliance requirements, which are
+  // separate records from the documents that may satisfy them.
+  | "compliance_missing"
+  | "compliance_rejected"
+  | "compliance_expiring"
+  | "compliance_expired"
+  | "compliance_critical";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
 export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 
 export type NeedsYouEntityKind =
-  | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice";
+  | "load" | "truck" | "trailer" | "driver" | "document" | "customer"
+  | "settlement" | "invoice" | "organization" | "person"
+  | "compliance_requirement";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -41,7 +50,8 @@ export interface NeedsYouEntityRef {
 
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
-  | "review" | "confirm_status" | "start_search" | "contact_customer";
+  | "review" | "confirm_status" | "start_search" | "contact_customer"
+  | "open_compliance" | "assign_responsibility";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -124,6 +134,11 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invoice_review: "Invoice review",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
+  compliance_missing: "Compliance evidence missing",
+  compliance_rejected: "Compliance evidence rejected",
+  compliance_expiring: "Compliance expiring",
+  compliance_expired: "Compliance expired",
+  compliance_critical: "Critical compliance issue",
 };
 
 /**

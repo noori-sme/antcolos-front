@@ -31,6 +31,10 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "loads:status:update",
       "documents:view", "documents:upload",
       "settlements:view",
+      // A driver must be able to see what they themselves owe — their licence,
+      // their medical card. Record scope keeps it to their own record; without
+      // this they cannot see why they are about to be taken off dispatch.
+      "compliance:view",
     ],
   },
   {

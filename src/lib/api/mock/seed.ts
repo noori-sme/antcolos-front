@@ -1,5 +1,5 @@
 import type {
-  Customer, Document, Driver, Load, LoadEvent, NeedsYouItem,
+  Customer, Document, Driver, Load, LoadEvent, NeedsYouItem, VerificationState,
 } from "@/types";
 import { buildLoad, nextId, type LoadSeed } from "./build-load";
 import { daysFromNow, hoursFromNow, minutesFromNow } from "./time";
@@ -60,6 +60,105 @@ function needsYou(
     ],
     ...n,
   } as NeedsYouItem;
+}
+
+/**
+ * Paperwork the company holds about ITSELF rather than about a load.
+ *
+ * These live in the Document Center like every other document, linked to the
+ * organization. Safety & Compliance points at them; it does not hold a second
+ * copy, and deleting one here leaves the requirement standing and unsatisfied,
+ * which is the whole reason a requirement is not a document.
+ */
+function orgDocument(
+  organizationId: string,
+  d: {
+    id: string;
+    kind: Document["kind"];
+    fileName: string;
+    verification: VerificationState;
+    uploadedDaysAgo: number;
+    expiresAt?: string;
+    rejectionReason?: string;
+  },
+): Document {
+  return {
+    id: d.id,
+    organizationId,
+    kind: d.kind,
+    fileName: d.fileName,
+    mimeType: "application/pdf",
+    sizeBytes: 240_000,
+    links: [{ entityKind: "organization", entityId: organizationId }],
+    uploadedAt: daysFromNow(-d.uploadedDaysAgo),
+    uploadedBy: SYSTEM,
+    source: "web",
+    ocr: { state: "not_applicable" },
+    verification: {
+      state: d.verification,
+      verifiedBy: d.verification === "verified" ? SYSTEM : undefined,
+      verifiedAt: d.verification === "verified" ? daysFromNow(-d.uploadedDaysAgo) : undefined,
+      rejectionReason: d.rejectionReason,
+    },
+    version: 1,
+    expiresAt: d.expiresAt,
+  };
+}
+
+/** Stable ids so compliance requirements can point at a known document. */
+export const ORG_DOCUMENT_IDS = {
+  northlineAuthority: "doc_nl_authority",
+  northlineBipd: "doc_nl_bipd",
+  northlineCargo: "doc_nl_cargo",
+  northlineUcr: "doc_nl_ucr",
+  northlineWorkersComp: "doc_nl_workers_comp",
+  northlineProcessAgent: "doc_nl_boc3",
+  baxterAuthority: "doc_bx_authority",
+  baxterBipd: "doc_bx_bipd",
+  baxterCargo: "doc_bx_cargo",
+  meridianAgreement: "doc_md_agreement",
+  meridianEando: "doc_md_eando",
+  meridianW9: "doc_md_w9",
+  cascadeBipd: "doc_cs_bipd",
+  cascadeCargo: "doc_cs_cargo",
+} as const;
+
+export function organizationDocuments(organizationId: string): Document[] {
+  const D = ORG_DOCUMENT_IDS;
+  switch (organizationId) {
+    case "org_northline":
+      return [
+        orgDocument(organizationId, { id: D.northlineAuthority, kind: "carrier_packet", fileName: "operating-authority-letter.pdf", verification: "verified", uploadedDaysAgo: 380 }),
+        orgDocument(organizationId, { id: D.northlineBipd, kind: "certificate_of_insurance", fileName: "bipd-certificate.pdf", verification: "verified", uploadedDaysAgo: 300, expiresAt: daysFromNow(160) }),
+        // Expiring inside the warning window, so the dashboard has something real to warn about.
+        orgDocument(organizationId, { id: D.northlineCargo, kind: "certificate_of_insurance", fileName: "cargo-certificate.pdf", verification: "verified", uploadedDaysAgo: 330, expiresAt: daysFromNow(26) }),
+        // Lapsed: the requirement reads expired, and the document says why.
+        orgDocument(organizationId, { id: D.northlineUcr, kind: "other", fileName: "ucr-receipt.pdf", verification: "verified", uploadedDaysAgo: 400, expiresAt: daysFromNow(-34) }),
+        orgDocument(organizationId, { id: D.northlineWorkersComp, kind: "other", fileName: "workers-comp-certificate.pdf", verification: "verified", uploadedDaysAgo: 200, expiresAt: daysFromNow(120) }),
+        orgDocument(organizationId, { id: D.northlineProcessAgent, kind: "other", fileName: "boc3-designation.pdf", verification: "verified", uploadedDaysAgo: 380 }),
+      ];
+    case "org_baxter":
+      return [
+        orgDocument(organizationId, { id: D.baxterAuthority, kind: "carrier_packet", fileName: "baxter-authority-letter.pdf", verification: "verified", uploadedDaysAgo: 500 }),
+        orgDocument(organizationId, { id: D.baxterBipd, kind: "certificate_of_insurance", fileName: "baxter-bipd.pdf", verification: "verified", uploadedDaysAgo: 210, expiresAt: daysFromNow(180) }),
+        orgDocument(organizationId, { id: D.baxterCargo, kind: "certificate_of_insurance", fileName: "baxter-cargo.pdf", verification: "verified", uploadedDaysAgo: 210, expiresAt: daysFromNow(180) }),
+      ];
+    case "org_meridian":
+      return [
+        orgDocument(organizationId, { id: D.meridianAgreement, kind: "carrier_packet", fileName: "baxter-dispatch-agreement.pdf", verification: "verified", uploadedDaysAgo: 120 }),
+        orgDocument(organizationId, { id: D.meridianEando, kind: "certificate_of_insurance", fileName: "eando-certificate.pdf", verification: "verified", uploadedDaysAgo: 150, expiresAt: daysFromNow(95) }),
+        orgDocument(organizationId, { id: D.meridianW9, kind: "w9", fileName: "meridian-w9.pdf", verification: "verified", uploadedDaysAgo: 300 }),
+      ];
+    case "org_cascade":
+      return [
+        // Submitted and never reviewed: the requirement stays "action required",
+        // because handing a file in is not the same as it being accepted.
+        orgDocument(organizationId, { id: D.cascadeBipd, kind: "certificate_of_insurance", fileName: "cascade-bipd.pdf", verification: "pending", uploadedDaysAgo: 12, expiresAt: daysFromNow(240) }),
+        orgDocument(organizationId, { id: D.cascadeCargo, kind: "certificate_of_insurance", fileName: "cascade-cargo.pdf", verification: "verified", uploadedDaysAgo: 90, expiresAt: daysFromNow(150) }),
+      ];
+    default:
+      return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +378,10 @@ function northline(): OrgData {
     }),
   ];
 
-  return { loads, events, documents, drivers, customers, needsYou: items };
+  return {
+    loads, events, drivers, customers, needsYou: items,
+    documents: [...documents, ...organizationDocuments(org)],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +517,10 @@ function meridian(): OrgData {
     }),
   ];
 
-  return { loads, events, documents, drivers, customers, needsYou: items };
+  return {
+    loads, events, drivers, customers, needsYou: items,
+    documents: [...documents, ...organizationDocuments(org)],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -511,13 +616,16 @@ function cascade(): OrgData {
     }),
   ];
 
-  return { loads, events, documents, drivers, customers, needsYou: items };
+  return {
+    loads, events, drivers, customers, needsYou: items,
+    documents: [...documents, ...organizationDocuments(org)],
+  };
 }
 
 /** A newly created organization that has not booked anything yet. */
-function empty(): OrgData {
+function empty(organizationId: string): OrgData {
   return {
-    loads: [], events: [], documents: [],
+    loads: [], events: [], documents: organizationDocuments(organizationId),
     drivers: [], customers: [], needsYou: [],
   };
 }
@@ -526,7 +634,8 @@ export function buildSeed(): Record<string, OrgData> {
   return {
     org_northline: northline(),
     org_meridian: meridian(),
-    org_summit: empty(),
+    org_summit: empty("org_summit"),
     org_cascade: cascade(),
+    org_baxter: empty("org_baxter"),
   };
 }

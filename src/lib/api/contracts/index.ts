@@ -3,7 +3,9 @@ export type * from "./needs-you";
 export type * from "./home";
 export type * from "./directory";
 export type * from "./loads";
+export type * from "./compliance";
 
+import type { ComplianceService } from "./compliance";
 import type { DirectoryService } from "./directory";
 import type { HomeService } from "./home";
 import type { LoadsService } from "./loads";
@@ -15,4 +17,5 @@ export interface AntcolosServices {
   home: HomeService;
   directory: DirectoryService;
   loads: LoadsService;
+  compliance: ComplianceService;
 }

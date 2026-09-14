@@ -8,6 +8,9 @@ import {
 import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
+import {
+  complianceNeedsYouItems, isComplianceItemId, replaceComplianceNeedsYou,
+} from "./compliance-needs-you";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
@@ -54,6 +57,29 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   return true;
 }
 
+/**
+ * Everything in the queue, from every producer.
+ *
+ * Safety & Compliance does not get a second alert system: it produces items
+ * through the compliance bridge and they land here alongside the ones the
+ * organization's own data raises. Compliance items arrive already filtered by
+ * the compliance service, which is the only place that knows about shares,
+ * responsibility scope and frozen records.
+ */
+function allItems(ctx: ServiceContext): NeedsYouItem[] {
+  const org = mockStore.org(ctx.organizationId);
+  return [...org.needsYou.filter((i) => visibleTo(ctx, i)), ...complianceNeedsYouItems(ctx)];
+}
+
+/** Writes go back to whichever producer owns the item. */
+function replaceItem(ctx: ServiceContext, item: NeedsYouItem) {
+  if (isComplianceItemId(item.id)) {
+    replaceComplianceNeedsYou(item);
+    return;
+  }
+  mockStore.replaceNeedsYou(ctx.organizationId, item);
+}
+
 function autoUnsnooze(item: NeedsYouItem): NeedsYouItem {
   if (item.status !== "snoozed" || !item.snoozedUntil) return item;
   if (new Date(item.snoozedUntil).getTime() > Date.now()) return item;
@@ -91,21 +117,25 @@ function appendHistory(
 }
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
-  const org = mockStore.org(ctx.organizationId);
-  const item = org.needsYou.find((n) => n.id === itemId);
-  if (!item) throw new NotFoundError("Needs You item");
-  mockStore.assertOwned(ctx.organizationId, item.organizationId);
-  if (!visibleTo(ctx, item)) throw new PermissionDeniedError(item.requires);
-  return item;
+  const item = allItems(ctx).find((n) => n.id === itemId);
+  if (item) {
+    mockStore.assertOwned(ctx.organizationId, item.organizationId);
+    return item;
+  }
+  // An item that exists but is permission-gated still answers "forbidden"
+  // rather than "not found", which is the behaviour this service has always
+  // had. A compliance item the caller may not see falls through to not-found,
+  // matching the compliance service, where an id is never a directory.
+  const hidden = mockStore.org(ctx.organizationId).needsYou.find((n) => n.id === itemId);
+  if (hidden) throw new PermissionDeniedError(hidden.requires);
+  throw new NotFoundError("Needs You item");
 }
 
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
-    const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
+    return allItems(ctx)
       .map(autoUnsnooze)
-      .filter((i) => visibleTo(ctx, i))
       .filter((i) => matches(ctx, i, filters))
       .sort((a, b) => urgencyScore(a) - urgencyScore(b));
   },
@@ -116,10 +146,8 @@ export const mockNeedsYouService: NeedsYouService = {
   },
 
   async openCount(ctx) {
-    const org = mockStore.org(ctx.organizationId);
-    return org.needsYou
+    return allItems(ctx)
       .map(autoUnsnooze)
-      .filter((i) => visibleTo(ctx, i))
       .filter((i) => i.status === "open" || i.status === "escalated").length;
   },
 
@@ -135,7 +163,7 @@ export const mockNeedsYouService: NeedsYouService = {
         note: `Assigned to ${membershipId}`,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    replaceItem(ctx, next);
     return next;
   },
 
@@ -160,7 +188,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "snoozed", note: input.reason.trim(), until,
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    replaceItem(ctx, next);
     return next;
   },
 
@@ -174,7 +202,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozeReason: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "unsnoozed" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    replaceItem(ctx, next);
     return next;
   },
 
@@ -191,7 +219,7 @@ export const mockNeedsYouService: NeedsYouService = {
         actor: ctx.actor, action: "escalated", note: input.note.trim(),
       }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    replaceItem(ctx, next);
     return next;
   },
 
@@ -208,7 +236,7 @@ export const mockNeedsYouService: NeedsYouService = {
       snoozedUntil: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "resolved", note }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    replaceItem(ctx, next);
     return next;
   },
 
@@ -222,7 +250,7 @@ export const mockNeedsYouService: NeedsYouService = {
       resolutionNote: undefined,
       history: appendHistory(item, { actor: ctx.actor, action: "reopened" }),
     };
-    mockStore.replaceNeedsYou(ctx.organizationId, next);
+    replaceItem(ctx, next);
     return next;
   },
 };

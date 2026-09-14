@@ -14,9 +14,13 @@ export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
 export type * from "./trailer";
+export type * from "./compliance";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";
+export {
+  OPEN_COMPLIANCE_STATUSES, COMPLIANCE_SEVERITY_ORDER, COMPLIANCE_STATUS_ORDER,
+} from "./compliance";

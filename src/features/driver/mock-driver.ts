@@ -164,6 +164,25 @@ export function resetDriverMock(options?: { withProfile?: boolean }) {
 /* Profile                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Synchronous reads for other modules.
+ *
+ * The driver's own permanent profile and their carrier relationships live here
+ * and only here. Safety & Compliance reads them to build the compliance a
+ * driver sees about themselves; it never copies the person.
+ */
+export function driverProfileSync(): DriverProfile | null {
+  return PROFILE ? { ...PROFILE } : null;
+}
+
+export function driverRelationshipsSync(): CarrierRelationship[] {
+  return RELATIONSHIPS.map((r) => ({ ...r }));
+}
+
+export function driverDocumentsSync(): DriverDocument[] {
+  return DOCUMENTS.map((d) => ({ ...d }));
+}
+
 export async function mockGetDriverProfile(): Promise<DriverProfile | null> {
   await sleep(250);
   return PROFILE ? { ...PROFILE } : null;

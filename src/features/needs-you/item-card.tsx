@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  BellOff, CheckCircle2, ChevronRight, FileText, Package, Truck, User,
-  Building2, Receipt, ArrowUpCircle, type LucideIcon,
+  BellOff, CheckCircle2, ChevronRight, Container, FileText, Package, ShieldCheck,
+  Truck, User, UserCircle, Building2, Receipt, ArrowUpCircle, type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORY_LABEL, type NeedsYouEntityKind, type NeedsYouItem } from "@/types";
@@ -11,8 +11,9 @@ import { DueLabel } from "./due-label";
 import { SeverityBar } from "./severity";
 
 const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
-  load: Package, truck: Truck, driver: User, document: FileText,
+  load: Package, truck: Truck, trailer: Container, driver: User, document: FileText,
   customer: Building2, settlement: Receipt, invoice: Receipt,
+  organization: Building2, person: UserCircle, compliance_requirement: ShieldCheck,
 };
 
 export function NeedsYouCard({
