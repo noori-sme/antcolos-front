@@ -169,6 +169,79 @@ function northline(): OrgData {
       delivery: { city: "Louisville", state: "KY", timeZone: "America/New_York", at: daysFromNow(-8) },
       linehaul: 36100, loaded: 301, deadhead: 16, equipment: "cargo_van",
     },
+    // --- Billing history -----------------------------------------------
+    // Delivered freight from the last ten weeks. Invoicing is a backward-facing
+    // module: without settled loads behind it there is no receivable to age, no
+    // payment to record and nothing to dispute. These belong to the Loads
+    // module like every other load — Invoices only references them.
+    {
+      ref: "NL-24788", customerRef: "TFP-31740", status: "invoiced",
+      customer: { id: "cus_nl_tandem", name: "Tandem Freight Partners", kind: "broker", mc: "MC-908114", contact: "Priya Raman" },
+      pickup: { city: "Chicago", state: "IL", timeZone: TZ, at: daysFromNow(-10), arrived: daysFromNow(-10), departed: daysFromNow(-10) },
+      delivery: { city: "Charlotte", state: "NC", timeZone: "America/New_York", at: daysFromNow(-8), arrived: daysFromNow(-8), departed: daysFromNow(-8) },
+      linehaul: 112500, accessorials: [{ code: "detention", label: "Detention, 2 hrs", cents: 9750 }],
+      loaded: 764, deadhead: 26, equipment: "box_truck", weight: 7100, commodity: "Retail goods",
+      driverId: "drv_nl_03", driverName: "Ray Bell", truckId: TRUCK_IDS.nl111,
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+    {
+      ref: "NL-24775", customerRef: "GD-8744", status: "invoiced",
+      customer: { id: "cus_nl_glenmark", name: "Glenmark Distribution", kind: "shipper", contact: "Eli Ross" },
+      pickup: { city: "Rockford", state: "IL", timeZone: TZ, at: daysFromNow(-14), arrived: daysFromNow(-14), departed: daysFromNow(-14) },
+      delivery: { city: "Oklahoma City", state: "OK", timeZone: TZ, at: daysFromNow(-12), arrived: daysFromNow(-12), departed: daysFromNow(-12) },
+      linehaul: 96400, loaded: 692, deadhead: 31, equipment: "box_truck", weight: 6600,
+      driverId: "drv_nl_05", driverName: "Tomas Reyes", truckId: TRUCK_IDS.nl118,
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+    {
+      ref: "NL-24762", customerRef: "APX-76310", status: "invoiced",
+      customer: { id: "cus_nl_apex", name: "Apex Logistics", kind: "broker", mc: "MC-612884", contact: "Dana Wells", phone: "+1 (312) 555-0110" },
+      pickup: { city: "Gary", state: "IN", timeZone: TZ, at: daysFromNow(-22), arrived: daysFromNow(-22), departed: daysFromNow(-22) },
+      delivery: { city: "Denver", state: "CO", timeZone: "America/Denver", at: daysFromNow(-19), arrived: daysFromNow(-19), departed: daysFromNow(-19) },
+      linehaul: 156000, accessorials: [{ code: "lumper", label: "Lumper fee, Denver receiver", cents: 12500 }],
+      loaded: 1018, deadhead: 42, equipment: "box_truck", weight: 8100, commodity: "Packaged food",
+      driverId: "drv_nl_04", driverName: "Amir Haddad", truckId: TRUCK_IDS.nl115,
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery", "lumper_receipt"],
+    },
+    {
+      // Delivered, paperwork complete, still unbilled. The load Invoices offers
+      // first when somebody goes looking for something to bill.
+      ref: "NL-24756", customerRef: "RS-5401", status: "ready_to_invoice",
+      customer: { id: "cus_nl_rivet", name: "Rivet Supply Co.", kind: "shipper", contact: "Marco Bell", phone: "+1 (614) 555-0166" },
+      pickup: { city: "Joliet", state: "IL", timeZone: TZ, at: daysFromNow(-18), arrived: daysFromNow(-18), departed: daysFromNow(-18) },
+      delivery: { city: "Little Rock", state: "AR", timeZone: TZ, at: daysFromNow(-15), arrived: daysFromNow(-15), departed: daysFromNow(-15) },
+      linehaul: 78300, loaded: 604, deadhead: 22, equipment: "box_truck", weight: 5200,
+      driverId: "drv_nl_06", driverName: "Kelsey Nguyen", truckId: TRUCK_IDS.nl121,
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+    {
+      ref: "NL-24744", customerRef: "RS-5388", status: "invoiced",
+      customer: { id: "cus_nl_rivet", name: "Rivet Supply Co.", kind: "shipper", contact: "Marco Bell", phone: "+1 (614) 555-0166" },
+      pickup: { city: "Chicago", state: "IL", timeZone: TZ, at: daysFromNow(-31), arrived: daysFromNow(-31), departed: daysFromNow(-31) },
+      delivery: { city: "Dallas", state: "TX", timeZone: TZ, at: daysFromNow(-28), arrived: daysFromNow(-28), departed: daysFromNow(-28) },
+      linehaul: 142000, loaded: 967, deadhead: 38, equipment: "box_truck", weight: 7800,
+      driverId: "drv_nl_01", driverName: "Dmitri Kovalenko", truckId: TRUCK_IDS.nl104,
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+    {
+      ref: "NL-24728", customerRef: "TFP-31488", status: "invoiced",
+      customer: { id: "cus_nl_tandem", name: "Tandem Freight Partners", kind: "broker", mc: "MC-908114", contact: "Priya Raman", phone: "+1 (773) 555-0143" },
+      pickup: { city: "Milwaukee", state: "WI", timeZone: TZ, at: daysFromNow(-44), arrived: daysFromNow(-44), departed: daysFromNow(-44) },
+      delivery: { city: "Omaha", state: "NE", timeZone: TZ, at: daysFromNow(-41), arrived: daysFromNow(-41), departed: daysFromNow(-41) },
+      linehaul: 87500, accessorials: [{ code: "layover", label: "Layover, 1 night", cents: 15000 }],
+      loaded: 493, deadhead: 19, equipment: "box_truck", weight: 5900,
+      driverId: "drv_nl_02", driverName: "Marisol Ortiz", truckId: TRUCK_IDS.nl107,
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+    {
+      ref: "NL-24701", customerRef: "APX-75902", status: "paid",
+      customer: { id: "cus_nl_apex", name: "Apex Logistics", kind: "broker", mc: "MC-612884", contact: "Dana Wells" },
+      pickup: { city: "Chicago", state: "IL", timeZone: TZ, at: daysFromNow(-65), arrived: daysFromNow(-65), departed: daysFromNow(-65) },
+      delivery: { city: "Atlanta", state: "GA", timeZone: "America/New_York", at: daysFromNow(-62), arrived: daysFromNow(-62), departed: daysFromNow(-62) },
+      linehaul: 118900, loaded: 716, deadhead: 24, equipment: "box_truck", weight: 6900,
+      driverId: "drv_nl_06", driverName: "Kelsey Nguyen", truckId: TRUCK_IDS.nl121,
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
   ]);
 
   const ld = (ref: string) => loads.find((l) => l.reference === ref)!;
@@ -348,6 +421,27 @@ function meridian(): OrgData {
       linehaul: 17900, loaded: 112, deadhead: 8, equipment: "cargo_van",
       driverId: "drv_md_02", driverName: "Hannah Boyd", truckId: TRUCK_IDS.mdB04,
       carrierOrganizationId: "carrier_ridgeway",
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+    // --- Billing history, for the same reason Northline has one ----------
+    {
+      ref: "MD-8990", status: "invoiced",
+      customer: { id: "cus_md_harbor", name: "Harbor Point Freight", kind: "broker", contact: "Nia Coles" },
+      pickup: { city: "Norfolk", state: "VA", timeZone: TZ, at: daysFromNow(-13), arrived: daysFromNow(-13), departed: daysFromNow(-13) },
+      delivery: { city: "Atlanta", state: "GA", timeZone: TZ, at: daysFromNow(-11), arrived: daysFromNow(-11), departed: daysFromNow(-11) },
+      linehaul: 74500, loaded: 546, deadhead: 27, equipment: "box_truck", weight: 5400,
+      driverId: "drv_md_02", driverName: "Hannah Boyd", truckId: TRUCK_IDS.mdB04,
+      carrierOrganizationId: "carrier_ridgeway",
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+    {
+      ref: "MD-8974", customerRef: "KB-22540", status: "invoiced",
+      customer: { id: "cus_md_keystone", name: "Keystone Brokerage", kind: "broker", mc: "MC-771220", contact: "Alan Pike" },
+      pickup: { city: "Philadelphia", state: "PA", timeZone: TZ, at: daysFromNow(-24), arrived: daysFromNow(-24), departed: daysFromNow(-24) },
+      delivery: { city: "Columbus", state: "OH", timeZone: "America/New_York", at: daysFromNow(-22), arrived: daysFromNow(-22), departed: daysFromNow(-22) },
+      linehaul: 61200, loaded: 471, deadhead: 16, equipment: "sprinter", weight: 2600,
+      driverId: "drv_md_01", driverName: "Serge Petrov", truckId: TRUCK_IDS.mdA12,
+      carrierOrganizationId: "carrier_baxter",
       has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
     },
   ]);

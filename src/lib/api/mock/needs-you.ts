@@ -8,6 +8,7 @@ import {
 import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
+import { ensureInvoiceNeedsYou } from "./invoice-registry";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
@@ -91,6 +92,7 @@ function appendHistory(
 }
 
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
+  ensureInvoiceNeedsYou(ctx.organizationId);
   const org = mockStore.org(ctx.organizationId);
   const item = org.needsYou.find((n) => n.id === itemId);
   if (!item) throw new NotFoundError("Needs You item");
@@ -102,6 +104,10 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
+    // The invoice module contributes its own items — missing documents,
+    // disputes and overdue receivables — into THIS queue rather than keeping a
+    // second one of its own.
+    ensureInvoiceNeedsYou(ctx.organizationId);
     const org = mockStore.org(ctx.organizationId);
     return org.needsYou
       .map(autoUnsnooze)
@@ -116,6 +122,7 @@ export const mockNeedsYouService: NeedsYouService = {
   },
 
   async openCount(ctx) {
+    ensureInvoiceNeedsYou(ctx.organizationId);
     const org = mockStore.org(ctx.organizationId);
     return org.needsYou
       .map(autoUnsnooze)

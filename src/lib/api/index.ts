@@ -1,6 +1,7 @@
 import type { AntcolosServices } from "./contracts";
 import { httpServices } from "./http";
 import { mockDirectoryService, mockHomeService } from "./mock/home";
+import { mockInvoicesService } from "./mock/invoices";
 import { mockLoadsService } from "./mock/loads";
 import { mockNeedsYouService } from "./mock/needs-you";
 
@@ -14,6 +15,7 @@ const mockServices: AntcolosServices = {
   home: mockHomeService,
   directory: mockDirectoryService,
   loads: mockLoadsService,
+  invoices: mockInvoicesService,
 };
 
 export const API_MODE =
