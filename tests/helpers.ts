@@ -5,7 +5,7 @@ import {
 } from "@/lib/session/fixtures";
 import type { InsuranceContext } from "@/lib/api/mock/insurance-registry";
 import type { ServiceContext } from "@/lib/api/contracts/context";
-import type { ActorRef, PermissionKey } from "@/types";
+import { workspaceKindOf, type ActorRef, type PermissionKey } from "@/types";
 
 /**
  * Callers for the tests, built the way the app builds them: from a real
@@ -33,6 +33,10 @@ export function serviceContextFor(membershipId: string): ServiceContext {
   const organization = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
   return {
     organizationId: organization.id,
+    // From the same fixture organization as the permissions below, so the
+    // context a test runs under is the one the app would build.
+    organizationName: organization.displayName,
+    workspaceKind: workspaceKindOf(organization),
     membershipId: membership.id,
     permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
     scope: membership.scope,

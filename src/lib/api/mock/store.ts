@@ -23,6 +23,19 @@ class MockStore {
     }
   }
 
+  /**
+   * The organization's Needs You list, to be reconciled in place.
+   *
+   * Handed out as the live array rather than a copy because the derivation
+   * service adds, refreshes and removes items on every read, and copying would
+   * mean an item's snooze and history were rebuilt from nothing each time.
+   * Nothing else in the app writes to it — every other caller goes through
+   * `replaceNeedsYou`, which checks the organization first.
+   */
+  needsYouBucket(organizationId: string): NeedsYouItem[] {
+    return this.org(organizationId).needsYou;
+  }
+
   replaceNeedsYou(organizationId: string, next: NeedsYouItem) {
     this.assertOwned(organizationId, next.organizationId);
     const org = this.org(organizationId);

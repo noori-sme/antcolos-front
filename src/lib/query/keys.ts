@@ -30,4 +30,6 @@ export const queryKeys = {
     [...orgKey(organizationId), "insurance", membershipId, "claims", filters ?? null] as const,
   claim: (organizationId: string, membershipId: string, claimId: string) =>
     [...orgKey(organizationId), "insurance", membershipId, "claim", claimId] as const,
+  invoices: (organizationId: string, membershipId: string, scope: unknown) =>
+    [...orgKey(organizationId), "invoices", membershipId, scope ?? null] as const,
 } as const;

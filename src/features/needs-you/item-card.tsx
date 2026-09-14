@@ -2,7 +2,8 @@
 
 import {
   BellOff, CheckCircle2, ChevronRight, FileText, Package, Truck, User,
-  Building2, Container, Receipt, ArrowUpCircle, ShieldCheck, TriangleAlert,
+  ArrowUpCircle, Building2, ClipboardCheck, Container, FileSignature, Handshake, Mail,
+  MailQuestion, Radar, Receipt, RefreshCw, ShieldCheck, TriangleAlert, UserCheck,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +13,11 @@ import { DueLabel } from "./due-label";
 import { SeverityBar } from "./severity";
 
 const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
-  load: Package, truck: Truck, trailer: Container, driver: User,
-  document: FileText, customer: Building2, settlement: Receipt,
-  invoice: Receipt, policy: ShieldCheck, claim: TriangleAlert,
-  carrier: Building2,
+  load: Package, truck: Truck, trailer: Container, driver: User, document: FileText,
+  customer: Building2, settlement: Receipt, invoice: Receipt, policy: ShieldCheck,
+  claim: TriangleAlert, carrier: Building2, mt_loop: RefreshCw, listing: Radar,
+  draft: Mail, negotiation: Handshake, booking: ClipboardCheck, message: MailQuestion,
+  rate_confirmation: FileSignature, driver_review: UserCheck,
 };
 
 export function NeedsYouCard({

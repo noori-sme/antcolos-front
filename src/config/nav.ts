@@ -1,8 +1,8 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BadgeCheck, Bell, Building2, ClipboardList, Container, FileBadge, FileText,
-  Gauge, Home, IdCard, Inbox, Link2, MailPlus, Package, Palette, Receipt, Route,
-  ScrollText, Settings2, Shield, ShieldCheck, Truck, TriangleAlert, UserCircle,
+  BadgeCheck, Bell, Building2, ClipboardList, Container, FileBadge, FileText, Gauge,
+  Handshake, Home, IdCard, Inbox, Layers, Link2, MailPlus, Package, Palette, Receipt,
+  Route, ScrollText, Settings2, Shield, ShieldCheck, TriangleAlert, Truck, UserCircle,
   Users, UsersRound,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
@@ -36,6 +36,7 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Home", href: "/home", icon: Home, requires: [], primaryMobile: true },
       { label: "Needs You", href: "/needs-you", icon: Inbox, requires: [], primaryMobile: true, showsNeedsYouCount: true },
       { label: "Dispatch", href: "/dispatch", icon: Route, requires: ["loads:view", "loads:assign"], primaryMobile: true },
+      { label: "Opportunities", href: "/dispatch/opportunities", icon: Layers, requires: ["loads:view", "trucks:view"] },
       { label: "Loads", href: "/loads", icon: Package, requires: ["loads:view"], primaryMobile: true },
     ],
   },
@@ -62,7 +63,7 @@ export const PRODUCT_NAV: NavSection[] = [
     id: "business",
     label: "Business",
     items: [
-      { label: "Customers", href: "/customers", icon: Building2, requires: ["customers:view"] },
+      { label: "Directory", href: "/directory", icon: Building2, requires: ["customers:view"] },
       { label: "Documents", href: "/documents", icon: FileText, requires: ["documents:view"] },
       { label: "Settlements", href: "/finance/settlements", icon: Receipt, requires: ["settlements:view"] },
       { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, requires: ["invoices:view"] },
@@ -78,6 +79,7 @@ export const DRIVER_NAV: NavSection[] = [
     label: "My work",
     items: [
       { label: "Home", href: "/driver/home", icon: Home, requires: [], driverOnly: true, primaryMobile: true },
+      { label: "Proposals", href: "/driver/proposals", icon: Handshake, requires: ["proposals:view"], driverOnly: true, primaryMobile: true },
       { label: "My loads", href: "/driver/loads", icon: ClipboardList, requires: ["loads:view"], driverOnly: true, primaryMobile: true },
       { label: "My documents", href: "/driver/documents", icon: FileText, requires: [], driverOnly: true, primaryMobile: true },
       { label: "My profile", href: "/driver/profile", icon: IdCard, requires: [], driverOnly: true },

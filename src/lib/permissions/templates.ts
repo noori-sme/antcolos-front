@@ -19,7 +19,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
-      "drivers:view", "trucks:view", "trailers:view", "customers:view",
+      "proposals:view",
+      "drivers:view", "trucks:view", "trailers:view",
+      "customers:view", "customers:create", "customers:private:manage", "customers:resolve",
       "documents:view", "documents:upload", "compliance:view",
       // A dispatcher is usually the first to hear about a wreck, so they can
       // open a claim. They are not given the policy, and never the money.
@@ -32,6 +34,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "loads:view", "loads:status:update",
+      "proposals:view", "proposals:respond", "trips:execute",
       "documents:view", "documents:upload",
       "settlements:view",
     ],
