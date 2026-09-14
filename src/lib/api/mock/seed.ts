@@ -405,6 +405,8 @@ export function buildSeed(): Record<string, OrgData> {
     org_summit: summit(),
     org_solo: solo(),
     org_cascade: cascade(),
+    // Every organization a membership can switch into needs a partition, even
+    // an empty one: a missing partition is not "no data", it is a crash.
     org_baxter: empty(),
   };
 }

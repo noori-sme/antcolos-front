@@ -60,9 +60,12 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     createdAt: "2026-08-11T15:10:00.000Z",
   },
   {
-    // The individual-dispatcher workspace: a real dispatch organization with
-    // exactly one person in it. `soloDispatcher` is the only stored difference;
-    // everything else about the dashboard is derived from it.
+    // The individual-dispatcher workspace: one person booking freight for
+    // carriers, with no company behind them. It is a dispatch workspace, not a
+    // dispatch organization, and both things that follow from that are derived
+    // from the one stored flag — the dashboard it gets, and the paperwork it is
+    // asked for, which is personal identity and a service agreement rather than
+    // company registration and company-level insurance.
     id: "org_solo",
     type: "DISPATCH_AGENCY",
     legalName: "Sam Murtaza",
@@ -164,7 +167,9 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
   },
   {
     // Working alone. Owner of a workspace that has no team in it, which is a
-    // different thing from being an owner who happens to be the only member.
+    // different thing from being an owner who happens to be the only member —
+    // and, for the Document Center, a workspace with its own paperwork
+    // obligations, different from either kind of organization.
     id: "mem_solo_dispatcher",
     userId: MOCK_USER.id,
     organizationId: "org_solo",

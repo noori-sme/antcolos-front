@@ -7,6 +7,7 @@ export type * from "./session";
 export type * from "./load";
 export type * from "./event";
 export type * from "./document";
+export type * from "./document-center";
 export type * from "./fleet";
 export type * from "./needs-you";
 export type * from "./access";
@@ -14,6 +15,8 @@ export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
 export type * from "./trailer";
+export type * from "./party";
+export type * from "./rate-confirmation";
 export type * from "./workspace";
 export type * from "./mt-loop";
 export type * from "./carrier";
@@ -43,3 +46,4 @@ export {
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";
+export { workspaceKindOf, WORKSPACE_KIND_LABEL } from "./organization";

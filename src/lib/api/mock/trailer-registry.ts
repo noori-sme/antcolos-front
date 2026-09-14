@@ -32,6 +32,16 @@ import { normalizeVin, validateVin } from "@/lib/fleet/vin";
 import { TRAILER_DOCUMENT_LABEL } from "@/lib/fleet/trailer-equipment";
 import { checkMechanicalCompatibility } from "@/lib/fleet/compatibility";
 import {
+  trailerDocumentTypeKey, trailerRequirementKey,
+} from "@/lib/documents/requirements";
+import {
+  addAssetDocument, assetDocumentRows, seedAssetDocument, submitAssetDocument,
+  type AssetDocumentAdapter,
+} from "./asset-documents";
+import {
+  clearDocumentsForSubjectKind, documentById as storedDocument, endRelationshipDocuments,
+} from "./document-store";
+import {
   TRUCK_IDS,
   activateOperatingLeaseSync,
   activationStateFor as truckActivationStateFor,
@@ -140,22 +150,74 @@ interface RegistryState {
   dispatchAccess: TrailerDispatchAccess[];
   attachments: TrailerAttachment[];
   leases: TrailerOperatingLease[];
-  documents: TrailerDocument[];
   movements: TrailerMovementRecord[];
   events: TrailerEvent[];
 }
 
 let registry: RegistryState | null = null;
 
+/** Seeded after the registry exists, so a trailer's label can be resolved. */
+let pendingDocumentSeed: (() => void) | null = null;
+
 function db(): RegistryState {
-  if (!registry) registry = buildFixtures();
+  if (!registry) {
+    registry = buildFixtures();
+    const seed = pendingDocumentSeed;
+    pendingDocumentSeed = null;
+    seed?.();
+  }
   return registry;
 }
 
 /** Test hook. Never called by the UI. */
 export function resetTrailerRegistry() {
   seq = 0;
-  registry = buildFixtures();
+  clearDocumentsForSubjectKind("trailer");
+  registry = null;
+  pendingDocumentSeed = null;
+  db();
+}
+
+/**
+ * Trailer documents are rows in THE document store, shared with trucks, drivers
+ * and organizations. `TrailerDocument` is the projection the fleet screens read.
+ */
+const TRAILER_DOCUMENTS: AssetDocumentAdapter<TrailerDocumentKind> = {
+  subjectKind: "trailer",
+  requirementKey: trailerRequirementKey,
+  typeKey: trailerDocumentTypeKey,
+  kindFromRequirementKey: (key) =>
+    key.startsWith("trailer:") ? (key.slice("trailer:".length) as TrailerDocumentKind) : undefined,
+};
+
+const ORG_DISPLAY_NAMES: Record<string, string> = {
+  org_northline: "Northline Freight",
+  org_baxter: "Baxter Transit LLC",
+  org_cascade: "Cascade Haul",
+  org_meridian: "Meridian Dispatch",
+  org_summit: "Summit Dispatch",
+  org_ridgeway: "Ridgeway Carriers",
+  org_crosswind: "Crosswind Freight",
+  org_halberd: "Halberd Leasing LLC",
+};
+
+function trailerLabel(trailerId: string): string {
+  const found = registry?.trailers.find((t) => t.trailerId === trailerId);
+  const unit = registry?.relationships.find(
+    (r) => r.trailerId === trailerId && r.status !== "ended" && r.unitNumber,
+  )?.unitNumber;
+  if (!found) return unit ? `Trailer ${unit}` : "Trailer";
+  return `${unit ? `${unit} · ` : ""}${found.year} ${found.make} ${found.model}`;
+}
+
+function trailerDocumentsFor(trailerId: string): TrailerDocument[] {
+  return assetDocumentRows(TRAILER_DOCUMENTS, trailerId).map((row) => ({ ...row, trailerId }));
+}
+
+function trailerDocumentById(documentId: string): TrailerDocument | undefined {
+  const subject = storedDocument(documentId)?.links.find((l) => l.subject.kind === "trailer")?.subject;
+  if (!subject) return undefined;
+  return trailerDocumentsFor(subject.id).find((d) => d.id === documentId);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -237,15 +299,22 @@ function attach(
   };
 }
 
+/** Seeds one fixture document straight into the shared store. */
 function doc(
   trailerId: string, kind: TrailerDocumentKind, status: TrailerDocument["status"],
   addedByOrganizationId: string, fileName: string, expiresAt?: string, rejectionReason?: string,
-): TrailerDocument {
-  return {
-    id: rowId("tdoc"), trailerId, kind, status, fileName, fileType: "application/pdf",
-    sizeBytes: 180_000, expiresAt, rejectionReason, addedByOrganizationId,
+): void {
+  seedAssetDocument(TRAILER_DOCUMENTS, {
+    assetId: trailerId,
+    assetLabel: trailerLabel(trailerId),
+    assetHref: `/fleet/trailers/${trailerId}`,
+    kind, status,
+    organizationId: addedByOrganizationId,
+    organizationName: ORG_DISPLAY_NAMES[addedByOrganizationId] ?? addedByOrganizationId,
+    fileName, fileType: "application/pdf", sizeBytes: 180_000,
+    expiresAt, rejectionReason,
     createdAt: daysAgo(90), updatedAt: daysAgo(90),
-  };
+  });
 }
 
 function evt(
@@ -438,29 +507,29 @@ function buildFixtures(): RegistryState {
     },
   ];
 
-  const documents: TrailerDocument[] = [
-    doc(T.dv220, "registration", "expiring_soon", "org_northline", "reg-v220.pdf", daysFromNow(18)),
-    doc(T.dv220, "title", "approved", "org_northline", "title-v220.pdf"),
-    doc(T.dv220, "insurance", "approved", "org_northline", "coi-v220.pdf", daysFromNow(160)),
-    doc(T.dv220, "annual_inspection", "approved", "org_northline", "inspection-v220.pdf", daysFromNow(210)),
-    doc(T.rf114, "registration", "approved", "org_northline", "reg-r114.pdf", daysFromNow(210)),
-    doc(T.rf114, "title", "approved", "org_northline", "title-r114.pdf"),
-    doc(T.rf114, "reefer_service_record", "approved", "org_northline", "reefer-service-r114.pdf", daysFromNow(135)),
-    doc(T.fb410, "registration", "approved", "org_northline", "reg-f410.pdf", daysFromNow(150)),
+  const seedDocuments = () => {
+    doc(T.dv220, "registration", "expiring_soon", "org_northline", "reg-v220.pdf", daysFromNow(18));
+    doc(T.dv220, "title", "approved", "org_northline", "title-v220.pdf");
+    doc(T.dv220, "insurance", "approved", "org_northline", "coi-v220.pdf", daysFromNow(160));
+    doc(T.dv220, "annual_inspection", "approved", "org_northline", "inspection-v220.pdf", daysFromNow(210));
+    doc(T.rf114, "registration", "approved", "org_northline", "reg-r114.pdf", daysFromNow(210));
+    doc(T.rf114, "title", "approved", "org_northline", "title-r114.pdf");
+    doc(T.rf114, "reefer_service_record", "approved", "org_northline", "reefer-service-r114.pdf", daysFromNow(135));
+    doc(T.fb410, "registration", "approved", "org_northline", "reg-f410.pdf", daysFromNow(150));
     doc(T.fb410, "annual_inspection", "rejected", "org_northline", "inspection-f410.jpg", undefined,
-      "The photo cuts off the inspector's signature and the date. Please upload the full page."),
-    doc(T.gn330, "registration", "approved", "org_northline", "reg-g330.pdf", daysFromNow(260)),
-    doc(T.gn330, "lease_agreement", "pending_review", "org_northline", "lease-hale-trailer.pdf"),
-    doc(T.mt501, "registration", "approved", "org_northline", "reg-s501.pdf", daysFromNow(90)),
-    doc(T.oos602, "registration", "expired", "org_northline", "reg-v602.pdf", daysFromNow(-30)),
-    doc(T.mc701, "registration", "approved", "org_northline", "reg-v701.pdf", daysFromNow(300)),
-    doc(T.mc701, "title", "approved", "org_northline", "title-v701.pdf"),
-    doc(T.lk702, "registration", "approved", "org_northline", "reg-r702.pdf", daysFromNow(280)),
-    doc(T.lk702, "reefer_service_record", "approved", "org_northline", "reefer-service-r702.pdf", daysFromNow(160)),
-    doc(T.bx810, "registration", "approved", "org_baxter", "reg-bx810.pdf", daysFromNow(190)),
-    doc(T.ch950, "registration", "approved", "org_baxter", "reg-bx950.pdf", daysFromNow(120)),
-    doc(T.cl901, "registration", "approved", "org_northline", "reg-f901.pdf", daysFromNow(70)),
-  ];
+      "The photo cuts off the inspector's signature and the date. Please upload the full page.");
+    doc(T.gn330, "registration", "approved", "org_northline", "reg-g330.pdf", daysFromNow(260));
+    doc(T.gn330, "lease_agreement", "pending_review", "org_northline", "lease-hale-trailer.pdf");
+    doc(T.mt501, "registration", "approved", "org_northline", "reg-s501.pdf", daysFromNow(90));
+    doc(T.oos602, "registration", "expired", "org_northline", "reg-v602.pdf", daysFromNow(-30));
+    doc(T.mc701, "registration", "approved", "org_northline", "reg-v701.pdf", daysFromNow(300));
+    doc(T.mc701, "title", "approved", "org_northline", "title-v701.pdf");
+    doc(T.lk702, "registration", "approved", "org_northline", "reg-r702.pdf", daysFromNow(280));
+    doc(T.lk702, "reefer_service_record", "approved", "org_northline", "reefer-service-r702.pdf", daysFromNow(160));
+    doc(T.bx810, "registration", "approved", "org_baxter", "reg-bx810.pdf", daysFromNow(190));
+    doc(T.ch950, "registration", "approved", "org_baxter", "reg-bx950.pdf", daysFromNow(120));
+    doc(T.cl901, "registration", "approved", "org_northline", "reg-f901.pdf", daysFromNow(70));
+  };
 
   const claims: TrailerOwnershipClaim[] = [
     {
@@ -515,9 +584,12 @@ function buildFixtures(): RegistryState {
     events.push(evt(t.trailerId, "created", "Trailer registered in Antcolos", t.createdAt, t.createdByOrganizationId));
   }
 
+  // Seeded after the registry exists: a document snapshots its trailer's label.
+  pendingDocumentSeed = seedDocuments;
+
   return {
     trailers, ownership, claims, relationships, dispatchAccess,
-    attachments, leases, documents, movements, events,
+    attachments, leases, movements, events,
   };
 }
 
@@ -763,9 +835,7 @@ function canSeeCarrier(visible: Set<string> | "all", organizationId?: string): b
 const DOC_WARNING_STATUSES = new Set(["expired", "expiring_soon", "rejected", "missing"]);
 
 function documentWarnings(trailerId: string): number {
-  return db().documents.filter(
-    (d) => d.trailerId === trailerId && DOC_WARNING_STATUSES.has(d.status),
-  ).length;
+  return trailerDocumentsFor(trailerId).filter((d) => DOC_WARNING_STATUSES.has(d.status)).length;
 }
 
 function project(trailer: Trailer, ctx: TrailerContext): FleetTrailer {
@@ -930,7 +1000,7 @@ export async function getTrailerProfile(
       // Even the owner does not get another carrier's load reference.
       .map((l) => (l.organizationId === ctx.organizationId ? l : { ...l, loadReference: undefined }))
       .sort(byDate),
-    documents: db().documents.filter(
+    documents: trailerDocumentsFor(trailerId).filter(
       (d) => d.trailerId === trailerId
         && (!d.carrierOrganizationId || canSeeCarrier(visible, d.carrierOrganizationId)),
     ),
@@ -1390,6 +1460,17 @@ export async function endTrailerCarrierRelationship(
     ...relationship, status: "ended", endedAt: at, endReason: reason.trim() || undefined,
   };
   db().relationships = db().relationships.map((r) => (r.id === relationshipId ? ended : r));
+
+  // Documents survive. This carrier's links are closed and its shares revoked,
+  // a snapshot of each is kept, and no record, version or event is deleted.
+  endRelationshipDocuments({
+    subjectKind: "trailer",
+    subjectId: relationship.trailerId,
+    organizationId: ctx.organizationId,
+    reason: reason.trim() || "Carrier relationship ended.",
+    actorName: ctx.actorName,
+  });
+
   record({
     trailerId: relationship.trailerId, at, kind: "relationship_ended",
     summary: `${relationship.organizationName} stopped operating this trailer`,
@@ -1473,28 +1554,28 @@ export async function addTrailerDocument(
   requirePermissions(ctx, "trailers:documents:manage");
   if (!approvedRelationship(trailerId, ctx.organizationId)) throw new TrailerNotFoundError();
 
-  const at = iso(now());
-  // A replacement supersedes the old record; it never deletes it.
-  const previous = db().documents.find(
-    (d) => d.trailerId === trailerId && d.kind === kind && d.status !== "superseded",
-  );
-  const created: TrailerDocument = {
-    id: rowId("tdoc"), trailerId, kind, status: "selected_local",
-    fileName: file.name, fileType: file.type, sizeBytes: file.size, expiresAt,
-    addedByOrganizationId: ctx.organizationId, createdAt: at, updatedAt: at,
-  };
-  db().documents = [
-    ...db().documents.map((d) =>
-      d.id === previous?.id ? { ...d, status: "superseded" as const, supersededByDocumentId: created.id, updatedAt: at } : d),
-    created,
-  ];
+  // A replacement supersedes the old record; it never deletes it. The shared
+  // store owns that rule, so trailers version exactly as trucks and drivers do.
+  const { record: created } = addAssetDocument(TRAILER_DOCUMENTS, {
+    assetId: trailerId,
+    assetLabel: trailerLabel(trailerId),
+    assetHref: `/fleet/trailers/${trailerId}`,
+    kind, file,
+    organizationId: ctx.organizationId,
+    organizationName: ORG_DISPLAY_NAMES[ctx.organizationId] ?? ctx.organizationId,
+    actorName: ctx.actorName,
+    membershipId: ctx.membershipId,
+    expiresAt,
+  });
   record({
-    trailerId, at, kind: "document_added",
+    trailerId, at: iso(now()), kind: "document_added",
     summary: `${TRAILER_DOCUMENT_LABEL[kind] ?? kind} selected`,
     detail: "Chosen in the browser only. Nothing was uploaded, stored, read or verified.",
     organizationId: ctx.organizationId, actorName: ctx.actorName,
   });
-  return { ...created };
+  const row = trailerDocumentById(created.documentId);
+  if (!row) throw new TrailerNotFoundError();
+  return row;
 }
 
 /** Send a selected document for review. Still nothing leaves the browser. */
@@ -1504,20 +1585,20 @@ export async function submitTrailerDocument(
 ): Promise<TrailerDocument> {
   await sleep(350);
   requirePermissions(ctx, "trailers:documents:manage");
-  const document = db().documents.find((d) => d.id === documentId);
+  const document = trailerDocumentById(documentId);
   if (!document) throw new TrailerNotFoundError();
   if (!approvedRelationship(document.trailerId, ctx.organizationId)) throw new TrailerNotFoundError();
 
-  const at = iso(now());
-  const updated: TrailerDocument = { ...document, status: "pending_review", updatedAt: at };
-  db().documents = db().documents.map((d) => (d.id === documentId ? updated : d));
+  submitAssetDocument(documentId, ctx.actorName, ctx.organizationId);
   record({
-    trailerId: document.trailerId, at, kind: "document_reviewed",
+    trailerId: document.trailerId, at: iso(now()), kind: "document_reviewed",
     summary: `${TRAILER_DOCUMENT_LABEL[document.kind] ?? document.kind} sent for review`,
     detail: "Pending review. Nobody has looked at it and nothing was verified.",
     organizationId: ctx.organizationId, actorName: ctx.actorName,
   });
-  return { ...updated };
+  const row = trailerDocumentById(documentId);
+  if (!row) throw new TrailerNotFoundError();
+  return row;
 }
 
 /* -------------------------------------------------------------------------- */

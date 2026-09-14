@@ -1,8 +1,9 @@
 import type {
   CarrierRelationship, DriverAccessReason, DriverAvailability, DriverDocument,
-  DriverDocumentRequirement, DriverPreferences, DriverProfile, DriverView,
+  DriverPreferences, DriverProfile, DriverView,
   EngagementType, PermissionKey, RelationshipStatus,
 } from "@/types";
+import { driverRequirements } from "@/lib/documents/requirements";
 import { TRUCK_IDS, truckDispatchGrants, type TruckContext } from "./truck-registry";
 
 /**
@@ -47,27 +48,6 @@ const daysFromNow = (n: number) => {
 };
 const daysAgo = (n: number) => daysFromNow(-n);
 const hoursFromNow = (n: number) => iso(new Date(Date.now() + n * 3_600_000));
-
-/* -------------------------------------------------------------------------- */
-/* What carriers ask drivers for                                               */
-/* -------------------------------------------------------------------------- */
-
-const BASE_REQUIREMENTS: DriverDocumentRequirement[] = [
-  { key: "cdl_front", label: "Driver license / CDL — front", description: "The front of the licence.", category: "driver", required: true, expires: true },
-  { key: "cdl_back", label: "Driver license / CDL — back", description: "The back of the same licence.", category: "driver", required: true, expires: false },
-  { key: "medical_front", label: "Medical card", description: "Current DOT medical examiner's certificate.", category: "driver", required: true, expires: true },
-];
-
-const OWNER_OPERATOR_REQUIREMENTS: DriverDocumentRequirement[] = [
-  { key: "w9", label: "W-9", description: "So the carrier can pay and report correctly.", category: "owner_operator", required: true, expires: false },
-  { key: "coi", label: "Certificate of Insurance", description: "The driver's own coverage, with the carrier listed.", category: "owner_operator", required: true, expires: true },
-];
-
-function requirementsFor(engagementType: EngagementType): DriverDocumentRequirement[] {
-  return engagementType === "owner_operator"
-    ? [...BASE_REQUIREMENTS, ...OWNER_OPERATOR_REQUIREMENTS]
-    : BASE_REQUIREMENTS;
-}
 
 /* -------------------------------------------------------------------------- */
 /* State                                                                       */
@@ -142,12 +122,12 @@ function docs(
   return entries.map(([requirementKey, status, opts]) => ({
     requirementKey,
     status,
-    fileName: status === "not_started" ? undefined : `${requirementKey}.pdf`,
+    fileName: status === "missing" ? undefined : `${requirementKey}.pdf`,
     fileType: "application/pdf",
-    sizeBytes: status === "not_started" ? undefined : 640_000,
+    sizeBytes: status === "missing" ? undefined : 640_000,
     expiresAt: opts?.expiresDays === undefined ? undefined : daysFromNow(opts.expiresDays),
     rejectionReason: opts?.reason,
-    submittedAt: status === "not_started" ? undefined : daysAgo(90),
+    submittedAt: status === "missing" ? undefined : daysAgo(90),
     updatedAt: daysAgo(20),
   }));
 }
@@ -374,7 +354,7 @@ function project(
     engagedSince: engagement.startedAt,
     permissions: engagement.permissions,
     documents: shared,
-    requirements: requirementsFor(engagement.engagementType),
+    requirements: driverRequirements(engagement.engagementType),
     reason,
   };
 }
@@ -414,7 +394,7 @@ export async function driverView(
 export function driverDocumentProblems(view: DriverView): Array<{
   requirementKey: string;
   label: string;
-  status: DriverDocument["status"] | "missing";
+  status: DriverDocument["status"];
   expiresAt?: string;
   rejectionReason?: string;
 }> {
@@ -422,7 +402,7 @@ export function driverDocumentProblems(view: DriverView): Array<{
   const byKey = new Map(view.documents.map((d) => [d.requirementKey, d]));
 
   for (const requirement of view.requirements) {
-    if (!requirement.required) continue;
+    if (requirement.applicability !== "required") continue;
     const held = byKey.get(requirement.key);
     if (!held) {
       // Careful: a document the viewer is not entitled to see is NOT a document
@@ -431,11 +411,11 @@ export function driverDocumentProblems(view: DriverView): Array<{
       continue;
     }
     if (held.status === "expired" || held.status === "expiring_soon" || held.status === "rejected"
-      || held.status === "not_started") {
+      || held.status === "missing") {
       out.push({
         requirementKey: requirement.key,
         label: requirement.label,
-        status: held.status === "not_started" ? "missing" : held.status,
+        status: held.status,
         expiresAt: held.expiresAt,
         rejectionReason: held.rejectionReason,
       });

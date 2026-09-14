@@ -46,7 +46,7 @@ export function resolveWorkspace(
   }
 
   return {
-    kind: "carrier",
+    kind: "carrier_organization",
     organizationId: organization.id,
     displayName: organization.displayName,
     supportsTeam: true,
@@ -58,7 +58,7 @@ export function resolveWorkspace(
 export const WORKSPACE_KIND_LABEL: Record<Workspace["kind"], string> = {
   individual_dispatcher: "Individual dispatcher",
   dispatch_organization: "Dispatch organization",
-  carrier: "Carrier",
+  carrier_organization: "Carrier",
   driver: "Driver",
 };
 
@@ -67,6 +67,6 @@ export const WORKSPACE_KIND_DESCRIPTION: Record<Workspace["kind"], string> = {
     "You dispatch on your own. Everything here is your work; there is no team queue to hand it to.",
   dispatch_organization:
     "You dispatch as a team. Work can be held by one person, handed to another, or left in the unassigned queue.",
-  carrier: "You run freight under your own authority.",
+  carrier_organization: "You run freight under your own authority.",
   driver: "You drive. Your loads, documents and pay.",
 };
