@@ -856,6 +856,7 @@ function project(trailer: Trailer, ctx: TrailerContext): FleetTrailer {
     organizationId: ctx.organizationId,
     unit: relationship?.unitNumber ?? dispatchGrant?.unitLabel ?? "—",
     carrierName: dispatchGrant?.grantedByCarrierName,
+    carrierOrganizationId: dispatchGrant?.grantedByCarrierOrganizationId,
     trailerType: trailer.trailerType,
     status: trailer.status,
     attachmentState: attachmentStateFor(trailer.trailerId),

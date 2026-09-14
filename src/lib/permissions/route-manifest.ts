@@ -7,6 +7,14 @@ import type { PermissionKey } from "@/types";
  * The (app) guard reads this and redirects to a proper 403 screen.
  */
 const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
+  // These sit under /dispatch but need LESS than the dispatch board does.
+  // Working a truck's cycle and reading the opportunity inbox take seeing
+  // loads and trucks; handing work to somebody else is what needs
+  // `loads:assign`, and it is checked where that actually happens. Without
+  // these two entries the longest-prefix rule would apply /dispatch's
+  // requirements and lock out a dispatcher who may search but not assign.
+  "/dispatch/trucks": ["loads:view", "trucks:view"],
+  "/dispatch/opportunities": ["loads:view", "trucks:view"],
   "/rate-cons/new": ["loads:create", "documents:upload"],
   // Confirming who a broker is is a stronger power than reading the directory,
   // so the review screen is gated above its parent rather than inheriting it.

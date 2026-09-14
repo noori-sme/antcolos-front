@@ -2,7 +2,7 @@
 
 import {
   BellOff, CheckCircle2, ChevronRight, FileText, Package, Truck, User,
-  Building2, Receipt, ArrowUpCircle, type LucideIcon,
+  Building2, Receipt, ArrowUpCircle, RefreshCw, Radar, Mail, type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORY_LABEL, type NeedsYouEntityKind, type NeedsYouItem } from "@/types";
@@ -12,7 +12,8 @@ import { SeverityBar } from "./severity";
 
 const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   load: Package, truck: Truck, driver: User, document: FileText,
-  customer: Building2, settlement: Receipt, invoice: Receipt,
+  customer: Building2, settlement: Receipt, invoice: Receipt, mt_loop: RefreshCw,
+  carrier: Building2, listing: Radar, draft: Mail,
 };
 
 export function NeedsYouCard({

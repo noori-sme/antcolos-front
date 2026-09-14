@@ -1,8 +1,8 @@
 import type {
   Customer, Document, Driver, Load, LoadEvent, NeedsYouItem,
 } from "@/types";
-import { buildLoad, nextId, type LoadSeed } from "./build-load";
-import { daysFromNow, hoursFromNow, minutesFromNow } from "./time";
+import { buildLoad, type LoadSeed } from "./build-load";
+import { daysFromNow, hoursFromNow } from "./time";
 import { TRUCK_IDS } from "./truck-registry";
 
 /**
@@ -16,17 +16,18 @@ export interface OrgData {
   documents: Document[];
   drivers: Driver[];
   customers: Customer[];
+  /**
+   * Starts EMPTY for every organization, and stays that way in this file.
+   *
+   * Needs You items are not fixtures any more. They are generated from live
+   * state by `needs-you-derive.ts` on every read and removed again the moment
+   * the condition behind them is gone, so a card written here would be a
+   * problem that could never be fixed. This array is the place those generated
+   * items live, and the place a person's snooze, assignee and history survive
+   * between regenerations.
+   */
   needsYou: NeedsYouItem[];
 }
-
-const SYSTEM = {
-  userId: "system",
-  membershipId: "system",
-  displayNameSnapshot: "Antcolos",
-  source: "system" as const,
-};
-
-const id = (prefix: string) => nextId(prefix);
 
 /** Expands compact load seeds into canonical loads plus timelines and documents. */
 function expand(organizationId: string, seeds: LoadSeed[]) {
@@ -36,30 +37,6 @@ function expand(organizationId: string, seeds: LoadSeed[]) {
     events: built.flatMap((b) => b.events),
     documents: built.flatMap((b) => b.documents),
   };
-}
-
-function needsYou(
-  organizationId: string,
-  n: Omit<NeedsYouItem, "id" | "organizationId" | "createdAt" | "history" | "status"> &
-    Partial<Pick<NeedsYouItem, "status" | "createdAt">>,
-): NeedsYouItem {
-  const createdAt = n.createdAt ?? hoursFromNow(-6);
-  return {
-    id: id("ny"),
-    organizationId,
-    status: n.status ?? "open",
-    createdAt,
-    history: [
-      {
-        id: id("nyh"),
-        at: createdAt,
-        actor: SYSTEM,
-        action: "created",
-        note: n.reason,
-      },
-    ],
-    ...n,
-  } as NeedsYouItem;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,115 +148,7 @@ function northline(): OrgData {
     },
   ]);
 
-  const ld = (ref: string) => loads.find((l) => l.reference === ref)!;
-
-  const items: NeedsYouItem[] = [
-    needsYou(org, {
-      category: "rate_con_verification", severity: "high",
-      title: "Rate confirmation awaiting verification",
-      reason: "OCR extracted 15 fields. The rate and the delivery appointment are below the confidence threshold.",
-      detail: "Extracted rate $413.00 and delivery 08:00 — both flagged. Verify against the source document before this becomes a committed load.",
-      entity: { kind: "load", id: ld("NL-24821").id, label: "NL-24821 · Chicago, IL → Cleveland, OH", href: "/loads" },
-      recommendedAction: { kind: "verify", label: "Open verification workspace", requires: ["loads:edit"], deferred: true },
-      dueAt: hoursFromNow(3), source: "ocr", requires: ["loads:view"],
-    }),
-    needsYou(org, {
-      category: "missing_document", severity: "critical",
-      title: "POD missing on a delivered load",
-      reason: "NL-24812 delivered 28 hours ago. Apex requires the POD within 48 hours of delivery or payment terms reset.",
-      detail: "Driver Amir Haddad has uploaded the BOL but not the POD. Telegram reminder sent twice with no response.",
-      entity: { kind: "load", id: ld("NL-24812").id, label: "NL-24812 · Milwaukee, WI → Kansas City, MO", href: "/loads" },
-      relatedEntities: [{ kind: "driver", id: "drv_nl_04", label: "Amir Haddad", href: "/people/drivers" }],
-      recommendedAction: { kind: "request_document", label: "Request POD from driver", requires: ["documents:view"] },
-      dueAt: hoursFromNow(-2), source: "system", requires: ["loads:view", "documents:view"],
-    }),
-    needsYou(org, {
-      category: "truck_going_empty", severity: "high",
-      title: "Unit 107 goes empty in about 2 hours",
-      reason: "Marisol Ortiz delivers in Indianapolis, IN at 14:15 with no next load committed.",
-      detail: "Minimum rate $1.05/mi, deadhead limit 30 mi. Sprinter, available for same-day pickup.",
-      entity: { kind: "truck", id: TRUCK_IDS.nl107, label: "Unit 107 · Sprinter · Indianapolis, IN", href: "/fleet/trucks" },
-      recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(2), source: "system", requires: ["trucks:view"],
-    }),
-    needsYou(org, {
-      category: "truck_going_empty", severity: "medium",
-      title: "Unit 118 has been empty for 20 hours",
-      reason: "Tomas Reyes is sitting in Joliet, IL with no assignment and no outreach recorded since yesterday.",
-      entity: { kind: "truck", id: TRUCK_IDS.nl118, label: "Unit 118 · Cargo van · Joliet, IL", href: "/fleet/trucks" },
-      recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(6), source: "system", requires: ["trucks:view"],
-    }),
-    needsYou(org, {
-      category: "unassigned_load", severity: "high",
-      title: "NL-24809 picks up tomorrow with no driver",
-      reason: "Pickup in Gary, IN in 16 hours. No truck, driver or trailer assigned.",
-      detail: "Cargo van, 412 loaded miles, 34 deadhead — above the 30-mile policy for two of the three candidate trucks.",
-      entity: { kind: "load", id: ld("NL-24809").id, label: "NL-24809 · Gary, IN → Nashville, TN", href: "/loads" },
-      recommendedAction: { kind: "assign_load", label: "Assign a truck and driver", requires: ["loads:assign"], deferred: true },
-      dueAt: hoursFromNow(16), source: "system", requires: ["loads:view"],
-    }),
-    needsYou(org, {
-      category: "eta_risk", severity: "critical",
-      title: "NL-24817 is tracking 70 minutes late",
-      reason: "Current position near Lafayette, IN puts arrival at 19:50 against a 18:40 delivery appointment.",
-      detail: "Apex requires notification before the appointment window closes. No delay has been reported to the customer yet.",
-      entity: { kind: "load", id: ld("NL-24817").id, label: "NL-24817 · Chicago, IL → Columbus, OH", href: "/loads" },
-      relatedEntities: [{ kind: "driver", id: "drv_nl_01", label: "Dmitri Kovalenko", href: "/people/drivers" }],
-      recommendedAction: { kind: "contact_customer", label: "Notify Apex Logistics", requires: ["customers:view"] },
-      dueAt: hoursFromNow(1), source: "system", requires: ["loads:view"],
-    }),
-    needsYou(org, {
-      category: "status_confirmation", severity: "medium",
-      title: "No arrival confirmation from unit 115",
-      reason: "Amir Haddad was due at the Memphis receiver 45 minutes ago. No Telegram status update received.",
-      entity: { kind: "driver", id: "drv_nl_04", label: "Amir Haddad · Unit 115", href: "/people/drivers" },
-      recommendedAction: { kind: "contact_driver", label: "Message the driver", requires: ["drivers:view"] },
-      dueAt: minutesFromNow(-45), source: "telegram", requires: ["drivers:view"],
-    }),
-    needsYou(org, {
-      category: "expiring_document", severity: "high",
-      title: "Medical card expires in 6 days",
-      reason: "Amir Haddad's DOT medical certificate expires on the 19th. He is scheduled on loads through the 23rd.",
-      entity: { kind: "driver", id: "drv_nl_04", label: "Amir Haddad", href: "/people/drivers" },
-      recommendedAction: { kind: "request_document", label: "Request updated medical card", requires: ["compliance:view"] },
-      dueAt: daysFromNow(6), source: "system", requires: ["compliance:view"],
-    }),
-    needsYou(org, {
-      category: "invoice_review", severity: "medium",
-      title: "NL-24805 is ready to invoice",
-      reason: "Delivered with all required documents present. $1,121.00 unbilled for 3 days.",
-      entity: { kind: "load", id: ld("NL-24805").id, label: "NL-24805 · Rockford, IL → Memphis, TN", href: "/loads" },
-      recommendedAction: { kind: "review", label: "Review and invoice", requires: ["invoices:create"], deferred: true },
-      dueAt: hoursFromNow(20), source: "system", requires: ["invoices:view"],
-    }),
-    needsYou(org, {
-      category: "detention", severity: "medium",
-      title: "Possible detention at the Indianapolis receiver",
-      reason: "Unit 107 has been on site 2 hours 40 minutes. Rivet's agreement allows 2 hours free.",
-      entity: { kind: "load", id: ld("NL-24816").id, label: "NL-24816 · Joliet, IL → Indianapolis, IN", href: "/loads" },
-      recommendedAction: { kind: "contact_customer", label: "Open a detention claim", requires: ["customers:view"], deferred: true },
-      dueAt: hoursFromNow(1), source: "eld", requires: ["loads:view"],
-    }),
-    needsYou(org, {
-      category: "customer_response", severity: "low",
-      title: "Tandem Freight is waiting on a rate response",
-      reason: "Priya Raman replied to the NL-24822 offer 5 hours ago asking for $410. Nothing sent back yet.",
-      entity: { kind: "customer", id: "cus_nl_tandem", label: "Tandem Freight Partners", href: "/customers" },
-      recommendedAction: { kind: "contact_customer", label: "Reply to Tandem", requires: ["customers:view"] },
-      dueAt: hoursFromNow(12), source: "manual", requires: ["customers:view"],
-    }),
-    needsYou(org, {
-      category: "settlement_review", severity: "low",
-      title: "Weekly settlements ready for review",
-      reason: "6 drivers, 19 loads, period closes tonight. Nothing approved yet.",
-      entity: { kind: "settlement", id: "stl_nl_w37", label: "Week 37 settlement period", href: "/finance/settlements" },
-      recommendedAction: { kind: "review", label: "Review settlement period", requires: ["settlements:view"], deferred: true },
-      dueAt: hoursFromNow(9), source: "system", requires: ["settlements:view"],
-    }),
-  ];
-
-  return { loads, events, documents, drivers, customers, needsYou: items };
+  return { loads, events, documents, drivers, customers, needsYou: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -352,70 +221,7 @@ function meridian(): OrgData {
     },
   ]);
 
-  const ld = (ref: string) => loads.find((l) => l.reference === ref)!;
-
-  const items: NeedsYouItem[] = [
-    needsYou(org, {
-      category: "truck_going_empty", severity: "critical",
-      title: "B-04 has been empty for 6 hours in Newark",
-      reason: "Hannah Boyd went empty at 06:10 with nothing booked. Ridgeway's minimum is $1.00/mi within 25 miles deadhead.",
-      detail: "Newark is a strong outbound market this morning; 4 candidate loads matched on the last sweep.",
-      entity: { kind: "truck", id: TRUCK_IDS.mdB04, label: "B-04 · Ridgeway Carriers · Newark, NJ", href: "/fleet/trucks" },
-      recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(-1), source: "system", requires: ["trucks:view"],
-    }),
-    needsYou(org, {
-      category: "truck_going_empty", severity: "high",
-      title: "A-18 is empty in Baltimore",
-      reason: "Grace Lindqvist delivered an hour ago. No next assignment and no outreach logged.",
-      entity: { kind: "truck", id: TRUCK_IDS.mdA18, label: "A-18 · Baxter Transit LLC · Baltimore, MD", href: "/fleet/trucks" },
-      recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(2), source: "system", requires: ["trucks:view"],
-    }),
-    needsYou(org, {
-      category: "rate_con_verification", severity: "high",
-      title: "Keystone rate con needs verification",
-      reason: "Pickup address extracted with low confidence and the appointment time is ambiguous (14:00 vs 04:00).",
-      entity: { kind: "load", id: ld("MD-9050").id, label: "MD-9050 · Baltimore, MD → Raleigh, NC", href: "/loads" },
-      recommendedAction: { kind: "verify", label: "Open verification workspace", requires: ["loads:edit"], deferred: true },
-      dueAt: hoursFromNow(4), source: "ocr", requires: ["loads:view"],
-    }),
-    needsYou(org, {
-      category: "status_confirmation", severity: "high",
-      title: "C-31 has not confirmed pickup",
-      reason: "Luis Carrera is not connected to Telegram and the Richmond pickup was 4 hours ago.",
-      detail: "No ELD on this unit. Confirmation has to come by phone.",
-      entity: { kind: "driver", id: "drv_md_03", label: "Luis Carrera · C-31", href: "/people/drivers" },
-      recommendedAction: { kind: "contact_driver", label: "Call the driver", requires: ["drivers:view"] },
-      dueAt: hoursFromNow(-1), source: "system", requires: ["drivers:view"],
-    }),
-    needsYou(org, {
-      category: "unassigned_load", severity: "medium",
-      title: "MD-9051 picks up in 11 hours with no truck",
-      reason: "Newark pickup. B-04 is sitting empty 4 miles away and matches the equipment.",
-      entity: { kind: "load", id: ld("MD-9051").id, label: "MD-9051 · Newark, NJ → Boston, MA", href: "/loads" },
-      recommendedAction: { kind: "assign_load", label: "Assign B-04", requires: ["loads:assign"], deferred: true },
-      dueAt: hoursFromNow(11), source: "system", requires: ["loads:view"],
-    }),
-    needsYou(org, {
-      category: "missing_document", severity: "medium",
-      title: "BOL not uploaded for MD-9038",
-      reason: "Loaded 4 hours ago in Richmond. Harbor Point requires the BOL at pickup.",
-      entity: { kind: "load", id: ld("MD-9038").id, label: "MD-9038 · Richmond, VA → Charlotte, NC", href: "/loads" },
-      recommendedAction: { kind: "request_document", label: "Request BOL", requires: ["documents:view"] },
-      dueAt: hoursFromNow(2), source: "system", requires: ["documents:view"],
-    }),
-    needsYou(org, {
-      category: "customer_response", severity: "low",
-      title: "Keystone asked for a Pittsburgh update",
-      reason: "Alan Pike emailed 2 hours ago asking for an ETA on MD-9042.",
-      entity: { kind: "customer", id: "cus_md_keystone", label: "Keystone Brokerage", href: "/customers" },
-      recommendedAction: { kind: "contact_customer", label: "Send an ETA update", requires: ["customers:view"] },
-      dueAt: hoursFromNow(3), source: "manual", requires: ["customers:view"],
-    }),
-  ];
-
-  return { loads, events, documents, drivers, customers, needsYou: items };
+  return { loads, events, documents, drivers, customers, needsYou: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,44 +280,7 @@ function cascade(): OrgData {
     },
   ]);
 
-  const ld = (ref: string) => loads.find((l) => l.reference === ref)!;
-
-  const items: NeedsYouItem[] = [
-    needsYou(org, {
-      category: "status_confirmation", severity: "high",
-      title: "Confirm your arrival in Eugene",
-      reason: "You are due at the Eugene receiver in about 2 hours. Mark arrived when you are on site.",
-      entity: { kind: "load", id: ld("CS-3318").id, label: "CS-3318 · Portland, OR → Eugene, OR", href: "/driver/loads" },
-      recommendedAction: { kind: "confirm_status", label: "Open the load", requires: ["loads:status:update"], deferred: true },
-      dueAt: hoursFromNow(2), source: "system", requires: ["loads:view"],
-    }),
-    needsYou(org, {
-      category: "unassigned_load", severity: "high",
-      title: "CS-3321 is waiting for your acceptance",
-      reason: "Dispatch offered the Eugene → Boise run. Cascade requires driver consent before dispatch.",
-      entity: { kind: "load", id: ld("CS-3321").id, label: "CS-3321 · Eugene, OR → Boise, ID", href: "/driver/loads" },
-      recommendedAction: { kind: "confirm_status", label: "Accept or decline", requires: ["loads:status:update"], deferred: true },
-      dueAt: hoursFromNow(4), source: "telegram", requires: ["loads:view"],
-    }),
-    needsYou(org, {
-      category: "missing_document", severity: "medium",
-      title: "POD needed for CS-3309",
-      reason: "Delivered three days ago in Portland. The POD photo has not come through.",
-      entity: { kind: "load", id: ld("CS-3309").id, label: "CS-3309 · Seattle, WA → Portland, OR", href: "/driver/loads" },
-      recommendedAction: { kind: "request_document", label: "Upload the POD", requires: ["documents:upload"], deferred: true },
-      dueAt: hoursFromNow(10), source: "system", requires: ["documents:view"],
-    }),
-    needsYou(org, {
-      category: "truck_going_empty", severity: "medium",
-      title: "Unit 47 empty in Portland",
-      reason: "Owen Fitz has been available for 9 hours with nothing booked.",
-      entity: { kind: "truck", id: TRUCK_IDS.cs47, label: "Unit 47 · Sprinter · Portland, OR", href: "/fleet/trucks" },
-      recommendedAction: { kind: "start_search", label: "Start assisted load search", requires: ["loads:view"], deferred: true },
-      dueAt: hoursFromNow(3), source: "system", requires: ["trucks:view"],
-    }),
-  ];
-
-  return { loads, events, documents, drivers, customers, needsYou: items };
+  return { loads, events, documents, drivers, customers, needsYou: [] };
 }
 
 /** A newly created organization that has not booked anything yet. */
