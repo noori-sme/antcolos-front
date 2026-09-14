@@ -11,8 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   CONNECTION_IS_PLANNED, CONNECTION_LABEL, DRAFT_STATUS_LABEL, FACTOR_DESCRIPTION,
   FACTOR_LABEL, SOURCE_LABEL,
-  RATECON_STATUS_LABEL,
-  type BookingRecord, type LearningSummary, type Listing, type RankingFactorKey,
+  RATECON_STATUS_LABEL, UNARGUABLE_CHECKS,
+  type BookingRecord, type MatchWithListing, type LearningSummary, type Listing, type RankingFactorKey,
   type RankingPreferences, type RateConWorkflow,
 } from "@/types";
 import { money } from "@/lib/utils/format";
@@ -23,11 +23,12 @@ import { dismissMatch, restoreMatch, shortlistMatch } from "@/lib/api/mock/oppor
 import { approveDraft, cancelDraft } from "@/lib/api/mock/outreach-drafts";
 import { useMtLoopContext } from "@/features/mt-loop/use-mt-loop";
 import { MatchCard } from "./match-card";
-import { DraftReview } from "./opportunities-panel";
+import { DraftReview, driverClear } from "./opportunities-panel";
 import { useOpportunityInbox } from "./use-opportunities";
 import { useOpportunityRefresh } from "./use-opportunity-refresh";
 import { NegotiationPanel } from "./negotiation-panel";
-import { canOpen, openNegotiation } from "@/lib/api/mock/negotiation";
+import { openNegotiation } from "@/lib/api/mock/negotiation";
+import { sendOpportunityToDriver } from "@/lib/api/mock/driver-review";
 
 /**
  * One inbox for every source.
@@ -58,6 +59,8 @@ export function OpportunityInboxScreen() {
     if (!outcome) setError("Something went wrong. Nothing was changed.");
     else if (outcome.status === "not_permitted") setError("You are not allowed to do that.");
     else if (outcome.status === "needs_reason") setError("That needs a reason.");
+    else if (outcome.status === "no_driver") setError("There is no driver on this truck to send it to.");
+    else if (outcome.status === "undeliverable") setError("The driver's side did not take it.");
     void query.refetch();
     refreshWorkspace();
   }
@@ -94,16 +97,40 @@ export function OpportunityInboxScreen() {
   const openDraft = s.drafts.find((d) => d.draftId === openDraftId);
 
   /** The same gate the service uses, so the button and the rule agree. */
-  function ask(matchId: string): { onAskForIt?: () => void; askBlockedBecause?: string } {
+  /**
+   * What this row offers, read from the row.
+   *
+   * Everything here comes off the data the service already resolved. Asking a
+   * module during render is what made this note go stale: the card's props had
+   * not changed, so nothing re-rendered when the driver answered.
+   */
+  function ask(row: MatchWithListing) {
     if (!ctx) return {};
-    const gate = canOpen(matchId, ctx);
-    if (gate.status === "ok") {
-      return { onAskForIt: () => void act(() => openNegotiation(matchId, ctx)) };
+    const matchId = row.match.matchId;
+    const driver = row.driver;
+    const negotiable = row.match.status !== "closed_listing_gone"
+      && row.match.status !== "booked"
+      && row.listing.status === "open";
+
+    const unarguable = row.match.checks.filter(
+      (c) => c.outcome === "fail" && UNARGUABLE_CHECKS.includes(c.key),
+    );
+    if (unarguable.length > 0) {
+      return { askBlockedBecause: `No conversation will fix this: ${unarguable.map((c) => c.detail).join(" ")}` };
     }
-    if (gate.status === "unarguable") {
-      return { askBlockedBecause: `No conversation will fix this: ${gate.reasons.join(" ")}` };
-    }
-    return {};
+
+    const send = driver?.canSend && negotiable
+      ? { onSendToDriver: () => void act(() => sendOpportunityToDriver(matchId, ctx)) }
+      : {};
+    const blockedByDriver = Boolean(driver && !driverClear(driver));
+
+    return {
+      ...send,
+      onAskForIt: negotiable && !blockedByDriver
+        ? () => void act(() => openNegotiation(matchId, ctx))
+        : undefined,
+      driverNote: driver?.note,
+    };
   }
 
   return (
@@ -203,7 +230,7 @@ export function OpportunityInboxScreen() {
                       onDismiss={(reason) => void act(() => dismissMatch(row.match.matchId, reason, ctx!))}
                       onRestore={() => void act(() => restoreMatch(row.match.matchId, ctx!))}
                       onOpenDraft={setOpenDraftId}
-                      {...ask(row.match.matchId)}
+                      {...ask(row)}
                     />
                   ))}
                 </ul>
@@ -225,7 +252,7 @@ export function OpportunityInboxScreen() {
                           onDismiss={(reason) => void act(() => dismissMatch(row.match.matchId, reason, ctx!))}
                           onRestore={() => void act(() => restoreMatch(row.match.matchId, ctx!))}
                           onOpenDraft={setOpenDraftId}
-                          {...ask(row.match.matchId)}
+                          {...ask(row)}
                         />
                       ))}
                     </ul>

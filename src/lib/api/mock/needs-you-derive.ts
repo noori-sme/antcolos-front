@@ -23,6 +23,7 @@ import { openNegotiations } from "./negotiation";
 import { bookingsForWorkspace } from "./booking";
 import { threadsFor } from "./communications";
 import { progressOf, rateConsFor } from "./rate-confirmation";
+import { reviewsFor } from "./driver-review";
 import { driversForWorkspaceSync, driverDocumentProblems } from "./driver-registry";
 import { nowIso } from "./time";
 
@@ -1211,6 +1212,86 @@ function rateConRules(ctx: DeriveContext): Derived[] {
   return out;
 }
 
+/**
+ * Opportunities sitting with a driver.
+ *
+ * The most easily forgotten thing in the whole module: a dispatcher sends a
+ * load to a driver, moves on to the next truck, and neither of them comes back
+ * to it. The load goes to somebody else and nobody notices until the board is
+ * empty. Every one of these clears by itself the moment the driver answers.
+ */
+function driverReviewRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("loads:view")) return [];
+  const out: Derived[] = [];
+
+  for (const review of reviewsFor(ctx as MtLoopContext)) {
+    if (review.status === "withdrawn" || review.status === "approved") continue;
+
+    const common = {
+      entity: {
+        kind: "driver_review" as const,
+        id: review.reviewId,
+        label: `${review.driverName} · unit ${review.truckUnit}`,
+        href: `/dispatch/trucks/${review.dispatchCycleId}`,
+      },
+      source: "system" as const,
+      requires: ["loads:view"] as PermissionKey[],
+    };
+
+    if (review.status === "waiting") {
+      const hours = (Date.now() - Date.parse(review.sentAt)) / 3_600_000;
+      out.push({
+        ...common,
+        key: `driver-review-${review.reviewId}`,
+        category: "driver_review_waiting",
+        severity: hours >= 2 ? "high" : "medium",
+        title: `${review.driverName} has not answered about unit ${review.truckUnit}`,
+        reason: `${review.sent.originCity} → ${review.sent.destinationCity} was sent for their approval. Nobody may negotiate it until they answer.`,
+        detail: review.sent.note,
+        recommendedAction: {
+          kind: "chase_driver", label: "Chase them", requires: ["loads:view"],
+        },
+        dueAt: review.sent.pickupAt,
+      });
+      continue;
+    }
+
+    const last = [...review.decisions].reverse().find((d) => d.comment);
+    if (review.status === "countered") {
+      out.push({
+        ...common,
+        key: `driver-countered-${review.reviewId}`,
+        category: "driver_countered",
+        severity: "high",
+        title: `${review.driverName} will take unit ${review.truckUnit}'s load at a different number`,
+        reason: last?.comment ?? "They countered without saying why.",
+        recommendedAction: {
+          kind: "answer_broker", label: "Go and negotiate it", requires: ["loads:view"],
+        },
+      });
+      continue;
+    }
+
+    // Declined or paused: the truck is still empty and nobody is working it.
+    out.push({
+      ...common,
+      key: `driver-blocked-${review.reviewId}`,
+      category: "driver_blocked",
+      severity: "high",
+      title: review.status === "declined"
+        ? `${review.driverName} declined unit ${review.truckUnit}'s load`
+        : `${review.driverName} has a question about unit ${review.truckUnit}'s load`,
+      reason: last?.comment
+        ?? (review.status === "declined" ? "No reason was recorded." : "No question was recorded."),
+      detail: "The truck is still empty and this load is not being worked.",
+      recommendedAction: {
+        kind: "chase_driver", label: "Answer them", requires: ["loads:view"],
+      },
+    });
+  }
+  return out;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Reconciliation                                                              */
 /* -------------------------------------------------------------------------- */
@@ -1236,6 +1317,7 @@ function derive(ctx: DeriveContext): Derived[] {
     items.push(...bookingRules(ctx));
     items.push(...messageRules(ctx));
     items.push(...rateConRules(ctx));
+    items.push(...driverReviewRules(ctx));
   }
   items.push(...loadRules(ctx));
 

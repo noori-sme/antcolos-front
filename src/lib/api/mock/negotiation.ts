@@ -5,6 +5,7 @@ import type {
 import { isNegotiationOpen, UNARGUABLE_CHECKS } from "@/types";
 import { listingById } from "./listing-registry";
 import { allMatches, matchById, truckMatchContext } from "./opportunity-matching";
+import { driverGate } from "./driver-review";
 import { mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
 
@@ -137,7 +138,9 @@ export type OpenBlock =
   | { status: "not_found" }
   | { status: "listing_gone" }
   | { status: "already_open"; negotiation: Negotiation }
-  | { status: "unarguable"; reasons: string[] };
+  | { status: "unarguable"; reasons: string[] }
+  /** The driver was asked and has not answered, or the carrier insists. */
+  | { status: "driver_first"; reason: string; reviewRequired: boolean };
 
 /**
  * Can a conversation about this match even be started?
@@ -170,6 +173,17 @@ export function canOpen(matchId: string, ctx: MtLoopContext): OpenBlock {
   if (unarguable.length > 0) {
     return { status: "unarguable", reasons: unarguable.map((c) => c.detail) };
   }
+
+  // The driver comes LAST, after the things no conversation can fix. A driver
+  // should not be asked about a load the truck cannot legally take.
+  const gate = driverGate(matchId, ctx);
+  if (!gate.clear) {
+    return {
+      status: "driver_first",
+      reason: gate.reason ?? "The driver has to see this first.",
+      reviewRequired: gate.reviewRequired,
+    };
+  }
   return { status: "ok" };
 }
 
@@ -180,6 +194,7 @@ export type NegotiationOutcome =
   | { status: "listing_gone" }
   | { status: "already_open"; negotiation: Negotiation }
   | { status: "unarguable"; reasons: string[] }
+  | { status: "driver_first"; reason: string; reviewRequired: boolean }
   | { status: "needs_reason" }
   | { status: "closed" };
 

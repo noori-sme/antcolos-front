@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
  */
 export function MatchCard({
   row, rank, busy, onShortlist, onDismiss, onRestore, onOpenDraft, onAskForIt,
-  askBlockedBecause,
+  askBlockedBecause, onSendToDriver, driverNote,
 }: {
   row: MatchWithListing;
   /** 1-based place in the short list. Absent for everything below it. */
@@ -46,6 +46,10 @@ export function MatchCard({
    * equipment, and a greyed-out control does not say that.
    */
   askBlockedBecause?: string;
+  /** Put this load in front of the driver before anybody negotiates it. */
+  onSendToDriver?: () => void;
+  /** Where the driver review has got to, or why the load is waiting on one. */
+  driverNote?: string;
 }) {
   const [showChecks, setShowChecks] = useState(false);
   const [dismissing, setDismissing] = useState(false);
@@ -149,6 +153,9 @@ export function MatchCard({
               {askBlockedBecause}
             </p>
           ) : null}
+          {driverNote ? (
+            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-primary">{driverNote}</p>
+          ) : null}
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -168,6 +175,11 @@ export function MatchCard({
             {!gone && match.status !== "dismissed" && match.status !== "booked" ? (
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDismissing(true)}>
                 No
+              </Button>
+            ) : null}
+            {onSendToDriver ? (
+              <Button variant="secondary" size="sm" disabled={busy} onClick={onSendToDriver}>
+                Send to driver
               </Button>
             ) : null}
             {onAskForIt ? (

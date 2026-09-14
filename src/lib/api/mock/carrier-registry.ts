@@ -112,6 +112,7 @@ function buildFixtures(): CarrierProfile[] {
         rule("minimum_rate_per_mile", "At least $2.10/mi", "Northline will not run below $2.10 per loaded mile on any lane.", { number: 210 }),
         rule("max_deadhead_miles", "Deadhead 150 mi or less", "Nothing further than 150 empty miles to a pickup without the owner agreeing first.", { number: 150 }),
         rule("driver_consent_required", "Driver must accept", "Every load is offered to the driver and dispatched only once they accept.", {}),
+        rule("driver_review_required", "Driver reviews first", "Northline drivers see a load and approve it before anybody negotiates on it.", {}),
         rule("no_hazmat", "No hazmat", "No hazardous materials on any unit, regardless of endorsement.", {}),
         rule("refused_states", "Not into NY or NYC", "Northline does not run into New York City or anywhere in New York state.", { list: ["NY"] }),
         rule("broker_credit_minimum", "Broker credit 90 or better", "Brokers below a 90 credit score need the owner's approval before booking.", { number: 90, blocking: false }),

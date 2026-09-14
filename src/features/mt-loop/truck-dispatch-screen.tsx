@@ -25,6 +25,7 @@ import { useTruckOpportunities } from "@/features/opportunities/use-opportunitie
 import { useOpportunityRefresh } from "@/features/opportunities/use-opportunity-refresh";
 import { NegotiationPanel } from "@/features/opportunities/negotiation-panel";
 import { CommunicationsPanel } from "@/features/communications/communications-panel";
+import { DriverReviewPanel } from "@/features/driver-review/driver-review-panel";
 import { RateConAwaiting, RateConSummary } from "@/features/rate-confirmations/ratecon-panel";
 import { useMtLoopContext } from "./use-mt-loop";
 import { useTruckDispatchWorkspace } from "./use-truck-dispatch";
@@ -138,6 +139,17 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
             top={opportunities.data?.top ?? []}
             rest={opportunities.data?.rest ?? []}
             drafts={opportunities.data?.drafts ?? []}
+            ctx={ctx}
+            onChanged={refreshEverything}
+          />
+          {/* Between the loads and the brokers, because that is where it sits
+              in the work: the driver is asked about a load before anybody
+              talks to a broker about it. */}
+          <DriverReviewPanel
+            reviews={opportunities.data?.driverReviews ?? []}
+            policies={opportunities.data?.driverVisibility ?? []}
+            carrierOrganizationId={w.carrier?.organizationId}
+            carrierName={w.carrier?.displayName}
             ctx={ctx}
             onChanged={refreshEverything}
           />

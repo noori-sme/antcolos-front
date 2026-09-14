@@ -59,7 +59,13 @@ export type NeedsYouCategory =
   /** A rate confirmation disagrees with what was booked. */
   | "ratecon_disagrees"
   /** A booked load with no rate confirmation at all. */
-  | "ratecon_missing";
+  | "ratecon_missing"
+  /** An opportunity is sitting with a driver who has not answered. */
+  | "driver_review_waiting"
+  /** The driver said no, or wants something answered first. */
+  | "driver_blocked"
+  /** The driver will take it, at a different number. */
+  | "driver_countered";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
@@ -82,7 +88,9 @@ export type NeedsYouEntityKind =
   /** One prepared message to a broker, in a conversation. */
   | "message"
   /** A rate confirmation being checked. */
-  | "rate_confirmation";
+  | "rate_confirmation"
+  /** An opportunity sent to a driver for review. */
+  | "driver_review";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -114,7 +122,9 @@ export type NeedsYouActionKind =
   /** Read a prepared message and decide whether it goes. */
   | "read_message"
   /** Check a rate confirmation against what was booked. */
-  | "check_ratecon";
+  | "check_ratecon"
+  /** Chase, or answer, a driver who has the opportunity. */
+  | "chase_driver";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -215,6 +225,9 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   ratecon_waiting: "Rate confirmation to check",
   ratecon_disagrees: "Rate confirmation disagrees",
   ratecon_missing: "No rate confirmation yet",
+  driver_review_waiting: "Waiting on the driver",
+  driver_blocked: "Driver said no",
+  driver_countered: "Driver countered",
 };
 
 /**

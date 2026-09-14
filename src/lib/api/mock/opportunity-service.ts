@@ -1,6 +1,7 @@
 import type {
   BookingRecord, LearningSummary, Listing, MatchWithListing, NegotiationSummary,
-  OutreachDraft, RankingPreferences, RateConWorkflow, SearchSession,
+  DriverReview, DriverVisibilityPolicy, OutreachDraft, RankingPreferences,
+  RateConWorkflow, SearchSession,
 } from "@/types";
 import { expireStaleListings, listingsFor } from "./listing-registry";
 import {
@@ -20,13 +21,17 @@ import {
   openNegotiations, summarizeAll,
 } from "./negotiation";
 import { threadsFor } from "./communications";
+import {
+  closeReviewsForListing, driverGate, reviewForMatch, reviewsFor, reviewsForCycle,
+} from "./driver-review";
 import { rateConForCycle, rateConsFor } from "./rate-confirmation";
 import {
   bookAndStandDown, bookingForCycle, bookingsForWorkspace, type CloseoutResult,
 } from "./booking";
 import { learningFor, rankingPreferences } from "./ranking";
 import { sessionForCycle, sessionsFor } from "./search-session";
-import { openLoopsFor, type MtLoopContext } from "./mt-loop";
+import { mtLoopById, openLoopsFor, type MtLoopContext } from "./mt-loop";
+import { policiesFor } from "./driver-visibility";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -74,6 +79,8 @@ export interface OpportunityInbox {
   messagesWaiting: number;
   /** Rate confirmations still waiting to be checked and signed. */
   rateConsWaiting: number;
+  /** Opportunities sent to a driver that nobody has answered. */
+  driverReviewsWaiting: number;
   /** Every rate confirmation in the workspace, newest first. */
   rateCons: RateConWorkflow[];
   ranking: RankingPreferences;
@@ -136,6 +143,7 @@ export function opportunityInboxSync(ctx: MtLoopContext): OpportunityInbox {
   reconcileMessages(ctx);
   const waiting = messagesWaitingCount(ctx);
   const rateCons = rateConsFor(ctx);
+  const driverReviewsWaiting = reviewsFor(ctx).filter((r) => r.status === "waiting").length;
   const rateConsWaiting = rateCons.filter(
     (w) => w.status === "reviewing" || w.status === "ready_to_confirm",
   ).length;
@@ -164,6 +172,7 @@ export function opportunityInboxSync(ctx: MtLoopContext): OpportunityInbox {
     bookings,
     messagesWaiting: waiting,
     rateConsWaiting,
+    driverReviewsWaiting,
     rateCons,
     ranking: rankingPreferences(ctx.organizationId),
     learning: learningFor(ctx.organizationId),
@@ -211,6 +220,17 @@ export interface TruckOpportunities {
   communications: CycleCommunications;
   /** The rate confirmation for this cycle's load, once one has arrived. */
   rateCon?: RateConWorkflow;
+  /** Opportunities sent to this truck's driver, newest first. */
+  driverReviews: DriverReview[];
+  /**
+   * What this carrier shows its drivers, by pay model.
+   *
+   * Carried in the payload rather than read by the editor while it renders:
+   * a screen that reads module state mid-render does not re-render when that
+   * state changes, and a settings control that ignores its own clicks is worse
+   * than no control.
+   */
+  driverVisibility: DriverVisibilityPolicy[];
   ranking: RankingPreferences;
   counts: { considered: number; eligible: number; ineligible: number; shortlisted: number };
 }
@@ -239,6 +259,8 @@ export function truckOpportunitiesSync(
     booking: bookingForCycle(dispatchCycleId, ctx),
     communications: cycleCommunicationsSync(dispatchCycleId, ctx),
     rateCon: rateConForCycle(dispatchCycleId, ctx),
+    driverReviews: reviewsForCycle(dispatchCycleId, ctx),
+    driverVisibility: carrierOf(dispatchCycleId, ctx) ? policiesFor(carrierOf(dispatchCycleId, ctx)!) : [],
     ranking: rankingPreferences(ctx.organizationId),
     counts: {
       considered: matches.length,
@@ -277,10 +299,48 @@ function withBookings(
   });
 }
 
+/**
+ * Everything a screen needs about a row, resolved here rather than there.
+ *
+ * The draft that covers it and the driver review on it are both things a match
+ * card shows, and both live in other services. Resolving them while a component
+ * renders would make the card depend on module state React cannot see — and a
+ * memoized card would then keep showing a driver's answer from before they gave
+ * it. So they are attached to the data, once, on the way out.
+ */
 function attachDrafts(rows: MatchWithListing[], ctx: MtLoopContext): MatchWithListing[] {
   return rankMatches(
-    rows.map((r) => ({ ...r, draftId: draftIdForMatch(r.match.matchId, ctx) })),
+    rows.map((r) => {
+      const gate = driverGate(r.match.matchId, ctx);
+      const review = reviewForMatch(r.match.matchId, ctx);
+      const resendable = !review || review.status === "withdrawn" || review.status === "declined";
+      return {
+        ...r,
+        draftId: draftIdForMatch(r.match.matchId, ctx),
+        driver: {
+          hasDriver: gate.hasDriver,
+          reviewRequired: gate.reviewRequired,
+          canSend: gate.hasDriver && resendable && r.listing.status === "open",
+          status: gate.status,
+          driverName: gate.driverName,
+          note: gate.reason ?? driverReadout(gate.status, gate.driverName),
+        },
+      };
+    }),
   );
+}
+
+/** Whose authority a cycle runs under, for the policies that belong to them. */
+function carrierOf(dispatchCycleId: string, ctx: MtLoopContext): string | undefined {
+  return mtLoopById(dispatchCycleId, ctx)?.carrierOrganizationId;
+}
+
+/** Where a finished review got to, in one line, for the load it is about. */
+function driverReadout(status: string | undefined, driverName?: string): string | undefined {
+  const who = driverName ?? "The driver";
+  if (status === "approved") return `${who} approved this.`;
+  if (status === "countered") return `${who} will take it, at their own number.`;
+  return undefined;
 }
 
 function messagesWaitingCount(ctx: MtLoopContext): number {
@@ -333,11 +393,18 @@ export function markTakenElsewhere(
   listingId: string,
   ctx: MtLoopContext,
   reason: string,
-): { closedMatchIds: string[]; supersededDraftIds: string[]; closedNegotiationIds: string[] } {
+): {
+  closedMatchIds: string[];
+  supersededDraftIds: string[];
+  closedNegotiationIds: string[];
+  closedReviewIds: string[];
+} {
   const closedMatchIds = listingTakenElsewhere(listingId, ctx, reason);
   const supersededDraftIds = supersedeDraftsForListing(ctx.organizationId, listingId, reason);
   // A conversation about a load that is gone is the worst of the three to
   // leave open: it is the one where somebody is still typing.
   const closedNegotiationIds = closeNegotiationsForListing(ctx.organizationId, listingId, reason);
-  return { closedMatchIds, supersededDraftIds, closedNegotiationIds };
+  // And a driver still deciding about it is owed the same courtesy.
+  const closedReviewIds = closeReviewsForListing(ctx.organizationId, listingId, reason);
+  return { closedMatchIds, supersededDraftIds, closedNegotiationIds, closedReviewIds };
 }
