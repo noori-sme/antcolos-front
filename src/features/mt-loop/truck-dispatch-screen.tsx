@@ -23,6 +23,7 @@ import { SearchPanel } from "@/features/opportunities/search-panel";
 import { OpportunitiesPanel } from "@/features/opportunities/opportunities-panel";
 import { useTruckOpportunities } from "@/features/opportunities/use-opportunities";
 import { useOpportunityRefresh } from "@/features/opportunities/use-opportunity-refresh";
+import { NegotiationPanel } from "@/features/opportunities/negotiation-panel";
 import { useMtLoopContext } from "./use-mt-loop";
 import { useTruckDispatchWorkspace } from "./use-truck-dispatch";
 
@@ -135,6 +136,14 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
             top={opportunities.data?.top ?? []}
             rest={opportunities.data?.rest ?? []}
             drafts={opportunities.data?.drafts ?? []}
+            ctx={ctx}
+            onChanged={refreshEverything}
+          />
+          {/* Below the loads, because a conversation is about a load somebody
+              picked out above it — and once one is open, it is the thing on
+              this page that is actually waiting for an answer. */}
+          <NegotiationPanel
+            negotiations={opportunities.data?.negotiations ?? []}
             ctx={ctx}
             onChanged={refreshEverything}
           />

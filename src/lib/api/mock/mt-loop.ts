@@ -675,6 +675,34 @@ export function mtLoopById(loopId: string, ctx: MtLoopContext): MtLoop | undefin
   return loop;
 }
 
+/**
+ * A load was booked onto this cycle.
+ *
+ * Lives here rather than in the booking service because a loop's status and its
+ * history belong to the loop: every other transition in this module goes
+ * through `setStatus`, and letting one caller set `status = "covered"` by hand
+ * is how a history ends up with a gap in it. The booking service owns the load;
+ * this owns what that does to the cycle.
+ *
+ * The loop id does not change. It is the same cycle it was when the truck went
+ * empty, and it stays that way until the load is delivered and released.
+ */
+export function markLoopBooked(loop: MtLoop, opts: {
+  loadId: string;
+  loadReference: string;
+  actorMembershipId?: string;
+  actorName: string;
+  note?: string;
+}) {
+  loop.loadId = opts.loadId;
+  loop.loadReference = opts.loadReference;
+  setStatus(loop, "covered", "load_booked", {
+    actorMembershipId: opts.actorMembershipId,
+    actorName: opts.actorName,
+    note: opts.note,
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* Mutations                                                                   */
 /* -------------------------------------------------------------------------- */

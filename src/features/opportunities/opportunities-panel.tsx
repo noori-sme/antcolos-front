@@ -8,6 +8,7 @@ import type { MatchWithListing, OutreachDraft } from "@/types";
 import { DRAFT_STATUS_LABEL } from "@/types";
 import { dismissMatch, restoreMatch, shortlistMatch } from "@/lib/api/mock/opportunity-matching";
 import { approveDraft, cancelDraft } from "@/lib/api/mock/outreach-drafts";
+import { canOpen, openNegotiation } from "@/lib/api/mock/negotiation";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
 import { MatchCard } from "./match-card";
 
@@ -47,6 +48,26 @@ export function OpportunitiesPanel({
   }
 
   const openDraft = drafts.find((d) => d.draftId === openDraftId);
+
+  /**
+   * Whether this load can be argued about, and if not, why not.
+   *
+   * Asked of the service rather than guessed from the match's status, so the
+   * button and the rule can never disagree: the same function decides both.
+   */
+  function ask(matchId: string): { onAskForIt?: () => void; askBlockedBecause?: string } {
+    if (!ctx) return {};
+    const gate = canOpen(matchId, ctx);
+    if (gate.status === "ok") {
+      return { onAskForIt: () => void act(() => openNegotiation(matchId, ctx)) };
+    }
+    if (gate.status === "unarguable") {
+      return {
+        askBlockedBecause: `No conversation will fix this: ${gate.reasons.join(" ")}`,
+      };
+    }
+    return {};
+  }
 
   return (
     <section className="rounded-lg border border-border bg-surface p-4 shadow-e1">
@@ -101,6 +122,7 @@ export function OpportunitiesPanel({
                     onDismiss={(reason) => void act(() => dismissMatch(row.match.matchId, reason, ctx!))}
                     onRestore={() => void act(() => restoreMatch(row.match.matchId, ctx!))}
                     onOpenDraft={setOpenDraftId}
+                    {...ask(row.match.matchId)}
                   />
                 ))}
               </ul>
@@ -132,6 +154,7 @@ export function OpportunitiesPanel({
                         onDismiss={(reason) => void act(() => dismissMatch(row.match.matchId, reason, ctx!))}
                         onRestore={() => void act(() => restoreMatch(row.match.matchId, ctx!))}
                         onOpenDraft={setOpenDraftId}
+                        {...ask(row.match.matchId)}
                       />
                     ))}
                   </ul>

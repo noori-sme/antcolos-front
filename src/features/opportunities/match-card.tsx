@@ -25,7 +25,8 @@ import { cn } from "@/lib/utils";
  * ring the carrier about the authority.
  */
 export function MatchCard({
-  row, rank, busy, onShortlist, onDismiss, onRestore, onOpenDraft,
+  row, rank, busy, onShortlist, onDismiss, onRestore, onOpenDraft, onAskForIt,
+  askBlockedBecause,
 }: {
   row: MatchWithListing;
   /** 1-based place in the short list. Absent for everything below it. */
@@ -35,6 +36,16 @@ export function MatchCard({
   onDismiss: (reason: string) => void;
   onRestore: () => void;
   onOpenDraft?: (draftId: string) => void;
+  /** Start a conversation with the broker. Absent where one cannot be started. */
+  onAskForIt?: () => void;
+  /**
+   * Why there is no "Ask for it" button.
+   *
+   * Shown instead of the button rather than as a disabled one: a dispatcher
+   * needs to know that no phone call will fix a sprinter van being the wrong
+   * equipment, and a greyed-out control does not say that.
+   */
+  askBlockedBecause?: string;
 }) {
   const [showChecks, setShowChecks] = useState(false);
   const [dismissing, setDismissing] = useState(false);
@@ -133,6 +144,11 @@ export function MatchCard({
               {listing.closeReason ?? "This load has gone."}
             </p>
           ) : null}
+          {askBlockedBecause ? (
+            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-muted">
+              {askBlockedBecause}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -152,6 +168,11 @@ export function MatchCard({
             {!gone && match.status !== "dismissed" && match.status !== "booked" ? (
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDismissing(true)}>
                 No
+              </Button>
+            ) : null}
+            {onAskForIt ? (
+              <Button variant="primary" size="sm" disabled={busy} onClick={onAskForIt}>
+                Ask for it
               </Button>
             ) : null}
             {row.draftId && onOpenDraft ? (

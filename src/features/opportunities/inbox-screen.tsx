@@ -11,8 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   CONNECTION_IS_PLANNED, CONNECTION_LABEL, DRAFT_STATUS_LABEL, FACTOR_DESCRIPTION,
   FACTOR_LABEL, SOURCE_LABEL,
-  type LearningSummary, type Listing, type RankingFactorKey, type RankingPreferences,
+  type BookingRecord, type LearningSummary, type Listing, type RankingFactorKey,
+  type RankingPreferences,
 } from "@/types";
+import { money } from "@/lib/utils/format";
 import {
   applySuggestedWeights, resetRankingWeights, setRankingWeight,
 } from "@/lib/api/mock/ranking";
@@ -23,6 +25,8 @@ import { MatchCard } from "./match-card";
 import { DraftReview } from "./opportunities-panel";
 import { useOpportunityInbox } from "./use-opportunities";
 import { useOpportunityRefresh } from "./use-opportunity-refresh";
+import { NegotiationPanel } from "./negotiation-panel";
+import { canOpen, openNegotiation } from "@/lib/api/mock/negotiation";
 
 /**
  * One inbox for every source.
@@ -88,6 +92,19 @@ export function OpportunityInboxScreen() {
   const s = query.data;
   const openDraft = s.drafts.find((d) => d.draftId === openDraftId);
 
+  /** The same gate the service uses, so the button and the rule agree. */
+  function ask(matchId: string): { onAskForIt?: () => void; askBlockedBecause?: string } {
+    if (!ctx) return {};
+    const gate = canOpen(matchId, ctx);
+    if (gate.status === "ok") {
+      return { onAskForIt: () => void act(() => openNegotiation(matchId, ctx)) };
+    }
+    if (gate.status === "unarguable") {
+      return { askBlockedBecause: `No conversation will fix this: ${gate.reasons.join(" ")}` };
+    }
+    return {};
+  }
+
   return (
     <div className="space-y-section">
       <PageHeader
@@ -107,11 +124,19 @@ export function OpportunityInboxScreen() {
         </p>
       ) : null}
 
-      <section aria-label="Inbox overview" className="grid grid-cols-2 gap-stack xl:grid-cols-5">
+      <section aria-label="Inbox overview" className="grid grid-cols-2 gap-stack xl:grid-cols-6">
         <Tile label="Loads" value={s.counts.listings} hint={`${s.counts.duplicatesFolded} were the same load twice`} />
         <Tile label="Eligible" value={s.counts.eligible} hint="Pass every hard check" />
         <Tile label="Short-listed" value={s.counts.shortlisted} hint="You picked these out" />
         <Tile label="Drafts to read" value={s.counts.draftsWaiting} hint="Nothing is sent" tone={s.counts.draftsWaiting > 0 ? "warning" : "default"} />
+        <Tile
+          label="Brokers waiting on you"
+          value={s.counts.negotiationsWaitingOnYou}
+          hint={s.counts.agreedNotBooked > 0
+            ? `${s.counts.agreedNotBooked} agreed and not booked`
+            : "They answered and nobody replied"}
+          tone={s.counts.negotiationsWaitingOnYou > 0 || s.counts.agreedNotBooked > 0 ? "warning" : "default"}
+        />
         <Tile
           label="Trucks with nobody looking"
           value={s.counts.cyclesWithoutSearch}
@@ -169,6 +194,7 @@ export function OpportunityInboxScreen() {
                       onDismiss={(reason) => void act(() => dismissMatch(row.match.matchId, reason, ctx!))}
                       onRestore={() => void act(() => restoreMatch(row.match.matchId, ctx!))}
                       onOpenDraft={setOpenDraftId}
+                      {...ask(row.match.matchId)}
                     />
                   ))}
                 </ul>
@@ -190,6 +216,7 @@ export function OpportunityInboxScreen() {
                           onDismiss={(reason) => void act(() => dismissMatch(row.match.matchId, reason, ctx!))}
                           onRestore={() => void act(() => restoreMatch(row.match.matchId, ctx!))}
                           onOpenDraft={setOpenDraftId}
+                          {...ask(row.match.matchId)}
                         />
                       ))}
                     </ul>
@@ -198,6 +225,12 @@ export function OpportunityInboxScreen() {
               ) : null}
             </div>
           </section>
+
+          <NegotiationPanel
+            negotiations={s.negotiations}
+            ctx={ctx}
+            onChanged={() => { void query.refetch(); refreshWorkspace(); }}
+          />
 
           {openDraft ? (
             <section className="rounded-lg border border-border bg-surface p-4 shadow-e1">
@@ -217,6 +250,7 @@ export function OpportunityInboxScreen() {
             drafts={s.drafts}
             onOpen={setOpenDraftId}
           />
+          <BookedPanel bookings={s.bookings} />
           <SourcesPanel listings={s.listings} />
           <SearchesPanel sessions={s.sessions} />
         </div>
@@ -226,8 +260,9 @@ export function OpportunityInboxScreen() {
         No load board is connected. Everything here came from sample sources that behave like a
         market so the parts that are real — one listing per load however many sources have it, a
         separate match per truck, the ranking, the draft grouping, and standing the competition down
-        when a load goes — can be used and argued with. Negotiating, sending, rate confirmations and
-        booking are later milestones and none of them is built.
+        when a load goes — can be used and argued with. Conversations with brokers are recorded by
+        you or produced by the sample market, and every round says which. Sending mail, rate
+        confirmations and signing are later milestones and none of them is built.
       </p>
     </div>
   );
@@ -482,6 +517,51 @@ function SourcesPanel({ listings }: { listings: Listing[] }) {
           and folded into a single row, so nobody emails the same broker twice about it.
         </p>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * What actually came out of all this: the loads booked from this inbox.
+ *
+ * Kept on the inbox rather than only on each truck because a dispatcher's
+ * question at the end of a morning is "what did we cover", and answering it by
+ * opening six trucks in turn is not answering it.
+ */
+function BookedPanel({ bookings }: { bookings: BookingRecord[] }) {
+  return (
+    <section className="rounded-lg border border-border bg-surface p-4 shadow-e1">
+      <h2 className="text-[0.875rem] font-semibold text-fg">Booked from here</h2>
+      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+        Each one created a real load on the truck&apos;s own cycle.
+      </p>
+      {bookings.length === 0 ? (
+        <p className="mt-3 text-[0.75rem] text-fg-muted">Nothing has been booked yet.</p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {bookings.slice(0, 8).map((b) => (
+            <li key={b.bookingId} className="text-[0.8125rem]">
+              <span className="flex flex-wrap items-center gap-2 text-fg">
+                {b.loadReference}
+                <span className="text-[0.75rem] text-fg-muted">Unit {b.truckUnit}</span>
+                {b.consent === "pending" ? (
+                  <Badge tone="warning">Driver has not accepted</Badge>
+                ) : null}
+                {b.consent === "declined" ? (
+                  <Badge tone="danger">Driver declined</Badge>
+                ) : null}
+              </span>
+              <span className="mt-0.5 block text-[0.75rem] text-fg-subtle">
+                {money(b.agreedRateCents)} · {b.brokerName} · {b.bookedByName}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-[0.6875rem] leading-relaxed text-fg-subtle">
+        Brokers here are written exactly as the market gave them. Linking them to permanent Broker,
+        Shipper and Receiver profiles is that module&apos;s job, not this one&apos;s.
+      </p>
     </section>
   );
 }

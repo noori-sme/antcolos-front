@@ -19,6 +19,8 @@ import { allMatches } from "./opportunity-matching";
 import { carriersForWorkspaceSync } from "./carrier-registry";
 import { sessionForCycle } from "./search-session";
 import { draftsFor } from "./outreach-drafts";
+import { openNegotiations } from "./negotiation";
+import { bookingsForWorkspace } from "./booking";
 import { driversForWorkspaceSync, driverDocumentProblems } from "./driver-registry";
 import { nowIso } from "./time";
 
@@ -916,6 +918,168 @@ function opportunityRules(ctx: DeriveContext): Derived[] {
   return out;
 }
 
+/**
+ * A conversation with a broker that is waiting on us.
+ *
+ * The most time-sensitive thing in the whole module. A broker who has come back
+ * with a number and heard nothing for an hour gives the load to somebody else,
+ * and the dispatcher who opened the conversation is usually looking at a
+ * different screen by then.
+ */
+function negotiationRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("loads:view")) return [];
+  const out: Derived[] = [];
+
+  for (const negotiation of openNegotiations(ctx as MtLoopContext)) {
+    if (negotiation.status === "waiting_on_you") {
+      const hours = negotiation.offerExpiresAt
+        ? hoursUntil(negotiation.offerExpiresAt)
+        : undefined;
+      const expiring = hours !== undefined && hours <= 2;
+      out.push({
+        key: `negotiation-${negotiation.negotiationId}`,
+        category: expiring ? "offer_expiring" : "broker_replied",
+        severity: expiring ? "critical" : "high",
+        title: expiring
+          ? `${negotiation.brokerName}'s number on unit ${negotiation.truckUnit} lapses in ${Math.max(0, Math.round(hours))}h`
+          : `${negotiation.brokerName} answered about unit ${negotiation.truckUnit}`,
+        reason: negotiation.onTheTableCents !== undefined
+          ? `${money(negotiation.onTheTableCents)} is on the table. You asked ${money(negotiation.askedRateCents)}.`
+          : "They have come back to you and nobody has answered.",
+        detail: lastWord(negotiation),
+        entity: {
+          kind: "negotiation",
+          id: negotiation.negotiationId,
+          label: `${negotiation.brokerName} · unit ${negotiation.truckUnit}`,
+          href: "/dispatch/opportunities",
+        },
+        recommendedAction: {
+          kind: "answer_broker", label: "Answer them", requires: ["loads:view"],
+        },
+        dueAt: negotiation.offerExpiresAt,
+        source: "system",
+        requires: ["loads:view"],
+      });
+      continue;
+    }
+
+    if (negotiation.status === "agreed") {
+      out.push({
+        key: `agreed-${negotiation.negotiationId}`,
+        category: "agreed_not_booked",
+        severity: "high",
+        title: `${money(negotiation.agreedRateCents ?? 0)} agreed with ${negotiation.brokerName}, nothing booked`,
+        reason: `Unit ${negotiation.truckUnit} is still empty as far as the rest of Antcolos is concerned. Booking it is what creates the load.`,
+        detail: negotiation.belowFloorReason
+          ? `Agreed under ${negotiation.carrierName}'s floor. ${negotiation.belowFloorReason}`
+          : undefined,
+        entity: {
+          kind: "negotiation",
+          id: negotiation.negotiationId,
+          label: `${negotiation.brokerName} · unit ${negotiation.truckUnit}`,
+          href: "/dispatch/opportunities",
+        },
+        recommendedAction: {
+          kind: "book_load", label: "Book it", requires: ["loads:create"],
+        },
+        source: "system",
+        requires: ["loads:view"],
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * What a booked load is still waiting for.
+ *
+ * Two conditions, and they are different problems with different owners. A
+ * driver who has not accepted is a person to ring; a broker with no permanent
+ * profile is a record to link, and it stays raised because the profile system
+ * that owns that linking is not part of this workspace yet.
+ */
+function bookingRules(ctx: DeriveContext): Derived[] {
+  if (!ctx.permissions.has("loads:view")) return [];
+  const out: Derived[] = [];
+
+  for (const booking of bookingsForWorkspace(ctx as MtLoopContext)) {
+    if (booking.consent === "pending") {
+      out.push({
+        key: `consent-${booking.bookingId}`,
+        category: "driver_consent",
+        severity: "critical",
+        title: `${booking.driverName ?? "The driver"} has not accepted ${booking.loadReference}`,
+        reason: `${booking.truckUnit} is booked and the carrier requires the driver to accept before it is assigned.`,
+        entity: {
+          kind: "booking",
+          id: booking.bookingId,
+          label: `${booking.loadReference} · unit ${booking.truckUnit}`,
+          href: "/dispatch/opportunities",
+        },
+        recommendedAction: {
+          kind: "ask_driver", label: "Record their answer", requires: ["loads:create"],
+        },
+        source: "system",
+        requires: ["loads:view"],
+      });
+    }
+
+    if (booking.consent === "declined") {
+      out.push({
+        key: `declined-${booking.bookingId}`,
+        category: "driver_consent",
+        severity: "critical",
+        title: `${booking.driverName ?? "The driver"} declined ${booking.loadReference}`,
+        reason: `${booking.truckUnit} is committed to a broker and has nobody to drive it. The broker has to be told.`,
+        entity: {
+          kind: "booking",
+          id: booking.bookingId,
+          label: `${booking.loadReference} · unit ${booking.truckUnit}`,
+          href: "/dispatch/opportunities",
+        },
+        recommendedAction: {
+          kind: "contact_customer", label: "Ring the broker", requires: ["loads:view"],
+        },
+        source: "system",
+        requires: ["loads:view"],
+      });
+    }
+
+    if (!booking.brokerProfileLinked) {
+      out.push({
+        key: `broker-profile-${booking.bookingId}`,
+        category: "broker_profile_unlinked",
+        severity: "low",
+        title: `${booking.brokerName} on ${booking.loadReference} is not a saved profile yet`,
+        reason: "The load carries the name exactly as the market gave it. Linking it to the permanent broker record is a person's decision, not a guess.",
+        detail: "The Broker, Shipper and Receiver profiles are built in their own module and are not in this workspace yet.",
+        entity: {
+          kind: "booking",
+          id: booking.bookingId,
+          label: `${booking.brokerName} · ${booking.loadReference}`,
+          href: "/dispatch/opportunities",
+        },
+        recommendedAction: {
+          kind: "review", label: "Link the profile", requires: ["loads:view"], deferred: true,
+        },
+        source: "system",
+        requires: ["loads:view"],
+      });
+    }
+  }
+  return out;
+}
+
+/** The last thing anybody said, for the queue's one-line detail. */
+function lastWord(negotiation: { rounds: { note?: string; byName: string }[] }): string | undefined {
+  const last = [...negotiation.rounds].reverse().find((r) => r.note);
+  return last ? `${last.byName}: ${last.note}` : undefined;
+}
+
+const money = (cents: number) => `$${(cents / 100).toLocaleString("en-US", {
+  minimumFractionDigits: 0, maximumFractionDigits: 0,
+})}`;
+
 /* -------------------------------------------------------------------------- */
 /* Reconciliation                                                              */
 /* -------------------------------------------------------------------------- */
@@ -937,6 +1101,8 @@ function derive(ctx: DeriveContext): Derived[] {
     items.push(...searchRules(ctx, loops));
     items.push(...draftRules(ctx));
     items.push(...opportunityRules(ctx));
+    items.push(...negotiationRules(ctx));
+    items.push(...bookingRules(ctx));
   }
   items.push(...loadRules(ctx));
 
