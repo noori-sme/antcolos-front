@@ -1,7 +1,7 @@
 import type {
   Address, Cents, Contact, CurrencyCode, IsoDateTime, TimeZone,
 } from "./common";
-import type { DocumentRequirement } from "./document";
+import type { LoadDocumentRequirement } from "./document";
 import type { ActorRef } from "./user";
 
 /**
@@ -158,7 +158,7 @@ export interface Load {
   commodity?: string;
   temperatureF?: { min: number; max: number };
   /** Per-load, from the customer agreement — not a global rule. */
-  documentRequirements: DocumentRequirement[];
+  documentRequirements: LoadDocumentRequirement[];
   /** Omitted entirely unless the caller holds `rates:view`. */
   financials?: LoadFinancials;
   createdAt: IsoDateTime;
@@ -187,7 +187,7 @@ export function laneLabel(load: Load): string {
   return `${a.address.city}, ${a.address.state} → ${b.address.city}, ${b.address.state}`;
 }
 
-export function missingRequiredDocuments(load: Load): DocumentRequirement[] {
+export function missingRequiredDocuments(load: Load): LoadDocumentRequirement[] {
   return load.documentRequirements.filter(
     (r) => r.required && !r.satisfiedByDocumentId,
   );

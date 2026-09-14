@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Building2, ClipboardList, Container, FileText, Gauge,
-  Home, IdCard, Inbox, Link2, MailPlus, Package, Palette, Receipt, Route, ScrollText, Settings2,
+  Home, IdCard, Inbox, Layers, Link2, MailPlus, Package, Palette, Receipt, Route, ScrollText, Settings2,
   Shield, Truck, UserCircle, Users, UsersRound,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
@@ -35,6 +35,7 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Home", href: "/home", icon: Home, requires: [], primaryMobile: true },
       { label: "Needs You", href: "/needs-you", icon: Inbox, requires: [], primaryMobile: true, showsNeedsYouCount: true },
       { label: "Dispatch", href: "/dispatch", icon: Route, requires: ["loads:view", "loads:assign"], primaryMobile: true },
+      { label: "Opportunities", href: "/dispatch/opportunities", icon: Layers, requires: ["loads:view", "trucks:view"] },
       { label: "Loads", href: "/loads", icon: Package, requires: ["loads:view"], primaryMobile: true },
     ],
   },
@@ -51,7 +52,7 @@ export const PRODUCT_NAV: NavSection[] = [
     id: "business",
     label: "Business",
     items: [
-      { label: "Customers", href: "/customers", icon: Building2, requires: ["customers:view"] },
+      { label: "Directory", href: "/directory", icon: Building2, requires: ["customers:view"] },
       { label: "Documents", href: "/documents", icon: FileText, requires: ["documents:view"] },
       { label: "Settlements", href: "/finance/settlements", icon: Receipt, requires: ["settlements:view"] },
       { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, requires: ["invoices:view"] },

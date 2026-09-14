@@ -13,6 +13,12 @@ export function ctx(
 ): ServiceContext {
   return {
     organizationId,
+    // Required on ServiceContext since the Document Center landed: the
+    // workspace kind decides which document requirements exist, so it is never
+    // inferred. Tests that care about a dispatch or individual workspace pass
+    // their own through `overrides`.
+    organizationName: `Org ${organizationId}`,
+    workspaceKind: "carrier_organization",
     membershipId: `mem_${organizationId}_test`,
     permissions: new Set(permissions),
     scope: { loads: "all", financials: "all" },

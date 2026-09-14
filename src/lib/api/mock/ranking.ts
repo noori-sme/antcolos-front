@@ -1,0 +1,444 @@
+import type {
+  LearningSummary, Listing, OpportunityMatch, RankingFactorKey,
+  RankingPreferences,
+} from "@/types";
+
+/**
+ * ███ MOCK ONLY — NOT A BACKEND ███
+ *
+ * How opportunities are ordered, and what Antcolos is allowed to learn from it.
+ *
+ * Two things live here and they are kept strictly apart.
+ *
+ * The WEIGHTS are the dispatcher's. They ship with a sensible default, a person
+ * can move them, and the screen always says which of the two is in force. That
+ * matters more than the algorithm: a ranking somebody cannot argue with is a
+ * ranking they stop reading, and a dispatcher who cannot say "I care about
+ * getting him home more than the rate" will go back to sorting by rate in a
+ * spreadsheet.
+ *
+ * The LEARNING is Antcolos's, and it is deliberately hobbled. It watches which
+ * loads dispatchers actually pursue and which they throw away, and it turns
+ * that into a SUGGESTION — never an adjustment. Weights do not move under a
+ * person without them pressing something. A ranking that quietly drifts is the
+ * fastest way to lose the trust the first paragraph is about.
+ *
+ * What crosses the Antcolos boundary is spelled out in `SHARED_FIELDS` and
+ * `WITHHELD_FIELDS` below, in the data rather than in a policy document, so a
+ * test can assert it and a dispatcher can read it. The short version: a shape of
+ * a load and a yes or no. No workspace, no carrier, no broker, no person, no
+ * address, no credential — and nothing that could be joined back to any of them.
+ */
+
+const nowIso = () => new Date().toISOString();
+
+/* -------------------------------------------------------------------------- */
+/* Weights                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export const FACTOR_KEYS: RankingFactorKey[] = [
+  "rate", "profit", "deadhead", "home_time", "broker_quality", "lane_preference",
+];
+
+/**
+ * What Antcolos ranks by until somebody says otherwise.
+ *
+ * Rate and profit lead because that is what a dispatcher is paid on; deadhead
+ * is close behind because empty miles are the cost nobody bills for. Home time
+ * is weighted lower than it deserves on purpose — it is the one most likely to
+ * be adjusted UP by a carrier that keeps its drivers, and a default that is
+ * already high leaves them nothing to say.
+ */
+const DEFAULT_WEIGHTS: Record<RankingFactorKey, number> = {
+  rate: 85,
+  profit: 80,
+  deadhead: 70,
+  home_time: 45,
+  broker_quality: 55,
+  lane_preference: 35,
+};
+
+const preferences = new Map<string, RankingPreferences>();
+
+export function resetRanking() {
+  preferences.clear();
+  observations.length = 0;
+  network.length = 0;
+}
+
+export function rankingPreferences(organizationId: string): RankingPreferences {
+  let found = preferences.get(organizationId);
+  if (!found) {
+    found = {
+      organizationId,
+      weights: { ...DEFAULT_WEIGHTS },
+      source: "default",
+      updatedAt: nowIso(),
+    };
+    preferences.set(organizationId, found);
+  }
+  return found;
+}
+
+/**
+ * Move one weight.
+ *
+ * Clamped rather than rejected: a dispatcher dragging a slider to the end means
+ * "as much as this goes", and an error message at that moment is useless.
+ */
+export function setRankingWeight(
+  organizationId: string,
+  key: RankingFactorKey,
+  value: number,
+  byName: string,
+): RankingPreferences {
+  const current = rankingPreferences(organizationId);
+  const next: RankingPreferences = {
+    ...current,
+    weights: { ...current.weights, [key]: Math.max(0, Math.min(100, Math.round(value))) },
+    source: "adjusted",
+    updatedAt: nowIso(),
+    updatedByName: byName,
+  };
+  preferences.set(organizationId, next);
+  return next;
+}
+
+export function resetRankingWeights(organizationId: string, byName: string): RankingPreferences {
+  const next: RankingPreferences = {
+    organizationId,
+    weights: { ...DEFAULT_WEIGHTS },
+    source: "default",
+    updatedAt: nowIso(),
+    updatedByName: byName,
+  };
+  preferences.set(organizationId, next);
+  return next;
+}
+
+/** Take the learning's suggestion. Only ever called by a person pressing it. */
+export function applySuggestedWeights(
+  organizationId: string,
+  byName: string,
+): RankingPreferences | undefined {
+  const suggested = learningFor(organizationId).suggested;
+  if (!suggested) return undefined;
+  const next: RankingPreferences = {
+    organizationId,
+    weights: { ...suggested },
+    source: "learned",
+    updatedAt: nowIso(),
+    updatedByName: byName,
+  };
+  preferences.set(organizationId, next);
+  return next;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Scoring                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export interface ScoringInput {
+  listing: Listing;
+  deadheadMiles: number;
+  loadedMiles: number;
+  allInRatePerMileCents?: number;
+  estimatedProfitCents?: number;
+  /** The carrier's own floor, so "good rate" means good FOR THIS CARRIER. */
+  minRatePerMileCents: number;
+  maxDeadheadMiles: number;
+  /** Where the driver wants to be, if they have said. */
+  preferredStates?: string[];
+  avoidStates?: string[];
+  /** When they have asked to be home by. */
+  homeByAt?: string;
+  homeState?: string;
+  brokerCreditScore?: number;
+  brokerMcAgeMonths?: number;
+  workedWithBefore?: boolean;
+}
+
+/** 0-100 for one factor, with a sentence a dispatcher can argue with. */
+interface RawFactor {
+  raw: number;
+  detail: string;
+}
+
+function rateFactor(i: ScoringInput): RawFactor {
+  const rpm = i.listing.ratePerMileCents;
+  if (rpm === undefined) return { raw: 40, detail: "No rate posted, so this is a guess." };
+  const floor = i.minRatePerMileCents;
+  // Everything is measured against what THIS carrier will accept, not a market
+  // average: $2.00 is a good day for one carrier and a refusal for another.
+  const ratio = rpm / Math.max(1, floor);
+  const raw = Math.max(0, Math.min(100, Math.round((ratio - 0.8) * 125)));
+  return {
+    raw,
+    detail: `$${(rpm / 100).toFixed(2)}/mi against a floor of $${(floor / 100).toFixed(2)}.`,
+  };
+}
+
+function profitFactor(i: ScoringInput): RawFactor {
+  if (i.estimatedProfitCents === undefined) {
+    return { raw: 40, detail: "Not enough posted to estimate what is left." };
+  }
+  // A day's work is worth having at roughly $700 clear; scale around that.
+  const raw = Math.max(0, Math.min(100, Math.round((i.estimatedProfitCents / 70_000) * 60)));
+  return {
+    raw,
+    detail: `About $${Math.round(i.estimatedProfitCents / 100).toLocaleString()} left after the empty miles and fuel.`,
+  };
+}
+
+function deadheadFactor(i: ScoringInput): RawFactor {
+  const limit = Math.max(1, i.maxDeadheadMiles);
+  const raw = Math.max(0, Math.min(100, Math.round(100 - (i.deadheadMiles / limit) * 90)));
+  return {
+    raw,
+    detail: `${i.deadheadMiles} empty miles against a limit of ${limit}.`,
+  };
+}
+
+function homeTimeFactor(i: ScoringInput): RawFactor {
+  const dest = i.listing.destination.state;
+  if (i.homeState && dest === i.homeState) {
+    return { raw: 95, detail: `Delivers in ${dest}, which is where they are based.` };
+  }
+  if (i.homeByAt) {
+    const deliver = i.listing.deliverBy ?? i.listing.pickupAt;
+    const slack = (new Date(i.homeByAt).getTime() - new Date(deliver).getTime()) / 3_600_000;
+    if (slack >= 0) return { raw: 75, detail: `Delivers with about ${Math.round(slack)}h to spare before they want to be home.` };
+    return { raw: 15, detail: `Delivers about ${Math.round(-slack)}h after they asked to be home.` };
+  }
+  return { raw: 50, detail: "Nothing recorded about when they want to be home." };
+}
+
+function brokerFactor(i: ScoringInput): RawFactor {
+  const parts: string[] = [];
+  let raw = 50;
+  if (i.brokerCreditScore !== undefined) {
+    raw = i.brokerCreditScore;
+    parts.push(`credit ${i.brokerCreditScore}`);
+  }
+  if (i.brokerMcAgeMonths !== undefined) {
+    // A very young MC number is a real risk however good the score looks.
+    if (i.brokerMcAgeMonths < 6) {
+      raw = Math.min(raw, 30);
+      parts.push(`MC only ${i.brokerMcAgeMonths} months old`);
+    } else {
+      parts.push(`MC ${Math.round(i.brokerMcAgeMonths / 12)} years old`);
+    }
+  }
+  if (i.workedWithBefore) {
+    raw = Math.min(100, raw + 15);
+    parts.push("you have run for them before");
+  }
+  return {
+    raw: Math.max(0, Math.min(100, Math.round(raw))),
+    detail: parts.length ? parts.join(", ") + "." : "Nothing known about this broker.",
+  };
+}
+
+function laneFactor(i: ScoringInput): RawFactor {
+  const dest = i.listing.destination.state;
+  if (i.avoidStates?.includes(dest)) {
+    return { raw: 5, detail: `Goes to ${dest}, which they asked to avoid.` };
+  }
+  if (i.preferredStates?.includes(dest)) {
+    return { raw: 95, detail: `Goes to ${dest}, which is where they want to run.` };
+  }
+  if (i.preferredStates?.length) {
+    return { raw: 40, detail: `Goes to ${dest}; they prefer ${i.preferredStates.join(", ")}.` };
+  }
+  return { raw: 50, detail: "No lane preference recorded." };
+}
+
+const FACTOR_FN: Record<RankingFactorKey, (i: ScoringInput) => RawFactor> = {
+  rate: rateFactor,
+  profit: profitFactor,
+  deadhead: deadheadFactor,
+  home_time: homeTimeFactor,
+  broker_quality: brokerFactor,
+  lane_preference: laneFactor,
+};
+
+/**
+ * Score one match, showing its working.
+ *
+ * The components come back with it on purpose. "87" tells a dispatcher nothing;
+ * "87, and it is 87 because the rate is strong and the deadhead is short but it
+ * does not get him home" is something they can act on — or disagree with, and
+ * then go and move a slider.
+ */
+export function scoreMatch(
+  input: ScoringInput,
+  weights: Record<RankingFactorKey, number>,
+): OpportunityMatch["score"] {
+  const totalWeight = FACTOR_KEYS.reduce((sum, k) => sum + weights[k], 0);
+  const components = FACTOR_KEYS.map((key) => {
+    const { raw, detail } = FACTOR_FN[key](input);
+    const weight = weights[key];
+    const contribution = totalWeight === 0 ? 0 : (raw * weight) / totalWeight;
+    return { key, weight, raw, contribution: Math.round(contribution * 10) / 10, detail };
+  });
+  const total = Math.round(components.reduce((sum, c) => sum + c.contribution, 0));
+  return { total: Math.max(0, Math.min(100, total)), components };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Learning                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The ONLY fields that leave a workspace.
+ *
+ * Every one is a shape, a band or a boolean. None of them names anything, and
+ * no combination of them identifies a workspace, a carrier, a broker or a
+ * person — which is the test that actually matters, not the field count.
+ */
+export const SHARED_FIELDS = [
+  "equipment type",
+  "loaded-mile band (rounded to 100)",
+  "deadhead band (rounded to 25)",
+  "rate-per-mile band (rounded to 10 cents)",
+  "broker credit band (rounded to 10)",
+  "broker MC age band (under 6 months / 6-24 / over 24)",
+  "whether the dispatcher pursued it",
+] as const;
+
+/**
+ * What never leaves, whatever happens.
+ *
+ * Written out rather than implied by omission, because "we only send what we
+ * listed" is a claim somebody can check and "we don't send anything sensitive"
+ * is not.
+ */
+export const WITHHELD_FIELDS = [
+  "workspace and organization ids",
+  "carrier name, MC and DOT numbers",
+  "broker name, contact and email",
+  "driver name, licence and contact",
+  "truck and trailer identifiers",
+  "origin and destination cities",
+  "exact rates and exact mileage",
+  "any credential, token or password",
+] as const;
+
+/** One anonymised decision. This shape is all that ever crosses the boundary. */
+interface NetworkObservation {
+  equipment: string;
+  loadedMileBand: number;
+  deadheadBand: number;
+  ratePerMileBand: number;
+  creditBand?: number;
+  mcAgeBand: "new" | "young" | "established" | "unknown";
+  pursued: boolean;
+}
+
+/** Kept per workspace only so a dispatcher can be told how much they gave. */
+const observations: Array<{ organizationId: string; at: string }> = [];
+/** The anonymised pool. Deliberately holds no organization id at all. */
+const network: NetworkObservation[] = [];
+
+const band = (n: number, to: number) => Math.round(n / to) * to;
+
+/**
+ * Turn a decision into the anonymised shape, and nothing else.
+ *
+ * Exported so a test can hand it a match full of names and assert that none of
+ * them come out the other side. That test is the point of this function.
+ */
+export function anonymize(
+  match: OpportunityMatch,
+  listing: Listing,
+  pursued: boolean,
+): NetworkObservation {
+  const age = listing.broker.mcAgeMonths;
+  return {
+    equipment: listing.equipment,
+    loadedMileBand: band(match.loadedMiles, 100),
+    deadheadBand: band(match.deadheadMiles, 25),
+    ratePerMileBand: band(match.allInRatePerMileCents ?? 0, 10),
+    creditBand: listing.broker.creditScore === undefined
+      ? undefined
+      : band(listing.broker.creditScore, 10),
+    mcAgeBand: age === undefined ? "unknown" : age < 6 ? "new" : age <= 24 ? "young" : "established",
+    pursued,
+  };
+}
+
+/**
+ * Record that a dispatcher pursued a load, or threw it away.
+ *
+ * Called from the match service when somebody short-lists or dismisses. The
+ * workspace keeps a count; the network keeps the anonymised shape. Those are
+ * two different stores on purpose — the count is what a dispatcher is shown
+ * about their own contribution, and it is never joined to the pool.
+ */
+export function observeDecision(
+  organizationId: string,
+  match: OpportunityMatch,
+  listing: Listing,
+  pursued: boolean,
+): void {
+  observations.push({ organizationId, at: nowIso() });
+  network.push(anonymize(match, listing, pursued));
+}
+
+/**
+ * What the learning would suggest, and how much it is standing on.
+ *
+ * The suggestion is derived by comparing what pursued loads looked like against
+ * what dismissed ones looked like: if the loads a dispatcher chases consistently
+ * have short deadheads and unremarkable rates, deadhead deserves more weight
+ * than rate for them. It needs a real number of decisions before it says
+ * anything at all — an opinion formed from four data points is noise wearing a
+ * suggestion's clothes.
+ */
+export function learningFor(organizationId: string): LearningSummary {
+  const mine = observations.filter((o) => o.organizationId === organizationId).length;
+  const summary: LearningSummary = {
+    observations: mine,
+    networkObservations: network.length,
+    sharedFields: [...SHARED_FIELDS],
+    withheldFields: [...WITHHELD_FIELDS],
+  };
+
+  const MINIMUM = 8;
+  if (network.length < MINIMUM) return summary;
+
+  const pursued = network.filter((o) => o.pursued);
+  const dropped = network.filter((o) => !o.pursued);
+  if (pursued.length === 0 || dropped.length === 0) return summary;
+
+  const mean = (rows: NetworkObservation[], pick: (o: NetworkObservation) => number) =>
+    rows.reduce((s, o) => s + pick(o), 0) / rows.length;
+
+  const base = rankingPreferences(organizationId).weights;
+  const next = { ...base };
+
+  // Pursued loads pay better than dismissed ones → rate is doing real work.
+  const rateGap = mean(pursued, (o) => o.ratePerMileBand) - mean(dropped, (o) => o.ratePerMileBand);
+  next.rate = clampWeight(base.rate + Math.sign(rateGap) * Math.min(20, Math.abs(rateGap) / 2));
+
+  // Pursued loads run fewer empty miles → deadhead is doing real work.
+  const deadGap = mean(dropped, (o) => o.deadheadBand) - mean(pursued, (o) => o.deadheadBand);
+  next.deadhead = clampWeight(base.deadhead + Math.sign(deadGap) * Math.min(20, Math.abs(deadGap) / 4));
+
+  // Pursued loads come from better-established brokers → broker quality matters.
+  const scoreOf = (o: NetworkObservation) =>
+    (o.creditBand ?? 50) + (o.mcAgeBand === "established" ? 15 : o.mcAgeBand === "new" ? -25 : 0);
+  const brokerGap = mean(pursued, scoreOf) - mean(dropped, scoreOf);
+  next.broker_quality = clampWeight(base.broker_quality + Math.sign(brokerGap) * Math.min(20, Math.abs(brokerGap) / 2));
+
+  summary.suggested = next;
+  summary.lastLearnedAt = nowIso();
+  return summary;
+}
+
+const clampWeight = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+
+/** Test hook: the anonymised pool, so a test can inspect what would be shared. */
+export function networkPoolForTests(): ReadonlyArray<Readonly<NetworkObservation>> {
+  return network;
+}
