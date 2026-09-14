@@ -107,7 +107,7 @@ function WorkspaceIcon({
   organization,
   className,
 }: {
-  organization: Pick<Organization, "type" | "individual">;
+  organization: Pick<Organization, "type" | "soloDispatcher">;
   className?: string;
 }) {
   const kind = workspaceKindOf(organization);

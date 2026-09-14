@@ -8,26 +8,35 @@ export interface Organization {
   dotNumber?: string;
   mcNumber?: string;
   timeZone: string;
-  createdAt: string;
   /**
-   * A dispatch workspace run by one person for themselves.
+   * A dispatch organization with exactly one person in it and no team.
    *
-   * It is a real workspace, not a lesser one — but it is not a dispatch
-   * organization, and the paperwork asked of it is different: personal
-   * identity and a service agreement rather than company registration and
-   * company-level insurance. Meaningful only when `type` is "DISPATCH_AGENCY";
-   * a carrier is never individual, because authority is held by the company.
+   * The ONLY thing stored about workspace shape; everything else is derived
+   * from it — the dashboard in `resolveWorkspace`, and the paperwork the
+   * workspace owes in `workspaceKindOf`. It exists because "is there a team
+   * here?" cannot be worked out from a member count alone — an organization
+   * that has invited its first dispatcher but not had them accept yet is a
+   * team, and a one-person carrier is not a solo dispatcher.
+   *
+   * Only meaningful on DISPATCH_AGENCY organizations. Absent means a team.
    */
-  individual?: boolean;
+  soloDispatcher?: boolean;
+  createdAt: string;
   // Nothing about a person.
 }
 
 /**
- * What kind of workspace this is, for everything that differs between them.
+ * What kind of workspace an organization is, for everything that differs
+ * between them.
  *
  * Organization TYPE answers "carrier or dispatcher". Workspace KIND answers the
  * question document requirements actually turn on, which has three answers, not
  * two. Derive it — never store it twice.
+ *
+ * These are the canonical names for the three shapes; `WorkspaceSurfaceKind` in
+ * `./workspace` adds the driver portal, which is a membership shape rather than
+ * a kind of organization. Both use these same spellings so that one concept is
+ * never called two things.
  */
 export type WorkspaceKind =
   | "carrier_organization"
@@ -35,10 +44,10 @@ export type WorkspaceKind =
   | "individual_dispatcher";
 
 export function workspaceKindOf(
-  organization: Pick<Organization, "type" | "individual">,
+  organization: Pick<Organization, "type" | "soloDispatcher">,
 ): WorkspaceKind {
   if (organization.type === "CARRIER") return "carrier_organization";
-  return organization.individual ? "individual_dispatcher" : "dispatch_organization";
+  return organization.soloDispatcher ? "individual_dispatcher" : "dispatch_organization";
 }
 
 export const WORKSPACE_KIND_LABEL: Record<WorkspaceKind, string> = {

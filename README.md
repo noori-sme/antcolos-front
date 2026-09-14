@@ -17,10 +17,20 @@ Other commands:
 
 ```bash
 npm run build      # production build
-npm test           # unit tests (vitest, against the service layer)
-npx tsc --noEmit   # typecheck
-npx eslint .       # lint
+npm test           # every test (both suites below)
+npm run test:unit  # vitest, against the service layer
+npm run test:node  # node --test over tests/
+npm run typecheck  # tsc --noEmit
+npm run lint       # eslint
 ```
+
+There are two suites, split by what they need rather than by taste. The
+service-layer tests live beside the code they cover (`src/**/*.test.ts`) and run
+on vitest, which resolves the `@/` alias through the app's own tsconfig. The
+directory and normalization tests live in `tests/` and run on Node's own test
+runner with no extra dependencies; `tests/alias-hook.mjs` teaches that loader the
+`@/` alias and extensionless imports, so those tests import the real application
+files rather than a copy. `npm test` runs both.
 
 ## What is built so far
 
@@ -29,9 +39,80 @@ npx eslint .       # lint
 | 1. Foundation and shell | Design tokens, theme and density, identity and membership switching, permissions, responsive navigation, shared states |
 | 2. Home + Needs You | `/home` (adapts to the membership), `/needs-you`, `/driver/home` |
 | Canonical Load slice | `/loads`, `/loads/[loadId]` — read-only |
+| Broker / Shipper / Receiver directory | `/directory`, `/directory/[partyId]`, `/directory/locations/[facilityId]`, `/directory/contacts/[contactId]`, `/directory/review` |
 | Unified Document Center | `/documents`, `/documents/[documentId]` |
 
 Everything else is a placeholder screen that says so.
+
+## The directory and entity resolution
+
+A rate confirmation names companies, places and people. Antcolos keeps those as
+three different permanent records, each with its own immutable UUID:
+
+- **Party** — the company (broker, shipper, receiver). Roles accumulate on one
+  record, so a company that both ships and receives is one profile, not two.
+- **Facility** — a place it ships from or receives at. One company, many docks.
+- **Contact** — a person. People move between companies, so they are never a
+  field on the company.
+
+`src/lib/directory/` holds the part that decides which record a name refers to,
+as pure functions with no store access:
+
+- `normalize.ts` — safe normalized identifiers. Every function returns nothing
+  rather than a value it is unsure of, because a loose key silently merges two
+  companies and the merge surfaces weeks later as a load billed to the wrong
+  broker.
+- `matching.ts` — candidate scoring. A broker is matched on its **MC number**,
+  which is decisive on its own; everything else is soft evidence that
+  accumulates, and a *different* MC number eliminates a candidate outright
+  rather than merely lowering its score.
+
+`src/lib/api/mock/party-registry.ts` is the service the future rate
+confirmation workflow will call:
+
+```
+planResolution(ctx, extraction)   // writes NOTHING — safe to call and discard
+commitResolution(ctx, plan, confirmation)  // applies only what a dispatcher confirmed
+```
+
+The rules it enforces, each covered by a test in `tests/resolution.test.ts`:
+
+- Nothing is ever merged automatically. Every proposal carries
+  `requiresDispatcherConfirmation: true`, and where two profiles fit equally
+  the resolver refuses to pick one.
+- A second load for the same company links to the existing profile — there is
+  no path that creates one profile per load.
+- A profile created from an uncertain or thin match is born **provisional** and
+  says why, rather than quietly joining the directory as settled fact.
+- Rate confirmation data is **never** marked externally verified. The strongest
+  state a document can produce is `dispatcher_confirmed`; only a check against
+  FMCSA could produce `externally_verified`, and nothing in this module can
+  write it.
+- The rate confirmation is preserved as the source on every record, and a
+  **frozen snapshot** of the fields used is written against the load — so
+  correcting a profile in September never rewrites what a load ran under in
+  March.
+
+Loads are reached through link rows and then read from the loads service. The
+directory never stores a load, so a profile shows its load history without
+owning it.
+
+Extraction itself (OCR, field-level correction) is **not built**. `/directory/review`
+runs on reviewed fixtures in `src/lib/api/mock/rate-con-extractions.ts` and says
+so on screen; everything after that point is real.
+
+### Carrier-private data
+
+A company record is shared — an MC number is the same number for everyone. What
+one carrier *thinks* is not. Notes, ratings, blocked and preferred standing,
+payment experience and private history live in rows keyed by carrier
+organization, and every accessor takes that organization from the context
+rather than from a parameter a screen could supply.
+
+Switch between **Northline Freight** and **Baxter Transit** on the same broker
+profile to see it: Northline has Apex Logistics marked *preferred* with a note
+about calling Dana directly; Baxter has the same company *blocked* over an
+unpaid detention claim. Neither can see the other's.
 
 ## Try the permission and identity model
 
@@ -56,12 +137,13 @@ src/
     layout/             AppShell, Sidebar, Topbar, OrgSwitcher, AccountMenu
     auth/               Can, PermissionBadge, ActorLabel
     data/               loading / empty / error states
-  features/             home, needs-you, loads, documents
+  features/             home, needs-you, loads, directory, documents
   lib/
     api/
       contracts/        ★ typed service interfaces — the backend seam
       mock/             in-memory adapter, PARTITIONED BY ORGANIZATION
       http/             real adapter, deliberately unimplemented
+    directory/          ★ normalization and entity-resolution matching (pure)
     documents/          ★ type catalog, requirement sets, status derivation
     permissions/        ★ catalog, can(), templates, effective, scope, routes
     session/            ★ permanent User, Membership[], active membership

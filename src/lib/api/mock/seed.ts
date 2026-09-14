@@ -522,15 +522,122 @@ function empty(): OrgData {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Summit Dispatch — DISPATCH_AGENCY with a team. Sam owns it.
+// Small on purpose: enough work for a team queue to mean something, and no more.
+// ---------------------------------------------------------------------------
+
+function summit(): OrgData {
+  const org = "org_summit";
+  const TZ = "America/Denver";
+
+  const customers: Customer[] = [
+    { id: "cus_sm_ridge", organizationId: org, name: "Ridgeline Logistics", kind: "broker", contactName: "Dana Whitlock", phone: "+1 (303) 555-0155" },
+    { id: "cus_sm_basin", organizationId: org, name: "Basin Produce Co.", kind: "shipper", contactName: "Tomás Ibarra" },
+  ];
+
+  const drivers: Driver[] = [];
+
+  const { loads, events, documents } = expand(org, [
+    {
+      ref: "SM-4410", status: "in_transit",
+      customer: { id: "cus_sm_ridge", name: "Ridgeline Logistics", kind: "broker", mc: "MC-884012", contact: "Dana Whitlock" },
+      pickup: { city: "Denver", state: "CO", timeZone: TZ, at: hoursFromNow(-6), arrived: hoursFromNow(-6.4), departed: hoursFromNow(-5.2) },
+      delivery: { city: "Salt Lake City", state: "UT", timeZone: TZ, at: hoursFromNow(5) },
+      linehaul: 92500, loaded: 521, deadhead: 18, equipment: "dry_van", weight: 31000,
+      carrierOrganizationId: "carrier_northline",
+      has: ["rate_confirmation", "bill_of_lading"],
+    },
+    {
+      ref: "SM-4412", status: "assigned",
+      customer: { id: "cus_sm_basin", name: "Basin Produce Co.", kind: "shipper", contact: "Tomás Ibarra" },
+      pickup: { city: "Greeley", state: "CO", timeZone: TZ, at: hoursFromNow(9) },
+      delivery: { city: "Phoenix", state: "AZ", timeZone: TZ, at: hoursFromNow(31) },
+      linehaul: 118000, loaded: 812, deadhead: 40, equipment: "reefer", weight: 38000,
+      carrierOrganizationId: "carrier_northline",
+      has: ["rate_confirmation"],
+    },
+    {
+      ref: "SM-4415", status: "planned",
+      customer: { id: "cus_sm_ridge", name: "Ridgeline Logistics", kind: "broker", contact: "Dana Whitlock" },
+      pickup: { city: "Colorado Springs", state: "CO", timeZone: TZ, at: hoursFromNow(20) },
+      delivery: { city: "Albuquerque", state: "NM", timeZone: TZ, at: hoursFromNow(33) },
+      linehaul: 64000, loaded: 386, deadhead: 12, equipment: "flatbed",
+    },
+    {
+      ref: "SM-4417", status: "verifying",
+      customer: { id: "cus_sm_basin", name: "Basin Produce Co.", kind: "shipper", contact: "Tomás Ibarra" },
+      pickup: { city: "Pueblo", state: "CO", timeZone: TZ, at: hoursFromNow(26) },
+      delivery: { city: "Las Vegas", state: "NV", timeZone: TZ, at: hoursFromNow(48) },
+      linehaul: 87500, loaded: 634, deadhead: 25, equipment: "dry_van",
+    },
+    {
+      ref: "SM-4408", status: "delivered",
+      customer: { id: "cus_sm_ridge", name: "Ridgeline Logistics", kind: "broker", contact: "Dana Whitlock" },
+      pickup: { city: "Cheyenne", state: "WY", timeZone: TZ, at: hoursFromNow(-40), arrived: hoursFromNow(-40.5), departed: hoursFromNow(-39.2) },
+      delivery: { city: "Denver", state: "CO", timeZone: TZ, at: hoursFromNow(-30), arrived: hoursFromNow(-30.3), departed: hoursFromNow(-29.4) },
+      linehaul: 41000, loaded: 101, deadhead: 8, equipment: "dry_van",
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+  ]);
+
+  return { loads, events, documents, drivers, customers, needsYou: [] };
+}
+
+// ---------------------------------------------------------------------------
+// The individual dispatcher — a dispatch workspace with one person in it.
+// Everything here is Sam's own work; there is nobody to hand it to.
+// ---------------------------------------------------------------------------
+
+function solo(): OrgData {
+  const org = "org_solo";
+  const TZ = "America/Los_Angeles";
+
+  const customers: Customer[] = [
+    { id: "cus_so_coastal", organizationId: org, name: "Coastal Freight Group", kind: "broker", contactName: "Priya Raman", phone: "+1 (503) 555-0190" },
+    { id: "cus_so_cedar", organizationId: org, name: "Cedar Mill Supply", kind: "shipper", contactName: "Gene Halloran" },
+  ];
+
+  const { loads, events, documents } = expand(org, [
+    {
+      ref: "SD-118", status: "in_transit",
+      customer: { id: "cus_so_coastal", name: "Coastal Freight Group", kind: "broker", mc: "MC-902344", contact: "Priya Raman" },
+      pickup: { city: "Portland", state: "OR", timeZone: TZ, at: hoursFromNow(-5), arrived: hoursFromNow(-5.4), departed: hoursFromNow(-4.6) },
+      delivery: { city: "Seattle", state: "WA", timeZone: TZ, at: hoursFromNow(2) },
+      linehaul: 42000, loaded: 174, deadhead: 11, equipment: "sprinter", weight: 2600,
+      carrierOrganizationId: "carrier_cascade",
+      has: ["rate_confirmation", "bill_of_lading"],
+    },
+    {
+      ref: "SD-121", status: "assigned",
+      customer: { id: "cus_so_cedar", name: "Cedar Mill Supply", kind: "shipper", contact: "Gene Halloran" },
+      pickup: { city: "Eugene", state: "OR", timeZone: TZ, at: hoursFromNow(12) },
+      delivery: { city: "Boise", state: "ID", timeZone: TZ, at: hoursFromNow(27) },
+      linehaul: 58000, loaded: 428, deadhead: 19, equipment: "box_truck", weight: 7400,
+      carrierOrganizationId: "carrier_cascade",
+      has: ["rate_confirmation"],
+    },
+    {
+      ref: "SD-124", status: "planned",
+      customer: { id: "cus_so_coastal", name: "Coastal Freight Group", kind: "broker", contact: "Priya Raman" },
+      pickup: { city: "Tacoma", state: "WA", timeZone: TZ, at: hoursFromNow(23) },
+      delivery: { city: "Spokane", state: "WA", timeZone: TZ, at: hoursFromNow(36) },
+      linehaul: 37500, loaded: 299, deadhead: 9, equipment: "cargo_van",
+    },
+  ]);
+
+  return { loads, events, documents, drivers: [], customers, needsYou: [] };
+}
+
 export function buildSeed(): Record<string, OrgData> {
   return {
     org_northline: northline(),
     org_meridian: meridian(),
-    org_summit: empty(),
+    org_summit: summit(),
+    org_solo: solo(),
+    org_cascade: cascade(),
     // Every organization a membership can switch into needs a partition, even
     // an empty one: a missing partition is not "no data", it is a crash.
     org_baxter: empty(),
-    org_solo: empty(),
-    org_cascade: cascade(),
   };
 }

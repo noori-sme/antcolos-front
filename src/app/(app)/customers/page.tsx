@@ -1,7 +1,11 @@
-import { ModulePlaceholder } from "../placeholder";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Customers" };
-
+/**
+ * The customers module became the directory: brokers, shippers and receivers
+ * are one set of permanent profiles with locations and contacts of their own.
+ * The old path stays as a redirect so existing links — including the entity
+ * links on Needs You items — keep working.
+ */
 export default function Page() {
-  return <ModulePlaceholder title="Customers" description="Brokers and shippers, rate confirmations and aging." />;
+  redirect("/directory");
 }
