@@ -194,7 +194,10 @@ export function buildLoad(organizationId: string, seed: LoadSeed): BuiltLoad {
     )?.id,
   }));
 
-  const assignment: Assignment | undefined = seed.driverId
+  // A dispatch agency knows whose authority a load runs under before anybody
+  // has picked a truck for it, so a carrier alone is enough to make an
+  // assignment record. Consent only means something once there is a driver.
+  const assignment: Assignment | undefined = (seed.driverId || seed.carrierOrganizationId)
     ? {
         id: nextId("asg"),
         loadId,
@@ -204,10 +207,12 @@ export function buildLoad(organizationId: string, seed: LoadSeed): BuiltLoad {
         carrierOrganizationId: seed.carrierOrganizationId,
         assignedAt: hoursFromNow(-40),
         assignedBy: officeActor,
-        consent: {
-          status: seed.consent ?? "accepted",
-          respondedAt: seed.consent === "pending" ? undefined : hoursFromNow(-39),
-        },
+        consent: seed.driverId
+          ? {
+              status: seed.consent ?? "accepted",
+              respondedAt: seed.consent === "pending" ? undefined : hoursFromNow(-39),
+            }
+          : { status: "not_required" as const },
       }
     : undefined;
 

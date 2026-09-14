@@ -374,6 +374,10 @@ function buildFixtures(): RegistryState {
     dispatch(T.mdB04, "org_meridian", "Meridian Dispatch", "org_ridgeway", "Ridgeway Carriers", "B-04", daysAgo(90)),
     dispatch(T.mdA18, "org_meridian", "Meridian Dispatch", "org_baxter", "Baxter Transit LLC", "A-18", daysAgo(70)),
     dispatch(T.crosswind, "org_meridian", "Meridian Dispatch", "org_crosswind", "Crosswind Freight", "C-31", daysAgo(60)),
+    // Summit dispatches two of Northline's units. A second dispatch agency on
+    // the same carrier, so "scoped equipment" is visibly per-workspace.
+    dispatch(T.nl111, "org_summit", "Summit Dispatch", "org_northline", "Northline Freight LLC", "111", daysAgo(45)),
+    dispatch(T.nl131, "org_summit", "Summit Dispatch", "org_northline", "Northline Freight LLC", "131", daysAgo(30)),
   ];
 
   const assignments: TruckDriverAssignment[] = [
