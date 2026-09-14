@@ -21,6 +21,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
       "drivers:view", "trucks:view", "trailers:view", "customers:view",
       "documents:view", "documents:upload", "compliance:view",
+      "fleet:view", "fleet:telemetry:record",
     ],
   },
   {
@@ -48,7 +49,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     description: "Driver and equipment compliance.",
     seeded: true,
     permissions: [
-      "drivers:view", "trucks:view", "trailers:view", "compliance:view", "compliance:manage",
+      "drivers:view", "trucks:view", "trailers:view", "fleet:view",
+      "compliance:view", "compliance:manage",
       "trucks:documents:manage", "trailers:documents:manage",
       "documents:view", "documents:upload", "documents:approve", "loads:view",
     ],
@@ -68,7 +70,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     description: "Equipment upkeep.",
     seeded: true,
     permissions: [
-      "trucks:view", "trucks:edit", "trucks:documents:manage",
+      "trucks:view", "trucks:edit", "trucks:documents:manage", "fleet:view",
+      "fleet:telemetry:record",
       "trailers:view", "trailers:edit", "trailers:documents:manage",
       "trailers:status:manage", "trailers:attachments:manage",
       "documents:view", "documents:upload",

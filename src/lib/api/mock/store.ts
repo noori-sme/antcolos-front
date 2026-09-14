@@ -30,6 +30,32 @@ class MockStore {
     if (i >= 0) org.needsYou[i] = next;
   }
 
+  /**
+   * Registers a derived item once, then leaves it alone.
+   *
+   * Items the fleet layer computes from the permanent records arrive with a
+   * stable id. Inserting them here on first sight — and never overwriting them
+   * afterwards — is what lets them be assigned, snoozed and resolved like any
+   * other item instead of resetting every time a screen recomputes them.
+   *
+   * Returns false when the organization holds no store, which is not an error:
+   * an organization with no seeded operational data still has a fleet.
+   */
+  registerNeedsYou(organizationId: string, items: NeedsYouItem[]): boolean {
+    let org: OrgData;
+    try {
+      org = this.org(organizationId);
+    } catch {
+      return false;
+    }
+    const known = new Set(org.needsYou.map((n) => n.id));
+    for (const candidate of items) {
+      this.assertOwned(organizationId, candidate.organizationId);
+      if (!known.has(candidate.id)) org.needsYou.push(candidate);
+    }
+    return true;
+  }
+
   /** Test/debug helper. Not used by the UI. */
   reset() {
     this.data = buildSeed();

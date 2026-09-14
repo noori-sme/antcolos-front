@@ -10,6 +10,8 @@ import type {
 } from "../contracts/needs-you";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
+import { fleetRowsFor } from "./fleet-operations";
+import { fleetNeedsYouItems } from "./fleet-needs-you";
 import { nowIso } from "./time";
 
 const LATENCY_MS = 180;
@@ -90,6 +92,32 @@ function appendHistory(
   ];
 }
 
+/**
+ * Folds the fleet layer's derived exceptions into this organization's queue.
+ *
+ * They are registered rather than concatenated so they behave like every other
+ * item — assignable, snoozable, resolvable, with a history that survives a
+ * reload. Registration is idempotent on a stable id, so recomputing the same
+ * exception does not resurrect an item somebody already resolved.
+ *
+ * Failures here are swallowed on purpose. A fleet rule that cannot run is not a
+ * reason to withhold the rest of somebody's queue, and the operational picture
+ * is still available in full on the fleet dashboard.
+ */
+async function registerFleetItems(ctx: ServiceContext): Promise<void> {
+  if (!ctx.permissions.has("fleet:view")) return;
+  try {
+    const { rows, triads } = await fleetRowsFor(ctx);
+    if (!rows.length) return;
+    mockStore.registerNeedsYou(
+      ctx.organizationId,
+      fleetNeedsYouItems(rows, triads, ctx.organizationId),
+    );
+  } catch {
+    // Deliberately silent: see above.
+  }
+}
+
 function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
   const org = mockStore.org(ctx.organizationId);
   const item = org.needsYou.find((n) => n.id === itemId);
@@ -102,6 +130,7 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
+    await registerFleetItems(ctx);
     const org = mockStore.org(ctx.organizationId);
     return org.needsYou
       .map(autoUnsnooze)
@@ -116,6 +145,7 @@ export const mockNeedsYouService: NeedsYouService = {
   },
 
   async openCount(ctx) {
+    await registerFleetItems(ctx);
     const org = mockStore.org(ctx.organizationId);
     return org.needsYou
       .map(autoUnsnooze)

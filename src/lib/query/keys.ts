@@ -1,4 +1,4 @@
-import type { NeedsYouFilters } from "@/types";
+import type { FleetAssetKind, FleetEquipmentFilters, NeedsYouFilters } from "@/types";
 
 /**
  * Every query key is namespaced by organization. Org A's data can never be
@@ -18,4 +18,12 @@ export const queryKeys = {
     [...orgKey(organizationId), "members"] as const,
   loads: (organizationId: string, filters?: unknown) =>
     [...orgKey(organizationId), "loads", filters ?? null] as const,
+  fleetDashboard: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "fleet", "dashboard", membershipId] as const,
+  fleetEquipment: (
+    organizationId: string, membershipId: string, filters: FleetEquipmentFilters,
+  ) => [...orgKey(organizationId), "fleet", "equipment", membershipId, filters] as const,
+  fleetAsset: (
+    organizationId: string, membershipId: string, assetKind: FleetAssetKind, assetId: string,
+  ) => [...orgKey(organizationId), "fleet", "asset", membershipId, assetKind, assetId] as const,
 } as const;
