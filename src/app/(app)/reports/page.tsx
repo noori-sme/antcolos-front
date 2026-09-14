@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../placeholder";
+import { ReportsScreen } from "@/features/reports/reports-screen";
 
 export const metadata = { title: "Reports" };
 
 export default function Page() {
-  return <ModulePlaceholder title="Reports" description="Revenue, cost per mile and utilization." />;
+  return <ReportsScreen />;
 }

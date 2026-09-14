@@ -10,6 +10,7 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/rate-cons/new": ["loads:create", "documents:upload"],
   "/fleet/trucks/new": ["trucks:create"],
   "/rate-cons": ["loads:view"],
+  "/reports": ["reports:view"],
   "/settings": ["members:view"],
   "/account": [],
 };

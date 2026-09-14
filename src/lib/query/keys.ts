@@ -18,4 +18,20 @@ export const queryKeys = {
     [...orgKey(organizationId), "members"] as const,
   loads: (organizationId: string, filters?: unknown) =>
     [...orgKey(organizationId), "loads", filters ?? null] as const,
+  reportWorkspace: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "reports", membershipId, "workspace"] as const,
+  report: (
+    organizationId: string,
+    membershipId: string,
+    reportId: string,
+    filters: unknown,
+  ) => [...orgKey(organizationId), "reports", membershipId, reportId, filters] as const,
+  reportDrilldown: (
+    organizationId: string,
+    membershipId: string,
+    reportId: string,
+    filters: unknown,
+    ref: unknown,
+  ) =>
+    [...orgKey(organizationId), "reports", membershipId, reportId, filters, "drilldown", ref] as const,
 } as const;

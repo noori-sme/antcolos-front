@@ -1,4 +1,4 @@
-import type { ActorRef, PermissionKey } from "@/types";
+import type { ActorRef, OrganizationType, PermissionKey } from "@/types";
 
 /**
  * Every service call carries the organization it acts in and the permissions of
@@ -7,6 +7,14 @@ import type { ActorRef, PermissionKey } from "@/types";
  */
 export interface ServiceContext {
   organizationId: string;
+  /**
+   * The kind of workspace the call is made in. A carrier and a dispatch agency
+   * are different products behind the same seam; a service may not guess which
+   * one it is serving, and a screen may not tell it.
+   */
+  organizationType: OrganizationType;
+  /** Display name of the workspace, for anything a person reads or exports. */
+  organizationName: string;
   membershipId: string;
   permissions: ReadonlySet<PermissionKey>;
   actor: ActorRef;

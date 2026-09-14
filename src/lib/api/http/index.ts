@@ -30,6 +30,12 @@ export const httpServices: AntcolosServices = {
     events: notImplemented("loads.events"),
     documents: notImplemented("loads.documents"),
   },
+  reports: {
+    workspace: notImplemented("reports.workspace"),
+    run: notImplemented("reports.run"),
+    drilldown: notImplemented("reports.drilldown"),
+    sources: notImplemented("reports.sources"),
+  },
   directory: {
     load: notImplemented("directory.load"),
     truck: notImplemented("directory.truck"),

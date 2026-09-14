@@ -20,6 +20,8 @@ export function useServiceContext(): ServiceContext | null {
     if (!membership || !organization) return null;
     return {
       organizationId: organization.id,
+      organizationType: organization.type,
+      organizationName: organization.displayName,
       membershipId: membership.id,
       permissions,
       scope: membership.scope,

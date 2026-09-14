@@ -21,6 +21,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
       "drivers:view", "trucks:view", "trailers:view", "customers:view",
       "documents:view", "documents:upload", "compliance:view",
+      // Their own income, loads and activity — never the organization's.
+      "reports:view",
     ],
   },
   {
@@ -41,6 +43,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "rates:view", "revenue:view", "expenses:view",
       "settlements:view", "settlements:create", "settlements:export",
       "invoices:view", "invoices:create", "customers:view", "documents:view",
+      "reports:view", "reports:export",
     ],
   },
   {

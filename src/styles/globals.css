@@ -45,6 +45,21 @@
 
   --focus-ring:           oklch(0.52 0.084 196);
 
+  /* ---- Data visualization ------------------------------------------------
+     A categorical series palette, ordered. Slots are assigned in order and
+     never cycled: a chart that would need a seventh series is the wrong chart.
+     Validated for colour-vision deficiency and for contrast against --surface
+     in both themes; three light-mode slots sit under 3:1, which is why every
+     chart also carries a legend, direct labels and a table view. */
+  --chart-1:              #2a78d6;   /* blue     */
+  --chart-2:              #eb6834;   /* orange   */
+  --chart-3:              #1baf7a;   /* aqua     */
+  --chart-4:              #eda100;   /* yellow   */
+  --chart-5:              #e87ba4;   /* magenta  */
+  --chart-6:              #008300;   /* green    */
+  --chart-grid:           oklch(0.895 0.004 106);
+  --chart-axis:           oklch(0.605 0.007 106);
+
   /* ---- Radius ----------------------------------------------------------- */
   --radius-xs: 0.1875rem;
   --radius-sm: 0.3125rem;
@@ -93,6 +108,16 @@
   --status-danger-bg:     oklch(0.320 0.058 25);
 
   --focus-ring:           oklch(0.695 0.098 192);
+
+  /* Same six hues, re-stepped for the dark surface — not an automatic flip. */
+  --chart-1:              #3987e5;
+  --chart-2:              #d95926;
+  --chart-3:              #199e70;
+  --chart-4:              #c98500;
+  --chart-5:              #d55181;
+  --chart-6:              #008300;
+  --chart-grid:           oklch(0.318 0.009 240);
+  --chart-axis:           oklch(0.615 0.009 240);
 
   --shadow-e1: 0 1px 2px 0 oklch(0 0 0 / 0.30);
   --shadow-e2: 0 1px 3px 0 oklch(0 0 0 / 0.40), 0 1px 2px -1px oklch(0 0 0 / 0.30);
@@ -180,6 +205,15 @@
   --color-st-danger-bg:    var(--status-danger-bg);
 
   --color-ring:            var(--focus-ring);
+
+  --color-chart-1:         var(--chart-1);
+  --color-chart-2:         var(--chart-2);
+  --color-chart-3:         var(--chart-3);
+  --color-chart-4:         var(--chart-4);
+  --color-chart-5:         var(--chart-5);
+  --color-chart-6:         var(--chart-6);
+  --color-chart-grid:      var(--chart-grid);
+  --color-chart-axis:      var(--chart-axis);
 
   --font-sans:   var(--font-antcolos-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono:   var(--font-antcolos-mono), ui-monospace, "SFMono-Regular", monospace;
