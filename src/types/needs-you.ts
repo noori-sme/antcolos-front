@@ -41,7 +41,17 @@ export type NeedsYouCategory =
   /** A prepared message is sitting unread. */
   | "draft_waiting"
   /** A load worth having is about to be unbookable. */
-  | "expiring_opportunity";
+  | "expiring_opportunity"
+  /** A broker has answered and the conversation is waiting on us. */
+  | "broker_replied"
+  /** A price the broker gave is about to stop being good. */
+  | "offer_expiring"
+  /** A price is agreed and nothing has been booked on it. */
+  | "agreed_not_booked"
+  /** A booked load the driver has not accepted yet. */
+  | "driver_consent"
+  /** A booked load whose broker is not linked to a permanent profile. */
+  | "broker_profile_unlinked";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
@@ -56,7 +66,11 @@ export type NeedsYouEntityKind =
   /** One load on offer, from whatever source. */
   | "listing"
   /** A prepared message to a broker. */
-  | "draft";
+  | "draft"
+  /** One conversation with a broker about one load for one truck. */
+  | "negotiation"
+  /** A load that was booked out of the Opportunity Inbox. */
+  | "booking";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -78,7 +92,13 @@ export type NeedsYouActionKind =
   /** Begin looking for a load for a truck. */
   | "start_search"
   /** Read a prepared message before it can go anywhere. */
-  | "review_draft";
+  | "review_draft"
+  /** Answer a broker who has come back to us. */
+  | "answer_broker"
+  /** Turn an agreed price into a load. */
+  | "book_load"
+  /** Ask the driver whether they will take it. */
+  | "ask_driver";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -170,6 +190,11 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   no_search: "Nobody is looking",
   draft_waiting: "Message waiting for you",
   expiring_opportunity: "Load about to go",
+  broker_replied: "Broker answered",
+  offer_expiring: "Offer about to lapse",
+  agreed_not_booked: "Agreed, not booked",
+  driver_consent: "Driver has not accepted",
+  broker_profile_unlinked: "Broker profile not linked",
 };
 
 /**

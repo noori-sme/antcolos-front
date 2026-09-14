@@ -1,6 +1,6 @@
 import type {
-  LearningSummary, Listing, MatchWithListing, OutreachDraft, RankingPreferences,
-  SearchSession,
+  BookingRecord, LearningSummary, Listing, MatchWithListing, NegotiationSummary,
+  OutreachDraft, RankingPreferences, SearchSession,
 } from "@/types";
 import { expireStaleListings, listingsFor } from "./listing-registry";
 import {
@@ -11,6 +11,11 @@ import {
   draftIdForMatch, draftsFor, draftsForCycle, reconcileDrafts,
   supersedeDraftsForListing,
 } from "./outreach-drafts";
+import {
+  closeNegotiationsForListing, expireStaleOffers, negotiationsForCycle,
+  openNegotiations, summarizeAll,
+} from "./negotiation";
+import { bookingForCycle, bookingsForWorkspace } from "./booking";
 import { learningFor, rankingPreferences } from "./ranking";
 import { sessionForCycle, sessionsFor } from "./search-session";
 import { openLoopsFor, type MtLoopContext } from "./mt-loop";
@@ -53,6 +58,10 @@ export interface OpportunityInbox {
   rest: MatchWithListing[];
   drafts: OutreachDraft[];
   sessions: SearchSession[];
+  /** Conversations still live, whichever truck they are for. */
+  negotiations: NegotiationSummary[];
+  /** Loads booked out of this inbox, newest first. */
+  bookings: BookingRecord[];
   ranking: RankingPreferences;
   learning: LearningSummary;
   counts: {
@@ -62,6 +71,12 @@ export interface OpportunityInbox {
     ineligible: number;
     shortlisted: number;
     draftsWaiting: number;
+    /** Conversations where the ball is with us. */
+    negotiationsWaitingOnYou: number;
+    /** Agreed with a broker and not yet turned into a load. */
+    agreedNotBooked: number;
+    /** Booked loads still waiting on a driver to accept. */
+    consentPending: number;
     openCycles: number;
     /** Cycles with no search running. The ones nobody is looking for. */
     cyclesWithoutSearch: number;
@@ -86,6 +101,10 @@ const TOP_N = 5;
  */
 export function refreshOpportunities(ctx: MtLoopContext): void {
   expireStaleListings(ctx.organizationId);
+  // Offers age out AFTER the listings do, so a number that went stale because
+  // the load itself came off the board is recorded as the load going, not as
+  // the dispatcher being slow.
+  expireStaleOffers(ctx);
   reconcileMatches(ctx);
   reconcileDrafts(ctx);
 }
@@ -98,6 +117,8 @@ export function opportunityInboxSync(ctx: MtLoopContext): OpportunityInbox {
   const drafts = draftsFor(ctx);
   const sessions = sessionsFor(ctx);
   const loops = openLoopsFor(ctx);
+  const bookings = bookingsForWorkspace(ctx);
+  const negotiations = withBookings(summarizeAll(openNegotiations(ctx), ctx), bookings);
 
   // Only genuinely eligible work can be "the best". A short list with an
   // ineligible load in it is not a short list, it is a trap.
@@ -119,6 +140,8 @@ export function opportunityInboxSync(ctx: MtLoopContext): OpportunityInbox {
     rest,
     drafts,
     sessions,
+    negotiations,
+    bookings,
     ranking: rankingPreferences(ctx.organizationId),
     learning: learningFor(ctx.organizationId),
     counts: {
@@ -128,6 +151,13 @@ export function opportunityInboxSync(ctx: MtLoopContext): OpportunityInbox {
       ineligible: matches.filter((m) => m.match.status === "ineligible").length,
       shortlisted: matches.filter((m) => m.match.status === "shortlisted").length,
       draftsWaiting: drafts.filter((d) => d.status === "ready").length,
+      negotiationsWaitingOnYou: negotiations.filter(
+        (n) => n.negotiation.status === "waiting_on_you",
+      ).length,
+      agreedNotBooked: negotiations.filter(
+        (n) => n.negotiation.status === "agreed",
+      ).length,
+      consentPending: bookings.filter((b) => b.consent === "pending").length,
       openCycles: loops.length,
       cyclesWithoutSearch,
     },
@@ -150,6 +180,10 @@ export interface TruckOpportunities {
   /** Everything else considered for it, each with the reason it ranks lower. */
   rest: MatchWithListing[];
   drafts: OutreachDraft[];
+  /** Every conversation on this cycle, open or finished, newest first. */
+  negotiations: NegotiationSummary[];
+  /** The load booked onto this cycle, once there is one. */
+  booking?: BookingRecord;
   ranking: RankingPreferences;
   counts: { considered: number; eligible: number; ineligible: number; shortlisted: number };
 }
@@ -171,6 +205,11 @@ export function truckOpportunitiesSync(
     top,
     rest: matches.filter((m) => !topIds.has(m.match.matchId)),
     drafts: draftsForCycle(dispatchCycleId, ctx),
+    negotiations: withBookings(
+      summarizeAll(negotiationsForCycle(dispatchCycleId, ctx), ctx),
+      bookingsForWorkspace(ctx),
+    ),
+    booking: bookingForCycle(dispatchCycleId, ctx),
     ranking: rankingPreferences(ctx.organizationId),
     counts: {
       considered: matches.length,
@@ -187,6 +226,26 @@ export async function truckOpportunities(
 ): Promise<TruckOpportunities> {
   await sleep(LATENCY_MS);
   return truckOpportunitiesSync(dispatchCycleId, ctx);
+}
+
+/**
+ * Put each booking next to the conversation that produced it.
+ *
+ * Joined here rather than inside the negotiation service, which must not know
+ * that booking exists: booking reads negotiations, and a module that reads back
+ * the other way would be a cycle. This file already knows about both, which is
+ * what it is for.
+ */
+function withBookings(
+  rows: NegotiationSummary[],
+  bookings: BookingRecord[],
+): NegotiationSummary[] {
+  if (bookings.length === 0) return rows;
+  const byNegotiation = new Map(bookings.map((b) => [b.negotiationId, b]));
+  return rows.map((r) => {
+    const booking = byNegotiation.get(r.negotiation.negotiationId);
+    return booking ? { ...r, booking } : r;
+  });
 }
 
 function attachDrafts(rows: MatchWithListing[], ctx: MtLoopContext): MatchWithListing[] {
@@ -206,9 +265,8 @@ export interface CloseoutResult extends BookingOutcome {
 /**
  * One truck got it. Everything else about that load stands down.
  *
- * Booking proper is milestone 8 — this is the mechanism it will call, built now
- * because the matches and drafts it has to stand down are built now. Two things
- * have to happen together and neither is optional: competing MATCHES close, and
+ * The booking service calls this as part of committing a truck. Two things have
+ * to happen together and neither is optional: competing MATCHES close, and
  * competing DRAFTS are superseded. Closing the matches alone leaves a prepared
  * email about a load that is gone sitting in somebody's review queue.
  */
@@ -240,8 +298,11 @@ export function markTakenElsewhere(
   listingId: string,
   ctx: MtLoopContext,
   reason: string,
-): { closedMatchIds: string[]; supersededDraftIds: string[] } {
+): { closedMatchIds: string[]; supersededDraftIds: string[]; closedNegotiationIds: string[] } {
   const closedMatchIds = listingTakenElsewhere(listingId, ctx, reason);
   const supersededDraftIds = supersedeDraftsForListing(ctx.organizationId, listingId, reason);
-  return { closedMatchIds, supersededDraftIds };
+  // A conversation about a load that is gone is the worst of the three to
+  // leave open: it is the one where somebody is still typing.
+  const closedNegotiationIds = closeNegotiationsForListing(ctx.organizationId, listingId, reason);
+  return { closedMatchIds, supersededDraftIds, closedNegotiationIds };
 }

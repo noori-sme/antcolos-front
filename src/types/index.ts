@@ -21,6 +21,7 @@ export type * from "./workspace";
 export type * from "./mt-loop";
 export type * from "./carrier";
 export type * from "./opportunity";
+export type * from "./negotiation";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
@@ -30,6 +31,11 @@ export {
   MATCH_STATUS_LABEL, CHECK_LABEL, FACTOR_LABEL, FACTOR_DESCRIPTION,
   SEARCH_STATUS_LABEL, DRAFT_STATUS_LABEL,
 } from "./opportunity";
+export {
+  NEGOTIATION_ROUND_LABEL, NEGOTIATION_CHANNEL_LABEL, NEGOTIATION_STATUS_LABEL,
+  NEGOTIATION_OPEN_STATUSES, isNegotiationOpen, UNARGUABLE_CHECKS,
+  CONSENT_LABEL, BOOKING_BLOCK_LABEL,
+} from "./negotiation";
 export {
   AUTHORITY_STATUS_LABEL, CONTACT_ROLE_LABEL, RULE_KIND_LABEL,
   CARRIER_DOCUMENT_LABEL, authorityAllowsDispatch,

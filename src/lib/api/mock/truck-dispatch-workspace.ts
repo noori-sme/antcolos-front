@@ -354,10 +354,8 @@ const CARRIER_DOC: Record<string, string> = {
  * greyed-out button that looks like it might work.
  */
 const PLANNED_SECTIONS: PlannedSection[] = [
-  { key: "outreach", milestone: 5, title: "Outreach", description: "Actually sending the prepared messages, plus calls and follow-ups, with the whole contact history in one thread. Drafts are prepared today; nothing is sent." },
-  { key: "negotiation", milestone: 6, title: "Negotiation", description: "Offers, counteroffers, rate per mile, estimated profit, conditions and expiry." },
-  { key: "ratecon", milestone: 7, title: "Rate confirmation", description: "The rate confirmation received, read, checked field by field, and turned into the confirmed load." },
-  { key: "booking", milestone: 8, title: "Booking and consent", description: "The driver's acceptance, the truck and trailer locked to the load, and every document and authority checked first." },
+  { key: "outreach", milestone: 5, title: "Outreach", description: "Actually sending the prepared messages, plus reusable templates for follow-ups, in-transit updates and thank-yous. Drafts are prepared and conversations are recorded today; nothing is sent." },
+  { key: "ratecon", milestone: 7, title: "Rate confirmation", description: "The broker's rate confirmation matched to this load, read field by field beside the original, signed with the carrier's authorised signature and returned." },
   { key: "pickup", milestone: 9, title: "Dispatch and pickup", description: "Load details sent, then dispatched, en route, arrived and loaded." },
   { key: "transit", milestone: 10, title: "In transit", description: "Location, ETA, delays, detention and exceptions, with the dispatcher's follow-ups." },
   { key: "delivery", milestone: 11, title: "Delivery and documents", description: "Arrived, unloaded, proof of delivery, receipts, and anything short or damaged." },
