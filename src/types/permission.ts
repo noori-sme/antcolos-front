@@ -31,6 +31,11 @@ export type PermissionKey =
   // Accounting and financial information
   | "rates:view" | "rates:edit"
   | "revenue:view" | "expenses:view" | "profitability:view"
+  // Fuel and IFTA — a fuel purchase and a mileage record are separate powers
+  | "fuel:view" | "fuel:record" | "fuel:import"
+  | "fuel:review" | "fuel:correct" | "fuel:export" | "fuel:costs:view"
+  | "mileage:view" | "mileage:record" | "mileage:review"
+  | "ifta:view" | "ifta:manage"
   // Compliance & safety
   | "compliance:view" | "compliance:manage"
   // Organization members
@@ -47,7 +52,7 @@ export type PermissionKey =
 export type PermissionGroup =
   | "loads" | "dispatch" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
-  | "accounting" | "compliance"
+  | "accounting" | "fuel" | "compliance"
   | "members" | "invitations" | "organization";
 
 export interface PermissionMeta {

@@ -14,6 +14,7 @@ export const DOCUMENT_KIND_LABEL: Record<DocumentKind, string> = {
   driver_license: "Driver licence",
   medical_card: "Medical card",
   equipment_registration: "Equipment registration",
+  fuel_receipt: "Fuel receipt",
   other: "Other",
 };
 

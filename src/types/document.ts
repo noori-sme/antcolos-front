@@ -21,6 +21,9 @@ export type DocumentKind =
   | "driver_license"
   | "medical_card"
   | "equipment_registration"
+  /** A fuel receipt. The same Document record every other kind uses — fuel
+   *  does not get a document entity of its own. */
+  | "fuel_receipt"
   | "other";
 
 /** State of machine extraction. "not_applicable" for documents never parsed. */
@@ -33,7 +36,9 @@ export type VerificationState =
 
 /** What a document is attached to. A document may link to several entities. */
 export interface DocumentLink {
-  entityKind: "load" | "stop" | "driver" | "truck" | "trailer" | "customer" | "settlement" | "invoice";
+  entityKind:
+    | "load" | "stop" | "driver" | "truck" | "trailer" | "customer"
+    | "settlement" | "invoice" | "fuel_transaction";
   entityId: string;
 }
 

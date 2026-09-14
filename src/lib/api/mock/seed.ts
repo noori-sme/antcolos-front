@@ -527,6 +527,9 @@ export function buildSeed(): Record<string, OrgData> {
     org_northline: northline(),
     org_meridian: meridian(),
     org_summit: empty(),
+    // The second carrier. Sam owns it, so every organization-scoped screen has
+    // to work under it — including the ones that have nothing to show.
+    org_baxter: empty(),
     org_cascade: cascade(),
   };
 }

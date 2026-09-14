@@ -14,9 +14,11 @@ export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
 export type * from "./trailer";
+export type * from "./fuel";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";
+export { EXCLUDED_FUEL_STATES, EXCLUDED_MILEAGE_STATES } from "./fuel";

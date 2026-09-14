@@ -9,6 +9,7 @@ import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
 import { mockStore } from "./store";
+import { syncFuelNeedsYou } from "./fuel-needs-you";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { nowIso } from "./time";
 
@@ -102,6 +103,9 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
 export const mockNeedsYouService: NeedsYouService = {
   async list(ctx, filters = {}) {
     await wait();
+    // Fuel items are derived from the ledger, not seeded, so the queue is
+    // brought into line with it before anything is read.
+    syncFuelNeedsYou(ctx);
     const org = mockStore.org(ctx.organizationId);
     return org.needsYou
       .map(autoUnsnooze)
@@ -112,10 +116,12 @@ export const mockNeedsYouService: NeedsYouService = {
 
   async get(ctx, itemId) {
     await wait();
+    syncFuelNeedsYou(ctx);
     return autoUnsnooze(find(ctx, itemId));
   },
 
   async openCount(ctx) {
+    syncFuelNeedsYou(ctx);
     const org = mockStore.org(ctx.organizationId);
     return org.needsYou
       .map(autoUnsnooze)

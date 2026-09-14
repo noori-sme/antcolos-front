@@ -21,6 +21,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
       "drivers:view", "trucks:view", "trailers:view", "customers:view",
       "documents:view", "documents:upload", "compliance:view",
+      // Operational fuel only. No cost, and deliberately no IFTA: tax access
+      // is never something a dispatcher picks up by being a dispatcher.
+      "fuel:view", "mileage:view",
     ],
   },
   {
@@ -41,6 +44,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "rates:view", "revenue:view", "expenses:view",
       "settlements:view", "settlements:create", "settlements:export",
       "invoices:view", "invoices:create", "customers:view", "documents:view",
+      "fuel:view", "fuel:costs:view", "fuel:export", "mileage:view", "ifta:view",
     ],
   },
   {
@@ -72,6 +76,19 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "trailers:view", "trailers:edit", "trailers:documents:manage",
       "trailers:status:manage", "trailers:attachments:manage",
       "documents:view", "documents:upload",
+    ],
+  },
+  {
+    name: "Fuel and tax",
+    description:
+      "Fuel purchases, jurisdiction mileage and the quarterly IFTA return. The only seeded template that carries tax access.",
+    seeded: true,
+    permissions: [
+      "fuel:view", "fuel:record", "fuel:import", "fuel:review", "fuel:correct",
+      "fuel:export", "fuel:costs:view",
+      "mileage:view", "mileage:record", "mileage:review",
+      "ifta:view", "ifta:manage",
+      "trucks:view", "drivers:view", "documents:view", "documents:upload",
     ],
   },
 ] as const;

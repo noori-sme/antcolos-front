@@ -1,7 +1,8 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BadgeCheck, Bell, Building2, ClipboardList, Container, FileText, Gauge,
-  Home, IdCard, Inbox, Link2, MailPlus, Package, Palette, Receipt, Route, ScrollText, Settings2,
+  BadgeCheck, Bell, Building2, CalendarClock, ClipboardList, Container, FileText,
+  Fuel, Gauge, Home, IdCard, Inbox, Link2, MailPlus, Map, Package, Palette,
+  Receipt, ReceiptText, Route, ScrollText, Settings2,
   Shield, Truck, UserCircle, Users, UsersRound,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
@@ -45,6 +46,16 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
+    ],
+  },
+  {
+    id: "fuel",
+    label: "Fuel & IFTA",
+    items: [
+      { label: "Fuel", href: "/fuel", icon: Fuel, requires: ["fuel:view"] },
+      { label: "Fuel purchases", href: "/fuel/transactions", icon: ReceiptText, requires: ["fuel:view"] },
+      { label: "Jurisdiction mileage", href: "/fuel/mileage", icon: Map, requires: ["mileage:view"] },
+      { label: "IFTA quarters", href: "/fuel/ifta", icon: CalendarClock, requires: ["ifta:view"] },
     ],
   },
   {

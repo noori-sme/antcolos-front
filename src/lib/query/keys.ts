@@ -18,4 +18,22 @@ export const queryKeys = {
     [...orgKey(organizationId), "members"] as const,
   loads: (organizationId: string, filters?: unknown) =>
     [...orgKey(organizationId), "loads", filters ?? null] as const,
+  fuelDashboard: (organizationId: string, membershipId: string, window: unknown) =>
+    [...orgKey(organizationId), "fuel", "dashboard", membershipId, window ?? null] as const,
+  fuelTransactions: (organizationId: string, membershipId: string, filters?: unknown) =>
+    [...orgKey(organizationId), "fuel", "transactions", membershipId, filters ?? null] as const,
+  fuelTransaction: (organizationId: string, membershipId: string, id: string) =>
+    [...orgKey(organizationId), "fuel", "transaction", membershipId, id] as const,
+  fuelMileage: (organizationId: string, membershipId: string, filters?: unknown) =>
+    [...orgKey(organizationId), "fuel", "mileage", membershipId, filters ?? null] as const,
+  fuelAudit: (organizationId: string, membershipId: string, subjectId?: string) =>
+    [...orgKey(organizationId), "fuel", "audit", membershipId, subjectId ?? null] as const,
+  fuelIntegrations: (organizationId: string) =>
+    [...orgKey(organizationId), "fuel", "integrations"] as const,
+  fuelSharing: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "fuel", "sharing", membershipId] as const,
+  iftaPeriods: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "ifta", "periods", membershipId] as const,
+  iftaPeriod: (organizationId: string, membershipId: string, id: string) =>
+    [...orgKey(organizationId), "ifta", "period", membershipId, id] as const,
 } as const;
