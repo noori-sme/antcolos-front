@@ -10,8 +10,8 @@ import type {
  *
  * One permanent user with several memberships, chosen to prove the model: the
  * same person is an Owner in two different carriers, a rate-blind Dispatcher in
- * a dispatch agency, an Owner in another, and a scoped Driver in a fifth.
- * Nothing about the profile changes when they switch.
+ * a dispatch agency, an Owner in another, a company Driver in a fifth and an
+ * owner-operator in a sixth. Nothing about the profile changes when they switch.
  */
 
 export const MOCK_USER: User = {
@@ -79,6 +79,20 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     dotNumber: "2910446",
     timeZone: "America/Los_Angeles",
     createdAt: "2026-05-30T19:45:00.000Z",
+  },
+  {
+    // The second driver seat, and the reason it exists: Sam is a COMPANY
+    // DRIVER at Cascade and an OWNER-OPERATOR here. Same person, same product,
+    // two engagements — which is the only way to see that the proposal view and
+    // the actions on it are decided by carrier policy and not by the screen.
+    id: "org_stonebridge",
+    type: "CARRIER",
+    legalName: "Stonebridge Carriers LLC",
+    displayName: "Stonebridge Carriers",
+    dotNumber: "3620118",
+    mcNumber: "MC-1203774",
+    timeZone: "America/New_York",
+    createdAt: "2026-06-22T12:15:00.000Z",
   },
 ];
 
@@ -161,6 +175,20 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     driverProfileId: "drv_cascade_0192",
     isOwner: false,
     joinedAt: "2026-05-30T19:45:00.000Z",
+  },
+  {
+    id: "mem_stonebridge_driver",
+    userId: MOCK_USER.id,
+    organizationId: "org_stonebridge",
+    status: "active",
+    title: "Owner-operator",
+    templateIds: [tpl("org_stonebridge", "driver")],
+    grants: [],
+    revocations: [],
+    scope: OWN_RECORDS_SCOPE,
+    driverProfileId: "drv_sb_0044",
+    isOwner: false,
+    joinedAt: "2026-06-22T12:15:00.000Z",
   },
 ];
 

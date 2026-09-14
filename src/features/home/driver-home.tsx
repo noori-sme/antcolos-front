@@ -17,6 +17,9 @@ import { destinationStop, originStop } from "@/types";
 import { CATEGORY_LABEL } from "@/types";
 import { useHomeSummary } from "./hooks";
 import { ProfileChecklistBanner } from "@/features/driver/profile-checklist-banner";
+import {
+  ActiveTripCard, ProposalsWaitingCard,
+} from "@/features/driver-workflow/home-cards";
 
 /**
  * Driver home: the current or next load first, one clear next action, and the
@@ -57,6 +60,11 @@ export function DriverHomeScreen() {
 
       {/* Prominent, but never in the way of the load. */}
       <ProfileChecklistBanner />
+
+      {/* The two things that need the driver: an unanswered proposal, and the
+          trip they are in the middle of. Both render nothing when empty. */}
+      <ProposalsWaitingCard />
+      <ActiveTripCard />
 
       {current ? (
         <Card className="border-primary/40">
@@ -121,8 +129,8 @@ export function DriverHomeScreen() {
               </Button>
             </div>
             <p className="text-[0.75rem] text-fg-subtle">
-              Status updates and photo upload arrive with the driver portal
-              milestone. Telegram stays your primary workflow.
+              Milestones, fuel and rest updates and paperwork live on the trip
+              itself — open the load to record them.
             </p>
           </CardContent>
         </Card>

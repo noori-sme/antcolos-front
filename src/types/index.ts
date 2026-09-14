@@ -14,9 +14,15 @@ export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
 export type * from "./trailer";
+export type * from "./integration";
+export type * from "./driver-policy";
+export type * from "./driver-proposal";
+export type * from "./driver-workflow";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";
+export { FINANCIAL_COUNTEROFFER_KINDS } from "./driver-policy";
+export { CLOSED_PROPOSAL_STATUSES } from "./driver-proposal";

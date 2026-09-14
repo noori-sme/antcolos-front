@@ -73,6 +73,7 @@ const CARRIER_EXTRA_DOCUMENTS: Record<string, DriverDocumentRequirement[]> = {
     },
   ],
   org_cascade: [],
+  org_stonebridge: [],
 };
 
 /** The full checklist for one engagement with one carrier. */
@@ -115,11 +116,27 @@ function seedRelationships(): CarrierRelationship[] {
       carrierName: "Cascade Haul",
       engagementType: "company_driver",
       roleName: "Driver",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      permissions: ["loads:view", "loads:status:update", "proposals:view", "proposals:respond", "trips:execute", "documents:view", "documents:upload", "settlements:view"],
       invitedAt: daysAgo(110),
       startedAt: daysAgo(108),
       status: "active",
       sharedDocumentKeys: ["cdl_front", "cdl_back", "medical_front"],
+    },
+    {
+      // The owner-operator side of the same person. Engagement type is the
+      // carrier's decision, not the driver's, and it is what the proposal and
+      // trip policies are resolved from.
+      id: "rel_stonebridge",
+      driverProfileId: "dp_sam",
+      carrierId: "org_stonebridge",
+      carrierName: "Stonebridge Carriers",
+      engagementType: "owner_operator",
+      roleName: "Owner-operator",
+      permissions: ["loads:view", "loads:status:update", "proposals:view", "proposals:respond", "trips:execute", "documents:view", "documents:upload"],
+      invitedAt: daysAgo(86),
+      startedAt: daysAgo(84),
+      status: "active",
+      sharedDocumentKeys: ["cdl_front", "cdl_back", "medical_front", "w9", "coi", "vehicle_registration"],
     },
     {
       id: "rel_ridgeway",

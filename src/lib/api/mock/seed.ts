@@ -514,6 +514,78 @@ function cascade(): OrgData {
   return { loads, events, documents, drivers, customers, needsYou: items };
 }
 
+// ---------------------------------------------------------------------------
+// Stonebridge Carriers — CARRIER. Sam runs here as an OWNER-OPERATOR, which is
+// what makes the two driver policies comparable side by side: the same person,
+// the same product, two engagements, two different views of the money.
+// ---------------------------------------------------------------------------
+
+function stonebridge(): OrgData {
+  const org = "org_stonebridge";
+  const me = "drv_sb_0044";
+
+  const customers: Customer[] = [
+    { id: "cus_sb_keystone", organizationId: org, name: "Keystone Brokerage", kind: "broker", contactName: "Nadia Frost", phone: "+1 (412) 555-0119" },
+    { id: "cus_sb_hartline", organizationId: org, name: "Hartline Manufacturing", kind: "shipper", contactName: "Gus Oyelaran" },
+  ];
+
+  const drivers: Driver[] = [
+    { id: me, organizationId: org, userId: "usr_sam", displayName: "Sam Murtaza", status: "driving", telegramConnected: true, documentWarnings: 0 },
+    { id: "drv_sb_02", organizationId: org, displayName: "Lena Whitfield", status: "available", telegramConnected: false, documentWarnings: 0 },
+  ];
+
+  const TZ = "America/New_York";
+  const { loads, events, documents } = expand(org, [
+    {
+      ref: "SB-1042", customerRef: "KEY-88213", status: "dispatched",
+      customer: { id: "cus_sb_keystone", name: "Keystone Brokerage", kind: "broker", mc: "MC-774301", contact: "Nadia Frost", phone: "+1 (412) 555-0119" },
+      pickup: { city: "Pittsburgh", state: "PA", timeZone: TZ, at: hoursFromNow(-2), facility: "Hartline Plant 2", contactName: "Shipping office", phone: "+1 (412) 555-0170", instructions: "Check in at the scale house. Trailer seal is applied by the shipper.", refs: [["PU", "88213-B"]] },
+      delivery: { city: "Richmond", state: "VA", timeZone: TZ, at: hoursFromNow(11), facility: "Keystone DC Richmond", appointmentType: "window", windowHours: 3, contactName: "Receiving", phone: "+1 (804) 555-0155", instructions: "Window is 3 hours. Lumper is paid by the receiver.", refs: [["Delivery", "RIC-2290"]] },
+      linehaul: 92500, loaded: 344, deadhead: 22, equipment: "box_truck", weight: 8100, commodity: "Fabricated steel brackets",
+      driverId: me, driverName: "Sam Murtaza",
+      has: ["rate_confirmation"],
+    },
+    {
+      // Papered but not yet posted: its rate confirmation is reviewed, signed
+      // and sent, and no Driver Load Post exists for it yet. This is the exact
+      // moment finalization acts on, and it is what makes the overlapping
+      // Richmond proposals answerable one way or the other.
+      ref: "SB-1048", customerRef: "HRT-4410", status: "assigned",
+      customer: { id: "cus_sb_hartline", name: "Hartline Manufacturing", kind: "shipper", contact: "Gus Oyelaran" },
+      pickup: { city: "Richmond", state: "VA", timeZone: TZ, at: hoursFromNow(17), facility: "Hartline Richmond Yard" },
+      delivery: { city: "Durham", state: "NC", timeZone: TZ, at: hoursFromNow(30) },
+      linehaul: 96000, loaded: 152, deadhead: 6, equipment: "box_truck", weight: 6800, commodity: "Crated assemblies",
+      driverId: me, driverName: "Sam Murtaza",
+      has: ["rate_confirmation"],
+    },
+    {
+      ref: "SB-1036", customerRef: "KEY-87740", status: "delivered",
+      customer: { id: "cus_sb_keystone", name: "Keystone Brokerage", kind: "broker", mc: "MC-774301", contact: "Nadia Frost" },
+      pickup: { city: "Harrisburg", state: "PA", timeZone: TZ, at: daysFromNow(-4), arrived: daysFromNow(-4), departed: daysFromNow(-4) },
+      delivery: { city: "Charlotte", state: "NC", timeZone: TZ, at: daysFromNow(-3), arrived: daysFromNow(-3), departed: daysFromNow(-3) },
+      linehaul: 118000, accessorials: [{ code: "detention", label: "Detention, 2 hrs", cents: 13000 }],
+      loaded: 468, deadhead: 15, equipment: "box_truck", weight: 9200, commodity: "Palletized hardware",
+      driverId: me, driverName: "Sam Murtaza",
+      has: ["rate_confirmation", "bill_of_lading", "proof_of_delivery"],
+    },
+  ]);
+
+  const ld = (ref: string) => loads.find((l) => l.reference === ref)!;
+
+  const items: NeedsYouItem[] = [
+    needsYou(org, {
+      category: "status_confirmation", severity: "medium",
+      title: "SB-1042 is dispatched and has not started rolling",
+      reason: "The rate confirmation is signed and sent. The trip workflow is waiting for you to start.",
+      entity: { kind: "load", id: ld("SB-1042").id, label: "SB-1042 · Pittsburgh, PA → Richmond, VA", href: "/driver/loads" },
+      recommendedAction: { kind: "confirm_status", label: "Open the trip", requires: ["trips:execute"], deferred: true },
+      dueAt: hoursFromNow(1), source: "system", requires: ["loads:view"],
+    }),
+  ];
+
+  return { loads, events, documents, drivers, customers, needsYou: items };
+}
+
 /** A newly created organization that has not booked anything yet. */
 function empty(): OrgData {
   return {
@@ -528,5 +600,6 @@ export function buildSeed(): Record<string, OrgData> {
     org_meridian: meridian(),
     org_summit: empty(),
     org_cascade: cascade(),
+    org_stonebridge: stonebridge(),
   };
 }

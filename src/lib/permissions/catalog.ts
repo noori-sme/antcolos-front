@@ -30,6 +30,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "dispatch:view", label: "Open the dispatch board", description: "See the planning board of trucks and available freight.", group: "dispatch" },
   { key: "loads:assign", label: "Assign loads", description: "Put a driver, truck and trailer on a load.", group: "dispatch" },
 
+  // ---- Driver decision and trip workflow ---------------------------------
+  { key: "proposals:view", label: "See load proposals", description: "See load opportunities dispatch sends you before they are booked.", group: "driver_workflow" },
+  { key: "proposals:respond", label: "Answer load proposals", description: "Approve, reject, pause, comment on or counter a load proposal.", group: "driver_workflow" },
+  { key: "trips:execute", label: "Run the trip workflow", description: "Record trip milestones, fuel, rest and other operational updates, and attach the paperwork they produce.", group: "driver_workflow" },
+
   // ---- Drivers -----------------------------------------------------------
   { key: "drivers:view", label: "View drivers", description: "See driver records, contact details and availability.", group: "drivers" },
   { key: "drivers:create", label: "Add drivers", description: "Create a new driver record.", group: "drivers" },
@@ -120,6 +125,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   loads: "Loads",
   dispatch: "Dispatch",
+  driver_workflow: "Driver proposals and trips",
   drivers: "Drivers",
   trucks: "Trucks",
   trailers: "Trailers",
@@ -137,7 +143,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 
 /** The reading order of the modules in every permission list. */
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
-  "loads", "dispatch", "drivers", "trucks", "trailers", "customers",
+  "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers", "customers",
   "documents", "settlements", "invoices", "reports", "accounting",
   "compliance", "members", "invitations", "organization",
 ] as const;
