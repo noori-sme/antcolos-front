@@ -35,6 +35,13 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // Where the equipment is, and whether its device is reporting. Not the
       // engine's faults, not the driver's clock, and not the raw payloads.
       "eld:view",
+      // Exact position — but only ever for the trucks a carrier has explicitly
+      // shared with this workspace, and only while that carrier keeps sharing
+      // it. The permission says what a dispatcher may hold; the carrier's
+      // per-truck share says which trucks it reaches, and both have to agree.
+      // A dispatcher covering a truck needs to know how far out it is; a
+      // dispatcher who is not covering it learns nothing either way.
+      "eld:location:precise:view",
       "maintenance:view",
       // A dispatcher is usually the first to hear about a wreck, so they can
       // open a claim. They are not given the policy, and never the money.

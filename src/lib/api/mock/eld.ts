@@ -23,7 +23,8 @@ import {
   disconnectConnection, endDriverBinding, endVehicleBinding, findRawPayload, grantShare,
   ingestDelivery, listBindingHistory, listConnections, listDevices, listDriverBindings,
   listEvents, listRawPayloads, listShares, listSignals, listVehicleBindings,
-  registerConnection, registerDevice, retireDevice, revokeShare, sharedClassesFor,
+  precisePositionSharedFor, registerConnection, registerDevice, retireDevice, revokeShare,
+  sharedClassesFor,
 } from "./eld-registry";
 
 /**
@@ -89,6 +90,13 @@ interface TruckScope {
   unit: string;
   ownerOrganizationId: string;
   classes: readonly EldSignalClass[];
+  /**
+   * Whether the CARRIER granted exact coordinates for this truck.
+   *
+   * Per truck, never per relationship. A carrier sharing two trucks may
+   * withhold precision on one of them, and this is where that lands.
+   */
+  precisePositionShared: boolean;
 }
 
 const ALL_CLASSES: readonly EldSignalClass[] = ["position", "meters", "diagnostics", "hos"];
@@ -124,6 +132,9 @@ function truckScopes(ctx: ServiceContext): TruckScope[] {
         unit: t.unit,
         ownerOrganizationId: ctx.organizationId,
         classes: ALL_CLASSES,
+        // Its own equipment. There is no share to consult, so the membership's
+        // own permission is the only gate — as it was before sharing existed.
+        precisePositionShared: true,
       }));
   }
 
@@ -139,6 +150,7 @@ function truckScopes(ctx: ServiceContext): TruckScope[] {
       unit,
       ownerOrganizationId: share.ownerOrganizationId,
       classes,
+      precisePositionShared: precisePositionSharedFor(ctx.organizationId, share.truckId),
     });
   }
   return scopes;
@@ -176,8 +188,24 @@ function mayReadHosOf(ctx: ServiceContext, driverProfileId?: string): boolean {
   return Boolean(driverProfileId) && driverProfileId === ctx.driverProfileId;
 }
 
-const mayReadPrecise = (ctx: ServiceContext) =>
-  ctx.permissions.has("eld:location:precise:view");
+/**
+ * Whether this caller may hold exact coordinates for ONE truck.
+ *
+ * Two gates, and both must pass. The membership's permission says what this
+ * person may hold at all; the carrier's share says which trucks it reaches.
+ * Holding `eld:location:precise:view` does not conjure a grant, and being
+ * granted precision does not substitute for the permission — the same shape
+ * `permittedClasses` uses for diagnostics and hours of service, for the same
+ * reason.
+ *
+ * Taking the SCOPE rather than a truck id is deliberate: a scope only exists
+ * for a truck this caller may already see, so there is no way to ask this
+ * question about somebody else's equipment.
+ */
+function mayReadPreciseFor(ctx: ServiceContext, scope: TruckScope): boolean {
+  if (!ctx.permissions.has("eld:location:precise:view")) return false;
+  return scope.precisePositionShared;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Event filtering                                                             */
@@ -210,7 +238,7 @@ function visibleEvents(
       return mayReadHosOf(ctx, event.attribution.driverProfileId);
     }
     return true;
-  }).map((event) => redactEvent(ctx, event));
+  }).map((event) => redactEvent(ctx, event, byTruck.get(event.attribution.truckId ?? "")));
 }
 
 /**
@@ -220,8 +248,16 @@ function visibleEvents(
  * append-only, and a redaction that mutated a row would make one viewer's
  * permissions permanently change what everybody else sees.
  */
-function redactEvent(ctx: ServiceContext, event: TelemetryEvent): TelemetryEvent {
-  if (event.value.kind !== "location" || mayReadPrecise(ctx)) return { ...event };
+function redactEvent(
+  ctx: ServiceContext,
+  event: TelemetryEvent,
+  scope: TruckScope | undefined,
+): TelemetryEvent {
+  // No scope means the event is not attributed to a truck this caller holds a
+  // scope for — a carrier's own unattributed event. Its own equipment, so the
+  // membership permission alone decides.
+  const precise = scope ? mayReadPreciseFor(ctx, scope) : ctx.permissions.has("eld:location:precise:view");
+  if (event.value.kind !== "location" || precise) return { ...event };
   return {
     ...event,
     value: {
@@ -376,7 +412,7 @@ function snapshotFor(
     providerNameOf: providerName,
     includeHos: mayHos,
     includeDiagnostics: allowed.has("diagnostics"),
-    includePreciseLocation: mayReadPrecise(ctx),
+    includePreciseLocation: mayReadPreciseFor(ctx, scope),
     nowMs: Date.now(),
   });
   if (!namesAllowed && device) snapshot.deviceWithheld = true;
@@ -773,6 +809,7 @@ export const mockEldService: EldService = {
       viewerOrganizationId: input.viewerOrganizationId,
       truckId: input.truckId,
       signalClasses: input.signalClasses,
+      precisePosition: input.precisePosition,
       grantedByMembershipId: ctx.membershipId,
       note: input.note,
     }) satisfies EldShare;
@@ -949,7 +986,7 @@ export function eldTelemetryForTruckSync(
     truckUnit: scope.unit,
     ownerOrganizationId: scope.ownerOrganizationId,
     scoped: true,
-    precise: mayReadPrecise(ctx),
+    precise: mayReadPreciseFor(ctx, scope),
     classes: [...allowed],
     snapshot: snapshotFor(ctx, scope),
     // Redacted by the same function the event list uses, so a caller cannot
@@ -968,7 +1005,14 @@ export function eldTruckIsScopedSync(ctx: ServiceContext, truckId: string): bool
   return Boolean(scope && permittedClasses(ctx, scope).has("position"));
 }
 
-/** True when this membership may hold coordinates rather than a city name. */
-export function eldPreciseLocationAllowed(ctx: ServiceContext): boolean {
-  return mayReadPrecise(ctx);
+/**
+ * Whether this caller may hold coordinates for one truck.
+ *
+ * Deliberately takes a truck: since precision is granted per truck there is no
+ * honest context-level answer, and a helper that gave one would be wrong for
+ * every carrier that withheld it on a single unit.
+ */
+export function eldPreciseLocationAllowedFor(ctx: ServiceContext, truckId: string): boolean {
+  const scope = truckScopes(ctx).find((s) => s.truckId === truckId);
+  return Boolean(scope && mayReadPreciseFor(ctx, scope));
 }

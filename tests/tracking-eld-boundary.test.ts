@@ -11,12 +11,13 @@ import {
   addTrackingRecipient, openTrackingSession,
 } from "@/lib/api/mock/tracking-registry";
 import { eldTelemetryForTruckSync } from "@/lib/api/mock/eld";
+import { services } from "@/lib/api";
 import { appendReading } from "@/lib/api/mock/fleet-telemetry";
 import { TRUCK_IDS } from "@/lib/api/mock/truck-registry";
 import { mockStore } from "@/lib/api/mock/store";
 import {
-  MERIDIAN_DISPATCHER, NORTHLINE_OWNER, SOLO_DISPATCHER, resetWorld,
-  trackingContextFor, without,
+  MERIDIAN_DISPATCHER, NORTHLINE_OWNER, SOLO_DISPATCHER, SUMMIT_OWNER, resetWorld,
+  rejects, trackingContextFor, without,
 } from "./tracking-harness";
 
 /**
@@ -142,46 +143,54 @@ describe("no fallback source may bypass the ELD boundary", () => {
   });
 });
 
-describe("precise-location permission gates everything derived from a coordinate", () => {
+describe("precise location is granted per truck, by the carrier", () => {
   beforeEach(resetWorld);
 
-  it("gives a dispatcher without the permission a city and no coordinates", () => {
+  it("gives a dispatcher coordinates for a truck whose carrier granted them", () => {
+    // Baxter shares A-12 with Meridian, precision included. A dispatcher
+    // covering a truck needs to know how far out it is.
     const ctx = trackingContextFor(MERIDIAN_DISPATCHER);
-    assert.equal(ctx.permissions.has("eld:location:precise:view"), false);
+    assert.equal(ctx.permissions.has("eld:location:precise:view"), true,
+      "the seeded Dispatcher template holds the permission");
 
-    const signals = locationSignalsFor(ctx, { truckId: TRUCK_IDS.mdA12 });
+    const scope = locationScopeFor(ctx, TRUCK_IDS.mdA12);
+    assert.equal(scope.precision, "exact");
+    const signals = locationSignalsFor(ctx, { truckId: TRUCK_IDS.mdA12, scope });
     assert.ok(signals.length > 0);
+    assert.ok(signals.some((s) => s.point), "a granted truck yields coordinates");
+  });
+
+  it("withholds coordinates for a truck whose carrier withheld them", () => {
+    // Northline shares unit 111 with Summit for planning, and withholds
+    // precision on it. Summit gets a city and a state.
+    const ctx = trackingContextFor(SUMMIT_OWNER);
+    assert.equal(ctx.permissions.has("eld:location:precise:view"), true,
+      "an owner holds every permission — the share is what withholds this");
+
+    const scope = locationScopeFor(ctx, TRUCK_IDS.nl111);
+    assert.equal(scope.scoped, true, "the truck IS shared");
+    assert.equal(scope.precision, "city_only", "but not precisely");
+
+    const signals = locationSignalsFor(ctx, { truckId: TRUCK_IDS.nl111, scope });
+    assert.ok(signals.length > 0, "a city-level position is still a position");
     for (const signal of signals) {
       assert.equal(signal.precision, "city_only");
       assert.equal(signal.point, undefined, "a coordinate must never survive the reduction");
     }
   });
 
-  it("states why route progress, miles and geofence are absent", () => {
-    const board = dispatchTrackingBoardSync(trackingContextFor(MERIDIAN_DISPATCHER));
-    const row = board.rows.find((r) => r.loadReference === "MD-9042")!;
-
-    assert.equal(row.precision, "city_only");
-    assert.equal(row.routeProgressPercent, undefined);
-    assert.equal(row.milesToDelivery, undefined);
-    assert.ok(row.precisionNote, "a blank must be explained, not left ambiguous");
-    assert.match(row.precisionNote!, /eld:location:precise:view/);
-    assert.match(row.precisionNote!, /no city-level estimate is substituted/i);
-    assert.equal(row.alerts.some((a) => a.kind === "geofence"), false);
-  });
-
-  it("does not infer city-level proximity as a substitute", () => {
-    const board = dispatchTrackingBoardSync(trackingContextFor(MERIDIAN_DISPATCHER));
-    const row = board.rows.find((r) => r.loadReference === "MD-9042")!;
-    // The receiver is Pittsburgh and the truck reports a Pennsylvania city.
-    // A centroid-to-centroid distance would be easy and would be a lie.
-    assert.equal(row.milesToDelivery, undefined);
-    assert.equal(row.routeProgressPercent, undefined);
+  it("grants precision on one truck without leaking it to another", () => {
+    // The whole point of per-truck: Summit holds a city-level grant on 111 and
+    // no grant at all on 131. Neither tells it anything about the other.
+    const ctx = trackingContextFor(SUMMIT_OWNER);
+    assert.equal(locationScopeFor(ctx, TRUCK_IDS.nl111).scoped, true);
+    assert.equal(locationScopeFor(ctx, TRUCK_IDS.nl131).scoped, false);
+    assert.equal(locationSignalsFor(ctx, { truckId: TRUCK_IDS.nl131 }).length, 0);
   });
 
   it("records the declined evaluation as evidence rather than silence", () => {
-    const ctx = trackingContextFor(MERIDIAN_DISPATCHER);
-    const decision = availabilityForTruck(TRUCK_IDS.mdA12, ctx)!;
+    const ctx = trackingContextFor(SUMMIT_OWNER);
+    const decision = availabilityForTruck(TRUCK_IDS.nl111, ctx)!;
     const declined = decision.evidence.find(
       (e) => e.disregardedReason?.includes("eld:location:precise:view"),
     );
@@ -189,13 +198,21 @@ describe("precise-location permission gates everything derived from a coordinate
     assert.match(declined!.summary, /not evaluated/i);
   });
 
-  it("gives an owner with the permission the full derived picture", () => {
+  it("gives an owner the full derived picture on its own equipment", () => {
     const board = dispatchTrackingBoardSync(trackingContextFor(NORTHLINE_OWNER));
     const row = board.rows.find((r) => r.loadReference === "NL-24817")!;
     assert.equal(row.precision, "exact");
     assert.equal(row.precisionNote, undefined);
     assert.ok(row.milesToDelivery != null);
     assert.ok(row.routeProgressPercent != null);
+  });
+
+  it("gives the dispatcher the derived picture on the truck they were granted", () => {
+    const board = dispatchTrackingBoardSync(trackingContextFor(MERIDIAN_DISPATCHER));
+    const row = board.rows.find((r) => r.loadReference === "MD-9042")!;
+    assert.equal(row.precision, "exact");
+    assert.equal(row.precisionNote, undefined);
+    assert.ok(row.milesToDelivery != null);
   });
 });
 
@@ -312,5 +329,142 @@ describe("a public tracking link cannot reach a coordinate", () => {
     });
     const result = publicTracking(recipient.link.token);
     assert.equal(result.ok, true);
+  });
+});
+
+describe("the carrier keeps control of precise position", () => {
+  beforeEach(resetWorld);
+
+  const carrier = () => trackingContextFor(NORTHLINE_OWNER);
+
+  it("defaults a new position share to including coordinates", async () => {
+    const share = await services.eld.grantShare(carrier(), {
+      viewerOrganizationId: "org_summit",
+      truckId: TRUCK_IDS.nl131,
+      signalClasses: ["position"],
+    });
+    assert.equal(share.precisePosition, true);
+    assert.equal(
+      locationScopeFor(trackingContextFor(SUMMIT_OWNER), TRUCK_IDS.nl131).precision,
+      "exact",
+    );
+  });
+
+  it("lets the carrier withhold coordinates while still sharing the position", async () => {
+    const share = await services.eld.grantShare(carrier(), {
+      viewerOrganizationId: "org_summit",
+      truckId: TRUCK_IDS.nl131,
+      signalClasses: ["position"],
+      precisePosition: false,
+    });
+    assert.equal(share.precisePosition, false);
+
+    const scope = locationScopeFor(trackingContextFor(SUMMIT_OWNER), TRUCK_IDS.nl131);
+    assert.equal(scope.scoped, true, "the truck is still shared");
+    assert.equal(scope.precision, "city_only", "the coordinates are not");
+  });
+
+  it("never grants coordinates on a share that does not include position", async () => {
+    const share = await services.eld.grantShare(carrier(), {
+      viewerOrganizationId: "org_summit",
+      truckId: TRUCK_IDS.nl131,
+      signalClasses: ["meters"],
+      // Asking for precision without position is incoherent, and is refused
+      // rather than honoured: there are no coordinates in a meter reading.
+      precisePosition: true,
+    });
+    assert.equal(share.precisePosition, false);
+  });
+
+  it("takes the coordinates back when the carrier revokes the share", async () => {
+    const ctx = carrier();
+    const share = await services.eld.grantShare(ctx, {
+      viewerOrganizationId: "org_summit",
+      truckId: TRUCK_IDS.nl131,
+      signalClasses: ["position"],
+    });
+    assert.equal(
+      locationScopeFor(trackingContextFor(SUMMIT_OWNER), TRUCK_IDS.nl131).precision,
+      "exact",
+    );
+
+    await services.eld.revokeShare(ctx, share.id);
+
+    const scope = locationScopeFor(trackingContextFor(SUMMIT_OWNER), TRUCK_IDS.nl131);
+    assert.equal(scope.scoped, false, "revoking the share takes the truck with it");
+    assert.equal(locationSignalsFor(trackingContextFor(SUMMIT_OWNER), { truckId: TRUCK_IDS.nl131 }).length, 0);
+  });
+
+  it("will not let a dispatch workspace share telemetry it was given", async () => {
+    // Meridian holds a precise grant on A-12. It cannot pass that on.
+    await rejects(
+      () => services.eld.grantShare(trackingContextFor(MERIDIAN_DISPATCHER), {
+        viewerOrganizationId: "org_summit",
+        truckId: TRUCK_IDS.mdA12,
+        signalClasses: ["position"],
+      }),
+      "PermissionDeniedError",
+    );
+  });
+});
+
+describe("the permission and the share must both agree", () => {
+  beforeEach(resetWorld);
+
+  it("gives no coordinates to a membership whose permission was revoked", () => {
+    // The carrier granted precision on A-12; the dispatch organization's own
+    // owner took the permission off this membership. Both gates, and this one
+    // is closed.
+    const ctx = without(trackingContextFor(MERIDIAN_DISPATCHER), "eld:location:precise:view");
+    const scope = locationScopeFor(ctx, TRUCK_IDS.mdA12);
+
+    assert.equal(scope.scoped, true, "the truck is still shared");
+    assert.equal(scope.precision, "city_only");
+    for (const signal of locationSignalsFor(ctx, { truckId: TRUCK_IDS.mdA12, scope })) {
+      assert.equal(signal.point, undefined);
+    }
+  });
+
+  it("gives no coordinates when the permission is held but nothing was shared", () => {
+    const ctx = trackingContextFor(MERIDIAN_DISPATCHER);
+    assert.equal(ctx.permissions.has("eld:location:precise:view"), true);
+    assert.equal(locationScopeFor(ctx, TRUCK_IDS.crosswind).scoped, false);
+  });
+
+  it("does not let a precise grant widen which trucks are visible at all", () => {
+    // Precision is about HOW WELL a truck may be seen, never about WHICH.
+    const ctx = trackingContextFor(MERIDIAN_DISPATCHER);
+    const board = dispatchTrackingBoardSync(ctx);
+    const positioned = board.rows.filter((r) => r.currentCity);
+    assert.equal(positioned.length, 1, "one shared truck, one position");
+    assert.equal(positioned[0].loadReference, "MD-9042");
+  });
+
+  it("reduces the ELD module's own snapshot too, not just Tracking's view", async () => {
+    // The reduction lives in the ELD module, so every consumer inherits it —
+    // Tracking is not the thing keeping coordinates out of Summit's hands.
+    const summit = trackingContextFor(SUMMIT_OWNER);
+    const snapshot = await services.eld.snapshot(summit, TRUCK_IDS.nl111);
+    assert.equal(snapshot.location.value?.precise, false);
+    assert.equal(snapshot.location.value?.latitude, undefined);
+    assert.equal(snapshot.location.value?.longitude, undefined);
+    assert.ok(snapshot.location.value?.city, "the city survives");
+  });
+
+  it("withholds coordinates from the ELD event stream as well as the snapshot", async () => {
+    const summit = trackingContextFor(SUMMIT_OWNER);
+    const events = await services.eld.events(summit, {
+      truckId: TRUCK_IDS.nl111,
+      kinds: ["location"],
+    });
+    assert.ok(events.length > 0);
+    for (const event of events) {
+      if (event.value.kind !== "location") continue;
+      // The module zeroes what it withholds; Tracking drops the point entirely.
+      // Either way no real coordinate reaches a viewer who may not hold one.
+      assert.equal(event.value.latitude, 0);
+      assert.equal(event.value.longitude, 0);
+      assert.match(event.ingestionNote ?? "", /eld:location:precise:view/);
+    }
   });
 });
