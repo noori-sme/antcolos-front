@@ -1,4 +1,5 @@
 import type { IsoDateTime } from "./common";
+import type { AvailabilityBasis, AvailabilityState } from "./tracking";
 import type { TruckEquipmentType } from "./truck";
 
 /**
@@ -73,6 +74,21 @@ export interface MtLoop {
   expectedEmptyCity?: string;
   expectedEmptyState?: string;
 
+  /**
+   * The availability decision this loop was last published from.
+   *
+   * The loop does not compute availability and does not own it: the decision
+   * is made by the availability engine, from evidence across several modules,
+   * and PUBLISHED here. What the loop keeps is the conclusion plus enough
+   * provenance to argue with it — which state, on whose word, how sure, from
+   * which adapter, and which operational cycle it was about.
+   *
+   * `cycleKey` is the important one. It is what stops one truck going empty
+   * from producing two entries on this board: a second decision carrying the
+   * same key is a re-reading of this loop, never a new loop.
+   */
+  availability?: MtLoopAvailability;
+
   status: MtLoopStatus;
 
   /** The load booked to close this cycle, once there is one. */
@@ -108,6 +124,30 @@ export interface MtLoop {
   assignments: MtLoopAssignment[];
   /** Everything that has happened to it, oldest first. Never rewritten. */
   history: MtLoopEvent[];
+}
+
+/**
+ * An availability decision, as the loop keeps it.
+ *
+ * A snapshot, not a link: the decision itself is a value recomputed on every
+ * read, and what belongs on the permanent loop record is what was concluded
+ * and on what grounds at the moment it was published.
+ */
+export interface MtLoopAvailability {
+  state: AvailabilityState;
+  /** `confirmed` only when a person said so. Never reachable from GPS alone. */
+  basis: AvailabilityBasis;
+  confidence: number;
+  /** The one operational cycle this loop is about. The deduplication key. */
+  cycleKey: string;
+  decidedAt: IsoDateTime;
+  /** One sentence a dispatcher can act on without opening the evidence. */
+  rationale: string;
+  /** What would move this to Empty Confirmed. Absent once it is. */
+  awaiting?: string;
+  /** The adapter behind it, and whether that adapter is a mock. */
+  sourceAdapter: string;
+  sourceIsMock: boolean;
 }
 
 /**
@@ -253,6 +293,8 @@ export interface MtLoopCard {
   expectedEmptyState?: string;
   /** True when the expected empty time has already passed. */
   emptyNow: boolean;
+  /** The published availability decision, where one has been made. */
+  availability?: MtLoopAvailability;
   respondBy?: IsoDateTime;
   loadReference?: string;
   blockReason?: string;

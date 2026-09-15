@@ -31,6 +31,7 @@ export type * from "./driver-policy";
 export type * from "./driver-proposal";
 export type * from "./driver-workflow";
 export type * from "./mt-loop";
+export type * from "./tracking";
 export type * from "./carrier";
 export type * from "./opportunity";
 export type * from "./negotiation";
@@ -68,6 +69,13 @@ export {
 export {
   MT_LOOP_STATUS_LABEL, MT_LOOP_ACTION_LABEL, MT_LOOP_OPEN_STATUSES, isMtLoopOpen,
 } from "./mt-loop";
+export {
+  AVAILABILITY_STATE_LABEL, AVAILABILITY_STATE_DESCRIPTION,
+  AVAILABILITY_EVIDENCE_LABEL, TRACKING_HEALTH_LABEL, TRACKING_ALERT_LABEL,
+  TRACKING_AUDIENCE_LABEL, TRACKING_LINK_STATE_LABEL, TRACKING_UPDATE_POLICY_LABEL,
+  TRACKING_UPDATE_KIND_LABEL, TRACKING_UPDATE_STATE_LABEL, TRACKING_AUDIT_LABEL,
+  PUBLIC_REFUSAL_MESSAGE,
+} from "./tracking";
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";

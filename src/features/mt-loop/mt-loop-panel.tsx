@@ -11,6 +11,7 @@ import {
   assignLoop, blockLoop, claimLoop, closeLoopById, pauseLoop, releaseLoop,
   resumeLoop, unblockLoop, type MtLoopContext, type MtLoopOutcome,
 } from "@/lib/api/mock/mt-loop";
+import { AvailabilityChip, BasisChip } from "@/features/tracking/chips";
 import { cn } from "@/lib/utils";
 
 /**
@@ -250,10 +251,29 @@ function LoopRow({
               {MT_LOOP_STATUS_LABEL[loop.status]}
             </Badge>
             {loop.emptyNow ? <Badge tone="warning">Empty now</Badge> : null}
+            {/* The availability decision that opened or last moved this cycle.
+                Shown beside the status because "expected available" and "a
+                person confirmed it is empty" are different amounts of certainty
+                to book against, and the board should not flatten them. */}
+            {loop.availability ? (
+              <>
+                <AvailabilityChip state={loop.availability.state} />
+                <BasisChip
+                  basis={loop.availability.basis}
+                  confidence={loop.availability.confidence}
+                />
+              </>
+            ) : null}
             <span className="text-[0.75rem] font-normal text-fg-muted">
               {loop.equipment.replace(/_/g, " ")} · {loop.carrierName}
             </span>
           </p>
+
+          {loop.availability ? (
+            <p className="mt-1 text-[0.75rem] leading-relaxed text-fg-muted">
+              {loop.availability.rationale}
+            </p>
+          ) : null}
 
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.75rem] text-fg-subtle">
             <span className="inline-flex items-center gap-1">

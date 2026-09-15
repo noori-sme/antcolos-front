@@ -57,6 +57,7 @@ files rather than a copy. `npm test` runs both.
 | Broker / Shipper / Receiver directory | `/directory`, `/directory/[partyId]`, `/directory/locations/[facilityId]`, `/directory/contacts/[contactId]`, `/directory/review` |
 | Driver decision & trip workflow | `/driver/proposals`, `/driver/proposals/[id]`, `/driver/loads`, `/driver/loads/[loadId]` |
 | Unified Document Center | `/documents`, `/documents/[documentId]` |
+| GPS-driven availability, MT Loop entry & broker tracking | `/dispatch/tracking`, `/dispatch/tracking/[loadId]`, `/track/[token]` (public) |
 
 Everything else is a placeholder screen that says so.
 
@@ -681,6 +682,212 @@ The wordmark and mark are temporary placeholders, not the final Antcolos logo. T
 2. The mark → `public/brand/antcolos-mark.svg`
 3. Name and wordmark treatment → `src/config/brand.ts`
 
+## GPS-driven availability, MT Loop entry and broker tracking
+
+Three connected things: deciding whether a truck is actually free, putting that
+decision on the MT Loop board exactly once, and letting a broker watch one load
+without letting them watch anything else.
+
+### GPS alone never confirms an empty truck
+
+That is the rule the whole module is built to keep, and it is enforced in one
+pure function — `decideAvailability` in `src/lib/tracking/availability.ts` —
+which fetches nothing, writes nothing and remembers nothing. It reads a bag of
+facts the service gathered from the modules that own them and returns a typed
+decision.
+
+Seven kinds of evidence go in:
+
+| Evidence | Where it comes from |
+|---|---|
+| GPS location and movement | The ELD & Telematics boundary, normalized into `LocationSignal` |
+| Delivery appointment and ETA | The Load module's stops and its `load.eta_updated` events |
+| Receiver geofence entry and exit | Derived from positions against the delivery facility's circle |
+| Driver Workflow events | The Driver Trip Workflow's own append-only milestones |
+| Unloading status | The same workflow's `unloading_started` / `delivered_and_unloaded` |
+| POD status | The Unified Document Center |
+| Driver or dispatcher confirmation | A person, recorded here |
+
+Five states come out:
+
+| State | What it means |
+|---|---|
+| **Expected available** | Still on a load. The appointment, the ETA and the distance say roughly when it comes free. |
+| **Likely available** | The evidence points at an empty truck. Nobody has confirmed it. |
+| **Empty confirmed** | A person confirmed it. **No amount of machine evidence reaches this state.** |
+| **Availability uncertain** | The signals are missing, too old, or they disagree. Said out loud rather than guessed. |
+| **Unavailable** | Loaded, in the shop, or stood down by the carrier. |
+
+Before delivery the engine derives Expected Available from the ETA (or the
+appointment) plus an unloading allowance, and reports the destination
+proximity. After a **confirmed** unloading — a driver recording it in their own
+workflow, or a dispatcher confirming it here — it moves to Empty Confirmed.
+A POD on file, a geofence exit and a "delivered" status together still only
+reach Likely Available.
+
+Anything a machine concluded stays `inferred`, carrying its source, its
+timestamp, its confidence and the evidence it stood on. Inferred confidence is
+capped below certainty (`MAX_INFERRED_CONFIDENCE`), enforced where evidence is
+made rather than only where it is read. `AvailabilityAttribution` is a closed
+union and `driver` is only reachable from a command a driver actually issued —
+there is nowhere in the types to record a driver action nobody took.
+
+Every decision comes back with the evidence it **disregarded** as well as the
+evidence it used, with the reason. "Inside the receiver's geofence but doing
+62 mph — that is a truck passing, not a truck arriving" is the line that
+settles the argument three weeks later.
+
+### False geofence inference
+
+A single ping inside a facility's radius is not an arrival. `evaluateGeofence`
+requires all three of: inside the circle, not moving (`GEOFENCE_MAX_SETTLED_MPH`),
+and dwelled long enough (`GEOFENCE_MIN_DWELL_MINUTES`). A crossing that fails
+any of them is rejected with a stated reason and kept as disregarded evidence.
+
+### One truck going empty, one MT Loop entry
+
+There is **no second MT Loop record system**. `publishAvailabilityDecision`
+lives in the existing MT Loop service (`src/lib/api/mock/mt-loop.ts`) and is the
+only door a decision comes through. Deduplication rests on the decision's
+`cycleKey`, derived purely from the truck and the load it is finishing:
+
+1. A truck has at most one **open** loop. A decision about a truck that already
+   has one updates that loop; it never opens a second.
+2. A cycle key this workspace has already run a loop for — **including a closed
+   one** — never opens another.
+3. A decision that changes nothing writes nothing, so the loop's history records
+   movement rather than heartbeat.
+
+Only Expected Available, Likely Available and Empty Confirmed are publishable.
+`availability_uncertain` produces no entry at all: putting a truck on the empty
+board when Antcolos cannot tell whether it is empty is the exact fabrication
+this milestone exists to avoid. It stays visible on the tracking board, with its
+reason.
+
+### Dispatch tracking
+
+`/dispatch/tracking` is organization-scoped and shows, per load: current
+location and route progress, last update time and signal source, ETA and
+delivery proximity, live / stale / offline / interrupted / unavailable state,
+confirmed versus inferred milestones, delay, route-deviation, geofence and
+availability alerts, and the carrier, driver, truck, trailer, load and operating
+authority in force at the time.
+
+One dispatch workspace carries several carriers at once with no logout and no
+workspace switch — the carriers are chips, because they are a filter over one
+board rather than four boards behind a login. The convenience stops at the
+entitlement: every row's truck is fetched through the truck registry's own
+scope, so a load whose equipment this workspace is not entitled to renders with
+no position and a stated reason rather than somebody else's truck.
+
+Freshness is four distinct answers, not one. An established feed that goes quiet
+for several times its own cadence reads **interrupted** — it was working and it
+stopped — rather than merely stale. Thresholds live in
+`src/lib/tracking/freshness.ts` so a screen, a test and an alert cannot disagree.
+
+### Broker tracking
+
+One **Load-scoped tracking session**, providing MacroPoint-style visibility
+without copying MacroPoint or claiming an integration with it or anyone else.
+Per recipient it mints a revocable, expiring link, and per audience —
+broker, shipper, receiver — it carries its own visibility switches.
+
+A link closes by itself: on its own timeout, after delivery plus a configured
+grace, on cancellation, and when the carrier relationship behind it ends. That
+last one is asked of the truck registry every time a link is resolved, so ending
+a relationship anywhere closes every link that depended on it with nothing to
+reconcile and nothing to remember. A revoked link is never un-revoked — a new
+one is a new token with its own audit line.
+
+What a link holder can see is a separate, smaller type (`PublicTrackingView`),
+assembled by redaction. It is not the dispatcher's row with fields hidden,
+because a shape that *could* carry a rate eventually will. Rates, driver names
+and contact details, hours of service, internal notes, any other load, any other
+carrier's data, position history and permanent tracking are **absent from the
+type** — there is no switch to turn them on. `NEVER_DISCLOSED` lists them so a
+test can assert it and a dispatcher can read it.
+
+Updates follow a configurable policy: `draft_for_approval` holds every update
+until a dispatcher approves it, `automatic_mock_handoff` queues it with nobody
+in the loop. There is no `delivered` state, because nothing is delivered —
+no email, SMS, portal or broker integration is connected to this build, and
+every update row says so.
+
+### Integration boundary
+
+Normalized location signals are consumed through the existing ELD & Telematics
+boundary. This module starts **no second store of positions**: the one mock
+adapter (`src/lib/api/mock/tracking-signals.ts`) reads the fleet layer's own
+org-partitioned telemetry readings and the Load module's own
+`load.location_reported` events, and holds a labelled fixture inbox of its own
+the way any adapter holds an inbound queue.
+
+Adapters are typed and registered for every planned transport — ELD, mobile GPS,
+Telegram location sharing, partner API, email and SMS. All of them report
+`not_connected`, `unconnectedAdapter` rejects with an honest error rather than
+inventing a position, and the tracking board prints the whole list with what
+each would populate.
+
+Positions are deduplicated on identity (`signalIdentity`) before anything is
+derived from them, so a webhook that fires twice cannot halve the apparent
+cadence or inflate a dwell.
+
+**Nothing here is live.** No ELD, GPS tracker, telematics provider, phone,
+Telegram bot, email gateway, SMS gateway, geofencing service or broker portal is
+connected. Coordinates are approximate city centroids so distance and geofence
+logic has something to run on; they are labelled inferred with a mock
+provenance and are never presented as observed positions. Every screen says so
+on the screen.
+
+### Trying it
+
+Sign in as any membership (the org switcher is top-left), then:
+
+**Availability and the MT Loop**
+1. Open **Northline Freight → Tracking**. Five rows, two live.
+2. Open **NL-24817**. It reads *Expected available*, *Inferred 70%*. Expand
+   *Show the evidence* — six pieces, one of them set aside with its reason.
+3. Press **It is empty**. It becomes *Empty confirmed*, *Confirmed by a person*.
+4. Go to **Home**. Unit 104's MT Loop row now carries the same decision.
+5. Reload Home several times. The board does not grow a second row for unit 104
+   — repeated readings of one cycle are one cycle.
+
+**Mock signals** (on any load with a truck, in *Mock adapter controls*)
+- *Pass the receiver at 62 mph* → a geofence alert appears saying the reading was
+  **not believed**, and availability does not move to empty.
+- *Report a position from six hours ago* → the row goes stale and availability
+  goes *uncertain*, naming the trust window.
+- *Send the last position again* → the position history does not grow; the
+  duplicate is collapsed and the decision says so.
+- *Silence the feed* → the row goes **offline**; bring it back and it is live again.
+
+**Interrupted and offline, without touching anything**
+- Switch to **Meridian Dispatch → Tracking**. Three carriers on one board.
+  MD-9042 is *interrupted* (a feed that was reporting every 15 minutes and
+  stopped); MD-9038 is *offline* (one position, nine hours old). Both refuse to
+  publish an MT Loop entry, because Antcolos cannot tell.
+
+**Broker tracking**
+1. On **NL-24817 → Customer tracking**, press *Open tracking on this load*.
+2. Add a **Broker**, "Apex Logistics", and press *Issue a link*.
+3. Copy the link and open it in another tab. It shows the reference, the stops,
+   the truck's city, the ETA, the expiry and the disclosure — and no rate, no
+   driver, nothing about another load.
+4. Add a **Shipper** and a **Receiver** and open their links: the shipper gets
+   the pickup and not the delivery, the receiver the reverse.
+5. Back on the dispatcher screen, press **Revoke**. Reload the customer's tab:
+   it now says the link was withdrawn. *Issue a new link* mints a different
+   token; the old one stays dead.
+6. Draft an update and approve it; it appears on the link. Draft one and leave
+   it: it does not.
+7. Everything above is in **Tracking history** at the bottom, including the
+   refused access.
+
+Tracking sessions are mirrored into `localStorage` so a link works when it is
+opened in another tab — the rest of the mock layer is in-memory and per page
+load, and a token minted in one would not exist in the next. It stores sessions,
+their audit and the token index, and nothing else.
+
 ## The Maintenance foundation
 
 Four record kinds, deliberately separate and deliberately linked, all keyed by the
@@ -751,3 +958,40 @@ They cover the service layer, which is where the rules actually live:
   invoice that was already issued.
 - **Needs You** — invoice items land in the shared queue, are gated on
   `invoices:view`, and snooze and resolve like any other item.
+
+### Tracking, availability and MT Loop deduplication
+
+`tests/tracking-availability.test.ts`, `tests/tracking-dispatch.test.ts`,
+`tests/tracking-broker-link.test.ts` and
+`tests/tracking-integration-boundary.test.ts` add 70-odd cases over this
+milestone specifically:
+
+- **GPS never confirms** — a truck parked at the receiver, a POD plus a geofence
+  exit plus a delivered status, and an *inferred* workflow milestone all fail to
+  reach Empty Confirmed; a person's word and a driver's own workflow milestone
+  both reach it immediately.
+- **Stale signals** — a position older than the trust window stops being
+  decided on, and is kept as disregarded evidence with its reason.
+- **Missing GPS** — a running load with no position at all is uncertain and
+  says which.
+- **False geofence inference** — inside the circle at 62 mph, and inside it for
+  four minutes, are both rejected with stated reasons and do not move
+  availability.
+- **Duplicate events** — three copies of one observation are one observation,
+  whether they share a source record id or just a place and an instant, and the
+  decision reports that they were collapsed.
+- **MT Loop deduplication** — publishing repeatedly does not grow the board, an
+  unchanged conclusion writes no history line, an uncertain decision is not
+  published at all, and a truck another workspace covers is refused.
+- **Expired and revoked links** — refused with the right reason, and a reissue
+  mints a new token while the old one stays dead.
+- **Unauthorized access** — an unknown token, a link after delivery, after
+  cancellation, and after the carrier relationship is ended for real through the
+  truck registry.
+- **Multi-carrier isolation** — one workspace never sees another's loads, a
+  driver membership and a membership without `tracking:view` get nothing, and a
+  caller who may see loads but not trucks gets the row with no position and a
+  stated reason.
+- **What a link can never carry** — the public view is serialized and asserted
+  against rates, driver identity, hours of service, internal notes, equipment
+  identity and every other load in the organization.

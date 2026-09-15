@@ -16,6 +16,10 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/dispatch/trucks": ["loads:view", "trucks:view"],
   "/dispatch/rate-confirmations": ["loads:view"],
   "/dispatch/opportunities": ["loads:view", "trucks:view"],
+  // Tracking sits under /dispatch but needs a different thing from the board:
+  // watching freight run is not the same power as putting a driver on a load,
+  // so it is gated on its own key rather than inheriting `loads:assign`.
+  "/dispatch/tracking": ["tracking:view", "loads:view"],
   "/rate-cons/new": ["loads:create", "documents:upload"],
   // Confirming who a broker is is a stronger power than reading the directory,
   // so the review screen is gated above its parent rather than inheriting it.

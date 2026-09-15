@@ -5,6 +5,10 @@ export type PermissionKey =
   | "loads:delete" | "loads:status:update" | "loads:export"
   // Dispatch
   | "dispatch:view" | "loads:assign"
+  // Tracking — watching a load run, and letting a customer watch a little of it.
+  // Seeing where a truck is, sharing that outside the organization, and sending
+  // an update to a broker are three different powers and three different keys.
+  | "tracking:view" | "tracking:share" | "tracking:update:send"
   // Driver decision and trip workflow
   | "proposals:view" | "proposals:respond" | "trips:execute"
   // Drivers
@@ -70,7 +74,7 @@ export type PermissionKey =
  * work first, then the money, then who is allowed in.
  */
 export type PermissionGroup =
-  | "loads" | "dispatch" | "drivers" | "trucks" | "trailers" | "fleet"
+  | "loads" | "dispatch" | "tracking" | "drivers" | "trucks" | "trailers" | "fleet"
   | "loads" | "dispatch" | "driver_workflow" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
   | "accounting" | "fuel" | "compliance"

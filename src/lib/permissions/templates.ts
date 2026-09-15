@@ -20,6 +20,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     permissions: [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
       "proposals:view",
+      // Watching the freight run, and telling the customer about it, is the
+      // dispatcher's job rather than something they are lent for an afternoon.
+      "tracking:view", "tracking:share", "tracking:update:send",
       "drivers:view", "trucks:view", "trailers:view",
       "customers:view", "customers:create", "customers:private:manage", "customers:resolve",
       "documents:view", "documents:upload", "compliance:view",

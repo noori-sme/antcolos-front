@@ -1,8 +1,10 @@
 import type {
-  FleetTruck, Membership, MtLoop, MtLoopAbilities, MtLoopAction, MtLoopAssignment,
-  MtLoopBoard, MtLoopCard, MtLoopEvent, MtLoopStatus, Organization, TruckDocumentKind,
-  Workspace,
+  AvailabilityDecision, AvailabilityPublication, FleetTruck, Membership, MtLoop,
+  MtLoopAbilities, MtLoopAction, MtLoopAssignment, MtLoopAvailability, MtLoopBoard,
+  MtLoopCard, MtLoopEvent, MtLoopStatus, Organization, TruckDocumentKind, Workspace,
 } from "@/types";
+import { AVAILABILITY_STATE_LABEL } from "@/types";
+import { isPublishableAvailability } from "@/lib/tracking";
 import { resolveWorkspace } from "@/lib/workspace/resolve";
 import type { ServiceContext } from "../contracts/context";
 import { mockStore } from "./store";
@@ -609,6 +611,7 @@ function toCard(loop: MtLoop, ctx: MtLoopContext, workspace: Workspace): MtLoopC
     expectedEmptyAt: loop.expectedEmptyAt,
     expectedEmptyCity: loop.expectedEmptyCity,
     expectedEmptyState: loop.expectedEmptyState,
+    availability: loop.availability,
     emptyNow: emptyAt === undefined ? true : emptyAt <= Date.now(),
     respondBy: loop.respondBy,
     loadReference: loop.loadReference,
@@ -939,4 +942,176 @@ export async function closeLoopById(
     name: ctx.actor.displayNameSnapshot,
   });
   return { status: "ok", loop };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Availability decisions arrive here                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ THE ONE DOOR AVAILABILITY COMES THROUGH ★
+ *
+ * The availability engine decides; this publishes. There is no second MT Loop
+ * record system anywhere in the tracking module, and there is no other way for
+ * a decision to become a board entry — which is the whole point of putting
+ * this function in this file rather than beside the engine.
+ *
+ * Deduplication is the substance of it. Availability is recomputed constantly:
+ * on every board read, every new position, every workflow event. Each of those
+ * is a fresh reading of ONE cycle, and a naive publish would open a loop every
+ * time, leaving a board with six entries for one empty truck and six people
+ * ringing the same broker. Three rules stop that:
+ *
+ *  1. A truck has at most one OPEN loop. A decision about a truck that already
+ *     has one updates that loop; it never opens a second.
+ *  2. A decision carries `cycleKey`. A key this workspace has already run a
+ *     loop for — even a closed one — never opens another.
+ *  3. A decision that changes nothing writes nothing, so the loop's history
+ *     records movement rather than heartbeat.
+ *
+ * And the honest part: only `expected_available`, `likely_available` and
+ * `empty_confirmed` are publishable at all. `availability_uncertain` produces
+ * no entry, because putting a truck on the empty board when Antcolos cannot
+ * tell whether it is empty is exactly the fabrication this milestone exists to
+ * avoid. It stays visible on the tracking board, where it belongs, with its
+ * reason attached.
+ */
+export function publishAvailabilityDecision(
+  decision: AvailabilityDecision,
+  ctx: MtLoopContext,
+): AvailabilityPublication {
+  const workspace = workspaceOf(ctx);
+  if (!maySeeBoard(ctx, workspace)) {
+    return {
+      outcome: "not_responsible",
+      reason: "This membership cannot work an MT Loop board in this workspace.",
+    };
+  }
+
+  if (responsibleOrganizationFor(decision.truckId) !== ctx.organizationId) {
+    return {
+      outcome: "not_responsible",
+      reason:
+        "Another workspace is responsible for covering this truck, so its cycle is not this board's to open.",
+    };
+  }
+
+  if (!isPublishableAvailability(decision.state)) {
+    return {
+      outcome: "not_publishable",
+      reason:
+        decision.state === "unavailable"
+          ? "The truck is not free, so there is no cycle to open."
+          : "Antcolos cannot tell whether this truck is empty, and will not put a guess on the board.",
+    };
+  }
+
+  const snapshot: MtLoopAvailability = {
+    state: decision.state,
+    basis: decision.basis,
+    confidence: decision.confidence,
+    cycleKey: decision.cycleKey,
+    decidedAt: decision.decidedAt,
+    rationale: decision.rationale,
+    awaiting: decision.awaiting,
+    sourceAdapter: decision.provenance.adapter,
+    sourceIsMock: decision.provenance.mock,
+  };
+
+  const open = openLoopForTruck(decision.truckId);
+
+  if (open) {
+    if (open.dispatchOrganizationId !== ctx.organizationId) {
+      return {
+        outcome: "not_responsible",
+        reason: "This truck's open cycle belongs to another dispatch workspace.",
+      };
+    }
+
+    const before = open.availability;
+    const unchanged = before
+      && before.cycleKey === snapshot.cycleKey
+      && before.state === snapshot.state
+      && before.basis === snapshot.basis;
+
+    if (unchanged) {
+      // Keep the freshest reasoning without writing a history line for a
+      // heartbeat. The conclusion has not moved, so nothing happened.
+      open.availability = { ...snapshot, decidedAt: decision.decidedAt };
+      return {
+        outcome: "unchanged",
+        loopId: open.loopId,
+        reason: `Still ${AVAILABILITY_STATE_LABEL[snapshot.state].toLowerCase()}. Nothing to record.`,
+      };
+    }
+
+    open.availability = snapshot;
+    if (decision.expectedEmptyAt) open.expectedEmptyAt = decision.expectedEmptyAt;
+    if (decision.expectedEmptyCity) open.expectedEmptyCity = decision.expectedEmptyCity;
+    if (decision.expectedEmptyState) open.expectedEmptyState = decision.expectedEmptyState;
+
+    record(open, "availability_changed", {
+      actorName: decision.basis === "confirmed" ? "Antcolos (confirmed)" : "Antcolos (inferred)",
+      note:
+        `${AVAILABILITY_STATE_LABEL[snapshot.state]} — ${snapshot.basis}, `
+        + `confidence ${(snapshot.confidence * 100).toFixed(0)}%. ${snapshot.rationale}`,
+    });
+
+    return {
+      outcome: "loop_updated",
+      loopId: open.loopId,
+      reason: `${AVAILABILITY_STATE_LABEL[snapshot.state]} published to the existing cycle.`,
+    };
+  }
+
+  // Rule 2: a cycle this workspace has already run is never re-opened. The
+  // check spans CLOSED loops too — that is what makes it a real deduplication
+  // rather than a race window.
+  const alreadyRan = db().loops.find(
+    (l) => l.dispatchOrganizationId === ctx.organizationId
+      && l.availability?.cycleKey === snapshot.cycleKey,
+  );
+  if (alreadyRan) {
+    return {
+      outcome: "duplicate_suppressed",
+      loopId: alreadyRan.loopId,
+      reason:
+        "A cycle has already run for this truck and this operational cycle. A second entry is not opened.",
+    };
+  }
+
+  const truck = fleetSync(truckContextFrom(ctx)).find((t) => t.truckId === decision.truckId);
+  if (!truck) {
+    return {
+      outcome: "not_responsible",
+      reason: "This workspace cannot see the truck, so it cannot open a cycle for it.",
+    };
+  }
+
+  const loop = openLoop(truck, ctx.organizationId);
+  loop.availability = snapshot;
+  if (decision.expectedEmptyAt) loop.expectedEmptyAt = decision.expectedEmptyAt;
+  if (decision.expectedEmptyCity) loop.expectedEmptyCity = decision.expectedEmptyCity;
+  if (decision.expectedEmptyState) loop.expectedEmptyState = decision.expectedEmptyState;
+  loop.respondBy = decision.expectedEmptyAt ?? loop.openedAt;
+
+  record(loop, "availability_changed", {
+    actorName: decision.basis === "confirmed" ? "Antcolos (confirmed)" : "Antcolos (inferred)",
+    note:
+      `Cycle opened from a ${snapshot.basis} availability decision: `
+      + `${AVAILABILITY_STATE_LABEL[snapshot.state]}. ${snapshot.rationale}`,
+  });
+
+  return {
+    outcome: "loop_opened",
+    loopId: loop.loopId,
+    reason: `A cycle was opened for ${truck.unit} from ${AVAILABILITY_STATE_LABEL[snapshot.state].toLowerCase()}.`,
+  };
+}
+
+/** The loop carrying a given operational cycle, open or closed. For tests and audit. */
+export function loopForCycle(cycleKey: string, organizationId: string): MtLoop | undefined {
+  return db().loops.find(
+    (l) => l.dispatchOrganizationId === organizationId && l.availability?.cycleKey === cycleKey,
+  );
 }
