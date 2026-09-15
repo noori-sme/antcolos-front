@@ -57,6 +57,7 @@ files rather than a copy. `npm test` runs both.
 | Broker / Shipper / Receiver directory | `/directory`, `/directory/[partyId]`, `/directory/locations/[facilityId]`, `/directory/contacts/[contactId]`, `/directory/review` |
 | Driver decision & trip workflow | `/driver/proposals`, `/driver/proposals/[id]`, `/driver/loads`, `/driver/loads/[loadId]` |
 | Unified Document Center | `/documents`, `/documents/[documentId]` |
+| Contracts & Relationships foundation | `/contracts`, `/contracts/new`, `/contracts/[contractId]`, `/contracts/[contractId]/versions/[versionId]` |
 
 Everything else is a placeholder screen that says so.
 
@@ -720,6 +721,108 @@ Try it with the organization switcher: **Northline Freight** (carrier, full modu
 (nothing shared — an honest empty state), **Cascade Haul** (a driver who can report a
 defect on their own truck and nothing more).
 
+## Contracts & Relationships
+
+A **Contract records the terms of a relationship. It is not the relationship.**
+That single sentence is the whole design, and the module is built so it cannot
+quietly stop being true.
+
+Antcolos already decides access in four separate places, and none of them is
+here:
+
+| Concept | What it controls | Owner |
+|---|---|---|
+| `Invitation` | Proposed access to an organization | Access service |
+| `Membership` | A user's access inside an organization | Access service |
+| `CarrierRelationship` | A driver's business scope with a carrier | Driver relationship service |
+| `Truck`/`TrailerCarrierRelationship` | Which carrier may operate an asset | Equipment registries |
+| `Truck`/`TrailerOperatingLease` | Which authority it legally runs under | Equipment registries |
+| `TruckDispatchAccess` | A dispatch organization's access to a truck | Truck registry |
+
+A contract holds a typed **reference** to those records and never becomes one.
+Signing or activating one may **request** a transition —
+`RelationshipTransitionRequest`, whose `applied` field is the literal `false`, so
+a later milestone has to change the type in a review rather than flip a boolean.
+Nothing in `src/lib/api/mock/agreement-registry.ts` imports a function that could
+write to a relationship service.
+
+### Seven records, seven jobs
+
+`Contract` holds identity and parties and **no terms**. `ContractVersion` holds
+one immutable statement of them. `ContractParty`, `AuthorizedSigner`,
+`ContractSignature`, `ContractRequirement` and `ContractRelationshipRef` are each
+their own record, because collapsing any two of them loses an answer somebody
+needs: which version was in force in March, who was entitled to sign it, what it
+asked for, and which relationship it was about.
+
+- **Nine states.** Draft, pending review, awaiting signature, active, expiring,
+  expired, terminated, cancelled, superseded. `terminated` (somebody ended it),
+  `cancelled` (it never took effect) and `superseded` (a newer version replaced
+  it) are deliberately three different things.
+- **`expiring` and `expired` are derived** from the effective dates on every
+  read, against the agreement's **own** reminder window. A contract cannot sit at
+  "active" a month after it ran out because no scheduled job fired.
+- **Signed versions are frozen forever.** `frozen` is set on sign, supersede and
+  void, and there is no `unfreeze`. An amendment is a new version citing the old
+  one, and which term groups changed is **computed from the terms** rather than
+  taken from the caller — so an amendment cannot claim it only moved the renewal
+  clause while rewriting the pay.
+- **Compensation is terms, not arithmetic.** Rules carry their own effective
+  window, and `compensationAt(date)` answers from the version that was in force
+  **then**. Settlements keep owning the money and the frozen snapshot.
+- **Requirements are evaluated, not stored.** A document requirement is checked
+  against the one Document Center; Operating Authority against the carrier
+  profile. Fix the document and the row clears without anybody ticking it off.
+  The only stored answer is a **waiver**, because that is a decision somebody
+  made — and a signature can never be waived.
+
+### What the service layer refuses
+
+Every rule is enforced in `agreement-registry.ts`, not in a screen:
+
+- **No party may sign, approve, amend or terminate for another.** Two gates, in
+  order: the `contracts:sign` permission, then live signer authority for *that*
+  party. A carrier owner holding every permission in the catalog still cannot
+  sign the driver's line. Authority is matched on **membership**, so the same
+  person cannot sign both sides from two workspaces, and one membership may be an
+  authorised signer for at most one party per contract.
+- **Cross-organization isolation.** A contract is only ever read through its own
+  organization; the counterparty keeps its own record of the same agreement.
+- **Financial visibility.** Compensation rules are **omitted from the payload**
+  rather than blanked in the UI, and `compensationVisible` says whether the empty
+  array means "not for you" or "none agreed".
+- **Relationship scope.** The agreement-type catalog decides which relationship
+  kinds a contract may reference. A carrier–driver agreement cannot be pointed at
+  an Operating Authority lease, because one that could would read, on screen, as
+  though signing it authorised a truck.
+
+### Ending a relationship deletes nothing
+
+Giving notice creates a termination record with the closeout checklist the terms
+asked for, and raises transition requests so somebody revokes access **where
+access lives**. It revokes nothing itself. What survives is listed in code
+(`TERMINATION_PRESERVES`) and shown on the screen: the person's account, every
+organization, the permanent truck and trailer records and their UUIDs and
+ownership history, this contract and every version and signature, documents and
+their review history, and every completed load, invoice and settlement.
+
+`tests/contracts/existing-behaviour.test.ts` is the guard: it creates, signs,
+amends and terminates agreements and then asserts a byte-for-byte snapshot of
+every canonical relationship record is unchanged.
+
+### Mock only, and it says so
+
+Signatures are typed names with `mock: true` and a statement — stored with the
+signature — saying no identity was verified, no e-signature service was used,
+nothing was reviewed by a lawyer and nothing was sent anywhere. "Pending review"
+means somebody on your team is reading it. Templates, negotiation, legal review,
+e-signature, insurance verification and payments are declared seams in
+`src/lib/contracts/extension-points.ts`; every adapter throws, and the dashboard
+lists them all as *Not connected* with what happens instead.
+
+The module builds no second Document Center, no negotiation workflow, no legal
+advice, no court workflow and no payment enforcement.
+
 ## For backend integration
 
 `src/lib/api/contracts/` is the seam. Every method takes a `ServiceContext` carrying the organization, membership, permission set, record scope and an actor snapshot — there is no method that accepts a `User`. The mock adapter enforces permissions and organization ownership itself, so a UI bug that renders a forbidden button still fails at the seam.
@@ -751,3 +854,19 @@ They cover the service layer, which is where the rules actually live:
   invoice that was already issued.
 - **Needs You** — invoice items land in the shared queue, are gated on
   `invoices:view`, and snooze and resolve like any other item.
+
+Contracts add 201 of their own, split between the pure domain and the seam:
+
+- **Domain** (`src/lib/contracts/*.test.ts`) — the status machine, version
+  immutability and the deep clone that stops an amendment reaching the version it
+  came from, signer authority, notice periods, renewal maths, compensation
+  validation in whole cents, and the relationship boundary.
+- **Seam** (`src/lib/api/mock/agreements.test.ts`) — permissions, cross-
+  organization isolation, "no party signs for another" from both sides, financial
+  omission, what a point-in-time compensation read answers, the whole lifecycle,
+  and that signing raises a request and changes no relationship.
+- **Needs You** (`agreement-needs-you.test.ts`) — every item is derived, has a
+  stable id, and stops existing when the underlying state is fixed.
+- **Existing behaviour** (`tests/contracts/existing-behaviour.test.ts`) — the
+  canonical-record snapshot guard described above, plus the permission keys and
+  routes that worked before still working.

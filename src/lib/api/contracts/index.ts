@@ -11,6 +11,7 @@ export type * from "./settlements";
 export type * from "./driver-workflow";
 export type * from "./invoices";
 export type * from "./documents";
+export type * from "./agreements";
 
 
 
@@ -22,6 +23,7 @@ import type { FleetService } from "./fleet";
 import type { DriverWorkflowService } from "./driver-workflow";
 import type { InvoicesService } from "./invoices";
 import type { DocumentsService } from "./documents";
+import type { AgreementsService } from "./agreements";
 import type { HomeService } from "./home";
 import type { LoadsService } from "./loads";
 import type { SettlementsService } from "./settlements";
@@ -45,4 +47,13 @@ export interface AntcolosServices {
   driverWorkflow: DriverWorkflowService;
   invoices: InvoicesService;
   documents: DocumentsService;
+  /**
+   * Contracts & Relationships — the TERMS of a business relationship.
+   *
+   * Named `agreements` because "contract" already means the service interface in
+   * this folder. It holds no method that creates, alters or ends anybody's
+   * access: those belong to the services above and to the registries, and this
+   * one can only ask.
+   */
+  agreements: AgreementsService;
 }

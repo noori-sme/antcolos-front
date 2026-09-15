@@ -58,6 +58,15 @@ export type PermissionKey =
   | "insurance:view" | "insurance:manage"
   | "insurance:sensitive:view" | "insurance:share:manage"
   | "claims:view" | "claims:create" | "claims:manage" | "claims:financials:view"
+  // Contracts and relationships — the TERMS of a business relationship.
+  // Deliberately separate from the keys that control access: `members:edit`,
+  // `invitations:create` and `trucks:relationships:manage` are what actually
+  // change what somebody can do. A contract permission never grants access.
+  | "contracts:view" | "contracts:create" | "contracts:edit"
+  | "contracts:review" | "contracts:sign" | "contracts:amend"
+  | "contracts:terminate" | "contracts:cancel"
+  | "contracts:signers:manage" | "contracts:requirements:waive"
+  | "contracts:links:manage" | "contracts:financials:view" | "contracts:export"
   // Organization members
   | "members:view" | "members:edit" | "members:suspend" | "permissions:manage"
   // Invitations
@@ -75,6 +84,7 @@ export type PermissionGroup =
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
   | "accounting" | "fuel" | "compliance"
   | "accounting" | "compliance" | "maintenance" | "insurance" | "claims"
+  | "contracts"
   | "members" | "invitations" | "organization";
 
 export interface PermissionMeta {
