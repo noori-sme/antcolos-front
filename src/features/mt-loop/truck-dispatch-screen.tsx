@@ -12,7 +12,7 @@ import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AUTHORITY_STATUS_LABEL, CONTACT_ROLE_LABEL, CARRIER_DOCUMENT_LABEL,
-  DRIVER_AVAILABILITY_LABEL, MT_LOOP_ACTION_LABEL, MT_LOOP_STATUS_LABEL,
+  ASSIGNMENT_SOURCE_LABEL, DRIVER_AVAILABILITY_LABEL, MT_LOOP_ACTION_LABEL, MT_LOOP_STATUS_LABEL,
   type CarrierView, type DriverView,
 } from "@/types";
 import type {
@@ -372,9 +372,27 @@ function LoopPanel({ w }: { w: TruckDispatchWorkspace }) {
     >
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
         <Field label="Status" value={MT_LOOP_STATUS_LABEL[loop.status]} />
+        {/*
+          Two fields, because they are two facts. "Responsible" is the
+          Responsibility Engine's answer, carried on the card — the same one
+          My work, Needs You and Home show. "Claimed" is whether anybody has
+          accepted the cycle, which this module does own.
+        */}
         <Field
           label="Responsible"
-          value={loop.responsibleName ?? <span className="text-st-warning">Nobody yet</span>}
+          value={
+            w.loopCard.responsible
+              ? `${w.loopCard.responsible.displayName} — ${ASSIGNMENT_SOURCE_LABEL[w.loopCard.responsible.source].toLowerCase()}`
+              : <span className="text-st-warning">Could not be read</span>
+          }
+        />
+        <Field
+          label="Claimed"
+          value={
+            w.loopCard.claimed
+              ? w.loopCard.claimed.displayName
+              : <span className="text-fg-subtle">Nobody has accepted it yet</span>
+          }
         />
         <Field label="Empty at" value={where || undefined} />
         <Field

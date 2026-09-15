@@ -80,7 +80,7 @@ export type NeedsYouCategory =
   | "critical_insurance_gap"
 
   /* ---- MT Loop conditions. Derived from live state, never seeded. ---- */
-  /** An open MT Loop that nobody has taken responsibility for. */
+  /** An open MT Loop nobody has ACCEPTED. It still has a responsible party. */
   | "unassigned_loop"
   /** A truck is going empty and nobody has recorded when or where. */
   | "missing_availability"
@@ -99,6 +99,11 @@ export type NeedsYouCategory =
   | "projection_needs_review"
   /** Two workspaces, or two loads, laying claim to the same thing. */
   | "assignment_conflict"
+  /**
+   * A dispatch organization has raised one of this carrier's trucks back to
+   * them. The only routine way work crosses an organization boundary.
+   */
+  | "dispatch_escalation"
   /** The truck goes empty sooner than the loop is being worked. */
   | "sla_deadline"
   /** A truck is empty and nobody has started looking for a load for it. */
@@ -408,12 +413,15 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   expired_policy: "Expired policy", unresolved_claim: "Unresolved claim",
   missing_claim_evidence: "Missing claim evidence",
   critical_insurance_gap: "Critical insurance gap",
-  unassigned_loop: "MT Loop with nobody on it",
+  // The loop has a responsible party; nobody has accepted it.
+  unassigned_loop: "MT Loop nobody has claimed",
   missing_availability: "Missing availability",
   operating_authority: "Operating Authority conflict", blocked_loop: "Blocked MT Loop",
   projection_failed: "Update did not finish",
   projection_needs_review: "Needs your decision",
-  assignment_conflict: "Assignment conflict", sla_deadline: "Deadline approaching",
+  assignment_conflict: "Assignment conflict",
+  dispatch_escalation: "Your dispatcher needs you",
+  sla_deadline: "Deadline approaching",
   no_search: "Nobody is looking", draft_waiting: "Message waiting for you",
   expiring_opportunity: "Load about to go", broker_replied: "Broker answered",
   offer_expiring: "Offer about to lapse", agreed_not_booked: "Agreed, not booked",

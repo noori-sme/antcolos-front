@@ -8,7 +8,9 @@ import {
   UserCircle, Wrench, type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { CATEGORY_LABEL, type NeedsYouEntityKind, type NeedsYouItem } from "@/types";
+import {
+  CATEGORY_LABEL, SEVERITY_LABEL, type NeedsYouEntityKind, type NeedsYouItem,
+} from "@/types";
 import { cn } from "@/lib/utils";
 import { DueLabel } from "./due-label";
 import { SeverityBar } from "./severity";
@@ -43,6 +45,10 @@ export function NeedsYouCard({
       type="button"
       onClick={onOpen}
       aria-current={selected ? "true" : undefined}
+      // Severity is otherwise carried by the colour of one bar, which is no
+      // information at all to a screen reader or to anybody who cannot tell
+      // the two reds apart. The attribute is the same fact, for tests.
+      data-severity={item.severity}
       className={cn(
         "group flex w-full gap-3 rounded-lg border bg-surface p-3 text-left transition-colors sm:p-4",
         selected
@@ -52,6 +58,7 @@ export function NeedsYouCard({
       )}
     >
       <SeverityBar severity={item.severity} className="self-stretch" />
+      <span className="sr-only">{SEVERITY_LABEL[item.severity]} severity.</span>
 
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">

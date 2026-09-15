@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loopContextFor, resetPropagationWorld } from "./propagation-harness.ts";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
-import { mtLoopBoardSync, syncMtLoops } from "@/lib/api/mock/mt-loop";
+import { buildMtLoopBoard, syncMtLoops } from "@/lib/api/mock/mt-loop";
 import { startSearch } from "@/lib/api/mock/search-session";
 import { allMatches } from "@/lib/api/mock/opportunity-matching";
 import {
@@ -38,10 +38,10 @@ test.beforeEach(() => resetPropagationWorld());
 /* MT Loop                                                                     */
 /* -------------------------------------------------------------------------- */
 
-test("every MT Loop card carries a stage, its evidence, and what is in the way", () => {
+test("every MT Loop card carries a stage, its evidence, and what is in the way", async () => {
   const ctx = loopContextFor(CTX);
   syncMtLoops(ctx);
-  const board = mtLoopBoardSync(ctx);
+  const board = (await buildMtLoopBoard(ctx));
   assert.ok(board.loops.length > 0);
 
   for (const card of board.loops) {
@@ -65,10 +65,10 @@ test("every MT Loop card carries a stage, its evidence, and what is in the way",
   }
 });
 
-test("the stage is about the truck's cycle, not about who is working it", () => {
+test("the stage is about the truck's cycle, not about who is working it", async () => {
   const ctx = loopContextFor(CTX);
   syncMtLoops(ctx);
-  const board = mtLoopBoardSync(ctx);
+  const board = (await buildMtLoopBoard(ctx));
 
   // An unworked empty truck and a worked one both have no load; the stage tells
   // them apart, which is the distinction `status` alone cannot make.
@@ -85,10 +85,10 @@ test("the stage is about the truck's cycle, not about who is working it", () => 
   }
 });
 
-test("a problem that stops dispatch outranks finding work", () => {
+test("a problem that stops dispatch outranks finding work", async () => {
   const ctx = loopContextFor(CTX);
   syncMtLoops(ctx);
-  const board = mtLoopBoardSync(ctx);
+  const board = (await buildMtLoopBoard(ctx));
 
   for (const card of board.loops) {
     const stopping = card.blockers.filter(
@@ -108,7 +108,7 @@ test("a booked load with no signed confirmation is a cycle that is not finished"
   const ctx = loopContextFor(CTX);
   const { loopId } = await bookALoad(ctx);
 
-  let card = cardFor(ctx, loopId);
+  let card = await cardFor(ctx, loopId);
   assert.equal(card.stage, "booked_unconfirmed");
   assert.ok(
     card.blockers.some((b) => b.key === "unconfirmed_load"),
@@ -122,7 +122,7 @@ test("a booked load with no signed confirmation is a cycle that is not finished"
 
   await signIt(ctx, loopId);
 
-  card = cardFor(ctx, loopId);
+  card = await cardFor(ctx, loopId);
   assert.ok(
     card.stage === "confirmed" || card.stage === "dispatched",
     `the cycle moved on: ${card.stage}`,
@@ -164,7 +164,7 @@ test("an item exists because the condition does, and stops existing when it stop
   const ctx = loopContextFor(CTX);
   const { loopId } = await bookALoad(ctx);
 
-  const reference = cardFor(ctx, loopId).loadReference;
+  const reference = (await cardFor(ctx, loopId)).loadReference;
   assert.ok(reference);
 
   const before = await mockNeedsYouService.list(ctx);
@@ -234,8 +234,8 @@ test("history survives regeneration", async () => {
 /* Helpers                                                                     */
 /* -------------------------------------------------------------------------- */
 
-function cardFor(ctx: MtLoopContext, loopId: string) {
-  const card = mtLoopBoardSync(ctx).loops.find((c) => c.loopId === loopId);
+async function cardFor(ctx: MtLoopContext, loopId: string) {
+  const card = (await buildMtLoopBoard(ctx)).loops.find((c) => c.loopId === loopId);
   assert.ok(card, "the loop is still on the board");
   return card;
 }
@@ -243,7 +243,7 @@ function cardFor(ctx: MtLoopContext, loopId: string) {
 /** Take one loop all the way to a booked load. Returns the loop and workflow. */
 async function bookALoad(ctx: MtLoopContext) {
   syncMtLoops(ctx);
-  const board = mtLoopBoardSync(ctx);
+  const board = (await buildMtLoopBoard(ctx));
   const loop = board.loops.find(
     (l) => l.driverName && !l.blockReason && (l.trailerUnit || !l.trailerRequired),
   ) ?? board.loops[0];
@@ -283,7 +283,7 @@ async function bookALoad(ctx: MtLoopContext) {
 
 /** Review every required field and sign, the way the review screen does. */
 async function signIt(ctx: MtLoopContext, loopId: string) {
-  const card = cardFor(ctx, loopId);
+  const card = await cardFor(ctx, loopId);
   assert.ok(card.loadReference);
   const { rateConsFor } = await import("@/lib/api/mock/rate-confirmation");
   const workflow = rateConsFor(ctx).find((w) => w.loadReference === card.loadReference);
@@ -310,7 +310,7 @@ test("every deep link MT Loop and Needs You produce resolves to a real route", a
   syncMtLoops(ctx);
 
   const links = new Set<string>();
-  for (const card of mtLoopBoardSync(ctx).loops) {
+  for (const card of (await buildMtLoopBoard(ctx)).loops) {
     if (card.nextAction) links.add(card.nextAction.href);
     for (const b of card.blockers) if (b.href) links.add(b.href);
     for (const e of card.evidence) if (e.href) links.add(e.href);

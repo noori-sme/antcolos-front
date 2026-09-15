@@ -7,12 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  ASSIGNMENT_SOURCE_LABEL,
   FACT_VERIFICATION_LABEL, MT_LOOP_STAGE_LABEL, MT_LOOP_STATUS_LABEL,
   type FactVerification, type MtLoopBoard, type MtLoopCard, type MtLoopStage,
 } from "@/types";
 import {
-  assignLoop, blockLoop, claimLoop, closeLoopById, pauseLoop, releaseLoop,
-  resumeLoop, unblockLoop, type MtLoopContext, type MtLoopOutcome,
+  assignLoop, blockLoop, claimLoop, closeLoopById, escalateLoopToCarrier,
+  pauseLoop, releaseLoop, resumeLoop, unblockLoop,
+  type MtLoopContext, type MtLoopOutcome,
 } from "@/lib/api/mock/mt-loop";
 import { AvailabilityChip, BasisChip } from "@/features/tracking/chips";
 import { cn } from "@/lib/utils";
@@ -31,14 +33,45 @@ import { cn } from "@/lib/utils";
  * role name. Each action is re-checked inside the service too, so a board left
  * open in a tab cannot be used to do something the person may no longer do.
  */
+export type MtLoopPanelScope = "personal" | "organization";
+
 export function MtLoopPanel({
-  board, ctx, onChanged,
+  board, ctx, onChanged, scope = "organization",
 }: {
   board: MtLoopBoard;
   ctx: MtLoopContext | null;
   /** Called after any successful change so the caller can refetch. */
   onChanged: () => void;
+  /**
+   * ★ WHOSE SCREEN IS THIS? ★
+   *
+   * `organization` — the dispatch board. Every open loop, every card, because
+   *                  that is the job of that screen.
+   * `personal`     — Home. Full cards only for loops that need this person,
+   *                  plus one compact line for everything the team is
+   *                  handling, with links to the views that show it.
+   *
+   * The panel does not decide which loops those are. It reads
+   * `card.needsYouPersonally`, which the Responsibility Engine computed from
+   * the same seven reasons that fill My Needs You and the nav badge. There is
+   * no Home filtering rule here and there must never be one: a Carrier Owner's
+   * Home used to carry an operational card for every truck in the workspace,
+   * including healthy ones a dispatcher was already working, which is an
+   * organization-wide board wearing a personal screen's clothes.
+   */
+  scope?: MtLoopPanelScope;
 }) {
+  const personal = scope === "personal";
+  /*
+   * What this screen renders as a full card.
+   *
+   * On a personal screen that is `needsYouPersonally` and nothing else — a
+   * fact the engine computed, not a filter this component invented. On the
+   * dispatch board it is everything, which is what an organization-wide board
+   * is for.
+   */
+  const shown = personal ? board.loops.filter((l) => l.needsYouPersonally) : board.loops;
+
   const [busyLoopId, setBusyLoopId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -80,22 +113,27 @@ export function MtLoopPanel({
             <RefreshCw className="size-4 text-fg-subtle" aria-hidden />
             MT Loop
             <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
-              {board.counts.open}
+              {shown.length}
             </span>
           </h2>
           <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Every truck you are responsible for that is empty or about to be, from the moment it
-            goes empty until its next load has run.
+            {personal
+              ? "Empty trucks that need you — yours to work, fallen to you, escalated to you, or waiting on your decision."
+              : "Every truck this workspace covers that is empty or about to be, from the moment it goes empty until its next load has run."}
           </p>
         </div>
-        {board.counts.open > 0 ? (
+        {shown.length > 0 ? (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.75rem] text-fg-subtle">
-            <span>{board.counts.emptyNow} empty now</span>
-            <span>{board.counts.unassigned} with nobody on them</span>
-            {board.counts.blocked > 0 ? (
-              <span className="text-st-danger">{board.counts.blocked} blocked</span>
+            <span>{shown.filter((c) => c.emptyNow).length} empty now</span>
+            <span>{shown.filter((c) => !c.claimed).length} not claimed</span>
+            {shown.filter((c) => c.status === "blocked").length > 0 ? (
+              <span className="text-st-danger">
+                {shown.filter((c) => c.status === "blocked").length} blocked
+              </span>
             ) : null}
-            {board.counts.paused > 0 ? <span>{board.counts.paused} paused</span> : null}
+            {shown.filter((c) => c.status === "paused").length > 0 ? (
+              <span>{shown.filter((c) => c.status === "paused").length} paused</span>
+            ) : null}
           </p>
         ) : null}
       </div>
@@ -118,17 +156,20 @@ export function MtLoopPanel({
       ) : null}
 
       <div className="mt-3">
-        {board.loops.length === 0 ? (
+        {shown.length === 0 ? (
           <div className="rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-            <p className="text-[0.8125rem] font-medium text-fg">No trucks going empty</p>
+            <p className="text-[0.8125rem] font-medium text-fg">
+              {personal ? "No empty truck needs you" : "No trucks going empty"}
+            </p>
             <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-              A loop opens by itself the moment one of your trucks becomes available or is expected
-              to go empty. Nothing here is waiting on you.
+              {personal
+                ? "A loop lands here when it is yours to work, when nobody else can take it, when somebody escalates it to you or asks for your help, or when it is waiting on your decision."
+                : "A loop opens by itself the moment one of your trucks becomes available or is expected to go empty. Nothing here is waiting on you."}
             </p>
           </div>
         ) : (
           <ul className="space-y-2">
-            {board.loops.map((loop) => (
+            {shown.map((loop) => (
               <LoopRow
                 key={loop.loopId}
                 loop={loop}
@@ -147,11 +188,20 @@ export function MtLoopPanel({
                 onUnblock={() => run(loop.loopId, () => unblockLoop(loop.loopId, ctx!), "Unblocked.")}
                 onClose={(reason) =>
                   run(loop.loopId, () => closeLoopById(loop.loopId, reason, ctx!), "This cycle is closed.")}
+                onEscalateToCarrier={(reason) =>
+                  run(
+                    loop.loopId,
+                    () => escalateLoopToCarrier(loop.loopId, reason, ctx!),
+                    "The carrier has been asked. You still have the truck.",
+                  )}
               />
             ))}
           </ul>
         )}
       </div>
+
+      {personal ? <HandledByOthers board={board} /> : null}
+      <DispatchedOut board={board} />
 
       <p className="mt-3 text-[0.75rem] leading-relaxed text-fg-subtle">
         Open a truck to search for a load for it. Contacting brokers and negotiating rates are not
@@ -165,8 +215,105 @@ export function MtLoopPanel({
 
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Trucks this carrier has handed to somebody else to dispatch.
+ *
+ * ★ THE OUTWARD HALF OF THE SAME IDEA ★
+ * `HandledByOthers` summarises work a colleague is doing. This summarises work
+ * another ORGANIZATION is doing, and it is shown on every scope — a carrier
+ * looking at their complete board should still not be given operational cards
+ * for trucks an agency is covering, because those cycles are not theirs to
+ * work. They reach the carrier when the agency asks, and then they arrive as
+ * an item in Needs You with a name and a reason on it.
+ */
+function DispatchedOut({ board }: { board: MtLoopBoard }) {
+  const { count, byOrganization } = board.dispatchedOut;
+  if (count === 0) return null;
+
+  const who = byOrganization.length === 1
+    ? byOrganization[0].name
+    : byOrganization.length === 2
+      ? `${byOrganization[0].name} and ${byOrganization[1].name}`
+      : `${byOrganization.length} dispatch organizations`;
+
+  return (
+    <section
+      aria-label="Dispatched by another organization"
+      className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-dashed border-border px-3.5 py-2.5"
+    >
+      <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+        <span className="font-medium text-fg">
+          {count} of your {count === 1 ? "trucks is" : "trucks are"} dispatched by {who}
+        </span>
+        . They will ask if they need you.
+      </p>
+      <Link
+        href="/needs-you"
+        className="text-[0.75rem] font-medium text-primary hover:underline"
+      >
+        Anything they have asked
+      </Link>
+    </section>
+  );
+}
+
+/**
+ * Everything the team is handling, as one line.
+ *
+ * ★ OVERSIGHT MOVED, NOT DELETED ★
+ * This is the whole of a delegated loop's presence on a personal Home: a count,
+ * who has them, and two links to the places built for looking. No card, no
+ * buttons, nothing to act on — because acting on somebody else's healthy loop
+ * from your Home screen is not oversight, it is interference, and the person
+ * reading it has not been asked to do anything.
+ *
+ * The loops are all still there: on the dispatch board, in Team oversight, in
+ * All organization. `/needs-you` is where the three views live and is the right
+ * destination for "who is holding what"; `/dispatch` is the complete board.
+ */
+function HandledByOthers({ board }: { board: MtLoopBoard }) {
+  const { count, holders } = board.handledByOthers;
+  if (count === 0) return null;
+
+  const who = holders.length === 1
+    ? holders[0].displayName
+    : holders.length === 2
+      ? `${holders[0].displayName} and ${holders[1].displayName}`
+      : "your dispatch team";
+
+  return (
+    <section
+      aria-label="Handled by your team"
+      className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-sunken px-3.5 py-2.5"
+    >
+      <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+        <span className="font-medium text-fg">
+          {count} Empty {count === 1 ? "Loop is" : "Loops are"} being handled by {who}
+        </span>
+        . Nothing there is waiting on you.
+      </p>
+      <span className="flex items-center gap-3">
+        <Link
+          href="/needs-you"
+          className="text-[0.75rem] font-medium text-primary hover:underline"
+        >
+          Team oversight
+        </Link>
+        <Link
+          href="/dispatch"
+          className="text-[0.75rem] font-medium text-primary hover:underline"
+        >
+          All loops
+        </Link>
+      </span>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
 const STATUS_TONE: Record<string, "neutral" | "info" | "progress" | "success" | "warning" | "danger"> = {
-  unassigned: "warning",
+  unclaimed: "warning",
   working: "info",
   covered: "progress",
   running: "progress",
@@ -208,7 +355,7 @@ const EVIDENCE_TONE: Record<FactVerification, "neutral" | "info" | "success" | "
 };
 
 /** The three actions that need a reason before they are allowed to happen. */
-type ReasonAction = "pause" | "block" | "close";
+type ReasonAction = "pause" | "block" | "close" | "escalateToCarrier";
 
 const REASON_PROMPT: Record<ReasonAction, { title: string; placeholder: string; confirm: string }> = {
   pause: {
@@ -226,11 +373,19 @@ const REASON_PROMPT: Record<ReasonAction, { title: string; placeholder: string; 
     placeholder: "Carrier took the truck back",
     confirm: "Close this loop",
   },
+  escalateToCarrier: {
+    // The one action that crosses an organization boundary, so the wording
+    // says out loud what it does and what it does not do.
+    title: "What do you need the carrier to decide?",
+    placeholder: "Broker wants $200 over your floor. Your call.",
+    confirm: "Escalate to the carrier",
+  },
 };
 
 function LoopRow({
   loop, assignableTo, busy,
   onClaim, onRelease, onAssign, onPause, onResume, onBlock, onUnblock, onClose,
+  onEscalateToCarrier,
 }: {
   loop: MtLoopCard;
   assignableTo?: Array<{ membershipId: string; name: string }>;
@@ -241,6 +396,7 @@ function LoopRow({
   onPause: (reason: string) => void;
   onResume: () => void;
   onBlock: (reason: string) => void;
+  onEscalateToCarrier: (reason: string) => void;
   onUnblock: () => void;
   onClose: (reason: string) => void;
 }) {
@@ -249,7 +405,9 @@ function LoopRow({
   const [handing, setHanding] = useState(false);
 
   const where = [loop.expectedEmptyCity, loop.expectedEmptyState].filter(Boolean).join(", ");
-  const others = (assignableTo ?? []).filter((p) => p.membershipId !== loop.responsibleMembershipId);
+  const others = (assignableTo ?? []).filter(
+    (p) => p.membershipId !== loop.claimed?.membershipId,
+  );
 
   function submitReason() {
     const action = asking;
@@ -259,11 +417,16 @@ function LoopRow({
     setReason("");
     if (action === "pause") onPause(text);
     else if (action === "block") onBlock(text);
+    else if (action === "escalateToCarrier") onEscalateToCarrier(text);
     else onClose(text);
   }
 
   return (
     <li
+      // The loop this row is about, so a caller can find one row among several
+      // without matching on copy that is meant to change.
+      data-loop-id={loop.loopId}
+      data-truck-unit={loop.truckUnit}
       className={cn(
         "rounded-md border bg-surface-sunken px-3.5 py-3",
         loop.status === "blocked" ? "border-st-danger/40" : "border-border",
@@ -339,12 +502,43 @@ function LoopRow({
             {loop.loadReference ? <span>{loop.loadReference}</span> : null}
           </p>
 
+          {/*
+            ★ TWO FACTS, AND THE ORDER MATTERS ★
+            Who is responsible comes from the Responsibility Engine and is the
+            same answer My work, Needs You and Home are showing. Whether
+            anybody has ACCEPTED it is this module's own fact, and it is second
+            because it is the lesser question: a loop nobody has picked up is
+            still somebody's.
+
+            This line used to read "Nobody is responsible for this yet" off a
+            field on the loop, about loops the engine had routed to a named
+            dispatcher. That sentence is why this change exists.
+          */}
           <p className="mt-1 text-[0.75rem] text-fg-muted">
-            {loop.responsibleName
-              ? `${loop.isMine ? "You are" : `${loop.responsibleName} is`} responsible`
-              : "Nobody is responsible for this yet"}
+            {loop.responsible ? (
+              <>
+                <span className={loop.isMine ? "font-medium text-fg" : undefined}>
+                  {loop.isMine ? "You are" : `${loop.responsible.displayName} is`} responsible
+                </span>
+                <span className="text-fg-subtle">
+                  {" "}· {ASSIGNMENT_SOURCE_LABEL[loop.responsible.source].toLowerCase()}
+                </span>
+              </>
+            ) : (
+              <span className="text-st-warning">
+                Could not read who is responsible
+              </span>
+            )}
+            {loop.claimed
+              ? ` · ${loop.claimed.isMine ? "you claimed it" : `claimed by ${loop.claimed.displayName}`}`
+              : " · not claimed yet"}
             {loop.handoffCount > 1 ? ` · ${loop.handoffCount} hands so far` : ""}
           </p>
+          {loop.responsible?.noEligibleAssignee ? (
+            <p className="mt-0.5 text-[0.75rem] text-st-warning">
+              Nobody in this workspace holds what this needs yet.
+            </p>
+          ) : null}
 
           {/* Everything unresolved, not only whichever one stopped the loop. A
               cycle can be workable and still owe two things, and a board that
@@ -448,6 +642,16 @@ function LoopRow({
           {loop.can.block ? (
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => setAsking("block")}>
               Block
+            </Button>
+          ) : null}
+          {loop.can.escalateToCarrier ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => setAsking("escalateToCarrier")}
+            >
+              Ask the carrier
             </Button>
           ) : null}
           {loop.can.close ? (

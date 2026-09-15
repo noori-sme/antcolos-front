@@ -14,7 +14,7 @@ import {
   fleetSync, truckContextFrom, truckDispatchGrants, truckDocumentProblems,
   truckOperatingCarrier,
 } from "./truck-registry";
-import { openLoopsFor, type MtLoopContext } from "./mt-loop";
+import { carrierEscalationsFor, openLoopsFor, type MtLoopContext } from "./mt-loop";
 import { allMatches } from "./opportunity-matching";
 import { carriersForWorkspaceSync } from "./carrier-registry";
 import { sessionForCycle } from "./search-session";
@@ -220,6 +220,48 @@ function loopEntity(loop: MtLoop): NeedsYouEntityRef {
 const LOOP_PERMS: PermissionKey[] = ["trucks:view", "loads:view"];
 
 /**
+ * A dispatch organization has raised one of this carrier's trucks back to them.
+ *
+ * ★ HOW WORK REACHES A CARRIER OWNER ACROSS AN ORGANIZATION BOUNDARY ★
+ * It does not route. Routing never looks outside a workspace, which is what
+ * stops a dispatcher's ordinary bad day landing on the carrier who hired them.
+ * Work crosses when somebody in the dispatch organization decides it has to,
+ * and this turns that decision into an item in the carrier's own queue — where
+ * the ordinary rules then apply to it, so it reaches whoever at the carrier can
+ * actually act rather than being addressed to "the Owner" by name.
+ *
+ * Scoped to loops on THIS carrier's trucks that somebody else is dispatching.
+ * The item says what was asked and by whom; it does not expose anything about
+ * how the dispatch organization has arranged itself internally, which is
+ * theirs and none of the carrier's business.
+ */
+function carrierEscalationRules(ctx: DeriveContext): Derived[] {
+  const loops = carrierEscalationsFor(ctx.organizationId);
+  return loops.map((loop) => {
+    const escalation = loop.carrierEscalation!;
+    return {
+      key: `carrier-escalation-${loop.truckId}`,
+      category: "dispatch_escalation" as const,
+      // Somebody has deliberately asked for the carrier. That is not a
+      // background condition to be triaged later.
+      severity: "high" as const,
+      title: `${escalation.fromOrganizationName} needs you on unit ${loop.truckUnit}`,
+      reason: `${escalation.byName} at ${escalation.fromOrganizationName} escalated this to you: "${escalation.note}"`,
+      detail: `They are still covering the truck. Escalating asks for a decision; it does not hand the cycle back.`,
+      entity: loopEntity(loop),
+      recommendedAction: {
+        kind: "assign_loop" as const,
+        label: "Look at this truck",
+        requires: LOOP_PERMS,
+        href: `/fleet/trucks/${loop.truckId}`,
+      },
+      requires: LOOP_PERMS,
+      source: "system" as const,
+    };
+  });
+}
+
+/**
  * Everything wrong with the loops this workspace is responsible for.
  *
  * Read straight off the loops, which have themselves just been reconciled
@@ -240,18 +282,23 @@ function loopRules(loops: MtLoop[]): Derived[] {
         ? "is empty now"
         : `goes empty in about ${Math.round(emptyIn)} ${Math.round(emptyIn) === 1 ? "hour" : "hours"}`;
 
-    /* ---- Nobody has taken responsibility for it ---- */
-    if (!loop.responsibleMembershipId && loop.status !== "closed") {
+    /* ---- Nobody has ACCEPTED it ---- */
+    //
+    // Not "nobody is responsible for it". The Responsibility Engine has an
+    // answer for every open loop, and this item goes to that person: what is
+    // missing is somebody saying they have picked it up, which is a real thing
+    // to chase and a different thing from having no owner.
+    if (!loop.claimedByMembershipId && loop.status !== "closed") {
       out.push({
         key: `loop-unassigned-${loop.truckId}`,
         category: "unassigned_loop",
         // A truck already sitting empty is losing money now. One going empty
         // later today is not yet, and saying both are critical means neither is.
         severity: emptyIn <= 0 ? "high" : emptyIn <= 6 ? "medium" : "low",
-        title: `${unit} ${emptyPhrase} and nobody is on it`,
+        title: `${unit} ${emptyPhrase} and nobody has picked it up`,
         reason: where
-          ? `The MT Loop for ${unit} in ${where} has no responsible dispatcher.`
-          : `The MT Loop for ${unit} has no responsible dispatcher.`,
+          ? `Nobody has taken on the MT Loop for ${unit} in ${where}.`
+          : `Nobody has taken on the MT Loop for ${unit}.`,
         detail: `Running under ${loop.carrierName}.`,
         entity: loopEntity(loop),
         recommendedAction: {
@@ -277,7 +324,7 @@ function loopRules(loops: MtLoop[]): Derived[] {
         reason: loop.blockReason ?? "This MT Loop is blocked.",
         detail: loop.blockOrigin === "system"
           ? "Raised automatically. It clears itself the moment the underlying problem is fixed."
-          : `Put on by ${loop.responsibleName ?? "somebody in this workspace"}. Only a person can take it off.`,
+          : `Put on by ${loop.claimedByName ?? "somebody in this workspace"}. Only a person can take it off.`,
         entity: loopEntity(loop),
         recommendedAction: {
           kind: "review",
@@ -347,9 +394,9 @@ function loopRules(loops: MtLoop[]): Derived[] {
     // is no deadline to be approaching, and the loop already carries an item
     // saying exactly that — reporting both would be the same gap twice.
     if (
-      loop.responsibleMembershipId
+      loop.claimedByMembershipId
       && loop.expectedEmptyAt !== undefined
-      && (loop.status === "working" || loop.status === "unassigned")
+      && (loop.status === "working" || loop.status === "unclaimed")
       && hoursUntil(loop.respondBy) <= 4
     ) {
       const late = hoursUntil(loop.respondBy) <= 0;
@@ -363,7 +410,7 @@ function loopRules(loops: MtLoop[]): Derived[] {
         reason: late
           ? `${unit} went empty${where ? ` in ${where}` : ""} and no load has been booked on it.`
           : `${unit} ${emptyPhrase}${where ? ` in ${where}` : ""} and no load has been booked on it.`,
-        detail: `${loop.responsibleName ?? "Somebody"} is responsible for this loop.`,
+        detail: `${loop.claimedByName ?? "Somebody"} is responsible for this loop.`,
         entity: loopEntity(loop),
         recommendedAction: {
           kind: "start_search",
@@ -937,7 +984,7 @@ function searchRules(ctx: DeriveContext, loops: MtLoop[]): Derived[] {
     if (loop.status === "closed" || loop.status === "paused" || loop.status === "blocked") continue;
     if (loop.status === "covered" || loop.status === "running") continue;
     // A loop with nobody on it is a different problem, already reported.
-    if (!loop.responsibleMembershipId) continue;
+    if (!loop.claimedByMembershipId) continue;
     if (sessionForCycle(loop.loopId, ctx as MtLoopContext)) continue;
 
     const emptyIn = hoursUntil(loop.expectedEmptyAt);
@@ -946,7 +993,7 @@ function searchRules(ctx: DeriveContext, loops: MtLoop[]): Derived[] {
       category: "no_search",
       severity: emptyIn <= 0 ? "high" : emptyIn <= 8 ? "medium" : "low",
       title: `Nobody is looking for a load for unit ${loop.truckUnit}`,
-      reason: `${loop.responsibleName ?? "Somebody"} is responsible for this cycle and no search has been started.`,
+      reason: `${loop.claimedByName ?? "Somebody"} is responsible for this cycle and no search has been started.`,
       detail: `Running under ${loop.carrierName}.`,
       entity: loopEntity(loop),
       recommendedAction: {
@@ -1438,6 +1485,16 @@ function derive(ctx: DeriveContext): Derived[] {
     items.push(...rateConRules(ctx));
     items.push(...driverReviewRules(ctx));
   }
+  /*
+   * Runs for every workspace, outside the block above.
+   *
+   * A carrier that has handed all its dispatch to an agency has no loops of
+   * its own, so `openLoopsFor` gives it nothing and none of those rules apply
+   * — and it is exactly that carrier who most needs to hear when the agency
+   * escalates. Putting this inside the block would have hidden it from the
+   * only people it is for.
+   */
+  items.push(...carrierEscalationRules(ctx));
   items.push(...loadRules(ctx));
   // Last, because it is about what the OTHER rules' records did when they
   // changed, and reading it after them keeps the reasoning in one direction.

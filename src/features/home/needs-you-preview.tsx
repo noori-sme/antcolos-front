@@ -12,6 +12,19 @@ import { CATEGORY_LABEL, type NeedsYouItem } from "@/types";
 /**
  * Needs You leads Home. Urgent exceptions and decisions outrank analytics —
  * this block is always first, whatever else the membership can see.
+ *
+ * ★ It is a PERSONAL queue, and nothing else. ★
+ *
+ * The items come from `HomeSummary.needsYouPreview`, which the home service
+ * builds from the responsibility layer's shared derivation — the same one the
+ * Needs You page uses. There is no separate Home rule, and there must never be
+ * one: this block used to show everything the membership could see, so a
+ * Carrier Owner opened the app to "142 open" and four items that were somebody
+ * else's job.
+ *
+ * ZERO IS A GOOD ANSWER. An Owner who has delegated well should see an empty
+ * block here, and it must not be filled with team work, informational alerts or
+ * organization-wide totals to look busy.
  */
 export function NeedsYouPreview({
   items, openCount, criticalCount,
@@ -32,8 +45,8 @@ export function NeedsYouPreview({
           </CardTitle>
           <p className="mt-0.5 text-[0.8125rem] text-fg-muted">
             {openCount === 0
-              ? "Your queue is clear."
-              : `${openCount} open, most urgent first.`}
+              ? "Nothing needs you."
+              : `${openCount} ${openCount === 1 ? "thing needs" : "things need"} you, most urgent first.`}
           </p>
         </div>
         <Button asChild variant="secondary" size="sm">
@@ -49,8 +62,8 @@ export function NeedsYouPreview({
           <div className="flex items-center gap-3 border-t border-border px-5 py-8">
             <CheckCircle2 aria-hidden className="size-5 shrink-0 text-st-success" />
             <p className="text-[0.875rem] text-fg-muted">
-              Nothing needs a decision right now. Antcolos is watching loads,
-              trucks, drivers and documents.
+              Nothing needs your decision right now. Anything your team is
+              holding is under Team oversight on the Needs You page.
             </p>
           </div>
         ) : (

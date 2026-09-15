@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Building2, CalendarClock, ClipboardList, Container, FileBadge,
   FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
-  Inbox, Layers, Link2, MailPlus, Map, Package, Palette, Radar, Receipt,
+  Inbox, Layers, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
   ReceiptText, Route, Satellite, ScrollText, Settings2, Shield, ShieldCheck,
   TriangleAlert, Truck, UserCircle, Users, UsersRound, Wrench,
 } from "lucide-react";
@@ -36,7 +36,16 @@ export const PRODUCT_NAV: NavSection[] = [
     items: [
       { label: "Home", href: "/home", icon: Home, requires: [], primaryMobile: true },
       { label: "Needs You", href: "/needs-you", icon: Inbox, requires: [], primaryMobile: true, showsNeedsYouCount: true },
+      // Everybody has work, so no permission is required to look at their own.
+      // Which QUEUES appear inside is decided by the service from the viewer's
+      // permissions and record scope — a driver gets two, an owner gets seven —
+      // which is a finer distinction than a nav entry can make.
+      { label: "My work", href: "/work", icon: ListChecks, requires: [] },
       { label: "Dispatch", href: "/dispatch", icon: Route, requires: ["loads:view", "loads:assign"], primaryMobile: true },
+      // The organization-wide MT Loop board. Home shows only the loops that
+      // need the person reading it; this is where every one of them lives, so
+      // oversight is a place somebody goes rather than a pile on their Home.
+      { label: "MT Loop", href: "/dispatch/loops", icon: RefreshCw, requires: ["loads:view", "trucks:view"] },
       { label: "Tracking", href: "/dispatch/tracking", icon: Radar, requires: ["tracking:view", "loads:view"] },
       { label: "Opportunities", href: "/dispatch/opportunities", icon: Layers, requires: ["loads:view", "trucks:view"] },
       { label: "Loads", href: "/loads", icon: Package, requires: ["loads:view"], primaryMobile: true },

@@ -11,7 +11,7 @@ import {
 import { trailerFleetSync } from "./trailer-registry";
 import { carrierForTruckSync } from "./carrier-registry";
 import { driverViewSync, driverDocumentProblems } from "./driver-registry";
-import { mtLoopBoardSync, openLoopsFor, type MtLoopContext } from "./mt-loop";
+import { buildMtLoopBoard, openLoopsFor, type MtLoopContext } from "./mt-loop";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -130,13 +130,13 @@ export async function truckDispatchWorkspace(
   ctx: MtLoopContext,
 ): Promise<TruckDispatchWorkspace | undefined> {
   await sleep(LATENCY_MS);
-  return truckDispatchWorkspaceSync(truckId, ctx);
+  return truckDispatchWorkspaceFor(truckId, ctx);
 }
 
-export function truckDispatchWorkspaceSync(
+export async function truckDispatchWorkspaceFor(
   truckId: string,
   ctx: MtLoopContext,
-): TruckDispatchWorkspace | undefined {
+): Promise<TruckDispatchWorkspace | undefined> {
   const workspace = resolveWorkspace(ctx.organization, ctx.membership);
   // A driver is the person this page is about, not the person who works it.
   if (!workspace || workspace.kind === "driver") return undefined;
@@ -169,7 +169,7 @@ export function truckDispatchWorkspaceSync(
 
   /* ---- The live cycle ---- */
   const loop = openLoopsFor(ctx).find((l) => l.truckId === truckId);
-  const loopCard = mtLoopBoardSync(ctx).loops.find((c) => c.truckId === truckId);
+  const loopCard = (await buildMtLoopBoard(ctx)).loops.find((c) => c.truckId === truckId);
 
   const docProblems = truckDocumentProblems(truckId);
   const driverProblems = driver ? driverDocumentProblems(driver) : [];
@@ -201,6 +201,7 @@ export function truckDispatchWorkspaceSync(
 const NOTHING_ALLOWED: MtLoopAbilities = {
   claim: false, assign: false, reassign: false, pause: false,
   resume: false, block: false, unblock: false, close: false,
+  escalateToCarrier: false,
 };
 
 /* -------------------------------------------------------------------------- */

@@ -20,6 +20,20 @@ export const queryKeys = {
     [...orgKey(organizationId), "needs-you", membershipId, "count"] as const,
   members: (organizationId: string) =>
     [...orgKey(organizationId), "members"] as const,
+  responsibilityBoard: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "responsibility", "board", membershipId] as const,
+  responsibilityAttention: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "responsibility", "attention", membershipId] as const,
+  responsibilityItem: (organizationId: string, membershipId: string, workId: string) =>
+    [...orgKey(organizationId), "responsibility", "item", membershipId, workId] as const,
+  responsibilityExplain: (organizationId: string, membershipId: string, workId: string) =>
+    [...orgKey(organizationId), "responsibility", "explain", membershipId, workId] as const,
+  responsibilityPolicies: (organizationId: string) =>
+    [...orgKey(organizationId), "responsibility", "policies"] as const,
+  responsibilityFleetProfile: (organizationId: string) =>
+    [...orgKey(organizationId), "responsibility", "fleet-profile"] as const,
+  responsibilityAssignable: (organizationId: string, role?: string) =>
+    [...orgKey(organizationId), "responsibility", "assignable", role ?? "any"] as const,
   loads: (organizationId: string, filters?: unknown) =>
     [...orgKey(organizationId), "loads", filters ?? null] as const,
   eldDashboard: (organizationId: string, membershipId: string) =>

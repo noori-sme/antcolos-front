@@ -14,6 +14,7 @@ export type * from "./documents";
 export type * from "./agreements";
 export type * from "./audit";
 export type * from "./risk";
+export type * from "./responsibility";
 
 
 
@@ -34,6 +35,7 @@ import type { LoadsService } from "./loads";
 import type { SettlementsService } from "./settlements";
 import type { NeedsYouService } from "./needs-you";
 import type { ReportsService } from "./reports";
+import type { ResponsibilityService } from "./responsibility";
 
 /** The seam Taqi implements against. The UI only ever sees this shape. */
 export interface AntcolosServices {
@@ -74,4 +76,14 @@ export interface AntcolosServices {
   audit: AuditService;
   /** Signals and cases, which are not audit events. See contracts/risk.ts. */
   risk: RiskService;
+  /**
+   * Hierarchical responsibility, delegation and escalation.
+   *
+   * The layer that answers "who" for every piece of work above. It owns no MT
+   * Loop and no Needs You item — it reads the typed responsibility context each
+   * of those emits and writes back nothing about the work itself. It is also
+   * not a second permission, team or notification system: see
+   * contracts/responsibility.ts for what it deliberately is not.
+   */
+  responsibility: ResponsibilityService;
 }

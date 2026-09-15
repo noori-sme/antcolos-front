@@ -120,10 +120,17 @@ export function DispatchWorkspaceScreen() {
       </p>
 
       {/* MT Loop leads. An empty truck costs money every hour it stays empty,
-          so it sits above everything else on this screen, always. */}
+          so it sits above everything else on this screen, always.
+
+          Personal, like every other Home. A dispatcher sees full cards for the
+          loops that need them and one line for what their colleagues are
+          holding; the complete board is a page of its own at /dispatch/loops.
+          This screen is somebody's Home, not the workspace's board, and the
+          difference is the one this change exists to draw. */}
       <MtLoopPanel
         board={s.mtLoop}
         ctx={ctx}
+        scope="personal"
         onChanged={() => {
           // The loops and the queue are two views of the same state: taking a
           // loop clears the item that said nobody had it, so both refresh.
