@@ -107,7 +107,15 @@ export type NeedsYouCategory =
   /** The driver said no, or wants something answered first. */
   | "driver_blocked"
   /** The driver will take it, at a different number. */
-  | "driver_countered";
+  | "driver_countered"
+
+  /* ---- Audit & Risk. Derived from open risk cases, never seeded. ---- */
+  /** A high-severity risk case somebody has been made responsible for. */
+  | "risk_case_assigned"
+  /** A critical risk case. These never wait on a queue being tidied. */
+  | "risk_case_critical"
+  /** An open risk case whose due date has passed. */
+  | "risk_case_overdue";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
@@ -148,7 +156,9 @@ export type NeedsYouEntityKind =
   /** A rate confirmation being checked. */
   | "rate_confirmation"
   /** An opportunity sent to a driver for review. */
-  | "driver_review";
+  | "driver_review"
+  /** One investigation, opened off one or more risk signals. */
+  | "risk_case";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -195,7 +205,9 @@ export type NeedsYouActionKind =
   /** Check a rate confirmation against what was booked. */
   | "check_ratecon"
   /** Chase, or answer, a driver who has the opportunity. */
-  | "chase_driver";
+  | "chase_driver"
+  /** Open the case and work it. The queue is never where a case is closed. */
+  | "investigate_risk";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -326,6 +338,9 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   ratecon_missing: "No rate confirmation yet",
   driver_review_waiting: "Waiting on the driver", driver_blocked: "Driver said no",
   driver_countered: "Driver countered",
+  risk_case_assigned: "Risk case assigned to you",
+  risk_case_critical: "Critical risk case",
+  risk_case_overdue: "Risk case overdue",
 };
 
 /**

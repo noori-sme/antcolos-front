@@ -81,6 +81,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "maintenance:view", "maintenance:manage", "maintenance:defects:manage",
       "maintenance:outofservice:manage",
       "insurance:view", "claims:view", "claims:create", "claims:manage",
+      // Safety is usually the first to be shown a flagged concern. Reading one
+      // is not the same as working it, so this is `risk:view` alone.
+      "risk:view",
     ],
   },
   {
@@ -92,6 +95,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "documents:view", "documents:approve", "drivers:view", "trucks:view", "trailers:view",
       "trailers:documents:manage",
       "insurance:view", "insurance:manage", "claims:view",
+      // Reading the record of what happened is the compliance job. Exporting
+      // it, and closing an investigation, are not — those stay separate keys.
+      "audit:view", "risk:view",
     ],
   },
   {
@@ -104,6 +110,11 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "claims:view", "claims:create", "claims:manage", "claims:financials:view",
       "trucks:view", "trailers:view", "drivers:view", "loads:view",
       "documents:view", "documents:upload", "compliance:view",
+      // The one seeded template that WORKS risk cases rather than only reading
+      // them. Separation of duties still applies to everyone in it: holding
+      // `risk:resolve` never lets somebody close a case about themselves.
+      "audit:view", "audit:export",
+      "risk:view", "risk:assign", "risk:investigate", "risk:resolve",
     ],
   },
   {

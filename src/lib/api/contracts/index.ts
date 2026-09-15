@@ -11,10 +11,14 @@ export type * from "./settlements";
 export type * from "./driver-workflow";
 export type * from "./invoices";
 export type * from "./documents";
+export type * from "./audit";
+export type * from "./risk";
 
 
 
 
+import type { AuditService } from "./audit";
+import type { RiskService } from "./risk";
 import type { ComplianceService } from "./compliance";
 import type { DirectoryService } from "./directory";
 import type { FuelService, IftaService } from "./fuel";
@@ -45,4 +49,11 @@ export interface AntcolosServices {
   driverWorkflow: DriverWorkflowService;
   invoices: InvoicesService;
   documents: DocumentsService;
+  /**
+   * The ONE audit ledger. Every module projects into it; none of them keeps a
+   * second one, and nothing but `audit.record` appends to it.
+   */
+  audit: AuditService;
+  /** Signals and cases, which are not audit events. See contracts/risk.ts. */
+  risk: RiskService;
 }

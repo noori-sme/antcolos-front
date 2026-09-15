@@ -169,6 +169,16 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "integrations:view", label: "View integrations", description: "See which outside tools are connected.", group: "organization" },
   { key: "integrations:manage", label: "Manage integrations", description: "Connect and disconnect outside tools.", group: "organization", sensitive: true },
   { key: "audit:view", label: "View audit log", description: "See the record of who changed what, and when.", group: "organization" },
+
+  // ---- Audit & Risk ------------------------------------------------------
+  // `audit:view` stays in Organization settings, where it has always been —
+  // moving it would silently change who holds it. The keys below are the new
+  // powers this module introduces, and none of them is implied by the others.
+  { key: "audit:export", label: "Export the audit log", description: "Prepare a filtered copy of the audit record to take out of Antcolos.", group: "audit", sensitive: true },
+  { key: "risk:view", label: "View risk signals and cases", description: "See the things Antcolos has flagged as worth a look, and the investigations opened on them.", group: "audit" },
+  { key: "risk:assign", label: "Assign risk cases", description: "Decide who is responsible for looking into a flagged concern.", group: "audit" },
+  { key: "risk:investigate", label: "Investigate risk cases", description: "Take a case on, record what you found, and attach evidence to it.", group: "audit", sensitive: true },
+  { key: "risk:resolve", label: "Close risk cases", description: "Record the decision that ends a case — resolved, accepted, or dismissed. Never on your own actions.", group: "audit", sensitive: true },
 ] as const;
 
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
@@ -193,6 +203,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   members: "Organization members",
   invitations: "Invitations",
   organization: "Organization settings",
+  audit: "Audit & Risk",
 };
 
 /** The reading order of the modules in every permission list. */
@@ -200,7 +211,7 @@ export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers",
   "fleet", "customers", "documents", "settlements", "invoices", "reports",
   "accounting", "fuel", "compliance", "maintenance", "insurance", "claims",
-  "members", "invitations", "organization",
+  "members", "invitations", "organization", "audit",
 ] as const;
 
 /**

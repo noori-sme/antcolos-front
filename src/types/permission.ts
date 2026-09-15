@@ -63,7 +63,14 @@ export type PermissionKey =
   // Invitations
   | "invitations:view" | "invitations:create" | "invitations:resend" | "invitations:revoke"
   // Organization settings
-  | "organization:manage" | "integrations:view" | "integrations:manage" | "audit:view";
+  | "organization:manage" | "integrations:view" | "integrations:manage" | "audit:view"
+  // Audit & Risk — the one ledger, and the cases opened off it.
+  //
+  // Reading the ledger, reading risk, and WORKING risk are three different
+  // powers on purpose: a compliance reviewer who may read everything is not
+  // thereby somebody who may close an investigation into a colleague.
+  | "audit:export"
+  | "risk:view" | "risk:assign" | "risk:investigate" | "risk:resolve";
 
 /**
  * One group per product module, in the order an owner reads them: the daily
@@ -75,7 +82,7 @@ export type PermissionGroup =
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
   | "accounting" | "fuel" | "compliance"
   | "accounting" | "compliance" | "maintenance" | "insurance" | "claims"
-  | "members" | "invitations" | "organization";
+  | "members" | "invitations" | "organization" | "audit";
 
 export interface PermissionMeta {
   key: PermissionKey;

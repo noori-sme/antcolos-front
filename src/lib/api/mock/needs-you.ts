@@ -33,6 +33,9 @@ import {
   applyDocumentItemAction, documentNeedsYouItems, findDocumentNeedsYouItem,
   isDocumentNeedsYouId,
 } from "./document-needs-you";
+import {
+  isRiskNeedsYouId, riskNeedsYouItems, RISK_ITEM_IS_DERIVED_MESSAGE,
+} from "./risk-needs-you";
 
 const LATENCY_MS = 180;
 const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
@@ -94,6 +97,11 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // Settlement items are derived too. Their own module has already applied
     // carrier isolation and payee privacy, so they arrive ready to show.
     ...settlementNeedsYouItems(ctx),
+    // Risk cases are derived from the cases themselves, so an item appears
+    // when a high or critical case is made somebody's responsibility and stops
+    // appearing when that case is closed. Nothing is seeded, and the queue is
+    // not where a case is worked.
+    ...riskNeedsYouItems(ctx),
     // Derived above, so the document rows it seeds are already in place.
     ...compliance,
   ];
@@ -109,6 +117,12 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
 
   // Item-level permission gate.
   if (!item.requires.every((k) => ctx.permissions.has(k))) return false;
+
+  // Risk items are derived from cases the risk service has already scoped to
+  // this organization and gated on `risk:view`. Re-narrowing them by entity
+  // kind below would drop every one of them, because a risk case is not an
+  // operational record a driver could be assigned to.
+  if (isRiskNeedsYouId(item.id)) return true;
 
   // Maintenance items are DERIVED from the maintenance registry, which has
   // already applied the caller's permissions, their relationship with the
@@ -214,6 +228,11 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
   // nothing here to write to. Snoozing or resolving one would hide the row
   // without touching the thing it is about, which is the one outcome the queue
   // must never allow.
+  // A risk item is a view of the case. There is nothing here to write to, and
+  // hiding the row would not move the investigation.
+  if (isRiskNeedsYouId(itemId)) {
+    throw new Error(RISK_ITEM_IS_DERIVED_MESSAGE);
+  }
   if (isDerivedSettlementItem(itemId)) {
     throw new Error(
       "This item is worked out from the settlement itself. Open the settlement and fix what it is asking for — it clears on its own.",
