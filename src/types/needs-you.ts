@@ -107,7 +107,21 @@ export type NeedsYouCategory =
   /** The driver said no, or wants something answered first. */
   | "driver_blocked"
   /** The driver will take it, at a different number. */
-  | "driver_countered";
+  | "driver_countered"
+
+  /* ---- Contracts and relationships. Derived from contract state. ---- */
+  /** A version is out for signature and somebody has not signed it. */
+  | "contract_signature_missing"
+  /** An agreement is inside its OWN renewal reminder window. */
+  | "contract_expiring"
+  /** It ran out and nothing renewed or replaced it. */
+  | "contract_expired"
+  /** Something the agreement asks for is missing or has run out. */
+  | "contract_requirement_unmet"
+  /** Notice was given and the closeout is not finished. */
+  | "contract_termination_unresolved"
+  /** A draft was sent for review and nobody has read it. */
+  | "contract_review_waiting";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
@@ -148,7 +162,11 @@ export type NeedsYouEntityKind =
   /** A rate confirmation being checked. */
   | "rate_confirmation"
   /** An opportunity sent to a driver for review. */
-  | "driver_review";
+  | "driver_review"
+  /** One agreement. Never the relationship it papers. */
+  | "contract"
+  /** One immutable version of one agreement. */
+  | "contract_version";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -195,7 +213,21 @@ export type NeedsYouActionKind =
   /** Check a rate confirmation against what was booked. */
   | "check_ratecon"
   /** Chase, or answer, a driver who has the opportunity. */
-  | "chase_driver";
+  | "chase_driver"
+
+  /* ---- Contracts ---- */
+  /** Sign a version, for a party the person is authorised to sign for. */
+  | "sign_contract"
+  /** Ask the other party for a signature nobody else may give. */
+  | "chase_signature"
+  /** Read a draft somebody sent for review, and decide. */
+  | "review_contract"
+  /** Renew an agreement, or give notice that it will not renew. */
+  | "renew_contract"
+  /** Produce whatever an agreement is asking for. */
+  | "satisfy_requirement"
+  /** Work through the closeout steps of a termination. */
+  | "complete_termination";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -326,6 +358,12 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   ratecon_missing: "No rate confirmation yet",
   driver_review_waiting: "Waiting on the driver", driver_blocked: "Driver said no",
   driver_countered: "Driver countered",
+  contract_signature_missing: "Signature missing",
+  contract_expiring: "Contract expiring",
+  contract_expired: "Contract expired",
+  contract_requirement_unmet: "Contract requirement outstanding",
+  contract_termination_unresolved: "Termination unfinished",
+  contract_review_waiting: "Contract waiting for review",
 };
 
 /**
