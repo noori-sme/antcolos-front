@@ -366,3 +366,58 @@ export async function mockCreateDispatchOrganization(
   await sleep(LATENCY_MS);
   return { created: true };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Onboarding — the individual dispatcher                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface IndividualDispatcherInput {
+  /** The address dispatchers will be reached on for work. Verified first. */
+  workEmail: string;
+}
+
+/**
+ * Pretends to set up a one-person dispatch workspace. Creates nothing.
+ *
+ * An individual dispatcher is not a different kind of account — everything in
+ * Antcolos hangs off a membership in an organization, so somebody working alone
+ * gets a dispatch workspace of their own with exactly one member in it. What
+ * makes it "individual" is that nobody is asked for a company name and nobody
+ * else is invited; it can grow into a team later without the person having to
+ * start again.
+ *
+ * No password is set here. The person already has one from signup, and a
+ * workspace is not an account you log into.
+ */
+export async function mockCreateIndividualDispatcher(
+  input: IndividualDispatcherInput,
+): Promise<{ created: true }> {
+  void input;
+  await sleep(LATENCY_MS);
+  return { created: true };
+}
+
+/**
+ * Pretends to email a code to a work address the dispatcher typed in.
+ *
+ * Kept separate from `mockSendOrgCode` even though both do nothing, because the
+ * two are different in the real world: that one goes to an address Antcolos
+ * already held on file, and this one goes to an address somebody just typed and
+ * may well have got wrong.
+ */
+export async function mockSendWorkEmailCode(address: string): Promise<SendCodeResult> {
+  void address; // the real adapter sends the code here, and only here
+  await sleep(LATENCY_MS);
+  return { sent: true };
+}
+
+/** Same rules as every other code in this file. Verifies nothing. */
+export async function mockVerifyWorkEmailCode(
+  code: string,
+  codeIsStale: boolean,
+): Promise<VerifyCodeResult> {
+  await sleep(LATENCY_MS);
+  if (code === ALWAYS_EXPIRED_CODE || codeIsStale) return { status: "expired" };
+  if (code === VALID_CODE) return { status: "verified" };
+  return { status: "invalid" };
+}

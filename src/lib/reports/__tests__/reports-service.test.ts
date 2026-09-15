@@ -129,14 +129,22 @@ describe("reports service — workspace and carrier isolation", () => {
   });
 
   it("reports a workspace the Loads module cannot serve as unavailable, not empty", async () => {
-    const result = await mockReportsService.run(contextFor(CARRIER_WITHOUT_DATA), {
+    // Every organization a membership can switch into now has a data
+    // partition, so no workspace makes the Loads module throw by being
+    // unseeded any more. The refusal that still happens is a permission one,
+    // and it has to read as "could not be read at all" rather than as a quiet
+    // month — which is exactly what this test is for.
+    const base = contextFor(CARRIER_WITHOUT_DATA);
+    const permissions = new Set(base.permissions);
+    permissions.delete("loads:view");
+    const result = await mockReportsService.run({ ...base, permissions }, {
       reportId: "carrier_revenue",
       filters: wideFilters(),
     });
     const loads = result.sources.find((s) => s.key === "loads");
     expect(loads?.availability).toBe("unavailable");
     expect(result.rows.every((row) => row.values.revenue === 0 || row.values.revenue == null)).toBe(true);
-    expect(result.notices.some((n) => n.message.includes("no records"))).toBe(true);
+    expect(loads?.note).toMatch(/loads:view/);
   });
 });
 

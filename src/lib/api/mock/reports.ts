@@ -2,7 +2,7 @@ import type {
   DrilldownRecord, Load, ReportCatalogEntry, ReportFilters, ReportRange,
   ReportResult,
 } from "@/types";
-import { laneLabel } from "@/types";
+import { organizationTypeOf, laneLabel } from "@/types";
 import { resolveAudience } from "@/lib/reports/audience";
 import { missingFor, reportDefinition, reportsForAudience } from "@/lib/reports/catalog";
 import { computeReport } from "@/lib/reports/compute";
@@ -142,9 +142,9 @@ async function assemble(
 }
 
 function catalogFor(ctx: ServiceContext): ReportCatalogEntry[] {
-  const audience = resolveAudience(ctx.organizationType, ctx.permissions);
+  const audience = resolveAudience(organizationTypeOf(ctx.workspaceKind), ctx.permissions);
   if (!audience) return [];
-  return reportsForAudience(audience, ctx.organizationType).map((definition) => {
+  return reportsForAudience(audience, organizationTypeOf(ctx.workspaceKind)).map((definition) => {
     const missing = missingFor(definition, ctx.permissions);
     return { definition, available: missing.length === 0, missingPermissions: missing };
   });
@@ -154,11 +154,11 @@ export const mockReportsService: ReportsService = {
   async workspace(ctx): Promise<ReportWorkspace> {
     await wait();
     assertCanOpenReports(ctx);
-    const audience = resolveAudience(ctx.organizationType, ctx.permissions)!;
+    const audience = resolveAudience(organizationTypeOf(ctx.workspaceKind), ctx.permissions)!;
 
     const { dataset } = await assemble(ctx, { range: neutralRange() }, audience);
     const carriers =
-      ctx.organizationType === "DISPATCH_AGENCY"
+      organizationTypeOf(ctx.workspaceKind) === "DISPATCH_AGENCY"
         ? dataset.carriers
             .filter((c) => c.sharing === "shared")
             .map((c) => ({ id: c.carrierOrganizationId, name: c.name }))
@@ -180,7 +180,7 @@ export const mockReportsService: ReportsService = {
     const definition = reportDefinition(request.reportId);
     if (!definition) throw new NotFoundError("Report");
 
-    const audience = resolveAudience(ctx.organizationType, ctx.permissions)!;
+    const audience = resolveAudience(organizationTypeOf(ctx.workspaceKind), ctx.permissions)!;
     // An individual membership may not run an organization-wide report, and a
     // carrier's reports do not exist inside a dispatch workspace. Both are a
     // denial rather than an empty result.
@@ -194,7 +194,7 @@ export const mockReportsService: ReportsService = {
     }
     if (
       definition.organizationTypes &&
-      !definition.organizationTypes.includes(ctx.organizationType)
+      !definition.organizationTypes.includes(organizationTypeOf(ctx.workspaceKind))
     ) {
       throw new NotFoundError("Report");
     }
@@ -223,7 +223,7 @@ export const mockReportsService: ReportsService = {
     const missing = missingFor(definition, ctx.permissions);
     if (missing.length > 0) throw new PermissionDeniedError(missing);
 
-    const audience = resolveAudience(ctx.organizationType, ctx.permissions)!;
+    const audience = resolveAudience(organizationTypeOf(ctx.workspaceKind), ctx.permissions)!;
     if (!definition.audiences.includes(audience)) {
       throw new PermissionDeniedError(["revenue:view"]);
     }

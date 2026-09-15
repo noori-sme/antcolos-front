@@ -2,9 +2,18 @@ import type { IsoDateTime, EventSource } from "./common";
 import type { ActorRef } from "./user";
 
 /**
- * A document is a first-class, organization-owned record with lineage: what it
- * is, what it relates to, who put it there, how it was read, and whether a
- * human has accepted it. Documents are versioned rather than overwritten.
+ * LOAD ATTACHMENTS — the older, load-only document record.
+ *
+ * This is NOT a second document system. It is the load module's existing
+ * attachment record, kept exactly as it is because the Load document workflow
+ * has not been designed yet and nothing about loads changes in this milestone.
+ *
+ * The unified record in `document-center.ts` is the one every Driver, Carrier,
+ * Truck and Trailer document now uses, and it already carries `load` as a
+ * subject kind and the load paperwork types (rate confirmation, BOL, POD,
+ * receipts, detention evidence, damage documents). When the Load document
+ * workflow is built, these records fold into it; until then the two are kept
+ * apart rather than pretending a migration happened.
  */
 
 export type DocumentKind =
@@ -32,8 +41,15 @@ export type VerificationState =
   | "not_required" | "pending" | "verified" | "rejected" | "superseded";
 
 /** What a document is attached to. A document may link to several entities. */
-export interface DocumentLink {
-  entityKind: "load" | "stop" | "driver" | "truck" | "trailer" | "customer" | "settlement" | "invoice";
+export interface LoadDocumentLink {
+  /**
+   * "organization" covers paperwork the company holds about itself — insurance
+   * certificates, authority letters, tax forms — rather than about one load or
+   * one vehicle. Safety & Compliance points at these; it never copies them.
+   */
+  entityKind:
+    | "load" | "stop" | "driver" | "truck" | "trailer" | "customer"
+    | "settlement" | "invoice" | "organization";
   entityId: string;
 }
 
@@ -45,7 +61,7 @@ export interface Document {
   mimeType: string;
   sizeBytes: number;
   /** Everything this document is attached to. Always at least one link. */
-  links: DocumentLink[];
+  links: LoadDocumentLink[];
   uploadedAt: IsoDateTime;
   uploadedBy: ActorRef;
   source: EventSource;
@@ -72,7 +88,7 @@ export interface Document {
  * What a load needs before it can be invoiced. Requirements are per load
  * because they come from the customer's agreement, not from a global rule.
  */
-export interface DocumentRequirement {
+export interface LoadDocumentRequirement {
   kind: DocumentKind;
   /** Blocks invoicing when missing. */
   required: boolean;

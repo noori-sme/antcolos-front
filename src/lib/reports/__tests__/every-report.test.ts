@@ -1,3 +1,4 @@
+import { organizationTypeOf } from "@/types";
 import { describe, expect, it } from "vitest";
 import { mockReportsService } from "@/lib/api/mock/reports";
 import { isEmptyResult } from "../compute";
@@ -26,10 +27,10 @@ describe("every report runs", () => {
   for (const [label, membershipId] of MEMBERSHIPS) {
     it(`runs every report offered to a ${label}`, async () => {
       const ctx = contextFor(membershipId);
-      const audience = resolveAudience(ctx.organizationType, ctx.permissions)!;
+      const audience = resolveAudience(organizationTypeOf(ctx.workspaceKind), ctx.permissions)!;
       expect(audience).toBeTruthy();
 
-      const offered = reportsForAudience(audience, ctx.organizationType);
+      const offered = reportsForAudience(audience, organizationTypeOf(ctx.workspaceKind));
       expect(offered.length).toBeGreaterThan(0);
 
       for (const definition of offered) {

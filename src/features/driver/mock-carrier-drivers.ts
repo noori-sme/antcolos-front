@@ -106,7 +106,7 @@ function seed(): CarrierDriver[] {
       sharedDocuments: [
         { key: "cdl_front", label: "Driver license / CDL — front", status: "approved", fileName: "licence-front.jpg", sharedAt: daysAgo(7), expiresAt: daysFromNow(35) },
         { key: "cdl_back", label: "Driver license / CDL — back", status: "approved", fileName: "licence-back.jpg", sharedAt: daysAgo(7) },
-        { key: "medical_front", label: "Medical card — front", status: "under_review", fileName: "med-card.pdf", sharedAt: daysAgo(2), expiresAt: daysFromNow(300) },
+        { key: "medical_front", label: "Medical card — front", status: "pending_review", fileName: "med-card.pdf", sharedAt: daysAgo(2), expiresAt: daysFromNow(300) },
         { key: "w9", label: "W-9", status: "rejected", fileName: "w9-2025.pdf", sharedAt: daysAgo(3) },
       ],
       invitationHistory: [
@@ -183,6 +183,27 @@ let DRIVERS: CarrierDriver[] = seed();
 export function resetCarrierDriversMock() {
   DRIVERS = seed();
 }
+
+/**
+ * Synchronous read for other modules.
+ *
+ * Safety & Compliance derives a driver's compliance subjects from these
+ * relationships rather than keeping its own list of people: end the
+ * relationship here and the compliance records freeze, because there is only
+ * one driver record and this is it.
+ */
+export function carrierDriversSync(): CarrierDriver[] {
+  return DRIVERS.map((d) => ({ ...d }));
+}
+
+/**
+ * The carrier these seeded relationships belong to.
+ *
+ * The roster screen is always the active carrier's, so the fixtures never had
+ * to say. Compliance is organization-scoped and does, and Northline is the
+ * carrier they were written for — their handbook document names it.
+ */
+export const CARRIER_DRIVERS_ORGANIZATION_ID = "org_northline";
 
 export async function mockListCarrierDrivers(): Promise<CarrierDriver[]> {
   await sleep(300);

@@ -23,11 +23,50 @@ class MockStore {
     }
   }
 
+  /**
+   * The organization's Needs You list, to be reconciled in place.
+   *
+   * Handed out as the live array rather than a copy because the derivation
+   * service adds, refreshes and removes items on every read, and copying would
+   * mean an item's snooze and history were rebuilt from nothing each time.
+   * Nothing else in the app writes to it — every other caller goes through
+   * `replaceNeedsYou`, which checks the organization first.
+   */
+  needsYouBucket(organizationId: string): NeedsYouItem[] {
+    return this.org(organizationId).needsYou;
+  }
+
   replaceNeedsYou(organizationId: string, next: NeedsYouItem) {
     this.assertOwned(organizationId, next.organizationId);
     const org = this.org(organizationId);
     const i = org.needsYou.findIndex((n) => n.id === next.id);
     if (i >= 0) org.needsYou[i] = next;
+  }
+
+  /**
+   * Registers a derived item once, then leaves it alone.
+   *
+   * Items the fleet layer computes from the permanent records arrive with a
+   * stable id. Inserting them here on first sight — and never overwriting them
+   * afterwards — is what lets them be assigned, snoozed and resolved like any
+   * other item instead of resetting every time a screen recomputes them.
+   *
+   * Returns false when the organization holds no store, which is not an error:
+   * an organization with no seeded operational data still has a fleet.
+   */
+  registerNeedsYou(organizationId: string, items: NeedsYouItem[]): boolean {
+    let org: OrgData;
+    try {
+      org = this.org(organizationId);
+    } catch {
+      return false;
+    }
+    const known = new Set(org.needsYou.map((n) => n.id));
+    for (const candidate of items) {
+      this.assertOwned(organizationId, candidate.organizationId);
+      if (!known.has(candidate.id)) org.needsYou.push(candidate);
+    }
+    return true;
   }
 
   /** Test/debug helper. Not used by the UI. */

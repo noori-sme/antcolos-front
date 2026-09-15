@@ -3,7 +3,7 @@ import { effectivePermissions } from "@/lib/permissions/effective";
 import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
 } from "@/lib/session/fixtures";
-import type { ReportFilters } from "@/types";
+import { workspaceKindOf, type ReportFilters } from "@/types";
 
 /**
  * Builds a ServiceContext exactly the way the app does — from a real fixture
@@ -17,7 +17,7 @@ export function contextFor(membershipId: string): ServiceContext {
 
   return {
     organizationId: organization.id,
-    organizationType: organization.type,
+    workspaceKind: workspaceKindOf(organization),
     organizationName: organization.displayName,
     membershipId: membership.id,
     permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
