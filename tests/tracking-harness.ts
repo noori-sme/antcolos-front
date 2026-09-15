@@ -10,6 +10,7 @@ import { resetEmptyConfirmations } from "@/lib/api/mock/tracking-availability";
 import { resetMtLoops } from "@/lib/api/mock/mt-loop";
 import { resetTruckRegistry } from "@/lib/api/mock/truck-registry";
 import { resetFleetTelemetry } from "@/lib/api/mock/fleet-telemetry";
+import { resetEldRegistry } from "@/lib/api/mock/eld-registry";
 import { mockStore } from "@/lib/api/mock/store";
 
 /**
@@ -59,12 +60,17 @@ export function withOnly(ctx: TrackingContext, ...keys: PermissionKey[]): Tracki
 /**
  * Put every store this module touches back to its fixture state.
  *
- * The tracking layer reads from five of them and owns two, so a test that
- * reset only its own would pass against state a previous test left behind.
+ * The tracking layer reads from six of them and owns two, so a test that reset
+ * only its own would pass against state a previous test left behind. The ELD
+ * registry is the one that bites hardest: telemetry SHARES live there, so a
+ * test that grants one and does not clear it hands the next test an access
+ * grant it never asked for — and a sharing test that passes because of a
+ * leaked grant is worse than no test at all.
  */
 export function resetWorld() {
   mockStore.reset();
   resetTruckRegistry();
+  resetEldRegistry();
   resetFleetTelemetry();
   resetMtLoops();
   resetTracking();

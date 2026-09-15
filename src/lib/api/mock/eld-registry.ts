@@ -1052,13 +1052,40 @@ export function sharedClassesFor(
   viewerOrganizationId: string, truckId: string,
 ): EldSignalClass[] {
   const classes = new Set<EldSignalClass>();
-  for (const share of db().shares) {
-    if (share.revokedAt) continue;
-    if (share.viewerOrganizationId !== viewerOrganizationId) continue;
-    if (share.truckId !== truckId) continue;
+  for (const share of liveSharesFor(viewerOrganizationId, truckId)) {
     for (const c of share.signalClasses) classes.add(c);
   }
   return [...classes];
+}
+
+/** Every unrevoked grant from any carrier to this viewer for this truck. */
+function liveSharesFor(viewerOrganizationId: string, truckId: string): EldShare[] {
+  return db().shares.filter(
+    (share) => !share.revokedAt
+      && share.viewerOrganizationId === viewerOrganizationId
+      && share.truckId === truckId,
+  );
+}
+
+/**
+ * Whether this viewer may hold exact coordinates for THIS truck.
+ *
+ * Scoped to the one truck, never to the relationship: a carrier that shares
+ * two trucks and withholds precision on one of them gets exactly that, and a
+ * viewer granted precision on truck A learns nothing more about truck B.
+ *
+ * `false` when nothing is shared at all, which is the same answer a withheld
+ * grant gives — a caller with no share has no business distinguishing "not
+ * shared" from "shared without precision".
+ */
+export function precisePositionSharedFor(
+  viewerOrganizationId: string, truckId: string,
+): boolean {
+  const shares = liveSharesFor(viewerOrganizationId, truckId);
+  if (shares.length === 0) return false;
+  // Any live grant carrying it is enough; a carrier that changes its mind
+  // revokes or re-grants rather than leaving two contradictory rows standing.
+  return shares.some((share) => share.precisePosition);
 }
 
 export function grantShare(input: {
@@ -1067,14 +1094,24 @@ export function grantShare(input: {
   truckId: string;
   signalClasses: readonly EldSignalClass[];
   grantedByMembershipId: string;
+  /**
+   * Defaults to true when position is shared: a dispatcher covering a truck
+   * needs to know how far out it is. The carrier withholds it by passing
+   * `false`, and withholding leaves the viewer a city and a state.
+   */
+  precisePosition?: boolean;
   note?: string;
 }): EldShare {
+  const sharesPosition = input.signalClasses.includes("position");
   const share: EldShare = {
     id: id("share"),
     ownerOrganizationId: input.ownerOrganizationId,
     viewerOrganizationId: input.viewerOrganizationId,
     truckId: input.truckId,
     signalClasses: [...input.signalClasses],
+    // Precision is meaningless without position, so it can never be granted
+    // on its own — a share of meters alone carries no coordinates to withhold.
+    precisePosition: sharesPosition && (input.precisePosition ?? true),
     grantedAt: nowIso(),
     grantedByMembershipId: input.grantedByMembershipId,
     note: input.note,
@@ -1200,6 +1237,7 @@ function seedFixtures() {
         viewerOrganizationId: share.viewerOrganizationId,
         truckId: share.truckId,
         signalClasses: share.signalClasses,
+        precisePosition: share.precisePosition,
         grantedByMembershipId: SEED_ACTOR.membershipId,
         note: share.note,
       });

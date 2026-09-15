@@ -942,6 +942,21 @@ export interface EldShare {
   viewerOrganizationId: string;
   truckId: string;
   signalClasses: readonly EldSignalClass[];
+  /**
+   * Whether this viewer may hold exact coordinates for THIS truck.
+   *
+   * A dispatcher covering a truck needs to know how far out it is, so sharing
+   * `position` grants this by default — but it is the carrier's to withhold,
+   * per truck, and withholding it leaves the viewer with a city and a state.
+   *
+   * It is a property of the SHARE rather than of the viewer's permissions
+   * because it is the carrier's call, and the carrier cannot edit another
+   * organization's memberships. A dispatcher holding
+   * `eld:location:precise:view` still gets coordinates only for the trucks
+   * whose carriers granted them: the permission says what the person may hold,
+   * the share says which trucks it reaches, and both must agree.
+   */
+  precisePosition: boolean;
   grantedAt: IsoDateTime;
   grantedByMembershipId: string;
   revokedAt?: IsoDateTime;

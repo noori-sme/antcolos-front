@@ -84,6 +84,8 @@ export interface FixtureShare {
   viewerOrganizationId: string;
   truckId: string;
   signalClasses: readonly EldSignalClass[];
+  /** Omitted means the default: position shared implies exact coordinates. */
+  precisePosition?: boolean;
   note?: string;
 }
 
@@ -123,10 +125,19 @@ export function buildEldFixtures(nowMs: number): FixtureOrg[] {
           // position on ONE of them, so "explicitly shared" is visibly
           // per-truck rather than per-relationship: Summit can see where 111
           // is and has no telemetry at all for 131.
+          //
+          // And precision is WITHHELD on it, which is the other half of the
+          // same idea: Northline is content for Summit to know the truck is
+          // near Joliet and not content for it to hold a driver's whereabouts
+          // to the metre. Summit gets a city, and loses distance, route
+          // progress and geofence proximity with it.
           viewerOrganizationId: "org_summit",
           truckId: T.nl111,
           signalClasses: ["position"],
-          note: "Position only, for load planning. No meters, no diagnostics, no driver clock.",
+          precisePosition: false,
+          note:
+            "City-level position only, for load planning. No exact coordinates, no meters, "
+            + "no diagnostics, no driver clock.",
         },
       ],
       connections: [
@@ -566,10 +577,14 @@ export function buildEldFixtures(nowMs: number): FixtureOrg[] {
         {
           // Meridian dispatches A-12 for Baxter and is given position and
           // meters — and never diagnostics, and never the driver's clock.
+          // Precision comes with the position by default: Meridian is covering
+          // this truck and needs to know how far out it is.
           viewerOrganizationId: "org_meridian",
           truckId: TRUCK_IDS.mdA12,
           signalClasses: ["position", "meters"],
-          note: "Shared for load planning. Diagnostics and hours of service are not shared.",
+          note:
+            "Shared for load planning, including exact position. Diagnostics and hours of "
+            + "service are not shared.",
         },
       ],
       connections: [

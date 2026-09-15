@@ -1043,15 +1043,44 @@ check-call the solo dispatcher typed into their own workspace for a Cascade
 truck Cascade never shared with them; it stays blocked, and there is a test that
 says so.
 
-**Precise location is a separate permission, and its absence is stated rather
-than blank.** A membership without `eld:location:precise:view` — which includes
-the whole seeded Dispatcher template — gets a city and a state and no
-coordinates. Route progress, miles to delivery and geofence proximity are all
-derived from coordinates, so they are not computed, and the row says exactly
-that instead of rendering three empty columns that read as "nothing is
-happening". No city-centroid estimate is substituted: a distance from a
-centroid would read as a measurement and is not one. The availability engine
-records the same thing as evidence it *declined to evaluate*, with the reason.
+**Precise location is granted per truck, by the carrier.** Two gates, and both
+must pass:
+
+| Gate | Who sets it | What it says |
+|---|---|---|
+| `eld:location:precise:view` | The viewer's own organization | Whether this person may hold coordinates at all |
+| `EldShare.precisePosition` | **The carrier**, per truck | Which trucks that permission reaches |
+
+Holding the permission does not conjure a grant, and being granted precision
+does not substitute for the permission — the same shape the module already uses
+for diagnostics and hours of service. The seeded Dispatcher template holds the
+permission, because a dispatcher covering a truck needs to know how far out it
+is; what it reaches is entirely the carrier's call, truck by truck.
+
+Sharing `position` grants precision by default and the carrier withholds it by
+passing `precisePosition: false`. Precision can never be granted without
+position — there are no coordinates in a meter reading — and revoking the share
+takes both back together. In the fixtures, Baxter shares A-12 with Meridian
+*including* coordinates, and Northline shares unit 111 with Summit **without**
+them: Summit is told the truck is near Joliet and is not given a driver's
+whereabouts to the metre.
+
+Crucially it is scoped to the truck and never to the relationship. A grant on
+one truck tells a viewer nothing about another, and precision governs *how well*
+a shared truck may be seen — never *which* trucks are visible.
+
+**Its absence is stated rather than blank.** A viewer without coordinates for a
+truck gets a city and a state. Route progress, miles to delivery and geofence
+proximity are all derived from coordinates, so they are not computed, and the
+row says exactly that instead of rendering three empty columns that read as
+"nothing is happening". No city-centroid estimate is substituted: a distance
+from a centroid would read as a measurement and is not one. The availability
+engine records the same thing as evidence it *declined to evaluate*, with the
+reason.
+
+The reduction lives in the ELD module rather than in Tracking, so every
+consumer inherits it: the snapshot returns `precise: false` with the
+coordinates absent, and the event stream withholds them too.
 
 **A public tracking link resolves under the carrier's own authority**, since a
 link holder has no membership to scope by. That context holds `eld:view` and
@@ -1136,15 +1165,16 @@ Sign in as any membership (the org switcher is top-left), then:
 - Three carriers on one board, and only **MD-9042** shows a position: Baxter
   explicitly shared unit A-12. MD-9031 and MD-9038 read *unavailable* — "this
   truck's position is not shared with this workspace".
-- MD-9042's row says route progress, miles to delivery and geofence proximity
-  need precise-location access, and names the permission. The seeded Dispatcher
-  template does not hold it; the Northline owner does, which is why the same
-  columns are populated over there.
-- Open MD-9042 → *Show the evidence*: the engine records the distance and
-  geofence checks it **declined to evaluate**, with the reason, rather than
-  leaving them blank.
-- Its ETA reads "No ETA reported — showing the delivery appointment", and
-  claims no lateness.
+- MD-9042 carries miles to delivery and route progress, because Baxter's share
+  includes precise position. Its ETA reads "No ETA reported — showing the
+  delivery appointment", and claims no lateness.
+- Now switch to **Summit Dispatch**. Northline shares unit 111 with Summit and
+  **withholds** the coordinates, so Summit is told the truck is near Joliet and
+  gets no distance, no route progress and no geofence proximity — with the row
+  saying so and naming the permission. Unit 131, which Northline never shared,
+  is absent entirely. Same relationship, two trucks, three different answers.
+- Open MD-9042 → *Show the evidence* to see what the engine used and what it
+  set aside, with the reason for each.
 
 **Broker tracking**
 1. On **NL-24817 → Customer tracking**, press *Open tracking on this load*.
@@ -1489,10 +1519,14 @@ milestone specifically:
 - **Fallback security** — a check-call, a load-timeline event and a simulated
   position are each written for an unshared truck and each fail to surface,
   while the same sources keep working where the truck IS in scope.
-- **Permission gating** — a dispatcher without `eld:location:precise:view` gets
+- **Permission gating, per truck** — a carrier that shares a truck *with*
+  precision yields coordinates; one that withholds it yields
   `precision: "city_only"` with no coordinate on any signal, no route progress,
-  no miles, no geofence alert, a note naming the permission, and no city-level
-  estimate substituted; an owner with it gets the full derived picture.
+  no miles, no geofence alert and a note naming the permission. A grant on one
+  truck leaks nothing to another, revoking the share takes the coordinates
+  back, precision is never granted without position, a dispatch workspace
+  cannot re-share what it was given, and a membership whose permission was
+  revoked gets a city even where the carrier granted coordinates.
 - **Source precedence and provenance** — ELD wins, every position carries its
   transport and a mock-labelled adapter, an ELD-sourced signal carries the
   event id it came from, and a provider's confidence is never raised.
