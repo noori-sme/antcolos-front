@@ -43,6 +43,20 @@ export type NeedsYouCategory =
   | "compliance_expired"
   | "compliance_critical"
 
+  /* ---- ELD & Telematics. Derived from devices, bindings and the event
+     stream itself, never seeded. Each one is a real inconsistency somebody can
+     go and fix, and each one disappears when they do. ---- */
+  /** A device is linked but nothing usable has arrived inside its expectation. */
+  | "telemetry_stale"
+  /** A binding points at a device, truck or driver that no longer lines up. */
+  | "telemetry_binding_broken"
+  /** A device or connection has stopped reporting, or was taken down. */
+  | "telemetry_device_disconnected"
+  /** Two sources disagree about a truck's odometer by more than tolerance. */
+  | "telemetry_odometer_conflict"
+  /** Equipment is reporting a fault its provider marked critical. */
+  | "telematics_diagnostic"
+
   // Fleet operations. Derived from the permanent records, never hand-written.
   | "stale_location"
   | "invalid_assignment"
@@ -176,7 +190,11 @@ export type NeedsYouEntityKind =
   /** One immutable version of one agreement. */
   | "contract_version"
   /** One investigation, opened off one or more risk signals. */
-  | "risk_case";
+  | "risk_case"
+  /** One ELD or telematics device. Never the truck it happens to be on. */
+  | "eld_device"
+  /** One organization's link to a provider. */
+  | "eld_connection";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -241,7 +259,17 @@ export type NeedsYouActionKind =
 
   /* ---- Audit & Risk ---- */
   /** Open the case and work it. The queue is never where a case is closed. */
-  | "investigate_risk";
+  | "investigate_risk"
+
+  /* ---- ELD & Telematics ---- */
+  /** Look at a device that has gone quiet or is reporting an error. */
+  | "check_device"
+  /** Put the device-to-truck or driver-to-device binding right. */
+  | "fix_binding"
+  /** Reconcile two odometer readings that disagree. */
+  | "reconcile_odometer"
+  /** Look at a fault the equipment is reporting. */
+  | "review_diagnostic";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -344,6 +372,11 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   duplicate_fuel_purchase: "Duplicate fuel purchase",
   suspicious_fuel_transaction: "Fuel purchase to check",
   incomplete_ifta_period: "IFTA quarter incomplete",
+  telemetry_stale: "Telemetry has gone stale",
+  telemetry_binding_broken: "Device binding is broken",
+  telemetry_device_disconnected: "Device disconnected",
+  telemetry_odometer_conflict: "Odometer readings disagree",
+  telematics_diagnostic: "Critical diagnostic reported",
   compliance_missing: "Compliance evidence missing",
   compliance_rejected: "Compliance evidence rejected",
   compliance_expiring: "Compliance expiring", compliance_expired: "Compliance expired",

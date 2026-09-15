@@ -59,6 +59,7 @@ files rather than a copy. `npm test` runs both.
 | Unified Document Center | `/documents`, `/documents/[documentId]` |
 | GPS-driven availability, MT Loop entry & broker tracking | `/dispatch/tracking`, `/dispatch/tracking/[loadId]`, `/track/[token]` (public) |
 | Contracts & Relationships foundation | `/contracts`, `/contracts/new`, `/contracts/[contractId]`, `/contracts/[contractId]/versions/[versionId]` |
+| ELD & Telematics foundation | `/eld`, `/eld/devices/[deviceId]` |
 
 Everything else is a placeholder screen that says so.
 
@@ -285,6 +286,186 @@ trailers keep the keys of the modules that own those records — a second
 permission for one action is how two answers start disagreeing. `fleet:view` is
 not a back door: a membership still needs `trucks:view` to be shown trucks and
 `trailers:view` to be shown trailers.
+## The ELD & Telematics foundation
+
+`/eld` is the machine layer **underneath** the fleet. It is the answer to a
+question nothing else in Antcolos could answer: where is this truck, how fast,
+how far, how many hours, is the key on, what is the engine complaining about, and
+how much clock has the driver got left.
+
+It creates no Truck, Trailer, Driver, Assignment, Operating Authority, Load,
+Maintenance requirement, Fuel record, Compliance requirement or Needs You bucket.
+Those all already exist, it reads them, and it writes to none of them.
+
+### Raw is not normalized
+
+Two stores, never one.
+
+| | What it is | Rules |
+|---|---|---|
+| `EldRawPayload` | exactly what the provider sent | stored **first**, before anything can fail; never parsed except by that provider's adapter; kept even when the delivery is refused |
+| `TelemetryEvent` | Antcolos's own normalized record | always points back at the raw row it came from; append-only; a correction is a new row that names the one it supersedes |
+
+Normalization is an opinion about the evidence. Keeping the two apart is what
+makes a normalization bug re-runnable rather than a permanent loss, and what lets
+a dispute be settled by looking at what actually arrived.
+
+### Ingestion is idempotent, and nothing is silently deleted
+
+Five things go wrong with real telemetry, constantly. Every one is detected,
+recorded, and **kept**:
+
+| Condition | Outcome | Why |
+|---|---|---|
+| the same event twice | `rejected`, with `duplicate` | a retried webhook or a file uploaded again must change nothing |
+| unusable or future timestamp | `rejected` | the arrival time is **never** substituted for a bad source time — that would make the row sort correctly and be wrong about when it happened |
+| out-of-order arrival | `flagged` | a buffered signal is real, and is not where the truck is now |
+| impossible movement | `flagged`, with the measured mph | usually a device reporting for the wrong unit |
+| a meter going backwards | `flagged` | usually a device swap |
+
+`accepted` rows feed everything derived. `flagged` rows are readable and are not
+trusted enough to move a snapshot or reach another module. `rejected` rows are
+kept for the record and excluded from every derivation. There is no fourth
+category called "deleted".
+
+The idempotency key anchors on the provider's own event id when it issues one.
+When it does not — the seeded nightly export does not — the key is derived, and
+it includes the **signal kind**, because one export row produces a position, an
+odometer, an hours reading and an HOS summary that share a device and a
+timestamp.
+
+### Bindings are time-bound, and a binding change never rewrites history
+
+A device is not a truck. It moves between them, it is swapped when it fails, and
+it spends time bound to nothing. So device→Truck and Driver→device are dated,
+half-open intervals that **close** rather than rows that are edited, with a
+separate immutable audit of every change.
+
+Every event is attributed **at event time** to the truck, driver, carrier, active
+operating authority and load that were in force *then* — snapshotted onto the
+event at ingestion, never joined on read. Re-binding a device tomorrow does not
+reach backwards and relabel last month. Where a leg cannot be resolved it is left
+absent and named in `gaps`: "we do not know who was driving" is always available,
+and is better than reaching for today's driver.
+
+### Seven connection states, and none of them collapses into another
+
+`connected`, `syncing`, `stale`, `offline`, `disconnected`, `error`,
+`unsupported`. Three are **declared** — a link somebody took down is not "stale",
+it is off, and a provider that has no HOS feed is not broken. The rest are
+derived from when data last actually arrived, against a per-connection
+expectation, so a nightly import and a thirty-second webhook each get a
+proportionate answer. Every state carries its reason; a state with no reason is
+one nobody can act on.
+
+### Confirmed, Provider reported, Inferred, Corrected, Missing
+
+The most important type in the module. `TelemetryDataQuality` is on every value
+this layer produces, shown as a chip beside it and never behind a hover.
+
+- **Confirmed** is reserved for a human act. Nothing in the ingestion path can
+  reach it, and a test asserts no machine ever produces one.
+- **Inferred** carries a rationale and a capped confidence, and reads in the
+  warning colour, because an inference is not a fact.
+- **Missing** is a first-class answer. A truck nobody has heard from has a
+  location with quality `missing` — not a blank, not a zero, not last week's
+  position shown as though it were current.
+
+A GPS fix inside a receiver's fence is never presented as a driver saying they
+arrived.
+
+### The snapshot is derived, and the history is untouched
+
+There is no row per truck holding "the current position". `EquipmentTelemetrySnapshot`
+is computed on read from the accepted events, every field carrying the event it
+came from, its provider, its age and whether that age is past the expectation.
+Recomputing it costs nothing and loses nothing.
+
+### Typed signals, published — not sent
+
+Fleet, the Trip Workflow, MT Loop, HOS, Maintenance, Fuel/IFTA and Safety &
+Compliance all own their own records, and **none of them is imported by this
+module**. It produces typed, addressed, idempotent records and stops.
+
+| Signal | Carries | And deliberately does not |
+|---|---|---|
+| `fleet.location_availability` | position, speed, motion, ignition | set a fleet status |
+| `trip.arrival_departure_inferred` | `suggests`, plus a rationale a driver reads | say anybody arrived — the type has nowhere to |
+| `mt_loop.eta_updated` | where it is now | carry an ETA; `etaBasis: "not_computed"`, because routing is not built here |
+| `hos.availability_reported` | a clock summary, `isFullLog: false` | pretend to be a record of duty status |
+| `maintenance.meter_reported` | odometer, engine hours | move a maintenance requirement |
+| `maintenance.diagnostic_reported` | the fault code, `interpretation: "none"` | diagnose anything |
+| `fuel.jurisdiction_mileage_observed` | the jurisdiction, `filingGrade: false` | be an IFTA return |
+| `compliance.telematics_alert` | disconnection, staleness, a critical fault, movement under inactive authority | raise a violation |
+
+Every signal is `pending_integration` and says so in `stateReason`. Only
+`accepted` events publish.
+
+### Needs You
+
+Five rules, each a real inconsistency somebody can go and fix, each disappearing
+when they fix it: **stale telemetry**, **broken binding**, **disconnected
+device**, **conflicting odometers**, **critical diagnostic**. Stable ids, so they
+assign, snooze and resolve like any other item. `source` is `system`, never
+`eld` — a rule in Antcolos spotted it; the device did not raise it.
+
+The odometer rule names both disagreeing sources and **picks no winner**:
+mileage-based service and jurisdiction mileage belong to Maintenance and to
+Fuel/IFTA, and a guess made here would quietly become a number somebody files.
+
+### Access
+
+Eight keys, because there are eight genuinely different powers:
+
+| Key | Opens |
+|---|---|
+| `eld:view` | the module |
+| `eld:devices:manage` | registering devices, linking and unlinking providers (carrier only) |
+| `eld:bindings:manage` | device→truck and driver→device bindings (carrier only) |
+| `eld:ingest` | the mock provider console (carrier only) |
+| `eld:location:precise:view` | exact coordinates rather than the city — **sensitive** |
+| `eld:diagnostics:view` | engine fault codes |
+| `eld:hos:view` | a driver's clock — **sensitive** |
+| `eld:raw:view` | the provider's own payloads — **sensitive** |
+
+On top of that, enforced in the service layer and nowhere else:
+
+- **Relationship and authority scope** come from the truck registry, which
+  already reconciles ownership, the carrier relationship, dispatch grants and the
+  operating-authority lease. A truck another carrier currently holds is not
+  yours to read a position from.
+- **Driver privacy** — a driver membership sees the truck it is on, and its own
+  clock. Another driver's hours of service are unreachable by any path: the
+  snapshot, the event list and the published signals are each checked.
+- **Sensitive location** — without the key, a position is reduced to the city the
+  provider geocoded and marked `precise: false`. The observation survives; the
+  precision does not.
+- **Cross-organization isolation** — every registry read is keyed by
+  organization, and unknown and forbidden are the same answer.
+- **Dispatch organizations and individual dispatchers see nothing by default.**
+  They see what a carrier deliberately shared, for the trucks it named, in the
+  signal classes it chose — position, meters, diagnostics, hours — and never the
+  carrier's devices, its provider links, its raw payloads or the driver's name.
+  A dispatch workspace cannot re-share what it was given.
+
+### Nothing is connected
+
+Every provider is a **labelled mock**, and `mock` is the literal `true` in the
+type so a fixture cannot quietly claim otherwise. There is no ELD, GPS receiver,
+vehicle, FMCSA system or compliance service behind any number on these screens,
+every screen says so in a banner, and an unsigned delivery is reported as
+`unsigned` rather than upgraded to `verified`.
+
+Four mock providers exist, deliberately different, so the boundary is proven
+against more than one shape: a hybrid webhook provider with its own event ids; a
+metric-units telematics provider with **no HOS feed at all** (which is what makes
+`unsupported` reachable); a nightly file export with **no event ids**; and a
+position-only trailer tracker.
+
+Explicitly **not** built, and not faked: real provider authentication, live
+tracking, full HOS logs, DVIR, IFTA filing, route optimization, geofence
+automation, diagnostic prediction and regulatory certification.
+
 ## Insurance and claims
 
 Four record types, kept separate because they expire, renew, are issued and are
@@ -1263,3 +1444,23 @@ the screens that show it:
 - **Needs You** — assigned high and critical cases land in the one shared queue,
   are gated on `risk:view`, cannot be snoozed or resolved from the queue, and
   stop existing when the case closes.
+`tests/eld/` covers the telematics foundation the same way:
+
+- **Ingestion** — idempotency across deliveries and *within* one, duplicates,
+  unusable and future timestamps, out-of-order arrivals, impossible jumps, meter
+  regressions, unregistered devices, unsupported signals — and that every
+  refused row is still on file with its raw payload.
+- **Attribution** — events resolve to the truck, driver, carrier, authority and
+  load in force at event time, gaps are named rather than guessed, and re-binding
+  a device leaves every historical event saying exactly what it said before.
+- **Access** — the eight keys, relationship and operating-authority scope,
+  driver privacy, sensitive location reduction, cross-organization isolation, and
+  a dispatch workspace seeing only what was explicitly shared.
+- **Signals** — every handoff is pending, nothing is transmitted, no machine ever
+  produces a `confirmed` value, and the four refusals (`etaBasis`, `filingGrade`,
+  `isFullLog`, `interpretation`) hold.
+- **Snapshot** — derivation mutates nothing, missing is not zero, and flagged and
+  rejected rows never move a value.
+- **Existing behaviour** — the fleet layer, its own telemetry store, the
+  permission catalog, the service registry and the unimplemented HTTP seam are
+  all exactly as they were.

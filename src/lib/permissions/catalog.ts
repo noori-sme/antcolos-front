@@ -75,6 +75,21 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "fleet:view", label: "Open the fleet dashboard", description: "See the operational picture across trucks, trailers and drivers — what is available, what is out, and what is stopping it.", group: "fleet" },
   { key: "fleet:telemetry:record", label: "Record location and mileage", description: "Write down where a truck or trailer is, its odometer and its engine hours. Nothing is read from a device — somebody types it in.", group: "fleet" },
 
+  // ---- ELD & Telematics --------------------------------------------------
+  // Eight keys, because there are eight genuinely different powers here. The
+  // last four are the ones that would otherwise ride in on "can see the fleet":
+  // a person's exact position, a person's driving clock, an engine's faults and
+  // the raw payloads a provider posted are each somebody's business and not
+  // everybody's.
+  { key: "eld:view", label: "Open ELD & Telematics", description: "See connected devices, their state, and the equipment picture built from what they report.", group: "eld" },
+  { key: "eld:devices:manage", label: "Manage devices and connections", description: "Register a device, link or unlink a provider connection, and retire a unit.", group: "eld", orgTypes: ["CARRIER"] },
+  { key: "eld:bindings:manage", label: "Bind devices to trucks and drivers", description: "Say which truck a device reports for, and which driver is operating it, from when until when.", group: "eld", orgTypes: ["CARRIER"] },
+  { key: "eld:ingest", label: "Submit provider data", description: "Push a mock provider payload through the webhook or import boundary. A development affordance, clearly labelled as one.", group: "eld", orgTypes: ["CARRIER"] },
+  { key: "eld:location:precise:view", label: "See precise locations", description: "See exact coordinates rather than the city a truck is near. This is a person's whereabouts, minute by minute.", group: "eld", sensitive: true },
+  { key: "eld:diagnostics:view", label: "See engine diagnostics", description: "See the fault codes equipment reports. Antcolos carries the codes and does not interpret them.", group: "eld" },
+  { key: "eld:hos:view", label: "See hours-of-service availability", description: "See how much driving, shift and cycle time a driver has left, as their provider summarises it. Not their logs.", group: "eld", sensitive: true },
+  { key: "eld:raw:view", label: "See raw provider payloads", description: "Read exactly what a provider sent, before Antcolos normalized it. For settling disputes about what actually arrived.", group: "eld", sensitive: true },
+
   // ---- Customers ---------------------------------------------------------
   { key: "customers:view", label: "View customers", description: "See the brokers and shippers you haul for.", group: "customers" },
   { key: "customers:create", label: "Add customers", description: "Add a new broker or shipper.", group: "customers" },
@@ -219,6 +234,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   trucks: "Trucks",
   trailers: "Trailers",
   fleet: "Fleet operations",
+  eld: "ELD & Telematics",
   customers: "Customers",
   documents: "Documents",
   settlements: "Settlements",
@@ -240,7 +256,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 /** The reading order of the modules in every permission list. */
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "loads", "dispatch", "tracking", "driver_workflow", "drivers", "trucks", "trailers",
-  "fleet", "customers", "documents", "settlements", "invoices", "reports",
+  "fleet", "eld", "customers", "documents", "settlements", "invoices", "reports",
   "accounting", "fuel", "compliance", "maintenance", "insurance", "claims",
   "contracts", "members", "invitations", "organization", "audit",
 ] as const;

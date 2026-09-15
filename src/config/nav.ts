@@ -3,8 +3,8 @@ import {
   BadgeCheck, Bell, Building2, CalendarClock, ClipboardList, Container, FileBadge,
   FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
   Inbox, Layers, Link2, MailPlus, Map, Package, Palette, Radar, Receipt,
-  ReceiptText, Route, ScrollText, Settings2, Shield, ShieldCheck, TriangleAlert,
-  Truck, UserCircle, Users, UsersRound, Wrench,
+  ReceiptText, Route, Satellite, ScrollText, Settings2, Shield, ShieldCheck,
+  TriangleAlert, Truck, UserCircle, Users, UsersRound, Wrench,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
 
@@ -47,6 +47,10 @@ export const PRODUCT_NAV: NavSection[] = [
     label: "Fleet & people",
     items: [
       { label: "Fleet", href: "/fleet", icon: Gauge, requires: ["fleet:view"] },
+      // Both keys, and stated here rather than only in the route manifest: the
+      // nav entry and the guard must agree, and seeing a device is pointless
+      // without being allowed to know which truck it is on.
+      { label: "ELD & Telematics", href: "/eld", icon: Satellite, requires: ["eld:view", "trucks:view"] },
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
@@ -113,6 +117,10 @@ export const DRIVER_NAV: NavSection[] = [
       { label: "My documents", href: "/driver/documents", icon: FileText, requires: [], driverOnly: true, primaryMobile: true },
       { label: "My compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"], driverOnly: true },
       { label: "My agreements", href: "/contracts", icon: FileSignature, requires: ["contracts:view"], driverOnly: true },
+      // The device on the truck they are on, and their own hours-of-service
+      // summary. The service layer narrows both to this driver: another
+      // driver's clock is not reachable from here by any path.
+      { label: "My truck's device", href: "/eld", icon: Satellite, requires: ["eld:view", "trucks:view"], driverOnly: true },
       { label: "Report a defect", href: "/driver/defects", icon: TriangleAlert, requires: ["maintenance:defects:report"], driverOnly: true },
       { label: "My profile", href: "/driver/profile", icon: IdCard, requires: [], driverOnly: true },
       { label: "Notifications", href: "/driver/notifications", icon: Bell, requires: [], driverOnly: true },

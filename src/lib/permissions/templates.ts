@@ -32,6 +32,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // Their own income, loads and activity — never the organization's.
       "reports:view",
       "fleet:view", "fleet:telemetry:record",
+      // Where the equipment is, and whether its device is reporting. Not the
+      // engine's faults, not the driver's clock, and not the raw payloads.
+      "eld:view",
       "maintenance:view",
       // A dispatcher is usually the first to hear about a wreck, so they can
       // open a claim. They are not given the policy, and never the money.
@@ -68,6 +71,10 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // Their own pay terms. Without this a driver is asked to sign an
       // agreement whose compensation they are not allowed to read.
       "contracts:financials:view",
+      // The device on the truck they are on, and their OWN clock. The service
+      // layer narrows hours of service to the driver themselves — this key
+      // does not open anybody else's.
+      "eld:view", "eld:hos:view",
     ],
   },
   {
@@ -94,6 +101,10 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     permissions: [
       "drivers:view", "trucks:view", "trailers:view", "fleet:view",
       "compliance:view", "compliance:manage",
+      // Safety investigates incidents, so it gets the engine's own account of
+      // itself and the exact position — the two things an investigation turns
+      // on, and two of the most intrusive keys in the catalog.
+      "eld:view", "eld:diagnostics:view", "eld:location:precise:view",
       "trucks:documents:manage", "trailers:documents:manage",
       "documents:view", "documents:upload", "documents:approve", "loads:view",
       "maintenance:view", "maintenance:manage", "maintenance:defects:manage",
@@ -145,6 +156,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     permissions: [
       "trucks:view", "trucks:edit", "trucks:documents:manage", "fleet:view",
       "fleet:telemetry:record",
+      // Maintenance owns the hardware, so it registers devices, binds them and
+      // reads what the engine reports. It is not given the driver's clock.
+      "eld:view", "eld:devices:manage", "eld:bindings:manage", "eld:diagnostics:view",
       "trailers:view", "trailers:edit", "trailers:documents:manage",
       "trailers:status:manage", "trailers:attachments:manage",
       "documents:view", "documents:upload",

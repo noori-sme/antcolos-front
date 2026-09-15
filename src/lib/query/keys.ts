@@ -22,6 +22,20 @@ export const queryKeys = {
     [...orgKey(organizationId), "members"] as const,
   loads: (organizationId: string, filters?: unknown) =>
     [...orgKey(organizationId), "loads", filters ?? null] as const,
+  eldDashboard: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "eld", "dashboard", membershipId] as const,
+  eldDevices: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "eld", "devices", membershipId] as const,
+  eldDevice: (organizationId: string, membershipId: string, deviceId: string) =>
+    [...orgKey(organizationId), "eld", "device", membershipId, deviceId] as const,
+  eldEvents: (organizationId: string, membershipId: string, query?: unknown) =>
+    [...orgKey(organizationId), "eld", "events", membershipId, query ?? null] as const,
+  eldSignals: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "eld", "signals", membershipId] as const,
+  eldRawPayloads: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "eld", "raw", membershipId] as const,
+  eldShares: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "eld", "shares", membershipId] as const,
   fuelDashboard: (organizationId: string, membershipId: string, window: unknown) =>
     [...orgKey(organizationId), "fuel", "dashboard", membershipId, window ?? null] as const,
   fuelTransactions: (organizationId: string, membershipId: string, filters?: unknown) =>
