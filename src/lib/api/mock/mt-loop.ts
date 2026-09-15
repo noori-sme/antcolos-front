@@ -14,6 +14,9 @@ import {
 } from "./truck-registry";
 import { trailerFleetSync } from "./trailer-registry";
 import { nowIso } from "./time";
+import {
+  blockersFor, cycleInputFor, evidenceFor, nextActionFor, stageOf,
+} from "./mt-loop-cycle";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -593,8 +596,16 @@ function abilitiesFor(
   };
 }
 
-function toCard(loop: MtLoop, ctx: MtLoopContext, workspace: Workspace): MtLoopCard {
+function toCard(
+  loop: MtLoop,
+  ctx: MtLoopContext,
+  workspace: Workspace,
+  truck?: FleetTruck,
+): MtLoopCard {
   const emptyAt = loop.expectedEmptyAt ? new Date(loop.expectedEmptyAt).getTime() : undefined;
+  const isMine = loop.responsibleMembershipId === ctx.membershipId;
+  // Derived on every read from records other modules own. See `mt-loop-cycle.ts`.
+  const cycle = cycleInputFor(loop, truck);
   return {
     loopId: loop.loopId,
     truckId: loop.truckId,
@@ -607,7 +618,7 @@ function toCard(loop: MtLoop, ctx: MtLoopContext, workspace: Workspace): MtLoopC
     trailerRequired: loop.trailerRequired,
     responsibleName: loop.responsibleName,
     responsibleMembershipId: loop.responsibleMembershipId,
-    isMine: loop.responsibleMembershipId === ctx.membershipId,
+    isMine,
     expectedEmptyAt: loop.expectedEmptyAt,
     expectedEmptyCity: loop.expectedEmptyCity,
     expectedEmptyState: loop.expectedEmptyState,
@@ -619,6 +630,13 @@ function toCard(loop: MtLoop, ctx: MtLoopContext, workspace: Workspace): MtLoopC
     pauseReason: loop.pauseReason,
     openedAt: loop.openedAt,
     handoffCount: loop.assignments.length,
+    stage: stageOf(cycle),
+    evidence: evidenceFor(cycle),
+    nextAction: nextActionFor(cycle, {
+      isMine,
+      held: Boolean(loop.responsibleMembershipId),
+    }),
+    blockers: blockersFor(cycle),
     can: abilitiesFor(loop, ctx, workspace),
   };
 }
@@ -645,7 +663,14 @@ export function mtLoopBoardSync(ctx: MtLoopContext): MtLoopBoard {
   }
 
   const loops = syncMtLoops(ctx);
-  const cards = loops.map((l) => toCard(l, ctx, workspace!)).sort(byUrgency);
+  // The trucks are read once and handed to each card, so the board does not do
+  // one registry lookup per loop to answer the same question.
+  const trucks = new Map(
+    fleetSync(truckContextFrom(ctx)).map((t) => [t.truckId, t] as const),
+  );
+  const cards = loops
+    .map((l) => toCard(l, ctx, workspace!, trucks.get(l.truckId)))
+    .sort(byUrgency);
   const mayMoveWork = workspace!.supportsTeam && ctx.permissions.has("loads:assign");
 
   return {

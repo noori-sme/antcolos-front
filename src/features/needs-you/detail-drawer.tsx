@@ -208,10 +208,13 @@ export function NeedsYouDrawer({
           ) : null}
 
           <div className="flex flex-wrap gap-2">
+            {/* Straight to where it is fixed. The action's own href wins over the
+                entity's, because the entity points at the record and the action
+                points at the resolution. */}
             {item.derived ? (
-              item.entity.href ? (
+              (item.recommendedAction.href ?? item.entity.href) ? (
                 <Button variant="primary" asChild>
-                  <Link href={item.entity.href}>
+                  <Link href={(item.recommendedAction.href ?? item.entity.href)!}>
                     <ExternalLink aria-hidden />
                     {item.recommendedAction.label}
                   </Link>

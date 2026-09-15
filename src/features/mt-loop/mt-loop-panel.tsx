@@ -6,7 +6,10 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MT_LOOP_STATUS_LABEL, type MtLoopCard, type MtLoopBoard } from "@/types";
+import {
+  FACT_VERIFICATION_LABEL, MT_LOOP_STAGE_LABEL, MT_LOOP_STATUS_LABEL,
+  type FactVerification, type MtLoopBoard, type MtLoopCard, type MtLoopStage,
+} from "@/types";
 import {
   assignLoop, blockLoop, claimLoop, closeLoopById, pauseLoop, releaseLoop,
   resumeLoop, unblockLoop, type MtLoopContext, type MtLoopOutcome,
@@ -172,6 +175,38 @@ const STATUS_TONE: Record<string, "neutral" | "info" | "progress" | "success" | 
   closed: "neutral",
 };
 
+/**
+ * Stage tones, read as a progression: something wrong, something waiting,
+ * something moving, something done. `empty_unworked` is a warning because an
+ * empty truck nobody has picked up is the most expensive thing on the screen.
+ */
+const STAGE_TONE: Record<MtLoopStage, "neutral" | "info" | "progress" | "success" | "warning" | "danger"> = {
+  stopped: "danger",
+  empty_unworked: "warning",
+  going_empty: "info",
+  finding_work: "info",
+  booked_unconfirmed: "warning",
+  confirmed: "success",
+  dispatched: "progress",
+  running: "progress",
+};
+
+/**
+ * How much one piece of evidence is worth, at a glance.
+ *
+ * `inferred` is deliberately not a success tone: a geofence suggesting a truck is
+ * empty and a driver saying so are different things to book a load against.
+ */
+const EVIDENCE_TONE: Record<FactVerification, "neutral" | "info" | "success" | "warning" | "danger"> = {
+  confirmed: "success",
+  corrected: "success",
+  inferred: "info",
+  extracted: "info",
+  pending: "warning",
+  rejected: "danger",
+  failed: "danger",
+};
+
 /** The three actions that need a reason before they are allowed to happen. */
 type ReasonAction = "pause" | "block" | "close";
 
@@ -247,6 +282,11 @@ function LoopRow({
               Unit {loop.truckUnit}
               <ChevronRight className="size-3.5 text-fg-subtle" aria-hidden />
             </Link>
+            {/* Stage is about the TRUCK's progress through this cycle; status is
+                about the WORK. A loop can be "being worked" and "finding work"
+                at once, and collapsing the two loses the difference between
+                nobody looking and somebody looking and finding nothing. */}
+            <Badge tone={STAGE_TONE[loop.stage]}>{MT_LOOP_STAGE_LABEL[loop.stage]}</Badge>
             <Badge tone={STATUS_TONE[loop.status] ?? "neutral"}>
               {MT_LOOP_STATUS_LABEL[loop.status]}
             </Badge>
@@ -306,17 +346,75 @@ function LoopRow({
             {loop.handoffCount > 1 ? ` · ${loop.handoffCount} hands so far` : ""}
           </p>
 
-          {loop.blockReason ? (
-            <p className="mt-1 text-[0.75rem] leading-relaxed text-st-danger">{loop.blockReason}</p>
+          {/* Everything unresolved, not only whichever one stopped the loop. A
+              cycle can be workable and still owe two things, and a board that
+              shows one hides the other until the first is fixed. */}
+          {loop.blockers.length > 0 ? (
+            <ul className="mt-2 space-y-0.5">
+              {loop.blockers.map((b) => (
+                <li
+                  key={b.key}
+                  className={cn(
+                    "text-[0.75rem] leading-relaxed",
+                    b.stopsDispatch ? "text-st-danger" : "text-fg-muted",
+                  )}
+                >
+                  <span className="font-medium">{b.label}:</span>{" "}
+                  {b.href ? (
+                    <Link href={b.href} className="underline-offset-4 hover:underline">
+                      {b.detail}
+                    </Link>
+                  ) : (
+                    b.detail
+                  )}
+                </li>
+              ))}
+            </ul>
           ) : null}
-          {loop.pauseReason ? (
-            <p className="mt-1 text-[0.75rem] leading-relaxed text-fg-muted">
-              Paused: {loop.pauseReason}
-            </p>
+
+          {/* Why the board says what it says. Kept collapsed so a scan stays a
+              scan, and every line says how much it is worth. */}
+          {loop.evidence.length > 0 ? (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[0.75rem] text-fg-subtle underline-offset-4 hover:underline">
+                Evidence ({loop.evidence.length})
+              </summary>
+              <ul className="mt-1 space-y-0.5">
+                {loop.evidence.map((e) => (
+                  <li key={e.label + e.detail} className="flex flex-wrap items-baseline gap-x-2 text-[0.75rem] leading-relaxed">
+                    <span className="font-medium text-fg">{e.label}</span>
+                    <Badge tone={EVIDENCE_TONE[e.verification]}>
+                      {FACT_VERIFICATION_LABEL[e.verification]}
+                    </Badge>
+                    <span className="text-fg-muted">
+                      {e.href ? (
+                        <Link href={e.href} className="underline-offset-4 hover:underline">
+                          {e.detail}
+                        </Link>
+                      ) : (
+                        e.detail
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* One next thing, deep-linked. A board that offers six options at
+              every stage is a board nobody works from. */}
+          {loop.nextAction ? (
+            <Button
+              variant={loop.nextAction.notYours ? "ghost" : "primary"}
+              size="sm"
+              asChild
+              title={loop.nextAction.reason}
+            >
+              <Link href={loop.nextAction.href}>{loop.nextAction.label}</Link>
+            </Button>
+          ) : null}
           {loop.can.claim ? (
             <Button variant="secondary" size="sm" disabled={busy} onClick={onClaim}>
               Take it

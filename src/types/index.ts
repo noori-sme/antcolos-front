@@ -57,6 +57,7 @@ export { METER_SOURCE_LABEL, METER_FLAG_LABEL } from "./meter";
 export {
   rateConfirmationValue, rateConfirmationCorrections,
 } from "./rate-confirmation";
+export { MT_LOOP_STAGE_LABEL, MT_LOOP_STAGE_ORDER } from "./mt-loop";
 export {
   SOURCE_LABEL, CONNECTION_LABEL, CONNECTION_IS_PLANNED, LISTING_STATUS_LABEL,
   MATCH_STATUS_LABEL, CHECK_LABEL, FACTOR_LABEL, FACTOR_DESCRIPTION,
