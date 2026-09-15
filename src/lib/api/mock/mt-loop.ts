@@ -658,6 +658,10 @@ function toCard(
     trailerUnit: loop.trailerUnit,
     trailerRequired: loop.trailerRequired,
     responsible,
+    // Straight from the engine. This module does not decide whose problem a
+    // loop is any more than it decides who is responsible for it.
+    attention: responsible?.attention ?? [],
+    needsYouPersonally: (responsible?.attention.length ?? 0) > 0,
     claimed: loop.claimedByMembershipId && loop.claimedAt
       ? {
           membershipId: loop.claimedByMembershipId,
@@ -693,6 +697,35 @@ function toCard(
   };
 }
 
+/**
+ * Everything that is somebody else's, counted and grouped by who has it.
+ *
+ * What a personal surface shows INSTEAD of a stack of cards nobody on that
+ * screen is going to act on. Ordered by how many each person holds, so the line
+ * names the busiest first.
+ */
+function handledByOthersFrom(cards: readonly MtLoopCard[]): MtLoopBoard["handledByOthers"] {
+  const others = cards.filter((c) => !c.needsYouPersonally);
+  const byHolder = new Map<string, { membershipId: string; displayName: string; count: number }>();
+  for (const card of others) {
+    const holder = card.responsible;
+    if (!holder) continue;
+    const existing = byHolder.get(holder.membershipId);
+    if (existing) existing.count += 1;
+    else {
+      byHolder.set(holder.membershipId, {
+        membershipId: holder.membershipId,
+        displayName: holder.displayName,
+        count: 1,
+      });
+    }
+  }
+  return {
+    count: others.length,
+    holders: [...byHolder.values()].sort((a, b) => b.count - a.count),
+  };
+}
+
 /** Soonest to go empty first; a truck already sitting is the most urgent of all. */
 function byUrgency(a: MtLoopCard, b: MtLoopCard): number {
   const at = a.expectedEmptyAt ? new Date(a.expectedEmptyAt).getTime() : 0;
@@ -719,7 +752,10 @@ export async function buildMtLoopBoard(ctx: MtLoopContext): Promise<MtLoopBoard>
   if (!maySeeBoard(ctx, workspace)) {
     return {
       loops: [],
-      counts: { open: 0, unclaimed: 0, mine: 0, blocked: 0, paused: 0, emptyNow: 0 },
+      counts: {
+        open: 0, unclaimed: 0, needsYou: 0, mine: 0, blocked: 0, paused: 0, emptyNow: 0,
+      },
+      handledByOthers: { count: 0, holders: [] },
     };
   }
 
@@ -740,11 +776,13 @@ export async function buildMtLoopBoard(ctx: MtLoopContext): Promise<MtLoopBoard>
 
   return {
     loops: cards,
+    handledByOthers: handledByOthersFrom(cards),
     counts: {
       open: cards.length,
       // Loops nobody has ACCEPTED. Every one of them still has a responsible
       // party; this is the count of hands not yet up.
       unclaimed: cards.filter((c) => !c.claimed).length,
+      needsYou: cards.filter((c) => c.needsYouPersonally).length,
       mine: cards.filter((c) => c.isMine).length,
       blocked: cards.filter((c) => c.status === "blocked").length,
       paused: cards.filter((c) => c.status === "paused").length,

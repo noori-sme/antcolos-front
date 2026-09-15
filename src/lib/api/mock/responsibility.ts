@@ -10,7 +10,8 @@ import {
 } from "@/lib/responsibility";
 import { resolveWorkspace } from "@/lib/workspace/resolve";
 import type {
-  ApprovalState, AssignmentSource, AssignmentState, EligibilityVerdict, EscalationPolicy,
+  ApprovalState, AssignmentSource, AssignmentState, AttentionReason,
+  EligibilityVerdict, EscalationPolicy,
   FleetProfile, Membership,
   MtLoop, NeedsYouItem, Organization, PermissionKey, ResponsibilityAbilities,
   ResponsibilityAssignment, ResponsibilityBoard, ResponsibilityContext,
@@ -1393,6 +1394,7 @@ export async function canonicalHolders(
       noEligibleAssignee: a.noEligibleAssignee,
       accountableMembershipId: a.accountable.membershipId,
       accountableName: a.accountable.displayName,
+      attention: a.attention,
     });
   }
   return out;
@@ -1406,6 +1408,19 @@ export interface CanonicalHolder {
   noEligibleAssignee: boolean;
   accountableMembershipId: string;
   accountableName: string;
+  /**
+   * Why this work needs the CALLER personally, or empty when it does not.
+   *
+   * ★ THE ONE PERSONAL-ATTENTION DERIVATION ★
+   * Straight from `attentionFor` — the same seven reasons that decide the Needs
+   * You page's My Needs You tab, Home's Needs You block and the nav badge. It
+   * travels with the holder so a module can present work at the right level of
+   * detail without inventing a rule about whose problem something is. Home used
+   * to render every open loop in the workspace as a full operational card,
+   * including healthy ones delegated to a dispatcher; this is what that panel
+   * reads instead.
+   */
+  attention: AttentionReason[];
 }
 
 /** The workspace's Owner, for a caller that needs the fallback by name. */

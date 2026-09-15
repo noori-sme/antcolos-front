@@ -32,14 +32,45 @@ import { cn } from "@/lib/utils";
  * role name. Each action is re-checked inside the service too, so a board left
  * open in a tab cannot be used to do something the person may no longer do.
  */
+export type MtLoopPanelScope = "personal" | "organization";
+
 export function MtLoopPanel({
-  board, ctx, onChanged,
+  board, ctx, onChanged, scope = "organization",
 }: {
   board: MtLoopBoard;
   ctx: MtLoopContext | null;
   /** Called after any successful change so the caller can refetch. */
   onChanged: () => void;
+  /**
+   * ★ WHOSE SCREEN IS THIS? ★
+   *
+   * `organization` — the dispatch board. Every open loop, every card, because
+   *                  that is the job of that screen.
+   * `personal`     — Home. Full cards only for loops that need this person,
+   *                  plus one compact line for everything the team is
+   *                  handling, with links to the views that show it.
+   *
+   * The panel does not decide which loops those are. It reads
+   * `card.needsYouPersonally`, which the Responsibility Engine computed from
+   * the same seven reasons that fill My Needs You and the nav badge. There is
+   * no Home filtering rule here and there must never be one: a Carrier Owner's
+   * Home used to carry an operational card for every truck in the workspace,
+   * including healthy ones a dispatcher was already working, which is an
+   * organization-wide board wearing a personal screen's clothes.
+   */
+  scope?: MtLoopPanelScope;
 }) {
+  const personal = scope === "personal";
+  /*
+   * What this screen renders as a full card.
+   *
+   * On a personal screen that is `needsYouPersonally` and nothing else — a
+   * fact the engine computed, not a filter this component invented. On the
+   * dispatch board it is everything, which is what an organization-wide board
+   * is for.
+   */
+  const shown = personal ? board.loops.filter((l) => l.needsYouPersonally) : board.loops;
+
   const [busyLoopId, setBusyLoopId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -81,22 +112,27 @@ export function MtLoopPanel({
             <RefreshCw className="size-4 text-fg-subtle" aria-hidden />
             MT Loop
             <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
-              {board.counts.open}
+              {shown.length}
             </span>
           </h2>
           <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Every truck you are responsible for that is empty or about to be, from the moment it
-            goes empty until its next load has run.
+            {personal
+              ? "Empty trucks that need you — yours to work, fallen to you, escalated to you, or waiting on your decision."
+              : "Every truck this workspace covers that is empty or about to be, from the moment it goes empty until its next load has run."}
           </p>
         </div>
-        {board.counts.open > 0 ? (
+        {shown.length > 0 ? (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.75rem] text-fg-subtle">
-            <span>{board.counts.emptyNow} empty now</span>
-            <span>{board.counts.unclaimed} not claimed</span>
-            {board.counts.blocked > 0 ? (
-              <span className="text-st-danger">{board.counts.blocked} blocked</span>
+            <span>{shown.filter((c) => c.emptyNow).length} empty now</span>
+            <span>{shown.filter((c) => !c.claimed).length} not claimed</span>
+            {shown.filter((c) => c.status === "blocked").length > 0 ? (
+              <span className="text-st-danger">
+                {shown.filter((c) => c.status === "blocked").length} blocked
+              </span>
             ) : null}
-            {board.counts.paused > 0 ? <span>{board.counts.paused} paused</span> : null}
+            {shown.filter((c) => c.status === "paused").length > 0 ? (
+              <span>{shown.filter((c) => c.status === "paused").length} paused</span>
+            ) : null}
           </p>
         ) : null}
       </div>
@@ -119,17 +155,20 @@ export function MtLoopPanel({
       ) : null}
 
       <div className="mt-3">
-        {board.loops.length === 0 ? (
+        {shown.length === 0 ? (
           <div className="rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-            <p className="text-[0.8125rem] font-medium text-fg">No trucks going empty</p>
+            <p className="text-[0.8125rem] font-medium text-fg">
+              {personal ? "No empty truck needs you" : "No trucks going empty"}
+            </p>
             <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-              A loop opens by itself the moment one of your trucks becomes available or is expected
-              to go empty. Nothing here is waiting on you.
+              {personal
+                ? "A loop lands here when it is yours to work, when nobody else can take it, when somebody escalates it to you or asks for your help, or when it is waiting on your decision."
+                : "A loop opens by itself the moment one of your trucks becomes available or is expected to go empty. Nothing here is waiting on you."}
             </p>
           </div>
         ) : (
           <ul className="space-y-2">
-            {board.loops.map((loop) => (
+            {shown.map((loop) => (
               <LoopRow
                 key={loop.loopId}
                 loop={loop}
@@ -154,12 +193,69 @@ export function MtLoopPanel({
         )}
       </div>
 
+      {personal ? <HandledByOthers board={board} /> : null}
+
       <p className="mt-3 text-[0.75rem] leading-relaxed text-fg-subtle">
         Open a truck to search for a load for it. Contacting brokers and negotiating rates are not
         built yet: messages can be prepared and read, but nothing is sent. What is real here is the
         cycle itself — who is responsible, what is standing in the way, and what happened to it —
         all of it kept on the loop and none of it overwritten.
       </p>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Everything the team is handling, as one line.
+ *
+ * ★ OVERSIGHT MOVED, NOT DELETED ★
+ * This is the whole of a delegated loop's presence on a personal Home: a count,
+ * who has them, and two links to the places built for looking. No card, no
+ * buttons, nothing to act on — because acting on somebody else's healthy loop
+ * from your Home screen is not oversight, it is interference, and the person
+ * reading it has not been asked to do anything.
+ *
+ * The loops are all still there: on the dispatch board, in Team oversight, in
+ * All organization. `/needs-you` is where the three views live and is the right
+ * destination for "who is holding what"; `/dispatch` is the complete board.
+ */
+function HandledByOthers({ board }: { board: MtLoopBoard }) {
+  const { count, holders } = board.handledByOthers;
+  if (count === 0) return null;
+
+  const who = holders.length === 1
+    ? holders[0].displayName
+    : holders.length === 2
+      ? `${holders[0].displayName} and ${holders[1].displayName}`
+      : "your dispatch team";
+
+  return (
+    <section
+      aria-label="Handled by your team"
+      className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-sunken px-3.5 py-2.5"
+    >
+      <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+        <span className="font-medium text-fg">
+          {count} Empty {count === 1 ? "Loop is" : "Loops are"} being handled by {who}
+        </span>
+        . Nothing there is waiting on you.
+      </p>
+      <span className="flex items-center gap-3">
+        <Link
+          href="/needs-you"
+          className="text-[0.75rem] font-medium text-primary hover:underline"
+        >
+          Team oversight
+        </Link>
+        <Link
+          href="/dispatch"
+          className="text-[0.75rem] font-medium text-primary hover:underline"
+        >
+          All loops
+        </Link>
+      </span>
     </section>
   );
 }
@@ -267,6 +363,10 @@ function LoopRow({
 
   return (
     <li
+      // The loop this row is about, so a caller can find one row among several
+      // without matching on copy that is meant to change.
+      data-loop-id={loop.loopId}
+      data-truck-unit={loop.truckUnit}
       className={cn(
         "rounded-md border bg-surface-sunken px-3.5 py-3",
         loop.status === "blocked" ? "border-st-danger/40" : "border-border",

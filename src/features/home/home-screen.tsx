@@ -108,13 +108,17 @@ export function HomeScreen() {
       />
 
       {/* MT Loop first, then Needs You, then anything analytical.
-          Hidden outright when there are no loops: this is a carrier's Home
-          rather than a dispatch board, and an empty panel here would be noise
-          on a screen that has plenty else to say. */}
-      {mtLoop.data && mtLoop.data.loops.length > 0 ? (
+          Hidden outright when nothing needs this person AND nobody is holding
+          anything: this is a carrier's Home rather than a dispatch board, and
+          an empty panel here would be noise on a screen with plenty to say. */}
+      {mtLoop.data
+        && (mtLoop.data.counts.needsYou > 0 || mtLoop.data.handledByOthers.count > 0) ? (
         <MtLoopPanel
           board={mtLoop.data}
           ctx={mtLoopCtx}
+          // ★ Home is personal. ★ Full cards only for loops that need this
+          // person; everything the team is handling collapses to one line.
+          scope="personal"
           onChanged={() => {
             void mtLoop.refetch();
             void summary.refetch();

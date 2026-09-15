@@ -1,5 +1,7 @@
 import type { IsoDateTime } from "./common";
-import type { AssignmentSource, AssignmentState } from "./responsibility";
+import type {
+  AssignmentSource, AssignmentState, AttentionReason,
+} from "./responsibility";
 import type { FactVerification } from "./propagation";
 import type { AvailabilityBasis, AvailabilityState } from "./tracking";
 import type { TruckEquipmentType } from "./truck";
@@ -377,6 +379,27 @@ export interface MtLoopCard {
   claimed?: MtLoopClaim;
   /** True when the viewer's own membership is the canonical responsible. */
   isMine: boolean;
+  /**
+   * ★ WHY THIS LOOP NEEDS THE VIEWER PERSONALLY — or empty when it does not. ★
+   *
+   * The same seven reasons that decide My Needs You, Home's Needs You block
+   * and the nav badge, computed by `attentionFor` and carried here so this
+   * module presents work at the right level of detail without inventing a rule
+   * of its own about whose problem something is.
+   *
+   * Being able to SEE a loop is not one of the reasons. A Carrier Owner can
+   * see every loop in their workspace; a healthy one delegated to a dispatcher
+   * is that dispatcher's problem, and it belongs in the Owner's oversight
+   * views rather than on their Home as an operational card with buttons.
+   */
+  attention: AttentionReason[];
+  /**
+   * `attention.length > 0`, named so a screen reads as the rule does.
+   *
+   * A personal surface renders a full card for these and a compact line for
+   * the rest. An organization-wide board renders them all.
+   */
+  needsYouPersonally: boolean;
   expectedEmptyAt?: IsoDateTime;
   expectedEmptyCity?: string;
   expectedEmptyState?: string;
@@ -551,6 +574,8 @@ export interface MtLoopBoard {
     open: number;
     /** Open loops nobody has ACCEPTED. Every one still has a responsible party. */
     unclaimed: number;
+    /** Open loops that need the viewer personally. The ones a personal surface shows. */
+    needsYou: number;
     mine: number;
     blocked: number;
     paused: number;
@@ -562,4 +587,20 @@ export interface MtLoopBoard {
    * which is a different statement from "there is nobody available".
    */
   assignableTo?: Array<{ membershipId: string; name: string }>;
+  /**
+   * The loops somebody else is handling, as one line rather than a stack of
+   * cards.
+   *
+   * ★ OVERSIGHT IS NOT DELETED, IT IS MOVED ★
+   * A personal surface says "3 Empty Loops are being handled by your dispatch
+   * team" and links to the views where they can be inspected. The loops are
+   * still on the organization-wide board, still in Team oversight, still in
+   * All organization. What they are not is a row of operational cards with
+   * buttons on the Home screen of somebody who is not doing the work.
+   */
+  handledByOthers: {
+    count: number;
+    /** Who is handling them, for a summary that names the team. */
+    holders: Array<{ membershipId: string; displayName: string; count: number }>;
+  };
 }
