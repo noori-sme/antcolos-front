@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loopContextFor, resetPropagationWorld } from "./propagation-harness.ts";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
-import { mtLoopBoardSync, syncMtLoops } from "@/lib/api/mock/mt-loop";
+import { buildMtLoopBoard, syncMtLoops } from "@/lib/api/mock/mt-loop";
 import { startSearch } from "@/lib/api/mock/search-session";
 import { allMatches } from "@/lib/api/mock/opportunity-matching";
 import {
@@ -39,7 +39,7 @@ const CTX = "mem_northline_owner";
 /** Drive the flow up to "a booked load with a rate confirmation on the desk". */
 async function bookedLoadWithRateCon(ctx: MtLoopContext) {
   syncMtLoops(ctx);
-  const board = mtLoopBoardSync(ctx);
+  const board = (await buildMtLoopBoard(ctx));
   // A loop with a DRIVER on it, and equipment it can legally run. The driver is
   // what makes this the full example: a load with nobody on it cannot become a
   // Driver Load Post, which the projection says out loud rather than failing.

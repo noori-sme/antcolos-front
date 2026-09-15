@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  ASSIGNMENT_SOURCE_LABEL,
   FACT_VERIFICATION_LABEL, MT_LOOP_STAGE_LABEL, MT_LOOP_STATUS_LABEL,
   type FactVerification, type MtLoopBoard, type MtLoopCard, type MtLoopStage,
 } from "@/types";
@@ -91,7 +92,7 @@ export function MtLoopPanel({
         {board.counts.open > 0 ? (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.75rem] text-fg-subtle">
             <span>{board.counts.emptyNow} empty now</span>
-            <span>{board.counts.unassigned} with nobody on them</span>
+            <span>{board.counts.unclaimed} not claimed</span>
             {board.counts.blocked > 0 ? (
               <span className="text-st-danger">{board.counts.blocked} blocked</span>
             ) : null}
@@ -166,7 +167,7 @@ export function MtLoopPanel({
 /* -------------------------------------------------------------------------- */
 
 const STATUS_TONE: Record<string, "neutral" | "info" | "progress" | "success" | "warning" | "danger"> = {
-  unassigned: "warning",
+  unclaimed: "warning",
   working: "info",
   covered: "progress",
   running: "progress",
@@ -249,7 +250,9 @@ function LoopRow({
   const [handing, setHanding] = useState(false);
 
   const where = [loop.expectedEmptyCity, loop.expectedEmptyState].filter(Boolean).join(", ");
-  const others = (assignableTo ?? []).filter((p) => p.membershipId !== loop.responsibleMembershipId);
+  const others = (assignableTo ?? []).filter(
+    (p) => p.membershipId !== loop.claimed?.membershipId,
+  );
 
   function submitReason() {
     const action = asking;
@@ -339,12 +342,43 @@ function LoopRow({
             {loop.loadReference ? <span>{loop.loadReference}</span> : null}
           </p>
 
+          {/*
+            ★ TWO FACTS, AND THE ORDER MATTERS ★
+            Who is responsible comes from the Responsibility Engine and is the
+            same answer My work, Needs You and Home are showing. Whether
+            anybody has ACCEPTED it is this module's own fact, and it is second
+            because it is the lesser question: a loop nobody has picked up is
+            still somebody's.
+
+            This line used to read "Nobody is responsible for this yet" off a
+            field on the loop, about loops the engine had routed to a named
+            dispatcher. That sentence is why this change exists.
+          */}
           <p className="mt-1 text-[0.75rem] text-fg-muted">
-            {loop.responsibleName
-              ? `${loop.isMine ? "You are" : `${loop.responsibleName} is`} responsible`
-              : "Nobody is responsible for this yet"}
+            {loop.responsible ? (
+              <>
+                <span className={loop.isMine ? "font-medium text-fg" : undefined}>
+                  {loop.isMine ? "You are" : `${loop.responsible.displayName} is`} responsible
+                </span>
+                <span className="text-fg-subtle">
+                  {" "}· {ASSIGNMENT_SOURCE_LABEL[loop.responsible.source].toLowerCase()}
+                </span>
+              </>
+            ) : (
+              <span className="text-st-warning">
+                Could not read who is responsible
+              </span>
+            )}
+            {loop.claimed
+              ? ` · ${loop.claimed.isMine ? "you claimed it" : `claimed by ${loop.claimed.displayName}`}`
+              : " · not claimed yet"}
             {loop.handoffCount > 1 ? ` · ${loop.handoffCount} hands so far` : ""}
           </p>
+          {loop.responsible?.noEligibleAssignee ? (
+            <p className="mt-0.5 text-[0.75rem] text-st-warning">
+              Nobody in this workspace holds what this needs yet.
+            </p>
+          ) : null}
 
           {/* Everything unresolved, not only whichever one stopped the loop. A
               cycle can be workable and still owe two things, and a board that

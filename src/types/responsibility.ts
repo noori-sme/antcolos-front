@@ -178,6 +178,33 @@ export interface ResponsibilityContext {
   /** What a membership must hold to actually perform it. */
   requires: PermissionKey[];
 
+  /**
+   * The membership that has personally ACCEPTED this work, where the module
+   * records such a thing.
+   *
+   * ★ THE ONE MEMBERSHIP ID IN THIS TYPE, AND WHY IT IS NOT A CONTRADICTION ★
+   * Everything above says a module describes work and never names a person.
+   * That still holds: this is not the module saying who SHOULD do the work, it
+   * is the module reporting that somebody has said "I have this" — an MT Loop
+   * claim, a Needs You item somebody took. A fact with an actor and a time,
+   * exactly like `acknowledgedAt`, which has always been here.
+   *
+   * The engine decides what to do with it. An acceptance from somebody who is
+   * still eligible becomes the responsible membership; one from somebody who
+   * has since lost the permission, left, or had their relationship end does
+   * not, and the work routes on. That is the whole point of routing it here
+   * rather than letting each module publish its own answer — which is what MT
+   * Loop used to do, and how a board came to read "Nobody on it" about a loop
+   * the engine had given a named dispatcher.
+   */
+  claimedByMembershipId?: string;
+  /**
+   * When they accepted it. Required alongside `claimedByMembershipId` for the
+   * acceptance to count, because the engine settles a clash between an
+   * acceptance and a delegation by which came last.
+   */
+  claimedAt?: IsoDateTime;
+
   /* -- The records the routing engine matches against ------------------- */
   /** The carrier whose operating authority the work runs under. */
   carrierOrganizationId?: string;

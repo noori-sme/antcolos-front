@@ -7,7 +7,7 @@ import { resolveWorkspace } from "@/lib/workspace/resolve";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
-import { mtLoopBoardSync } from "./mt-loop";
+import { buildMtLoopBoard } from "./mt-loop";
 import { publishAvailability } from "./tracking-board";
 import { syncDerivedNeedsYou } from "./needs-you-derive";
 import { trailerFleetSync } from "./trailer-registry";
@@ -179,10 +179,12 @@ export async function dispatchWorkspaceSummary(
   ctx: WorkspaceContext,
 ): Promise<DispatchWorkspaceSummary> {
   await sleep(LATENCY_MS);
-  return dispatchWorkspaceSummarySync(ctx);
+  return dispatchWorkspaceSummaryFor(ctx);
 }
 
-export function dispatchWorkspaceSummarySync(ctx: WorkspaceContext): DispatchWorkspaceSummary {
+export async function dispatchWorkspaceSummaryFor(
+  ctx: WorkspaceContext,
+): Promise<DispatchWorkspaceSummary> {
   const workspace = resolveWorkspace(ctx.organization, ctx.membership);
   if (!workspace) throw new PermissionDeniedError(["loads:view"]);
 
@@ -276,7 +278,7 @@ export function dispatchWorkspaceSummarySync(ctx: WorkspaceContext): DispatchWor
   // board current without a scheduler — and without a second MT Loop record
   // system, which is the point: the loops below are the same loops.
   if (ctx.permissions.has("tracking:view")) publishAvailability(ctx);
-  const mtLoop = mtLoopBoardSync(ctx);
+  const mtLoop = await buildMtLoopBoard(ctx);
 
   // Needs You is generated from live state rather than stored, so it is
   // regenerated here too — otherwise the count on this dashboard could differ

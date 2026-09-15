@@ -80,7 +80,7 @@ export type NeedsYouCategory =
   | "critical_insurance_gap"
 
   /* ---- MT Loop conditions. Derived from live state, never seeded. ---- */
-  /** An open MT Loop that nobody has taken responsibility for. */
+  /** An open MT Loop nobody has ACCEPTED. It still has a responsible party. */
   | "unassigned_loop"
   /** A truck is going empty and nobody has recorded when or where. */
   | "missing_availability"
@@ -408,7 +408,8 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   expired_policy: "Expired policy", unresolved_claim: "Unresolved claim",
   missing_claim_evidence: "Missing claim evidence",
   critical_insurance_gap: "Critical insurance gap",
-  unassigned_loop: "MT Loop with nobody on it",
+  // The loop has a responsible party; nobody has accepted it.
+  unassigned_loop: "MT Loop nobody has claimed",
   missing_availability: "Missing availability",
   operating_authority: "Operating Authority conflict", blocked_loop: "Blocked MT Loop",
   projection_failed: "Update did not finish",

@@ -104,7 +104,9 @@ function loopSeverity(loop: MtLoop): ResponsibilitySeverity {
   const emptyNow = emptyAt === undefined || emptyAt <= Date.now();
 
   if (loop.status === "blocked") return "high";
-  if (!loop.responsibleMembershipId && emptyNow) return "critical";
+  // An empty truck nobody has ACCEPTED is the urgent case. Somebody is
+  // responsible for it either way — what is missing is a hand up.
+  if (!loop.claimedByMembershipId && emptyNow) return "critical";
   if (emptyNow) return "high";
   if (loop.status === "paused") return "low";
   return "medium";
@@ -137,6 +139,7 @@ export function responsibilityContextForLoop(loop: MtLoop): ResponsibilityContex
 
   const firstHeld = loop.assignments[0]?.assignedAt;
 
+
   return {
     organizationId: loop.dispatchOrganizationId,
     work: {
@@ -154,6 +157,11 @@ export function responsibilityContextForLoop(loop: MtLoop): ResponsibilityContex
     trailerId: loop.trailerId,
     driverProfileId: loop.driverProfileId,
     loadId: loop.loadId,
+    // MT Loop's own operational fact, reported rather than decided. The engine
+    // honours it when the claimer is still eligible and routes past it when
+    // they are not — see `ResponsibilityContext.claimedByMembershipId`.
+    claimedByMembershipId: loop.claimedByMembershipId,
+    claimedAt: loop.claimedAt,
     openedAt: loop.openedAt,
     dueAt: loop.respondBy ?? loop.expectedEmptyAt,
     acknowledgedAt: firstHeld,
@@ -233,6 +241,13 @@ export function responsibilityContextForNeedsYou(
     truckId,
     driverProfileId,
     loadId: entityId(item, "load"),
+    // Same fact, from the other module that records one: somebody took this
+    // item. Routed through the same field so the two cannot be treated
+    // differently by accident.
+    claimedByMembershipId: item.assigneeMembershipId,
+    // The moment somebody took it, off the item's own history — never a second
+    // copy of the time kept alongside.
+    claimedAt: item.history.filter((h) => h.action === "assigned").at(-1)?.at,
     openedAt: item.createdAt,
     dueAt: item.dueAt,
     // Somebody taking an item on is the acknowledgement. Derived from the

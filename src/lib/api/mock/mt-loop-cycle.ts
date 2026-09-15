@@ -36,6 +36,14 @@ export interface CycleInput {
   confirmed: boolean;
   /** Whether a Driver Load Post exists, i.e. the driver has the work. */
   hasPost: boolean;
+  /**
+   * Who the Responsibility Engine says is responsible for this loop.
+   *
+   * Handed in rather than read off the loop, because the loop does not know:
+   * it stores who ACCEPTED the cycle, and that is a different question. Absent
+   * only when the responsibility layer could not be read.
+   */
+  responsibleName?: string;
 }
 
 /**
@@ -61,7 +69,7 @@ export function stageOf(input: CycleInput): MtLoopStage {
   const emptyAt = loop.expectedEmptyAt ? Date.parse(loop.expectedEmptyAt) : undefined;
   const emptyNow = emptyAt === undefined ? true : emptyAt <= Date.now();
   if (!emptyNow) return "going_empty";
-  return loop.responsibleMembershipId ? "finding_work" : "empty_unworked";
+  return loop.claimedByMembershipId ? "finding_work" : "empty_unworked";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -269,11 +277,15 @@ export function blockersFor(input: CycleInput): MtLoopBlocker[] {
     });
   }
 
-  if (!loop.responsibleMembershipId) {
+  if (!loop.claimedByMembershipId) {
     out.push({
-      key: "unassigned",
-      label: "Nobody on it",
-      detail: `No membership has taken responsibility for unit ${loop.truckUnit}'s cycle.`,
+      key: "unclaimed",
+      // NOT "Nobody on it". Somebody is responsible for every open loop; what
+      // is missing is a person saying they have accepted it.
+      label: "Not claimed",
+      detail: input.responsibleName
+        ? `${input.responsibleName} is responsible for unit ${loop.truckUnit}'s cycle and has not accepted it yet.`
+        : `Nobody has accepted unit ${loop.truckUnit}'s cycle yet.`,
       stopsDispatch: false,
     });
   }
@@ -295,7 +307,16 @@ export function blockersFor(input: CycleInput): MtLoopBlocker[] {
  */
 export function nextActionFor(
   input: CycleInput,
-  viewer: { isMine: boolean; held: boolean },
+  viewer: {
+    /** The canonical responsible party is the viewer. */
+    isMine: boolean;
+    /** Anybody has accepted it. */
+    claimed: boolean;
+    /** The viewer is the one who accepted it. */
+    claimedByMe: boolean;
+    /** Who the engine says is responsible, for copy that names them. */
+    responsibleName?: string;
+  },
 ): MtLoopNextAction | undefined {
   const { loop } = input;
   const stage = stageOf(input);
@@ -321,16 +342,22 @@ export function nextActionFor(
           href: "/home",
           reason: loop.pauseReason ?? "It was set aside by a person.",
           requires: ["loads:assign"],
-          notYours: !viewer.isMine && viewer.held,
+          notYours: !viewer.isMine,
         }
         : undefined;
 
     case "empty_unworked":
       return {
-        label: "Take this cycle",
+        label: viewer.isMine ? "Take this cycle" : "Take this cycle",
         href: "/home",
-        reason: `Unit ${loop.truckUnit} is empty and nobody has picked it up.`,
+        // "Nobody has picked it up" is true. "Nobody is on it" was not, and
+        // that is what this used to imply — the loop has a responsible party
+        // whether or not anybody has put their hand up, so the copy names them.
+        reason: viewer.responsibleName
+          ? `Unit ${loop.truckUnit} is empty. ${viewer.responsibleName} is responsible for it and nobody has accepted it yet.`
+          : `Unit ${loop.truckUnit} is empty and nobody has accepted it yet.`,
         requires: ["trucks:view"],
+        notYours: !viewer.isMine,
       };
 
     case "going_empty":
@@ -342,7 +369,7 @@ export function nextActionFor(
           ? `Unit ${loop.truckUnit} is free from ${new Date(loop.expectedEmptyAt).toISOString().slice(0, 16).replace("T", " ")}.`
           : `Unit ${loop.truckUnit} is empty and has no load.`,
         requires: ["loads:view"],
-        notYours: !viewer.isMine && viewer.held,
+        notYours: !viewer.isMine,
       };
 
     case "booked_unconfirmed":
@@ -351,7 +378,7 @@ export function nextActionFor(
         href: `/dispatch/trucks/${loop.truckId}`,
         reason: `${loop.loadReference ?? "The booked load"} is not final until the confirmation is reviewed, signed and returned to the broker.`,
         requires: ["loads:create"],
-        notYours: !viewer.isMine && viewer.held,
+        notYours: !viewer.isMine,
       };
 
     case "confirmed":
@@ -360,7 +387,7 @@ export function nextActionFor(
         href: `/dispatch/tracking/${loop.loadId}`,
         reason: `${loop.loadReference ?? "The load"} is confirmed. Opening tracking is what the broker will ask for next, and it is a person's decision because it discloses the truck's position.`,
         requires: ["tracking:share"],
-        notYours: !viewer.isMine && viewer.held,
+        notYours: !viewer.isMine,
       };
 
     case "dispatched":
@@ -389,7 +416,11 @@ export function nextActionFor(
  * confirmation store or the driver workflow store — it asks this, and this asks
  * them through their own readers.
  */
-export function cycleInputFor(loop: MtLoop, truck?: FleetTruck): CycleInput {
+export function cycleInputFor(
+  loop: MtLoop,
+  truck?: FleetTruck,
+  responsibleName?: string,
+): CycleInput {
   const confirmed = loop.loadId
     ? rateConfirmationForLoad(loop.dispatchOrganizationId, loop.loadId) !== undefined
     : false;
@@ -405,7 +436,7 @@ export function cycleInputFor(loop: MtLoop, truck?: FleetTruck): CycleInput {
     }
   }
 
-  return { loop, truck, confirmed, hasPost };
+  return { loop, truck, confirmed, hasPost, responsibleName };
 }
 
 /** Whether the load still owes required paperwork, for a blocker line. */

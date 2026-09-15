@@ -240,18 +240,23 @@ function loopRules(loops: MtLoop[]): Derived[] {
         ? "is empty now"
         : `goes empty in about ${Math.round(emptyIn)} ${Math.round(emptyIn) === 1 ? "hour" : "hours"}`;
 
-    /* ---- Nobody has taken responsibility for it ---- */
-    if (!loop.responsibleMembershipId && loop.status !== "closed") {
+    /* ---- Nobody has ACCEPTED it ---- */
+    //
+    // Not "nobody is responsible for it". The Responsibility Engine has an
+    // answer for every open loop, and this item goes to that person: what is
+    // missing is somebody saying they have picked it up, which is a real thing
+    // to chase and a different thing from having no owner.
+    if (!loop.claimedByMembershipId && loop.status !== "closed") {
       out.push({
         key: `loop-unassigned-${loop.truckId}`,
         category: "unassigned_loop",
         // A truck already sitting empty is losing money now. One going empty
         // later today is not yet, and saying both are critical means neither is.
         severity: emptyIn <= 0 ? "high" : emptyIn <= 6 ? "medium" : "low",
-        title: `${unit} ${emptyPhrase} and nobody is on it`,
+        title: `${unit} ${emptyPhrase} and nobody has picked it up`,
         reason: where
-          ? `The MT Loop for ${unit} in ${where} has no responsible dispatcher.`
-          : `The MT Loop for ${unit} has no responsible dispatcher.`,
+          ? `Nobody has taken on the MT Loop for ${unit} in ${where}.`
+          : `Nobody has taken on the MT Loop for ${unit}.`,
         detail: `Running under ${loop.carrierName}.`,
         entity: loopEntity(loop),
         recommendedAction: {
@@ -277,7 +282,7 @@ function loopRules(loops: MtLoop[]): Derived[] {
         reason: loop.blockReason ?? "This MT Loop is blocked.",
         detail: loop.blockOrigin === "system"
           ? "Raised automatically. It clears itself the moment the underlying problem is fixed."
-          : `Put on by ${loop.responsibleName ?? "somebody in this workspace"}. Only a person can take it off.`,
+          : `Put on by ${loop.claimedByName ?? "somebody in this workspace"}. Only a person can take it off.`,
         entity: loopEntity(loop),
         recommendedAction: {
           kind: "review",
@@ -347,9 +352,9 @@ function loopRules(loops: MtLoop[]): Derived[] {
     // is no deadline to be approaching, and the loop already carries an item
     // saying exactly that — reporting both would be the same gap twice.
     if (
-      loop.responsibleMembershipId
+      loop.claimedByMembershipId
       && loop.expectedEmptyAt !== undefined
-      && (loop.status === "working" || loop.status === "unassigned")
+      && (loop.status === "working" || loop.status === "unclaimed")
       && hoursUntil(loop.respondBy) <= 4
     ) {
       const late = hoursUntil(loop.respondBy) <= 0;
@@ -363,7 +368,7 @@ function loopRules(loops: MtLoop[]): Derived[] {
         reason: late
           ? `${unit} went empty${where ? ` in ${where}` : ""} and no load has been booked on it.`
           : `${unit} ${emptyPhrase}${where ? ` in ${where}` : ""} and no load has been booked on it.`,
-        detail: `${loop.responsibleName ?? "Somebody"} is responsible for this loop.`,
+        detail: `${loop.claimedByName ?? "Somebody"} is responsible for this loop.`,
         entity: loopEntity(loop),
         recommendedAction: {
           kind: "start_search",
@@ -937,7 +942,7 @@ function searchRules(ctx: DeriveContext, loops: MtLoop[]): Derived[] {
     if (loop.status === "closed" || loop.status === "paused" || loop.status === "blocked") continue;
     if (loop.status === "covered" || loop.status === "running") continue;
     // A loop with nobody on it is a different problem, already reported.
-    if (!loop.responsibleMembershipId) continue;
+    if (!loop.claimedByMembershipId) continue;
     if (sessionForCycle(loop.loopId, ctx as MtLoopContext)) continue;
 
     const emptyIn = hoursUntil(loop.expectedEmptyAt);
@@ -946,7 +951,7 @@ function searchRules(ctx: DeriveContext, loops: MtLoop[]): Derived[] {
       category: "no_search",
       severity: emptyIn <= 0 ? "high" : emptyIn <= 8 ? "medium" : "low",
       title: `Nobody is looking for a load for unit ${loop.truckUnit}`,
-      reason: `${loop.responsibleName ?? "Somebody"} is responsible for this cycle and no search has been started.`,
+      reason: `${loop.claimedByName ?? "Somebody"} is responsible for this cycle and no search has been started.`,
       detail: `Running under ${loop.carrierName}.`,
       entity: loopEntity(loop),
       recommendedAction: {

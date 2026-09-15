@@ -1,4 +1,5 @@
 import type { IsoDateTime } from "./common";
+import type { AssignmentSource, AssignmentState } from "./responsibility";
 import type { FactVerification } from "./propagation";
 import type { AvailabilityBasis, AvailabilityState } from "./tracking";
 import type { TruckEquipmentType } from "./truck";
@@ -63,12 +64,34 @@ export interface MtLoop {
   driverName?: string;
 
   /**
-   * The membership responsible for this loop right now. Absent means nobody has
-   * picked it up — which is a problem to be surfaced, not an empty column.
+   * The membership that has personally ACCEPTED this loop. Not who is
+   * responsible for it.
+   *
+   * ★ THE BOUNDARY ★
+   * This field used to be called `responsibleMembershipId`, and that name was
+   * the whole bug: MT Loop stored one answer to "who is responsible for this
+   * empty truck" while the Responsibility Engine computed another, and the two
+   * disagreed. A loop nobody had picked up read "Nobody on it" here while the
+   * engine had it routed to a named dispatcher.
+   *
+   * Claiming and being responsible are genuinely different facts:
+   *
+   *   responsible   who SHOULD be working this truck. Derived by the
+   *                 Responsibility Engine from permissions, scope, asset and
+   *                 work assignment, availability and delegation. Never stored
+   *                 on this record — see `MtLoopCard.responsible`.
+   *   claimed       who has SAID they have it. A person's own acceptance, with
+   *                 an actor and a time. Absent means nobody has accepted it
+   *                 yet, which is not the same as nobody being responsible.
+   *
+   * A claim is an input to the engine, not a competing answer: claiming writes
+   * the canonical override, so the two cannot drift apart again.
    */
-  responsibleMembershipId?: string;
+  claimedByMembershipId?: string;
   /** Snapshot, so an ended membership still reads sensibly in the history. */
-  responsibleName?: string;
+  claimedByName?: string;
+  /** When it was accepted. Absent whenever `claimedByMembershipId` is. */
+  claimedAt?: IsoDateTime;
 
   /**
    * The committed rate confirmation behind the booked load, once there is one.
@@ -171,8 +194,14 @@ export interface MtLoopAvailability {
  * booked and the driver is on their way to it.
  */
 export type MtLoopStatus =
-  /** Open, and nobody has taken responsibility for it yet. */
-  | "unassigned"
+  /**
+   * Open, and nobody has ACCEPTED it yet.
+   *
+   * Never "unassigned": somebody is responsible for every open loop — the
+   * engine always produces an answer, even if that answer is the Owner by
+   * fallback. This status says only that no person has put their hand up.
+   */
+  | "unclaimed"
   /** Somebody is responsible and is working out what to put on the truck. */
   | "working"
   /** A load has been booked onto the truck. The cycle has its answer. */
@@ -187,7 +216,8 @@ export type MtLoopStatus =
   | "closed";
 
 export const MT_LOOP_STATUS_LABEL: Record<MtLoopStatus, string> = {
-  unassigned: "Nobody on it",
+  // NOT "Nobody on it". Somebody is always responsible; nobody has accepted.
+  unclaimed: "Not claimed",
   working: "Being worked",
   covered: "Covered",
   running: "Running",
@@ -198,7 +228,7 @@ export const MT_LOOP_STATUS_LABEL: Record<MtLoopStatus, string> = {
 
 /** The statuses that mean the cycle is still live. */
 export const MT_LOOP_OPEN_STATUSES: readonly MtLoopStatus[] = [
-  "unassigned", "working", "covered", "running", "paused", "blocked",
+  "unclaimed", "working", "covered", "running", "paused", "blocked",
 ];
 
 export const isMtLoopOpen = (loop: MtLoop) => loop.status !== "closed";
@@ -283,6 +313,32 @@ export interface MtLoopEvent {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * The canonical answer, as a card carries it.
+ *
+ * `assignmentState` is the responsibility layer's own vocabulary and is passed
+ * through unchanged rather than re-worded here, so "Owner fallback" means the
+ * same thing on the MT Loop board as it does in Needs You.
+ */
+export interface MtLoopResponsible {
+  membershipId: string;
+  displayName: string;
+  /** Why they hold it — routed, delegated, chosen by a person, fallback. */
+  source: AssignmentSource;
+  assignmentState: AssignmentState;
+  /** True when nobody in the workspace can do this at all. */
+  noEligibleAssignee: boolean;
+}
+
+/** One person's recorded acceptance of a loop. */
+export interface MtLoopClaim {
+  membershipId: string;
+  displayName: string;
+  at: IsoDateTime;
+  /** True when the viewer is the one who accepted it. */
+  isMine: boolean;
+}
+
+/**
  * What the dashboard shows for one loop.
  *
  * A projection, like FleetTruck: it is what THIS membership may see of the
@@ -300,9 +356,26 @@ export interface MtLoopCard {
   driverName?: string;
   trailerUnit?: string;
   trailerRequired: boolean;
-  responsibleName?: string;
-  responsibleMembershipId?: string;
-  /** True when the viewer's own membership is responsible. */
+  /**
+   * ★ CANONICAL. Who is responsible for covering this truck. ★
+   *
+   * Derived on every read from the Responsibility service — the same answer
+   * `/work`, Needs You and Home show, because it is literally the same call.
+   * MT Loop stores nothing about it and decides nothing about it.
+   *
+   * Absent only when the responsibility layer could not be read at all, which
+   * the screen reports rather than papering over with "nobody".
+   */
+  responsible?: MtLoopResponsible;
+  /**
+   * Operational acceptance. A different fact, and never an answer to "who is
+   * responsible for this truck".
+   *
+   * Absent means nobody has put their hand up yet. It does NOT mean the loop
+   * has no owner — read `responsible` for that.
+   */
+  claimed?: MtLoopClaim;
+  /** True when the viewer's own membership is the canonical responsible. */
   isMine: boolean;
   expectedEmptyAt?: IsoDateTime;
   expectedEmptyCity?: string;
@@ -373,9 +446,16 @@ export interface MtLoopAbilities {
 export type MtLoopStage =
   /** Still on a load, with a known time it comes free. */
   | "going_empty"
-  /** Empty, and nobody has picked the cycle up. */
+  /**
+   * Empty, and nobody has ACCEPTED the cycle.
+   *
+   * Somebody is still responsible for it — read `MtLoopCard.responsible`. The
+   * distinction this stage draws is whether a person has put their hand up,
+   * because a truck whose owner has not started on it is the one worth
+   * showing first.
+   */
   | "empty_unworked"
-  /** Somebody is responsible and has not found work yet. */
+  /** Somebody has accepted it and has not found work yet. */
   | "finding_work"
   /** A load is booked but its rate confirmation is not signed and returned. */
   | "booked_unconfirmed"
@@ -390,7 +470,9 @@ export type MtLoopStage =
 
 export const MT_LOOP_STAGE_LABEL: Record<MtLoopStage, string> = {
   going_empty: "Going empty",
-  empty_unworked: "Empty, nobody on it",
+  // NOT "Empty, nobody on it": every open loop has a responsible party, and
+  // the card names them on the line below this badge.
+  empty_unworked: "Empty, not claimed",
   finding_work: "Finding work",
   booked_unconfirmed: "Booked, not confirmed",
   confirmed: "Confirmed",
@@ -467,7 +549,8 @@ export interface MtLoopBoard {
   loops: MtLoopCard[];
   counts: {
     open: number;
-    unassigned: number;
+    /** Open loops nobody has ACCEPTED. Every one still has a responsible party. */
+    unclaimed: number;
     mine: number;
     blocked: number;
     paused: number;

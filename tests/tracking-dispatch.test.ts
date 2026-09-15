@@ -3,7 +3,7 @@ import { beforeEach, describe, it } from "node:test";
 import {
   confirmTruckEmpty, dispatchTrackingBoardSync, loadTrackingSync, publishAvailability,
 } from "@/lib/api/mock/tracking-board";
-import { loopForCycle, mtLoopBoardSync } from "@/lib/api/mock/mt-loop";
+import { loopForCycle, buildMtLoopBoard } from "@/lib/api/mock/mt-loop";
 import { simulatePosition, simulateSignalOutage } from "@/lib/api/mock/tracking-signals";
 import { availabilityForTruck } from "@/lib/api/mock/tracking-availability";
 import { TRUCK_IDS } from "@/lib/api/mock/truck-registry";
@@ -198,14 +198,14 @@ describe("availability reaches the MT Loop service, once", () => {
     }
   });
 
-  it("does not open a second entry for the same truck and cycle", () => {
+  it("does not open a second entry for the same truck and cycle", async () => {
     const ctx = trackingContextFor(NORTHLINE_OWNER);
     publishAvailability(ctx);
-    const before = mtLoopBoardSync(ctx).loops.length;
+    const before = (await buildMtLoopBoard(ctx)).loops.length;
 
     const second = publishAvailability(ctx);
     const third = publishAvailability(ctx);
-    const after = mtLoopBoardSync(ctx).loops.length;
+    const after = (await buildMtLoopBoard(ctx)).loops.length;
 
     assert.equal(after, before, "republishing must not grow the board");
     for (const r of [...second, ...third]) {
@@ -270,7 +270,7 @@ describe("a person confirming an empty truck", () => {
     assert.notEqual(before.state, "empty_confirmed");
 
     publishAvailability(ctx);
-    const loopCount = mtLoopBoardSync(ctx).loops.length;
+    const loopCount = (await buildMtLoopBoard(ctx)).loops.length;
 
     const { decision, publication } = await confirmTruckEmpty(ctx, {
       truckId: TRUCK_IDS.nl104,
@@ -282,7 +282,7 @@ describe("a person confirming an empty truck", () => {
     assert.equal(decision?.basis, "confirmed");
     assert.equal(decision?.cycleKey, before.cycleKey, "same cycle, not a new one");
     assert.ok(publication?.outcome === "loop_updated" || publication?.outcome === "loop_opened");
-    assert.ok(mtLoopBoardSync(ctx).loops.length <= loopCount + 1);
+    assert.ok((await buildMtLoopBoard(ctx)).loops.length <= loopCount + 1);
   });
 
   it("attributes a dispatcher's phone call to the dispatcher, never to the driver", async () => {

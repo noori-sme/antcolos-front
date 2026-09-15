@@ -3,6 +3,8 @@ import type {
   MtLoopAbilities, MtLoopAction, MtLoopAssignment, MtLoopAvailability, MtLoopBoard,
   MtLoopCard, MtLoopEvent, MtLoopStatus, Organization, TruckDocumentKind, Workspace,
 } from "@/types";
+import { canonicalResponsibleFor } from "./responsibility-bridge";
+import type { CanonicalHolder } from "./responsibility";
 import { AVAILABILITY_STATE_LABEL } from "@/types";
 import { isPublishableAvailability } from "@/lib/tracking";
 import { resolveWorkspace } from "@/lib/workspace/resolve";
@@ -264,7 +266,7 @@ function openLoop(truck: FleetTruck, organizationId: string): MtLoop {
     // Only a tractor is useless without something behind it. A van is not
     // "missing a trailer", it simply does not take one.
     trailerRequired: truck.equipment === "tractor",
-    status: "unassigned",
+    status: "unclaimed",
     openedAt: at,
     assignments: [],
     history: [],
@@ -272,7 +274,7 @@ function openLoop(truck: FleetTruck, organizationId: string): MtLoop {
   record(loop, "opened", {
     actorName: "Antcolos",
     note: `${truck.unit} became ${truck.status === "available" ? "available" : "expected available"}.`,
-    toStatus: "unassigned",
+    toStatus: "unclaimed",
   });
 
   // Once, and only for the first loop a truck opens in this session. A cycle
@@ -284,7 +286,7 @@ function openLoop(truck: FleetTruck, organizationId: string): MtLoop {
   seededAlready.add(seedKey);
   const seeded = seededId ? memberIn(organizationId, seededId) : undefined;
   if (seeded) {
-    takeResponsibility(loop, seeded.membershipId, seeded.displayName, {
+    recordClaim(loop, seeded.membershipId, seeded.displayName, {
       byMembershipId: seeded.membershipId,
       byName: seeded.displayName,
       action: "claimed",
@@ -296,12 +298,16 @@ function openLoop(truck: FleetTruck, organizationId: string): MtLoop {
 }
 
 /**
- * Give a loop to a membership, ending whoever had it before.
+ * Record that a membership has ACCEPTED this loop, ending whoever held it before.
  *
  * The previous spell is CLOSED rather than edited, so the handoff chain stays
  * readable: two rows, two dates, and a reason on the one that ended.
+ *
+ * It used to be called `takeResponsibility`, and it never did that. It records
+ * an acceptance. Who is responsible is the Responsibility Engine's answer, and
+ * this is one of the facts it reads to reach it.
  */
-function takeResponsibility(
+function recordClaim(
   loop: MtLoop,
   membershipId: string,
   assigneeName: string,
@@ -326,13 +332,18 @@ function takeResponsibility(
       assignedByName: by.byName,
     };
     loop.assignments.push(next);
-    loop.responsibleMembershipId = membershipId;
-    loop.responsibleName = assigneeName;
-    if (loop.status === "unassigned") loop.status = "working";
+    loop.claimedByMembershipId = membershipId;
+    loop.claimedByName = assigneeName;
+    // The time is not decoration. The Responsibility Engine settles a clash
+    // between this acceptance and a delegation made there by which came last,
+    // so an acceptance with no time on it is one the engine has to ignore.
+    loop.claimedAt = at;
+    if (loop.status === "unclaimed") loop.status = "working";
   } else {
-    loop.responsibleMembershipId = undefined;
-    loop.responsibleName = undefined;
-    if (loop.status === "working") loop.status = "unassigned";
+    loop.claimedByMembershipId = undefined;
+    loop.claimedByName = undefined;
+    loop.claimedAt = undefined;
+    if (loop.status === "working") loop.status = "unclaimed";
   }
 
   record(loop, by.action, {
@@ -436,7 +447,7 @@ function refresh(loop: MtLoop, truck: FleetTruck, ctx: MtLoopContext) {
       actorName: "Antcolos",
       note: `${load.reference} is on this truck.`,
     });
-    if (loop.status === "unassigned" || loop.status === "working") {
+    if (loop.status === "unclaimed" || loop.status === "working") {
       setStatus(loop, "covered", "load_booked", { actorName: "Antcolos" });
     }
   } else if (!load && loop.loadId) {
@@ -444,7 +455,7 @@ function refresh(loop: MtLoop, truck: FleetTruck, ctx: MtLoopContext) {
     loop.loadReference = undefined;
     record(loop, "load_released", { actorName: "Antcolos", note: "The load came off this truck." });
     if (loop.status === "covered") {
-      setStatus(loop, loop.responsibleMembershipId ? "working" : "unassigned", "load_released", {
+      setStatus(loop, loop.claimedByMembershipId ? "working" : "unclaimed", "load_released", {
         actorName: "Antcolos",
       });
     }
@@ -465,7 +476,7 @@ function refresh(loop: MtLoop, truck: FleetTruck, ctx: MtLoopContext) {
     // stays until a person takes it off — they know something we do not.
     loop.blockReason = undefined;
     loop.blockOrigin = undefined;
-    setStatus(loop, loop.responsibleMembershipId ? "working" : "unassigned", "unblocked", {
+    setStatus(loop, loop.claimedByMembershipId ? "working" : "unclaimed", "unblocked", {
       actorName: "Antcolos",
       note: "The problem that stopped this loop is gone.",
     });
@@ -475,7 +486,7 @@ function refresh(loop: MtLoop, truck: FleetTruck, ctx: MtLoopContext) {
   if (loop.status === "paused" && loop.pausedUntil && new Date(loop.pausedUntil) <= new Date()) {
     loop.pauseReason = undefined;
     loop.pausedUntil = undefined;
-    setStatus(loop, loop.responsibleMembershipId ? "working" : "unassigned", "resumed", {
+    setStatus(loop, loop.claimedByMembershipId ? "working" : "unclaimed", "resumed", {
       actorName: "Antcolos",
       note: "The pause ran out.",
     });
@@ -585,8 +596,12 @@ function abilitiesFor(
   workspace: Workspace,
 ): MtLoopAbilities {
   const open = loop.status !== "closed";
-  const mine = loop.responsibleMembershipId === ctx.membershipId;
-  const held = Boolean(loop.responsibleMembershipId);
+  // Deliberately the CLAIM, not the canonical responsible. These are about
+  // operating a loop you have accepted: you may pause what you picked up, and
+  // "claim" has to be offered to the person the engine routed it to, who has
+  // not accepted it yet.
+  const mine = loop.claimedByMembershipId === ctx.membershipId;
+  const held = Boolean(loop.claimedByMembershipId);
   // Handing work to another person needs the authority to move work AND
   // somewhere to move it to. In a workspace of one there is no such thing.
   const mayMoveWork = workspace.supportsTeam && ctx.permissions.has("loads:assign");
@@ -607,16 +622,31 @@ function abilitiesFor(
   };
 }
 
+/**
+ * One loop, as a card.
+ *
+ * ★ TWO FACTS, KEPT APART ★
+ *   responsible  the canonical answer, handed in from the Responsibility
+ *                Engine. This module computes none of it.
+ *   claimed      this module's own record of somebody accepting the loop.
+ *
+ * They are different questions and they are allowed to differ — a loop routed
+ * to Paige that nobody has picked up yet reads "Paige is responsible · not
+ * claimed", which is the true state of affairs and was previously rendered as
+ * "Nobody on it".
+ */
 function toCard(
   loop: MtLoop,
   ctx: MtLoopContext,
   workspace: Workspace,
-  truck?: FleetTruck,
+  truck: FleetTruck | undefined,
+  responsible: CanonicalHolder | undefined,
 ): MtLoopCard {
   const emptyAt = loop.expectedEmptyAt ? new Date(loop.expectedEmptyAt).getTime() : undefined;
-  const isMine = loop.responsibleMembershipId === ctx.membershipId;
+  const isMine = responsible?.membershipId === ctx.membershipId;
+  const claimedByMe = loop.claimedByMembershipId === ctx.membershipId;
   // Derived on every read from records other modules own. See `mt-loop-cycle.ts`.
-  const cycle = cycleInputFor(loop, truck);
+  const cycle = cycleInputFor(loop, truck, responsible?.displayName);
   return {
     loopId: loop.loopId,
     truckId: loop.truckId,
@@ -627,8 +657,15 @@ function toCard(
     driverName: loop.driverName,
     trailerUnit: loop.trailerUnit,
     trailerRequired: loop.trailerRequired,
-    responsibleName: loop.responsibleName,
-    responsibleMembershipId: loop.responsibleMembershipId,
+    responsible,
+    claimed: loop.claimedByMembershipId && loop.claimedAt
+      ? {
+          membershipId: loop.claimedByMembershipId,
+          displayName: loop.claimedByName ?? "A colleague",
+          at: loop.claimedAt,
+          isMine: claimedByMe,
+        }
+      : undefined,
     isMine,
     expectedEmptyAt: loop.expectedEmptyAt,
     expectedEmptyCity: loop.expectedEmptyCity,
@@ -644,8 +681,12 @@ function toCard(
     stage: stageOf(cycle),
     evidence: evidenceFor(cycle),
     nextAction: nextActionFor(cycle, {
+      // "Is the next thing mine to do?" is a question about the canonical
+      // answer; "has anybody picked it up?" is a question about the claim.
       isMine,
-      held: Boolean(loop.responsibleMembershipId),
+      claimedByMe,
+      claimed: Boolean(loop.claimedByMembershipId),
+      responsibleName: responsible?.displayName,
     }),
     blockers: blockersFor(cycle),
     can: abilitiesFor(loop, ctx, workspace),
@@ -661,15 +702,24 @@ function byUrgency(a: MtLoopCard, b: MtLoopCard): number {
 
 export async function mtLoopBoard(ctx: MtLoopContext): Promise<MtLoopBoard> {
   await sleep(LATENCY_MS);
-  return mtLoopBoardSync(ctx);
+  return buildMtLoopBoard(ctx);
 }
 
-export function mtLoopBoardSync(ctx: MtLoopContext): MtLoopBoard {
+/**
+ * The board, without the simulated latency.
+ *
+ * Async — and it did not used to be. It reads the canonical responsible party
+ * from the Responsibility Engine now instead of publishing an answer of its
+ * own, and that is one call away rather than a field on the record. The cost
+ * of a second source of truth was two screens disagreeing about who was on a
+ * truck; an `await` is the cheaper end of that trade.
+ */
+export async function buildMtLoopBoard(ctx: MtLoopContext): Promise<MtLoopBoard> {
   const workspace = workspaceOf(ctx);
   if (!maySeeBoard(ctx, workspace)) {
     return {
       loops: [],
-      counts: { open: 0, unassigned: 0, mine: 0, blocked: 0, paused: 0, emptyNow: 0 },
+      counts: { open: 0, unclaimed: 0, mine: 0, blocked: 0, paused: 0, emptyNow: 0 },
     };
   }
 
@@ -679,8 +729,12 @@ export function mtLoopBoardSync(ctx: MtLoopContext): MtLoopBoard {
   const trucks = new Map(
     fleetSync(truckContextFrom(ctx)).map((t) => [t.truckId, t] as const),
   );
+  // ★ The one call that makes four surfaces agree. ★
+  // Not a lookup this module maintains: the Responsibility Engine's own answer,
+  // computed the same way `/work`, Needs You and Home compute theirs.
+  const responsible = await canonicalResponsibleFor(ctx, "mt_loop");
   const cards = loops
-    .map((l) => toCard(l, ctx, workspace!, trucks.get(l.truckId)))
+    .map((l) => toCard(l, ctx, workspace!, trucks.get(l.truckId), responsible.get(l.loopId)))
     .sort(byUrgency);
   const mayMoveWork = workspace!.supportsTeam && ctx.permissions.has("loads:assign");
 
@@ -688,7 +742,9 @@ export function mtLoopBoardSync(ctx: MtLoopContext): MtLoopBoard {
     loops: cards,
     counts: {
       open: cards.length,
-      unassigned: cards.filter((c) => !c.responsibleMembershipId).length,
+      // Loops nobody has ACCEPTED. Every one of them still has a responsible
+      // party; this is the count of hands not yet up.
+      unclaimed: cards.filter((c) => !c.claimed).length,
       mine: cards.filter((c) => c.isMine).length,
       blocked: cards.filter((c) => c.status === "blocked").length,
       paused: cards.filter((c) => c.status === "paused").length,
@@ -789,7 +845,7 @@ export function recordFinalizationOnLoop(
 
   // A cycle that was merely covered is now covered on a confirmed load. It does
   // not jump to `running` — the driver has not started rolling.
-  if (loop.status === "working" || loop.status === "unassigned") {
+  if (loop.status === "working" || loop.status === "unclaimed") {
     setStatus(loop, "covered", "load_booked", {
       actorMembershipId: opts.actorMembershipId,
       actorName: opts.actorName,
@@ -829,7 +885,7 @@ function actableLoop(loopId: string, ctx: MtLoopContext): MtLoop | undefined {
 function mayActOn(loop: MtLoop, ctx: MtLoopContext): boolean {
   const workspace = workspaceOf(ctx);
   if (!workspace) return false;
-  if (loop.responsibleMembershipId === ctx.membershipId) return true;
+  if (loop.claimedByMembershipId === ctx.membershipId) return true;
   return workspace.supportsTeam && ctx.permissions.has("loads:assign");
 }
 
@@ -849,13 +905,13 @@ export async function claimLoop(loopId: string, ctx: MtLoopContext): Promise<MtL
   const loop = actableLoop(loopId, ctx);
   if (!loop) return { status: "not_found" };
 
-  if (loop.responsibleMembershipId) {
-    return loop.responsibleMembershipId === ctx.membershipId
+  if (loop.claimedByMembershipId) {
+    return loop.claimedByMembershipId === ctx.membershipId
       ? { status: "ok", loop }
-      : { status: "already_held", responsibleName: loop.responsibleName ?? "Somebody else" };
+      : { status: "already_held", responsibleName: loop.claimedByName ?? "Somebody else" };
   }
 
-  takeResponsibility(loop, ctx.membershipId, ctx.actor.displayNameSnapshot, {
+  recordClaim(loop, ctx.membershipId, ctx.actor.displayNameSnapshot, {
     byMembershipId: ctx.membershipId,
     byName: ctx.actor.displayNameSnapshot,
     action: "claimed",
@@ -886,15 +942,15 @@ export async function assignLoop(
   const loop = actableLoop(loopId, ctx);
   if (!loop) return { status: "not_found" };
 
-  const wasHeld = Boolean(loop.responsibleMembershipId);
-  if (loop.responsibleMembershipId === membershipId) return { status: "ok", loop };
+  const wasHeld = Boolean(loop.claimedByMembershipId);
+  if (loop.claimedByMembershipId === membershipId) return { status: "ok", loop };
 
-  takeResponsibility(loop, membershipId, assigneeName, {
+  recordClaim(loop, membershipId, assigneeName, {
     byMembershipId: ctx.membershipId,
     byName: ctx.actor.displayNameSnapshot,
     action: wasHeld ? "reassigned" : "assigned",
     note: wasHeld
-      ? `Moved from ${loop.responsibleName ?? "nobody"} to ${assigneeName}.`
+      ? `Moved from ${loop.claimedByName ?? "nobody"} to ${assigneeName}.`
       : `Given to ${assigneeName}.`,
   });
   /* ---- end critical section ---- */
@@ -908,7 +964,7 @@ export async function releaseLoop(loopId: string, ctx: MtLoopContext): Promise<M
   if (!loop) return { status: "not_found" };
   if (!mayActOn(loop, ctx)) return { status: "not_permitted" };
 
-  takeResponsibility(loop, "", "", {
+  recordClaim(loop, "", "", {
     byMembershipId: ctx.membershipId,
     byName: ctx.actor.displayNameSnapshot,
     action: "released",
@@ -957,7 +1013,7 @@ export async function resumeLoop(loopId: string, ctx: MtLoopContext): Promise<Mt
 
   loop.pauseReason = undefined;
   loop.pausedUntil = undefined;
-  setStatus(loop, loop.responsibleMembershipId ? "working" : "unassigned", "resumed", {
+  setStatus(loop, loop.claimedByMembershipId ? "working" : "unclaimed", "resumed", {
     actorMembershipId: ctx.membershipId,
     actorName: ctx.actor.displayNameSnapshot,
   });
@@ -1005,7 +1061,7 @@ export async function unblockLoop(loopId: string, ctx: MtLoopContext): Promise<M
 
   loop.blockReason = undefined;
   loop.blockOrigin = undefined;
-  setStatus(loop, loop.responsibleMembershipId ? "working" : "unassigned", "unblocked", {
+  setStatus(loop, loop.claimedByMembershipId ? "working" : "unclaimed", "unblocked", {
     actorMembershipId: ctx.membershipId,
     actorName: ctx.actor.displayNameSnapshot,
   });

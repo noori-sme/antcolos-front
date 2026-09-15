@@ -10,7 +10,7 @@ import {
 } from "@/lib/responsibility";
 import { resolveWorkspace } from "@/lib/workspace/resolve";
 import type {
-  ApprovalState, AssignmentState, EligibilityVerdict, EscalationPolicy,
+  ApprovalState, AssignmentSource, AssignmentState, EligibilityVerdict, EscalationPolicy,
   FleetProfile, Membership,
   MtLoop, NeedsYouItem, Organization, PermissionKey, ResponsibilityAbilities,
   ResponsibilityAssignment, ResponsibilityBoard, ResponsibilityContext,
@@ -81,7 +81,34 @@ interface StoredRecord {
   workKind: ResponsibilityWorkKind;
   workId: string;
   /** A person's explicit choice of who does it. */
-  override?: { membershipId: string; source: "manual" | "escalation" | "takeover" | "fallback"; note: string };
+  override?: {
+    membershipId: string;
+    source: "manual" | "escalation" | "takeover" | "fallback";
+    note: string;
+    /**
+     * True when this came from somebody accepting the work themselves — an MT
+     * Loop claim, a Needs You item taken — rather than from an authorized
+     * person handing it out.
+     *
+     * The two are treated differently on purpose. A manager may deliberately
+     * give work to somebody the default routing would have passed over, and
+     * that choice stands. Accepting work yourself is not a licence to keep it
+     * after you can no longer do it, so a claim is re-checked on every read and
+     * released the moment the claimer stops being eligible.
+     */
+    fromClaim?: boolean;
+    /**
+     * When the choice was made.
+     *
+     * Load-bearing, not bookkeeping. A person's acceptance in MT Loop or Needs
+     * You and a manager's delegation here are both explicit choices, and the
+     * only honest way to settle which one applies is which came last. Without
+     * this, a dispatcher who pressed Claim after a delegation would be told
+     * they had the loop while every other surface still named somebody else —
+     * the same disagreement in a new place.
+     */
+    at: string;
+  };
   /** A person's explicit choice of who answers for it. */
   accountableOverride?: { membershipId: string; note: string };
   watchers: string[];
@@ -370,6 +397,119 @@ function rerouteIfHolderGone(
     membershipId: next.membershipId,
     source: "fallback",
     note: why,
+    at: nowIso(),
+  };
+}
+
+/**
+ * Somebody accepted this work in the module that owns it. Make that the
+ * canonical answer.
+ *
+ * ★ THE FIX FOR THE MT LOOP SEAM ★
+ * MT Loop and Needs You both let a person say "I have this". Before this
+ * existed, that acceptance lived only in the module: the MT Loop board read it
+ * and called that person "responsible", the engine never saw it and routed the
+ * loop somewhere else, and two screens gave two answers to one question.
+ *
+ * Now there is one store for "a person chose" — `record.override` — and this
+ * is how a module's acceptance gets into it. Three rules keep it honest:
+ *
+ *   • An EXISTING override always wins. It is a later, deliberate decision by
+ *     somebody with the authority to move work (or by the engine's own
+ *     fallback), and a stale claim must not undo it. Claiming afresh writes
+ *     the override directly — see `setWorkOverride` — so a new claim does win.
+ *   • The claimer must still be ELIGIBLE. Somebody who has lost the
+ *     permission, left the workspace, or whose relationship has ended does not
+ *     become responsible because a field still has their name in it. The work
+ *     routes on, and nothing is deleted from either record.
+ *   • It is recorded as `manual`, because that is what it is: a person chose.
+ */
+function canStillDoIt(
+  candidate: ResponsibilityCandidate | undefined,
+  context: ResponsibilityContext,
+): candidate is ResponsibilityCandidate {
+  if (!candidate || candidate.status !== "active") return false;
+  return context.requires.every((k) => candidate.permissions.has(k));
+}
+
+/**
+ * ★ THE FIX FOR THE MT LOOP SEAM ★
+ *
+ * Which explicit choice of who does this work applies right now — the one
+ * stored here, or the acceptance recorded in the module that holds the work.
+ *
+ * MT Loop and Needs You both let a person say "I have this". MT Loop used to
+ * treat that as its own answer to "who is responsible", render it, and never
+ * tell the engine; the engine routed the same loop elsewhere, and two screens
+ * gave two answers to one question. Now an acceptance is a FACT the module
+ * reports and this function decides what it means. There is one routing engine
+ * and one place that settles precedence, which is here.
+ *
+ * ★ PURE ON PURPOSE ★
+ * It returns a value and writes nothing. That is not tidiness: reading the
+ * board used to be able to write overrides, and because the workload tie-break
+ * reads overrides, the second read of an unchanged workspace gave a different
+ * answer from the first — fifteen items moved between two reads that asked the
+ * same question. A derivation that mutates the thing it derives from cannot be
+ * stable, and four surfaces agreeing is worth nothing if the answer changes
+ * each time somebody looks.
+ *
+ * Four rules, in order:
+ *
+ *   1. No acceptance, or one with no time on it → whatever is stored stands.
+ *   2. The later choice wins. A delegation made here and an acceptance made in
+ *      MT Loop are both a person choosing; neither outranks the other by
+ *      virtue of which screen it was made on, so the tie-break is time.
+ *   3. The accepter must still be able to do the work. Permission loss,
+ *      suspension, a membership ending and a relationship ending all take
+ *      effect on the next read, with no timer and nothing scheduled. Nothing
+ *      is deleted: the acceptance stays on the module's record, and the engine
+ *      simply stops agreeing that it decides anything.
+ *   4. Accepting what was already yours is not an override. If routing would
+ *      have picked this person anyway, recording "a person chose" would
+ *      replace the real reason — "follows the delegation that gave them this
+ *      carrier" — with something circular, and would outlive the delegation it
+ *      hid.
+ */
+function effectiveOverrideFor(
+  record: StoredRecord,
+  context: ResponsibilityContext,
+  candidates: readonly ResponsibilityCandidate[],
+  fleetProfile: FleetProfile,
+  workloads: ReadonlyMap<string, CandidateWorkload>,
+): StoredRecord["override"] {
+  const stored = record.override;
+  const claimed = context.claimedByMembershipId;
+  const claimedAt = context.claimedAt;
+
+  if (!claimed || !claimedAt || context.resolvedAt) return stored;          // 1
+
+  const supersedes = !stored
+    || stored.membershipId === claimed
+    || Date.parse(claimedAt) > Date.parse(stored.at);
+  if (!supersedes) return stored;                                           // 2
+
+  const claimer = candidates.find((c) => c.membershipId === claimed);
+  if (!canStillDoIt(claimer, context)) {                                    // 3
+    // If what is stored IS this acceptance, it goes with it and the work is
+    // routed again. A choice somebody else made stands.
+    return stored?.fromClaim ? undefined : stored;
+  }
+
+  if (stored?.membershipId === claimed && !stored.fromClaim) return stored;
+
+  const wouldBe = routeResponsibility({                                     // 4
+    context, members: candidates, fleetProfile, workloads,
+    accountableOverride: record.accountableOverride,
+  }).responsible.membershipId;
+  if (wouldBe === claimed) return undefined;
+
+  return {
+    membershipId: claimed,
+    source: "manual",
+    note: `${claimer.displayName} took this on.`,
+    fromClaim: true,
+    at: claimedAt,
   };
 }
 
@@ -405,6 +545,7 @@ function applyPolicyMoves(
     membershipId: next.membershipId,
     source: "escalation",
     note: `Moved by the escalation policy at level ${step.level}.`,
+    at: nowIso(),
   };
   record.timeline = appendTimeline(record.timeline, {
     action: "reassigned",
@@ -528,9 +669,15 @@ function buildAssignment(
 
   rerouteIfHolderGone(record, context, candidates, fleetProfile, workloads);
 
+  // The stored choice, or the module's acceptance where that is the later and
+  // better answer. Derived, never written back — see `effectiveOverrideFor`.
+  const override = effectiveOverrideFor(
+    record, context, candidates, fleetProfile, workloads,
+  );
+
   let routing = routeResponsibility({
     context, members: candidates, fleetProfile, workloads,
-    override: record.override,
+    override,
     accountableOverride: record.accountableOverride,
   });
 
@@ -570,7 +717,7 @@ function buildAssignment(
   )) {
     routing = routeResponsibility({
       context, members: candidates, fleetProfile, workloads,
-      override: record.override,
+      override: record.override ?? override,
       accountableOverride: record.accountableOverride,
     });
     escalations = escalationsFor({
@@ -881,7 +1028,9 @@ export const mockResponsibilityService: ResponsibilityService = {
       membershipId: assignment.accountable.membershipId,
       note: "Kept where it was when the work was delegated.",
     };
-    record.override = { membershipId: target.membershipId, source: "manual", note };
+    record.override = {
+      membershipId: target.membershipId, source: "manual", note, at: nowIso(),
+    };
     mutate(
       record, ctx, "delegated",
       `${note} ${assignment.accountable.displayName} still answers for the result.`,
@@ -902,7 +1051,9 @@ export const mockResponsibilityService: ResponsibilityService = {
 
     // Unlike a delegation, accountability re-derives from wherever the work
     // lands — unless a person has deliberately pinned it.
-    record.override = { membershipId: target.membershipId, source: "manual", note };
+    record.override = {
+      membershipId: target.membershipId, source: "manual", note, at: nowIso(),
+    };
     mutate(record, ctx, "reassigned", note, target);
 
     const next = (await load(ctx, work)).assignment;
@@ -918,7 +1069,9 @@ export const mockResponsibilityService: ResponsibilityService = {
     const me = requireTarget(ctx, ctx.membershipId);
 
     const from = assignment.responsible.displayName;
-    record.override = { membershipId: ctx.membershipId, source: "takeover", note: reason };
+    record.override = {
+      membershipId: ctx.membershipId, source: "takeover", note: reason, at: nowIso(),
+    };
     mutate(record, ctx, "taken_over", `Taken from ${from}. ${reason}`, me);
 
     const next = (await load(ctx, work)).assignment;
@@ -1211,29 +1364,48 @@ export async function personalNeedsYouIds(ctx: ServiceContext): Promise<string[]
 /* -------------------------------------------------------------------------- */
 
 /**
- * Who holds one piece of work, for a module that only needs the name.
+ * ★ THE CANONICAL ANSWER, for a module that has to show it. ★
  *
- * The MT Loop board and the Needs You drawer call this rather than routing
- * again themselves — which is what stops a second routing engine growing inside
- * a feature component.
+ * Who is responsible for every piece of work of one kind in this workspace,
+ * computed by the one routing engine this app has. The MT Loop board reads its
+ * `responsible` line from here, which is what stops MT Loop and Needs You
+ * giving two answers to "who is on this truck" — the failure this replaced.
+ *
+ * It runs the same `assemble` the board runs, so there is no second code path
+ * that could drift: a caller gets exactly what `/work` would show. It is
+ * deliberately NOT queue-filtered — queue visibility is about whose personal
+ * list something belongs on, and the MT Loop board applies its own dispatch-
+ * organization scope, which is the correct boundary for a board of trucks.
  */
-export function responsibleForWork(
+export async function canonicalHolders(
   ctx: ServiceContext,
-  work: WorkKey,
-): ResponsibilityHolder | undefined {
-  const record = org(ctx.organizationId).records.get(keyFor(work.kind, work.id));
-  if (!record?.override) return undefined;
-  const member = memberIn(ctx.organizationId, record.override.membershipId);
-  if (!member) return undefined;
-  return {
-    membershipId: member.membershipId,
-    displayName: member.displayName,
-    title: member.title,
-    role: "responsible",
-    source: record.override.source,
-    reason: record.override.note,
-    available: member.takesWork,
-  };
+  kind: ResponsibilityWorkKind,
+): Promise<Map<string, CanonicalHolder>> {
+  const out = new Map<string, CanonicalHolder>();
+  const { assignments } = await assemble(ctx);
+  for (const a of assignments) {
+    if (a.work.kind !== kind) continue;
+    out.set(a.work.id, {
+      membershipId: a.responsible.membershipId,
+      displayName: a.responsible.displayName,
+      source: a.responsible.source,
+      assignmentState: a.assignmentState,
+      noEligibleAssignee: a.noEligibleAssignee,
+      accountableMembershipId: a.accountable.membershipId,
+      accountableName: a.accountable.displayName,
+    });
+  }
+  return out;
+}
+
+export interface CanonicalHolder {
+  membershipId: string;
+  displayName: string;
+  source: AssignmentSource;
+  assignmentState: AssignmentState;
+  noEligibleAssignee: boolean;
+  accountableMembershipId: string;
+  accountableName: string;
 }
 
 /** The workspace's Owner, for a caller that needs the fallback by name. */
