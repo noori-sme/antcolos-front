@@ -1,6 +1,7 @@
 import type {
-  ComplianceFilters, FleetAssetKind, FleetEquipmentFilters, NeedsYouFilters,
-  SettlementFilters, SettlementSort,
+  AuditEventFilters, ComplianceFilters, FleetAssetKind, FleetEquipmentFilters,
+  NeedsYouFilters, RiskCaseFilters, RiskSignalFilters, SettlementFilters,
+  SettlementSort,
 } from "@/types";
 
 /**
@@ -55,6 +56,21 @@ export const queryKeys = {
     ref: unknown,
   ) =>
     [...orgKey(organizationId), "reports", membershipId, reportId, filters, "drilldown", ref] as const,
+  contractsDashboard: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "contracts", "dashboard", membershipId] as const,
+  contracts: (organizationId: string, membershipId: string, filters?: unknown) =>
+    [...orgKey(organizationId), "contracts", "list", membershipId, filters ?? null] as const,
+  contract: (organizationId: string, membershipId: string, contractId: string) =>
+    [...orgKey(organizationId), "contracts", "one", membershipId, contractId] as const,
+  contractVersion: (
+    organizationId: string,
+    membershipId: string,
+    contractId: string,
+    contractVersionId: string,
+  ) =>
+    [...orgKey(organizationId), "contracts", "version", membershipId, contractId, contractVersionId] as const,
+  contractTransitionRequests: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "contracts", "transitions", membershipId] as const,
   fleetDashboard: (organizationId: string, membershipId: string) =>
     [...orgKey(organizationId), "fleet", "dashboard", membershipId] as const,
   fleetEquipment: (
@@ -128,4 +144,47 @@ export const complianceKeys = {
     [...orgKey(organizationId), "compliance", "snapshots", subjectId ?? null] as const,
   extensions: (organizationId: string) =>
     [...orgKey(organizationId), "compliance", "extensions"] as const,
+} as const;
+
+/**
+ * Audit and risk keys carry the MEMBERSHIP as well as the organization.
+ *
+ * Two people in one organization legitimately see different ledgers: the feeds
+ * that contribute to it are gated on the reader's own permissions, so a
+ * compliance reviewer and an accountant see overlapping but different sets. One
+ * served from the other's cache would be a disclosure.
+ */
+export const auditKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "audit"] as const,
+  list: (organizationId: string, membershipId: string, filters: AuditEventFilters) =>
+    [...orgKey(organizationId), "audit", membershipId, "list", filters] as const,
+  event: (organizationId: string, membershipId: string, eventId: string) =>
+    [...orgKey(organizationId), "audit", membershipId, "event", eventId] as const,
+  forEntity: (organizationId: string, membershipId: string, entityId: string) =>
+    [...orgKey(organizationId), "audit", membershipId, "entity", entityId] as const,
+  forActor: (organizationId: string, membershipId: string, actorMembershipId: string) =>
+    [...orgKey(organizationId), "audit", membershipId, "actor", actorMembershipId] as const,
+  sources: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "audit", membershipId, "sources"] as const,
+  exportView: (organizationId: string, membershipId: string, filters: AuditEventFilters) =>
+    [...orgKey(organizationId), "audit", membershipId, "export", filters] as const,
+} as const;
+
+export const riskKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "risk"] as const,
+  dashboard: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "risk", membershipId, "dashboard"] as const,
+  rules: (organizationId: string) => [...orgKey(organizationId), "risk", "rules"] as const,
+  signals: (organizationId: string, membershipId: string, filters: RiskSignalFilters) =>
+    [...orgKey(organizationId), "risk", membershipId, "signals", filters] as const,
+  signal: (organizationId: string, membershipId: string, signalId: string) =>
+    [...orgKey(organizationId), "risk", membershipId, "signal", signalId] as const,
+  cases: (organizationId: string, membershipId: string, filters: RiskCaseFilters) =>
+    [...orgKey(organizationId), "risk", membershipId, "cases", filters] as const,
+  case: (organizationId: string, membershipId: string, caseId: string) =>
+    [...orgKey(organizationId), "risk", membershipId, "case", caseId] as const,
+  assignees: (organizationId: string, membershipId: string, caseId: string) =>
+    [...orgKey(organizationId), "risk", membershipId, "assignees", caseId] as const,
+  extensions: (organizationId: string) =>
+    [...orgKey(organizationId), "risk", "extensions"] as const,
 } as const;

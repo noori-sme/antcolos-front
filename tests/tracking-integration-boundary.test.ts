@@ -11,8 +11,13 @@ import {
 import { appendReading } from "@/lib/api/mock/fleet-telemetry";
 import { TRUCK_IDS } from "@/lib/api/mock/truck-registry";
 import { mockStore } from "@/lib/api/mock/store";
-import { dispatchTrackingBoardSync } from "@/lib/api/mock/tracking-board";
-import { NORTHLINE_OWNER, resetWorld, trackingContextFor } from "./tracking-harness";
+import { dispatchTrackingBoardSync, publicTracking } from "@/lib/api/mock/tracking-board";
+import {
+  addTrackingRecipient, openTrackingSession, revokeTrackingLink, trackingAudit,
+  trackingAuditForLedger,
+} from "@/lib/api/mock/tracking-registry";
+import { readAllFeeds } from "@/lib/api/mock/audit-sources";
+import { NORTHLINE_OWNER, resetWorld, trackingContextFor, without } from "./tracking-harness";
 
 /**
  * The integration boundary.
@@ -146,5 +151,57 @@ describe("it reads the existing layers rather than copying them", () => {
     assert.ok(board.sources.every((s) => s.status === "not_connected"));
     const tracked = board.rows.find((r) => r.lastSignalLabel);
     assert.match(tracked!.lastSignalLabel!, /mock adapter/i);
+  });
+});
+
+describe("the tracking history reaches the one audit ledger", () => {
+  beforeEach(resetWorld);
+
+  it("projects tracking lines rather than keeping a second audit log", async () => {
+    const ctx = trackingContextFor(NORTHLINE_OWNER);
+    const load = mockStore.org("org_northline").loads.find((l) => l.reference === "NL-24817")!;
+    const session = await openTrackingSession(ctx, { loadId: load.id });
+    await addTrackingRecipient(ctx, {
+      sessionId: session.id, audience: "broker", partyName: "Apex Logistics",
+    });
+
+    const feeds = await readAllFeeds(ctx);
+    const dispatch = feeds.find((f) => f.module === "dispatch");
+    assert.ok(dispatch, "the ledger reads a dispatch feed");
+
+    const mine = dispatch!.records.filter((r) => r.action === "dispatch.tracking_changed");
+    assert.ok(mine.length >= 2, "opening tracking and issuing a link are both projected");
+    // The tracking module keeps its own entry ids; the ledger does not mint new ones.
+    const ids = new Set(trackingAudit(ctx).map((e) => e.id));
+    for (const record of mine) assert.ok(ids.has(record.entryId));
+    // And the module's own action key survives verbatim.
+    assert.ok(mine.some((r) => r.sourceAction === "link_issued"));
+  });
+
+  it("projects a refused link access as a denial", async () => {
+    const ctx = trackingContextFor(NORTHLINE_OWNER);
+    const load = mockStore.org("org_northline").loads.find((l) => l.reference === "NL-24817")!;
+    const session = await openTrackingSession(ctx, { loadId: load.id });
+    const recipient = await addTrackingRecipient(ctx, {
+      sessionId: session.id, audience: "broker", partyName: "Apex Logistics",
+    });
+    await revokeTrackingLink(ctx, session.id, recipient.id, "Withdrawn.");
+    publicTracking(recipient.link.token);
+
+    const feeds = await readAllFeeds(ctx);
+    const denied = feeds
+      .find((f) => f.module === "dispatch")!
+      .records.find((r) => r.sourceAction === "link_access_refused");
+    assert.ok(denied);
+    assert.equal(denied!.outcome, "denied");
+  });
+
+  it("gives the ledger nothing without tracking:view", async () => {
+    const ctx = trackingContextFor(NORTHLINE_OWNER);
+    const load = mockStore.org("org_northline").loads.find((l) => l.reference === "NL-24817")!;
+    await openTrackingSession(ctx, { loadId: load.id });
+
+    const limited = without(ctx, "tracking:view");
+    assert.equal(trackingAuditForLedger(limited).length, 0);
   });
 });

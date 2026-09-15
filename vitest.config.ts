@@ -13,7 +13,13 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts", "tests/fleet/**/*.test.ts", "tests/compliance/**/*.test.ts"],
+    include: [
+      "src/**/*.test.ts",
+      "tests/fleet/**/*.test.ts",
+      "tests/compliance/**/*.test.ts",
+      "tests/contracts/**/*.test.ts",
+      "tests/audit/**/*.test.ts",
+    ],
     restoreMocks: true,
   },
 });

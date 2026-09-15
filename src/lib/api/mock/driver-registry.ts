@@ -425,6 +425,24 @@ export function driverDocumentProblems(view: DriverView): Array<{
 }
 
 /** Every driver this workspace may see, for a roster or a picker. */
+/**
+ * One carrier's copy of a driver's paperwork, with NO access check.
+ *
+ * The same shape of read as `truckDocumentRowsUnscoped`, and for the same
+ * reason: callers that are already scoping by something else need the rows
+ * without a context. Contract requirements use it — a requirement's status is a
+ * fact about the record, so it must not come out differently for two people
+ * looking at the same agreement. Anything serving a caller directly wants
+ * `driverViewSync`, which takes a context and gates on it.
+ */
+export function driverDocumentRowsUnscoped(
+  driverProfileId: string,
+  organizationId: string,
+): DriverDocument[] {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  return (record?.documents[organizationId] ?? []).map((d) => ({ ...d }));
+}
+
 export function driversForWorkspaceSync(ctx: TruckContext): DriverView[] {
   if (!DRIVER_PERMS.every((p) => ctx.permissions.has(p))) return [];
   const out: DriverView[] = [];

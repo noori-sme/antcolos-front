@@ -938,6 +938,37 @@ function describeVisibility(v: TrackingVisibility): string {
     : `Shares: ${on.join(", ")}. Rates, driver details, hours of service, internal notes and any other load are never shared.`;
 }
 
+/**
+ * The tracking history, for the shared audit ledger to PROJECT.
+ *
+ * The ledger does not own this history and does not write to it — the tracking
+ * module remains the authority on what it says, keeps its own entry ids, and
+ * nothing here is edited or removed. This is a read, gated on the same
+ * permission the tracking screens are, so projecting into the ledger cannot
+ * show somebody a line they could not already see.
+ *
+ * Deliberately takes a plain ServiceContext rather than a TrackingContext: the
+ * ledger's feeds are built from one, and the workspace-shape check that
+ * `mayTrack` also applies is about which SCREENS exist, not which records a
+ * person may read.
+ */
+export function trackingAuditForLedger(
+  ctx: Pick<ServiceContext, "organizationId" | "permissions" | "scope">,
+): TrackingAuditEntry[] {
+  if (!ctx.permissions.has("tracking:view")) return [];
+  if (ctx.scope.loads === "assigned") return [];
+  return [...(db().audit.get(ctx.organizationId) ?? [])];
+}
+
+/** The load a session is about, so a projected line can point at the record. */
+export function sessionLoadRef(
+  organizationId: string,
+  sessionId: string,
+): { loadId: string; loadReference: string } | undefined {
+  const session = sessionBucket(organizationId).find((s) => s.id === sessionId);
+  return session ? { loadId: session.loadId, loadReference: session.loadReference } : undefined;
+}
+
 /** Every session in this workspace, reconciled. Newest first. */
 export function sessionsForWorkspace(ctx: TrackingContext): TrackingSession[] {
   if (!mayTrack(ctx)) return [];
