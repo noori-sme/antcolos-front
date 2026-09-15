@@ -48,7 +48,12 @@ export function MyWorkScreen() {
   const [selected, setSelected] = useState<ResponsibilityAssignment | null>(null);
 
   const queues = useMemo(() => board.data?.queues ?? [], [board.data]);
-  const active = queues.find((q) => q.queue === queue) ?? queues[0];
+  // Until somebody picks a tab, land on the first queue that actually has
+  // something in it. Opening on an empty "My MT Loop" while five items wait one
+  // tab along is a screen that makes a person look for their own work.
+  const active = queue
+    ? (queues.find((q) => q.queue === queue) ?? queues[0])
+    : (queues.find((q) => q.count > 0) ?? queues[0]);
 
   if (board.isPending) {
     return (
@@ -74,12 +79,20 @@ export function MyWorkScreen() {
 
   const data = board.data!;
   const counts = data.counts;
+  const hasTeam = queues.some((q) => q.queue === "team");
 
   return (
     <div className="space-y-section">
       <PageHeader
         title="My work"
-        description="What is yours, what your team is holding, and anything that has slipped."
+        description={
+          // A driver, and a workspace of one, have no team. Promising them one
+          // in the subtitle is the same mistake as rendering an empty team
+          // queue: it describes somebody else's product.
+          hasTeam
+            ? "What is yours, what your team is holding, and anything that has slipped."
+            : "What is yours, and anything that has slipped."
+        }
         actions={
           <div className="flex items-center gap-2">
             {counts.escalated > 0 ? (
