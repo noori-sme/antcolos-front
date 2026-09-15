@@ -1,6 +1,6 @@
 import type {
   ActorRef, Assignment, BookingBlockKind, BookingRecord, ConsentRequirement,
-  Load, LoadDocumentRequirement, LoadEvent, Negotiation, Stop,
+  Load, LoadDocumentRequirement, Negotiation, Stop,
 } from "@/types";
 import { authorityAllowsDispatch } from "@/types";
 import { listingById } from "./listing-registry";
@@ -13,6 +13,7 @@ import {
 import { closeReviewsForListing, reviewForMatch } from "./driver-review";
 import { draftsFor, supersedeDraftsForListing } from "./outreach-drafts";
 import { mockStore } from "./store";
+import { createBookedLoad, recordLoadConsent } from "./load-commands";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -338,14 +339,25 @@ export async function bookNegotiation(
     consent: { status: consent, respondedAt: consent === "accepted" ? at : undefined },
   };
 
-  const load: Load = {
-    id: loadId,
+  /*
+   * The Load is created through the Loads module's own command, not by pushing a
+   * record onto its store. Booking used to build the `Load` and its events here
+   * and `unshift` both, which meant the canonical record had two writers and no
+   * idempotency: a double-tapped Book made two loads.
+   *
+   * The command derives the status from the consent rule, appends
+   * `load.created` and `assignment.created` itself, and is keyed on the
+   * negotiation so a retry returns the load it already made.
+   */
+  const load = createBookedLoad({
     organizationId: ctx.organizationId,
+    actor,
+    loadId,
+    idempotencyKey: `booking:${negotiation.negotiationId}`,
     reference,
-    status: consent === "pending" ? "offered" : "planned",
     customer: {
       // Carried exactly as the market gave it. NOT a profile reference — the
-      // profile system owns matching, and guessing here makes duplicates.
+      // Directory owns matching, and guessing here makes duplicates.
       id: `unlinked:${listing.broker.name}`,
       name: listing.broker.name,
       kind: "broker",
@@ -369,39 +381,10 @@ export async function bookNegotiation(
       deadheadMiles: 0,
       ratePerMileCents: Math.round(agreed / Math.max(listing.loadedMiles, 1)),
     },
-    createdAt: at,
-    createdBy: actor,
-    updatedAt: at,
-  };
-
-  const events: LoadEvent[] = [{
-    id: rowId("evt"),
-    organizationId: ctx.organizationId,
-    loadId,
-    kind: "load.created",
-    occurredAt: at,
-    recordedAt: at,
-    actor,
-    source: "web",
-    payload: { note: `Booked from the Opportunity Inbox at ${money(agreed)} with ${listing.broker.name}.` },
-  }, {
-    id: rowId("evt"),
-    organizationId: ctx.organizationId,
-    loadId,
-    kind: "assignment.created",
-    occurredAt: at,
-    recordedAt: at,
-    actor,
-    source: "web",
-    payload: {
-      note: consent === "pending"
-        ? `Unit ${loop.truckUnit} offered to ${loop.driverName}. ${loop.carrierName} requires the driver to accept.`
-        : `Unit ${loop.truckUnit}${loop.driverName ? ` with ${loop.driverName}` : ""}.`,
-    },
-  }];
-
-  org.loads.unshift(load);
-  org.events.unshift(...events);
+    consent,
+    note: `Booked from the Opportunity Inbox at ${money(agreed)} with ${listing.broker.name}. Unit ${loop.truckUnit}${loop.driverName ? ` with ${loop.driverName}` : ""}${consent === "pending" ? `, offered to ${loop.driverName} because ${loop.carrierName} requires the driver to accept` : ""}.`,
+    at,
+  });
 
   // Stand down everything else about this listing, in one go.
   const closeout = bookAndStandDown(negotiation.matchId, ctx, ctx.actor.displayNameSnapshot);
@@ -500,33 +483,24 @@ export async function recordDriverConsent(
   booking.consent = answer;
   booking.consentAnsweredAt = at;
 
-  const org = mockStore.org(ctx.organizationId);
-  const load = org.loads.find((l) => l.id === booking.loadId);
-  if (load?.assignment) {
-    load.assignment.consent = { status: answer, respondedAt: at };
-    load.status = answer === "accepted" ? "assigned" : "offered";
-    load.updatedAt = at;
-  }
-  org.events.unshift({
-    id: rowId("evt"),
+  // Through the Loads command again: the answer moves the derived status AND
+  // appends the event that justifies it, in one place, idempotently.
+  recordLoadConsent({
     organizationId: ctx.organizationId,
-    loadId: booking.loadId,
-    kind: answer === "accepted" ? "load.accepted" : "load.declined",
-    occurredAt: at,
-    recordedAt: at,
     actor: {
       userId: ctx.actor.userId,
       membershipId: ctx.membershipId,
       displayNameSnapshot: ctx.actor.displayNameSnapshot,
       source: "web",
     },
-    source: "web",
-    payload: {
-      note: note?.trim()
-        || (answer === "accepted"
-          ? `${booking.driverName ?? "The driver"} accepted ${booking.loadReference}.`
-          : `${booking.driverName ?? "The driver"} declined ${booking.loadReference}.`),
-    },
+    idempotencyKey: `booking-consent:${booking.bookingId}`,
+    loadId: booking.loadId,
+    answer,
+    note: note?.trim()
+      || (answer === "accepted"
+        ? `${booking.driverName ?? "The driver"} accepted ${booking.loadReference}.`
+        : `${booking.driverName ?? "The driver"} declined ${booking.loadReference}.`),
+    at,
   });
   return { status: "ok", booking };
 }
