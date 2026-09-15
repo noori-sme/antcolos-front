@@ -121,7 +121,15 @@ export type NeedsYouCategory =
   /** Notice was given and the closeout is not finished. */
   | "contract_termination_unresolved"
   /** A draft was sent for review and nobody has read it. */
-  | "contract_review_waiting";
+  | "contract_review_waiting"
+
+  /* ---- Audit & Risk. Derived from open risk cases, never seeded. ---- */
+  /** A high-severity risk case somebody has been made responsible for. */
+  | "risk_case_assigned"
+  /** A critical risk case. These never wait on a queue being tidied. */
+  | "risk_case_critical"
+  /** An open risk case whose due date has passed. */
+  | "risk_case_overdue";
 
 export type NeedsYouStatus = "open" | "snoozed" | "resolved" | "escalated";
 
@@ -166,7 +174,9 @@ export type NeedsYouEntityKind =
   /** One agreement. Never the relationship it papers. */
   | "contract"
   /** One immutable version of one agreement. */
-  | "contract_version";
+  | "contract_version"
+  /** One investigation, opened off one or more risk signals. */
+  | "risk_case";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -227,7 +237,11 @@ export type NeedsYouActionKind =
   /** Produce whatever an agreement is asking for. */
   | "satisfy_requirement"
   /** Work through the closeout steps of a termination. */
-  | "complete_termination";
+  | "complete_termination"
+
+  /* ---- Audit & Risk ---- */
+  /** Open the case and work it. The queue is never where a case is closed. */
+  | "investigate_risk";
 
 export interface NeedsYouRecommendedAction {
   kind: NeedsYouActionKind;
@@ -364,6 +378,9 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   contract_requirement_unmet: "Contract requirement outstanding",
   contract_termination_unresolved: "Termination unfinished",
   contract_review_waiting: "Contract waiting for review",
+  risk_case_assigned: "Risk case assigned to you",
+  risk_case_critical: "Critical risk case",
+  risk_case_overdue: "Risk case overdue",
 };
 
 /**

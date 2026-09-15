@@ -515,6 +515,7 @@ src/
   features/             home, needs-you, loads, fleet, trailers, insurance
   features/             home, needs-you, loads, directory, driver-workflow
   features/             home, needs-you, loads, directory, documents
+  features/             home, needs-you, audit (ledger, signals, cases)
   lib/
     api/
       contracts/        ★ typed service interfaces — the backend seam
@@ -532,6 +533,10 @@ src/
                           with labelled, replaceable mock adapters
     documents/          ★ type catalog, requirement sets, status derivation
     permissions/        ★ catalog, can(), templates, effective, scope, routes
+    audit/              ★ the ONE ledger's vocabulary: actions, sources,
+                          correlation, the redaction boundary, module feeds
+    risk/               ★ mock rules, pure evaluation, case state machine,
+                          separation of duties, extension points
     maintenance/        trigger evaluation, labels, integration extension points
     session/            ★ permanent User, Membership[], active membership
     settlements/        pure pay engine: money, agreements, status, breakdown
@@ -823,6 +828,105 @@ lists them all as *Not connected* with what happens instead.
 The module builds no second Document Center, no negotiation workflow, no legal
 advice, no court workflow and no payment enforcement.
 
+## The Audit & Risk Foundation
+
+There is **one** audit log. Not one per module — one, for the organization.
+
+Every module already kept a history of its own: a settlement's audit trail, an
+invoice's versions, the fuel ledger, a compliance requirement's timeline, a
+load's event stream. Those stay exactly where they are and remain the canonical
+record of their own module. What this adds is the single place an owner, a
+safety manager or an auditor can ask *who did what, across everything, and
+when* — built by **projecting** those histories, never by copying or replacing
+them.
+
+Three concepts, kept apart on purpose:
+
+- An **Audit Event** records WHAT HAPPENED. A fact. Never edited, never deleted.
+- A **Risk Signal** says something MIGHT BE A CONCERN. A judgement from a rule,
+  pointing at the events that prompted it. It can be wrong.
+- A **Risk Case** is the INVESTIGATION: who is on it, what they found, what they
+  decided, and how it ended.
+
+Collapsing any two of them destroys the thing that makes an audit trail worth
+having, so the types, the services and the screens keep them separate.
+
+### The ledger
+
+- **Append-only, structurally.** Every field of `AuditEvent` is `readonly`,
+  stored events are frozen, and `AuditService` has no `update`, `delete` or
+  `purge`. A mistake is fixed with `correct()`, which appends a NEW event
+  pointing back at the original. Both stay readable forever.
+- **Nothing is erased by an ending.** Ending a relationship, deleting a current
+  record or changing ownership appends events; it removes none. One intent that
+  touched several modules reads back as one act through its correlation id.
+- **Full attribution.** Actor snapshot, organization, membership, action, entity
+  reference, source, timestamps (when it happened *and* when Antcolos learned of
+  it), correlation id and request id, on every event.
+- **Five sources, and they are not the channel.** `human`, `system`,
+  `integration`, `imported`, `inferred`. An inferred event is labelled as one
+  everywhere it appears, because an inference presented as an observation is how
+  an audit trail starts lying.
+- **Projection is idempotent.** A projected event's id is derived from the
+  producing module plus that module's own entry id, so reading a module's
+  history a hundred times appends it once.
+
+### Redaction is enforced at the service boundary
+
+`sanitizeChanges` runs inside the audit service on the way in — not in the
+caller, not in the screen. Passwords, tokens, secrets, full bank and card
+numbers, government identifiers and document contents never enter a payload, in
+any form: the values are not hashed, not truncated and not reduced to a last
+four. The **fact** that the field changed is kept, which is the part an auditor
+needs. Structured values are refused outright rather than serialized, and text
+too long to be a summary is dropped rather than cut. Export views list what was
+withheld **by field name only**.
+
+### Signals and cases
+
+- **Eight mock rules**, in `src/lib/risk/rules.ts`. Refused permission-sensitive
+  actions; cross-organization attempts; ownership, Operating Authority, signer,
+  banking and payout changes; duplicates and conflicts; relationship, contract,
+  equipment and assignment churn; repeated rejected uploads and corrections; and
+  critical ELD/Maintenance/Insurance/Compliance inconsistencies. Every rule
+  carries `mock: true` in its type and its own `limitations` text, rendered
+  beside every signal it raises.
+- **Signals are derived** from the ledger on every read, with stable ids, so a
+  dismissal stays dismissed and a signal never duplicates itself. Dismissing one
+  records a judgement *beside* the record and changes no event.
+- **Cases** group signals, evidence, decisions and an append-only timeline, with
+  five severities and seven states. Resolved, accepted risk and dismissed are
+  three different endings, counted separately, because they are the three
+  different answers an auditor asks about. Reopening a closed case appends; the
+  original decision and its rationale survive.
+- **Separation of duties is enforced at the seam.** A membership whose own
+  actions a case is about cannot investigate, be assigned, decide or close it —
+  Owner included. They may add a note, so they can explain themselves. Policy,
+  not the person opening the case, decides when independent review is required:
+  every high and critical case.
+- **Real Needs You items.** High and critical cases that somebody has been made
+  responsible for appear in the one shared queue, derived from the case itself.
+  They cannot be snoozed or resolved from the queue — the case is where the work
+  happens — and they stop existing when the case closes.
+
+### What this is NOT
+
+Antcolos records what happened inside Antcolos. This is **not** a SIEM, not a
+legal case-management system, not an automated enforcement engine and not
+tamper-proof legal evidence. There is no fraud model, no risk scoring, no
+identity verification, no external monitoring and no regulatory certification of
+any kind, and no screen implies otherwise. Security monitoring, fraud detection,
+identity verification, legal holds, retention policies and external compliance
+tools are declared as typed extension points in `src/lib/risk/extensions.ts`,
+every one `available: false`, and listed on screen as "not built yet" rather
+than shown as an empty count — because a panel reading "0 fraud alerts" means
+Antcolos looked and found none, and Antcolos has not looked.
+
+Cross-module facts that no single module can express — equipment out of service
+while dispatched, a policy lapsed under a running load — arrive through the
+**centralized mock adapters** in `src/lib/api/mock/audit-sources.ts`, labelled
+`mockSource: true`, which travels with the data onto the screen.
+
 ## For backend integration
 
 `src/lib/api/contracts/` is the seam. Every method takes a `ServiceContext` carrying the organization, membership, permission set, record scope and an actor snapshot — there is no method that accepts a `User`. The mock adapter enforces permissions and organization ownership itself, so a UI bug that renders a forbidden button still fails at the seam.
@@ -870,3 +974,34 @@ Contracts add 201 of their own, split between the pure domain and the seam:
 - **Existing behaviour** (`tests/contracts/existing-behaviour.test.ts`) — the
   canonical-record snapshot guard described above, plus the permission keys and
   routes that worked before still working.
+
+### Audit & Risk
+
+`tests/audit/` covers the rules that make the ledger worth having rather than
+the screens that show it:
+
+- **Append-only** — no update or delete path exists, stored events are frozen, a
+  correction appends and leaves the original byte-identical, and an ending never
+  erases the history that led to it.
+- **Redaction at the boundary** — passwords, tokens, full account numbers and
+  document contents never reach the ledger however a caller passes them, the
+  safe half of the same change survives, and an export lists withheld fields by
+  name only.
+- **Projection** — reading a module's history repeatedly appends each entry
+  once, the module keeps its own record id and action key, and reading it does
+  not change it.
+- **Organization scope** — one organization's events and cases are never served
+  through another, and another organization's event is `NotFoundError` rather
+  than "forbidden", because a 403 would confirm it exists.
+- **Permissions** — reading, exporting, viewing risk, assigning, investigating
+  and closing are six separate powers, and a refusal is recorded even for a
+  membership that may read nothing.
+- **Separation of duties** — the subject of a case may open it and add a note,
+  and is refused investigation, assignment, decisions and closure on it, Owner
+  included.
+- **Signals are not events** — signals point at events rather than restating
+  them, dismissing one leaves every event untouched, and the dismissal stays
+  across re-derivation.
+- **Needs You** — assigned high and critical cases land in the one shared queue,
+  are gated on `risk:view`, cannot be snoozed or resolved from the queue, and
+  stop existing when the case closes.

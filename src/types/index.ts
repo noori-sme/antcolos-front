@@ -38,6 +38,8 @@ export type * from "./communication";
 export type * from "./rate-confirmation";
 export type * from "./driver-review";
 export type * from "./contract";
+export type * from "./audit";
+export type * from "./risk";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
@@ -95,3 +97,8 @@ export {
   CONTRACT_TERMINATION_STATUS_LABEL, CONTRACT_LINK_LABEL, CONTRACT_EVENT_LABEL,
   basisPointsToPercent, usd,
 } from "./contract";
+export {
+  RISK_SEVERITY_ORDER, RISK_SEVERITY_LABEL, RISK_ATTENTION_SEVERITIES,
+  RISK_CASE_OPEN_STATES, RISK_CASE_CLOSED_STATES, RISK_CASE_STATE_LABEL,
+  RISK_SIGNAL_KIND_LABEL, RISK_DECISION_LABEL,
+} from "./risk";
