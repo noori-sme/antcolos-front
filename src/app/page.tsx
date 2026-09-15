@@ -1,6 +1,12 @@
-import { redirect } from "next/navigation";
+import { LandingPage } from "@/features/landing/landing-page";
 
-/** The public landing page lands here later; for now go straight into the product. */
+/**
+ * `/` — the public landing page.
+ *
+ * No session is read and none is required: this is the one route that renders
+ * the same for everybody. Where a visitor goes next — Sign In or Sign Up — and
+ * everything that happens after, is the auth flow's business, untouched.
+ */
 export default function RootPage() {
-  redirect("/home");
+  return <LandingPage />;
 }
