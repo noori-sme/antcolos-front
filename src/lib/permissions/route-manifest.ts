@@ -22,6 +22,10 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/directory/review": ["customers:view", "customers:resolve"],
   "/customers": ["customers:view"],
   "/fleet/trucks/new": ["trucks:create"],
+  // Writing a new agreement is a stronger power than reading the ones that
+  // exist, so the create screen is gated above its parent rather than
+  // inheriting it.
+  "/contracts/new": ["contracts:create"],
   "/fleet/equipment": ["fleet:view"],
   // /eld itself comes from the nav entry. This is the child route, which has
   // no nav item of its own and must not fall through to a weaker parent.

@@ -57,6 +57,7 @@ files rather than a copy. `npm test` runs both.
 | Broker / Shipper / Receiver directory | `/directory`, `/directory/[partyId]`, `/directory/locations/[facilityId]`, `/directory/contacts/[contactId]`, `/directory/review` |
 | Driver decision & trip workflow | `/driver/proposals`, `/driver/proposals/[id]`, `/driver/loads`, `/driver/loads/[loadId]` |
 | Unified Document Center | `/documents`, `/documents/[documentId]` |
+| Contracts & Relationships foundation | `/contracts`, `/contracts/new`, `/contracts/[contractId]`, `/contracts/[contractId]/versions/[versionId]` |
 | ELD & Telematics foundation | `/eld`, `/eld/devices/[deviceId]` |
 
 Everything else is a placeholder screen that says so.
@@ -695,6 +696,7 @@ src/
   features/             home, needs-you, loads, fleet, trailers, insurance
   features/             home, needs-you, loads, directory, driver-workflow
   features/             home, needs-you, loads, directory, documents
+  features/             home, needs-you, audit (ledger, signals, cases)
   lib/
     api/
       contracts/        ★ typed service interfaces — the backend seam
@@ -712,6 +714,10 @@ src/
                           with labelled, replaceable mock adapters
     documents/          ★ type catalog, requirement sets, status derivation
     permissions/        ★ catalog, can(), templates, effective, scope, routes
+    audit/              ★ the ONE ledger's vocabulary: actions, sources,
+                          correlation, the redaction boundary, module feeds
+    risk/               ★ mock rules, pure evaluation, case state machine,
+                          separation of duties, extension points
     maintenance/        trigger evaluation, labels, integration extension points
     session/            ★ permanent User, Membership[], active membership
     settlements/        pure pay engine: money, agreements, status, breakdown
@@ -901,6 +907,207 @@ Try it with the organization switcher: **Northline Freight** (carrier, full modu
 (nothing shared — an honest empty state), **Cascade Haul** (a driver who can report a
 defect on their own truck and nothing more).
 
+## Contracts & Relationships
+
+A **Contract records the terms of a relationship. It is not the relationship.**
+That single sentence is the whole design, and the module is built so it cannot
+quietly stop being true.
+
+Antcolos already decides access in four separate places, and none of them is
+here:
+
+| Concept | What it controls | Owner |
+|---|---|---|
+| `Invitation` | Proposed access to an organization | Access service |
+| `Membership` | A user's access inside an organization | Access service |
+| `CarrierRelationship` | A driver's business scope with a carrier | Driver relationship service |
+| `Truck`/`TrailerCarrierRelationship` | Which carrier may operate an asset | Equipment registries |
+| `Truck`/`TrailerOperatingLease` | Which authority it legally runs under | Equipment registries |
+| `TruckDispatchAccess` | A dispatch organization's access to a truck | Truck registry |
+
+A contract holds a typed **reference** to those records and never becomes one.
+Signing or activating one may **request** a transition —
+`RelationshipTransitionRequest`, whose `applied` field is the literal `false`, so
+a later milestone has to change the type in a review rather than flip a boolean.
+Nothing in `src/lib/api/mock/agreement-registry.ts` imports a function that could
+write to a relationship service.
+
+### Seven records, seven jobs
+
+`Contract` holds identity and parties and **no terms**. `ContractVersion` holds
+one immutable statement of them. `ContractParty`, `AuthorizedSigner`,
+`ContractSignature`, `ContractRequirement` and `ContractRelationshipRef` are each
+their own record, because collapsing any two of them loses an answer somebody
+needs: which version was in force in March, who was entitled to sign it, what it
+asked for, and which relationship it was about.
+
+- **Nine states.** Draft, pending review, awaiting signature, active, expiring,
+  expired, terminated, cancelled, superseded. `terminated` (somebody ended it),
+  `cancelled` (it never took effect) and `superseded` (a newer version replaced
+  it) are deliberately three different things.
+- **`expiring` and `expired` are derived** from the effective dates on every
+  read, against the agreement's **own** reminder window. A contract cannot sit at
+  "active" a month after it ran out because no scheduled job fired.
+- **Signed versions are frozen forever.** `frozen` is set on sign, supersede and
+  void, and there is no `unfreeze`. An amendment is a new version citing the old
+  one, and which term groups changed is **computed from the terms** rather than
+  taken from the caller — so an amendment cannot claim it only moved the renewal
+  clause while rewriting the pay.
+- **Compensation is terms, not arithmetic.** Rules carry their own effective
+  window, and `compensationAt(date)` answers from the version that was in force
+  **then**. Settlements keep owning the money and the frozen snapshot.
+- **Requirements are evaluated, not stored.** A document requirement is checked
+  against the one Document Center; Operating Authority against the carrier
+  profile. Fix the document and the row clears without anybody ticking it off.
+  The only stored answer is a **waiver**, because that is a decision somebody
+  made — and a signature can never be waived.
+
+### What the service layer refuses
+
+Every rule is enforced in `agreement-registry.ts`, not in a screen:
+
+- **No party may sign, approve, amend or terminate for another.** Two gates, in
+  order: the `contracts:sign` permission, then live signer authority for *that*
+  party. A carrier owner holding every permission in the catalog still cannot
+  sign the driver's line. Authority is matched on **membership**, so the same
+  person cannot sign both sides from two workspaces, and one membership may be an
+  authorised signer for at most one party per contract.
+- **Cross-organization isolation.** A contract is only ever read through its own
+  organization; the counterparty keeps its own record of the same agreement.
+- **Financial visibility.** Compensation rules are **omitted from the payload**
+  rather than blanked in the UI, and `compensationVisible` says whether the empty
+  array means "not for you" or "none agreed".
+- **Relationship scope.** The agreement-type catalog decides which relationship
+  kinds a contract may reference. A carrier–driver agreement cannot be pointed at
+  an Operating Authority lease, because one that could would read, on screen, as
+  though signing it authorised a truck.
+
+### Ending a relationship deletes nothing
+
+Giving notice creates a termination record with the closeout checklist the terms
+asked for, and raises transition requests so somebody revokes access **where
+access lives**. It revokes nothing itself. What survives is listed in code
+(`TERMINATION_PRESERVES`) and shown on the screen: the person's account, every
+organization, the permanent truck and trailer records and their UUIDs and
+ownership history, this contract and every version and signature, documents and
+their review history, and every completed load, invoice and settlement.
+
+`tests/contracts/existing-behaviour.test.ts` is the guard: it creates, signs,
+amends and terminates agreements and then asserts a byte-for-byte snapshot of
+every canonical relationship record is unchanged.
+
+### Mock only, and it says so
+
+Signatures are typed names with `mock: true` and a statement — stored with the
+signature — saying no identity was verified, no e-signature service was used,
+nothing was reviewed by a lawyer and nothing was sent anywhere. "Pending review"
+means somebody on your team is reading it. Templates, negotiation, legal review,
+e-signature, insurance verification and payments are declared seams in
+`src/lib/contracts/extension-points.ts`; every adapter throws, and the dashboard
+lists them all as *Not connected* with what happens instead.
+
+The module builds no second Document Center, no negotiation workflow, no legal
+advice, no court workflow and no payment enforcement.
+
+## The Audit & Risk Foundation
+
+There is **one** audit log. Not one per module — one, for the organization.
+
+Every module already kept a history of its own: a settlement's audit trail, an
+invoice's versions, the fuel ledger, a compliance requirement's timeline, a
+load's event stream. Those stay exactly where they are and remain the canonical
+record of their own module. What this adds is the single place an owner, a
+safety manager or an auditor can ask *who did what, across everything, and
+when* — built by **projecting** those histories, never by copying or replacing
+them.
+
+Three concepts, kept apart on purpose:
+
+- An **Audit Event** records WHAT HAPPENED. A fact. Never edited, never deleted.
+- A **Risk Signal** says something MIGHT BE A CONCERN. A judgement from a rule,
+  pointing at the events that prompted it. It can be wrong.
+- A **Risk Case** is the INVESTIGATION: who is on it, what they found, what they
+  decided, and how it ended.
+
+Collapsing any two of them destroys the thing that makes an audit trail worth
+having, so the types, the services and the screens keep them separate.
+
+### The ledger
+
+- **Append-only, structurally.** Every field of `AuditEvent` is `readonly`,
+  stored events are frozen, and `AuditService` has no `update`, `delete` or
+  `purge`. A mistake is fixed with `correct()`, which appends a NEW event
+  pointing back at the original. Both stay readable forever.
+- **Nothing is erased by an ending.** Ending a relationship, deleting a current
+  record or changing ownership appends events; it removes none. One intent that
+  touched several modules reads back as one act through its correlation id.
+- **Full attribution.** Actor snapshot, organization, membership, action, entity
+  reference, source, timestamps (when it happened *and* when Antcolos learned of
+  it), correlation id and request id, on every event.
+- **Five sources, and they are not the channel.** `human`, `system`,
+  `integration`, `imported`, `inferred`. An inferred event is labelled as one
+  everywhere it appears, because an inference presented as an observation is how
+  an audit trail starts lying.
+- **Projection is idempotent.** A projected event's id is derived from the
+  producing module plus that module's own entry id, so reading a module's
+  history a hundred times appends it once.
+
+### Redaction is enforced at the service boundary
+
+`sanitizeChanges` runs inside the audit service on the way in — not in the
+caller, not in the screen. Passwords, tokens, secrets, full bank and card
+numbers, government identifiers and document contents never enter a payload, in
+any form: the values are not hashed, not truncated and not reduced to a last
+four. The **fact** that the field changed is kept, which is the part an auditor
+needs. Structured values are refused outright rather than serialized, and text
+too long to be a summary is dropped rather than cut. Export views list what was
+withheld **by field name only**.
+
+### Signals and cases
+
+- **Eight mock rules**, in `src/lib/risk/rules.ts`. Refused permission-sensitive
+  actions; cross-organization attempts; ownership, Operating Authority, signer,
+  banking and payout changes; duplicates and conflicts; relationship, contract,
+  equipment and assignment churn; repeated rejected uploads and corrections; and
+  critical ELD/Maintenance/Insurance/Compliance inconsistencies. Every rule
+  carries `mock: true` in its type and its own `limitations` text, rendered
+  beside every signal it raises.
+- **Signals are derived** from the ledger on every read, with stable ids, so a
+  dismissal stays dismissed and a signal never duplicates itself. Dismissing one
+  records a judgement *beside* the record and changes no event.
+- **Cases** group signals, evidence, decisions and an append-only timeline, with
+  five severities and seven states. Resolved, accepted risk and dismissed are
+  three different endings, counted separately, because they are the three
+  different answers an auditor asks about. Reopening a closed case appends; the
+  original decision and its rationale survive.
+- **Separation of duties is enforced at the seam.** A membership whose own
+  actions a case is about cannot investigate, be assigned, decide or close it —
+  Owner included. They may add a note, so they can explain themselves. Policy,
+  not the person opening the case, decides when independent review is required:
+  every high and critical case.
+- **Real Needs You items.** High and critical cases that somebody has been made
+  responsible for appear in the one shared queue, derived from the case itself.
+  They cannot be snoozed or resolved from the queue — the case is where the work
+  happens — and they stop existing when the case closes.
+
+### What this is NOT
+
+Antcolos records what happened inside Antcolos. This is **not** a SIEM, not a
+legal case-management system, not an automated enforcement engine and not
+tamper-proof legal evidence. There is no fraud model, no risk scoring, no
+identity verification, no external monitoring and no regulatory certification of
+any kind, and no screen implies otherwise. Security monitoring, fraud detection,
+identity verification, legal holds, retention policies and external compliance
+tools are declared as typed extension points in `src/lib/risk/extensions.ts`,
+every one `available: false`, and listed on screen as "not built yet" rather
+than shown as an empty count — because a panel reading "0 fraud alerts" means
+Antcolos looked and found none, and Antcolos has not looked.
+
+Cross-module facts that no single module can express — equipment out of service
+while dispatched, a policy lapsed under a running load — arrive through the
+**centralized mock adapters** in `src/lib/api/mock/audit-sources.ts`, labelled
+`mockSource: true`, which travels with the data onto the screen.
+
 ## For backend integration
 
 `src/lib/api/contracts/` is the seam. Every method takes a `ServiceContext` carrying the organization, membership, permission set, record scope and an actor snapshot — there is no method that accepts a `User`. The mock adapter enforces permissions and organization ownership itself, so a UI bug that renders a forbidden button still fails at the seam.
@@ -933,6 +1140,52 @@ They cover the service layer, which is where the rules actually live:
 - **Needs You** — invoice items land in the shared queue, are gated on
   `invoices:view`, and snooze and resolve like any other item.
 
+Contracts add 201 of their own, split between the pure domain and the seam:
+
+- **Domain** (`src/lib/contracts/*.test.ts`) — the status machine, version
+  immutability and the deep clone that stops an amendment reaching the version it
+  came from, signer authority, notice periods, renewal maths, compensation
+  validation in whole cents, and the relationship boundary.
+- **Seam** (`src/lib/api/mock/agreements.test.ts`) — permissions, cross-
+  organization isolation, "no party signs for another" from both sides, financial
+  omission, what a point-in-time compensation read answers, the whole lifecycle,
+  and that signing raises a request and changes no relationship.
+- **Needs You** (`agreement-needs-you.test.ts`) — every item is derived, has a
+  stable id, and stops existing when the underlying state is fixed.
+- **Existing behaviour** (`tests/contracts/existing-behaviour.test.ts`) — the
+  canonical-record snapshot guard described above, plus the permission keys and
+  routes that worked before still working.
+
+### Audit & Risk
+
+`tests/audit/` covers the rules that make the ledger worth having rather than
+the screens that show it:
+
+- **Append-only** — no update or delete path exists, stored events are frozen, a
+  correction appends and leaves the original byte-identical, and an ending never
+  erases the history that led to it.
+- **Redaction at the boundary** — passwords, tokens, full account numbers and
+  document contents never reach the ledger however a caller passes them, the
+  safe half of the same change survives, and an export lists withheld fields by
+  name only.
+- **Projection** — reading a module's history repeatedly appends each entry
+  once, the module keeps its own record id and action key, and reading it does
+  not change it.
+- **Organization scope** — one organization's events and cases are never served
+  through another, and another organization's event is `NotFoundError` rather
+  than "forbidden", because a 403 would confirm it exists.
+- **Permissions** — reading, exporting, viewing risk, assigning, investigating
+  and closing are six separate powers, and a refusal is recorded even for a
+  membership that may read nothing.
+- **Separation of duties** — the subject of a case may open it and add a note,
+  and is refused investigation, assignment, decisions and closure on it, Owner
+  included.
+- **Signals are not events** — signals point at events rather than restating
+  them, dismissing one leaves every event untouched, and the dismissal stays
+  across re-derivation.
+- **Needs You** — assigned high and critical cases land in the one shared queue,
+  are gated on `risk:view`, cannot be snoozed or resolved from the queue, and
+  stop existing when the case closes.
 `tests/eld/` covers the telematics foundation the same way:
 
 - **Ingestion** — idempotency across deliveries and *within* one, duplicates,

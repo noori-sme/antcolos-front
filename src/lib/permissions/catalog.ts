@@ -167,6 +167,26 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "claims:manage", label: "Manage claims", description: "Move a claim along, record evidence, third parties and who was responsible.", group: "claims" },
   { key: "claims:financials:view", label: "See claim money", description: "See reserves, repair costs, what the insurer paid and what the deductible cost you.", group: "claims", sensitive: true, financial: true },
 
+  // ---- Contracts and relationships ---------------------------------------
+  // Terms, not access. Every key below decides what somebody may do to a piece
+  // of PAPER; nothing here widens what anybody can do in the product. Granting
+  // `contracts:terminate` does not let somebody revoke a membership, end a
+  // driver relationship or release an authority lease — those need the keys in
+  // the modules that own them, and the contract service only ever asks.
+  { key: "contracts:view", label: "View contracts", description: "See the agreements this organization is party to, their terms, their versions and their signatures.", group: "contracts" },
+  { key: "contracts:create", label: "Create contracts", description: "Start a new agreement for a business relationship and write its first draft.", group: "contracts" },
+  { key: "contracts:edit", label: "Edit contract drafts", description: "Change the terms of a draft. Signed terms can never be edited — they are amended.", group: "contracts" },
+  { key: "contracts:review", label: "Send contracts for review and issue them", description: "Put a draft up for your team to read, send it back, and issue it for signature. Nothing is sent to anybody outside Antcolos.", group: "contracts" },
+  { key: "contracts:sign", label: "Sign contracts", description: "Record a signature on an agreement, for a party you are personally authorised to sign for. You can never sign for the other side.", group: "contracts", sensitive: true },
+  { key: "contracts:amend", label: "Amend signed contracts", description: "Create an amendment to a signed agreement. The signed version, its signatures and its terms stay exactly as they are.", group: "contracts", sensitive: true },
+  { key: "contracts:terminate", label: "Terminate contracts", description: "Give notice that an agreement is ending, and work through the closeout checklist. Access is revoked in the modules that control it, not here.", group: "contracts", sensitive: true },
+  { key: "contracts:cancel", label: "Cancel contract drafts", description: "Abandon an agreement that never took effect. The record and its history are kept.", group: "contracts" },
+  { key: "contracts:signers:manage", label: "Authorise contract signers", description: "Say who may sign for this organization on an agreement, and withdraw that authority. The strongest contract permission there is.", group: "contracts", sensitive: true },
+  { key: "contracts:requirements:waive", label: "Waive contract requirements", description: "Set aside something an agreement asks for, with a reason that goes on the record.", group: "contracts", sensitive: true },
+  { key: "contracts:links:manage", label: "Link records to contracts", description: "Connect an agreement to the relationships, equipment, documents, loads, invoices and settlements it is about. Linking reads those records and never changes them.", group: "contracts" },
+  { key: "contracts:financials:view", label: "See contract money terms", description: "See the compensation rules an agreement sets — percentages, rates, flat amounts and deductions.", group: "contracts", sensitive: true, financial: true },
+  { key: "contracts:export", label: "Download contracts", description: "Export agreements and their terms out of Antcolos as a file.", group: "contracts", sensitive: true },
+
   // ---- Organization members ----------------------------------------------
   { key: "members:view", label: "View members", description: "See everyone who belongs to this organization.", group: "members" },
   { key: "members:edit", label: "Edit members", description: "Change someone's job title and which role they hold.", group: "members", sensitive: true },
@@ -184,6 +204,16 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "integrations:view", label: "View integrations", description: "See which outside tools are connected.", group: "organization" },
   { key: "integrations:manage", label: "Manage integrations", description: "Connect and disconnect outside tools.", group: "organization", sensitive: true },
   { key: "audit:view", label: "View audit log", description: "See the record of who changed what, and when.", group: "organization" },
+
+  // ---- Audit & Risk ------------------------------------------------------
+  // `audit:view` stays in Organization settings, where it has always been —
+  // moving it would silently change who holds it. The keys below are the new
+  // powers this module introduces, and none of them is implied by the others.
+  { key: "audit:export", label: "Export the audit log", description: "Prepare a filtered copy of the audit record to take out of Antcolos.", group: "audit", sensitive: true },
+  { key: "risk:view", label: "View risk signals and cases", description: "See the things Antcolos has flagged as worth a look, and the investigations opened on them.", group: "audit" },
+  { key: "risk:assign", label: "Assign risk cases", description: "Decide who is responsible for looking into a flagged concern.", group: "audit" },
+  { key: "risk:investigate", label: "Investigate risk cases", description: "Take a case on, record what you found, and attach evidence to it.", group: "audit", sensitive: true },
+  { key: "risk:resolve", label: "Close risk cases", description: "Record the decision that ends a case — resolved, accepted, or dismissed. Never on your own actions.", group: "audit", sensitive: true },
 ] as const;
 
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
@@ -206,9 +236,11 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   maintenance: "Maintenance",
   insurance: "Insurance",
   claims: "Claims",
+  contracts: "Contracts and relationships",
   members: "Organization members",
   invitations: "Invitations",
   organization: "Organization settings",
+  audit: "Audit & Risk",
 };
 
 /** The reading order of the modules in every permission list. */
@@ -216,7 +248,7 @@ export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers",
   "fleet", "eld", "customers", "documents", "settlements", "invoices", "reports",
   "accounting", "fuel", "compliance", "maintenance", "insurance", "claims",
-  "members", "invitations", "organization",
+  "contracts", "members", "invitations", "organization", "audit",
 ] as const;
 
 /**

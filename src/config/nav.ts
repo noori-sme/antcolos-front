@@ -1,9 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Building2, CalendarClock, ClipboardList, Container, FileBadge,
-  FileText, Fuel, Gauge, Handshake, Home, IdCard, Inbox, Layers, Link2, MailPlus, Map,
-  Package, Palette, Receipt, ReceiptText, Route, Satellite, ScrollText, Settings2, Shield,
-  ShieldCheck, TriangleAlert, Truck, UserCircle, Users, UsersRound, Wrench,
+  FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
+  Inbox, Layers, Link2, MailPlus, Map, Package, Palette, Radar, Receipt,
+  ReceiptText, Route, Satellite, ScrollText, Settings2, Shield, ShieldCheck,
+  TriangleAlert, Truck, UserCircle, Users, UsersRound, Wrench,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
 
@@ -81,10 +82,24 @@ export const PRODUCT_NAV: NavSection[] = [
     label: "Business",
     items: [
       { label: "Directory", href: "/directory", icon: Building2, requires: ["customers:view"] },
+      { label: "Contracts", href: "/contracts", icon: FileSignature, requires: ["contracts:view"] },
       { label: "Documents", href: "/documents", icon: FileText, requires: ["documents:view"] },
       { label: "Settlements", href: "/finance/settlements", icon: Receipt, requires: ["settlements:view"] },
       { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, requires: ["invoices:view"] },
       { label: "Reports", href: "/reports", icon: Gauge, requires: ["reports:view"] },
+    ],
+  },
+  {
+    // Audit and risk sit together because they are read together, and apart
+    // from Organization settings because reading the record of what happened
+    // is daily work for safety and compliance, not an administrative errand.
+    id: "oversight",
+    label: "Audit & risk",
+    items: [
+      { label: "Audit & Risk", href: "/audit", icon: ShieldCheck, requires: ["audit:view"] },
+      { label: "Audit events", href: "/audit/events", icon: ScrollText, requires: ["audit:view"] },
+      { label: "Risk signals", href: "/audit/signals", icon: Radar, requires: ["risk:view"] },
+      { label: "Risk cases", href: "/audit/cases", icon: FileSearch, requires: ["risk:view"] },
     ],
   },
 ];
@@ -100,6 +115,7 @@ export const DRIVER_NAV: NavSection[] = [
       { label: "My loads", href: "/driver/loads", icon: ClipboardList, requires: ["loads:view"], driverOnly: true, primaryMobile: true },
       { label: "My documents", href: "/driver/documents", icon: FileText, requires: [], driverOnly: true, primaryMobile: true },
       { label: "My compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"], driverOnly: true },
+      { label: "My agreements", href: "/contracts", icon: FileSignature, requires: ["contracts:view"], driverOnly: true },
       // The device on the truck they are on, and their own hours-of-service
       // summary. The service layer narrows both to this driver: another
       // driver's clock is not reachable from here by any path.
