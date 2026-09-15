@@ -1773,7 +1773,11 @@ to redesign later:
   architecture blocks a later Contract Opportunity Intelligence module. It does
   not, so nothing was built: the record is the canonical data ownership map, the
   source-adapter and capability-resolution principles, and the list of changes
-  that were considered and refused.
+  that were considered and refused. Its §0.1 carries the prerequisite register —
+  five things that are already owned elsewhere and must be closed before that
+  module reads a carrier capability, including the fact that `domainEventId()`
+  omits the payload version and that the propagation bus enforces none of
+  `FactScope`'s relationship fields.
 
 ## Tests
 

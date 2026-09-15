@@ -1,9 +1,13 @@
 # ADR — Contract Opportunity Intelligence: future-compatibility audit
 
-**Status:** Accepted.
-**Decision:** **No production code change.** The existing architecture already
-carries every extension point a later Contract Opportunity Intelligence module
-needs. What is missing is written down here rather than built.
+**Status:** Accepted, and reconciled with the approved Architecture Scope
+Revision 2 (see §0.1).
+**Decision:** **No production code change.** The architecture is future-*shaped*:
+it carries the extension points a later Contract Opportunity Intelligence module
+needs, and none of them has to be redesigned to accommodate it. It is not yet
+future-*ready*: §0.1 records five prerequisites that must be closed before any
+Solicitation module reads a carrier capability. What is missing is written down
+here rather than built.
 
 **Audited against:** `main` at the Hierarchical Responsibility, Delegation and
 Escalation milestone (`README.md` §"Hierarchical responsibility, delegation &
@@ -23,9 +27,12 @@ engine, no crawler, no adapter, no store, no route, no navigation entry, no
 permission, no Needs You category and no event kind was added. Section 11 lists
 every change that was considered and says why each was refused.
 
-**The additional backend work this audit creates for the MVP is zero.**
-Everything below is either a description of what the repository already does or
-a note about what a future module would add *at the time it is built*.
+**The additional backend work this audit creates for the MVP is zero.** That is
+a statement about *this document*, not a claim that nothing must happen before a
+Solicitation module can exist. Everything below is either a description of what
+the repository already does, a prerequisite that an already-approved plan
+already owns (§0.1), or a note about what a future module would add *at the time
+it is built*. This audit adds no work; it does not remove any either.
 
 ### A naming collision to settle before anybody writes code
 
@@ -41,6 +48,112 @@ for the record and **`SolicitationRequirement`** for the extracted line item.
 The sample types in the brief that say `ContractOpportunity` and
 `OpportunityRequirement` should be renamed on the way in; every other part of
 their shape is fine.
+
+---
+
+## 0.1 Reconciliation with Architecture Scope Revision 2
+
+The first draft of this audit read the repository's *designed* shapes as
+*operational* guarantees in four places. Architecture Scope Revision 2 is right
+and the first draft was wrong. This section is the correction, and it governs
+every section below it: where §5 or §9 says a shape exists, read it against the
+register here before relying on it.
+
+The distinction that was being elided throughout: **a type that models a
+guarantee is not a system that provides one.** Nothing below is a new
+requirement. Each is a known prerequisite, verified in this repository at the
+commit named at the top, and each is owned by an existing approved plan rather
+than by this audit.
+
+### The prerequisite register
+
+**P1 — `domainEventId()` omits the event version, so a v2 event can be swallowed
+as a duplicate of v1.** Confirmed in `src/lib/propagation/bus.ts`:
+
+```ts
+export function domainEventId(kind: DomainEventKind, idempotencyKey: string): string {
+  return `dev_${kind}:${idempotencyKey}`;
+}
+```
+
+`publish()` dedupes on `event.eventId` alone and returns `duplicate: true`
+without offering the event to a single subscriber. So the same intent
+republished under a bumped payload version produces the *same* id, and the v2
+payload is discarded silently. Worse, the guard that exists for exactly this
+case — *"A payload version this subscriber has never seen is never guessed
+at"*, which would have recorded `needs_review` — never runs, because the event
+never reaches `run()`. The versioning story is sound on the envelope
+(`DomainEvent.version`) and at the subscriber (`ProjectionSubscriber.versions`);
+it is broken at the identity. **Until the version is part of the event identity,
+the event architecture must not be described as sufficient.** §9 is corrected
+accordingly.
+
+**P2 — `CanonicalFact<T>` is declared and not adopted.** `grep -rn CanonicalFact
+src tests` returns exactly one line: its own declaration at
+`src/types/propagation.ts:141`. Nothing constructs one, nothing stores one,
+nothing reads one, and no test exercises one. It is re-exported from
+`src/types/index.ts` by the barrel's `export type * from "./propagation"` and
+imported by nobody.
+
+What *is* operationally adopted is the vocabulary around it, module by module:
+`FactVerification` (rate confirmations, driver workflow, the meter ledger),
+`FactScope` (`DomainEvent`, `src/types/meter.ts`,
+`src/lib/api/mock/meter-ledger.ts`) and `Provenance` (widely). The
+original-value/corrected-value pair is implemented concretely by
+`RateConfirmationFact` for one module — not generically by `CanonicalFact`.
+So the repository has a canonical-fact *vocabulary* in use and a canonical-fact
+*system* on paper. §5 is corrected accordingly.
+
+**P3 — the propagation bus does not enforce `FactScope`'s relationship fields.**
+`FactScope` carries `carrierOrganizationId`, `dispatchOrganizationId` and
+`operatingAuthorityId` alongside `organizationId`. The bus reads **only
+`organizationId`** — at `bus.ts:165` (stamping `ProjectionRecord`), `:216`
+(`events()`) and `:221` (`event()`). The three relationship fields are carried
+and never read, never validated and never used to narrow who is offered an
+event. `publish()` takes no `ServiceContext` at all, so there is no
+authorization check on publishing, and every registered subscriber handling a
+kind receives every event of that kind whatever relationship the scope names.
+
+For the meter ledger that is tolerable — it is why the fields were put on the
+envelope, and the README says so. For Contract Opportunity it is not: a
+capability snapshot is the carrier's insurance, safety and compliance posture in
+one payload, and a dispatch workspace with a terminated relationship must not be
+offered it. **Relationship-aware authorization on publication and subscription
+is a prerequisite before any Solicitation module reads sensitive
+cross-organization capability data**, and it is a backend prerequisite — the
+in-memory bus cannot provide it and should not pretend to.
+
+**P4 — no Solicitation module may be implemented until every operational domain
+it reads is available through an approved service boundary.** Stated flatly
+because §3 of the first draft left it implicit. A Solicitation module that
+reaches into `@/lib/api/mock/insurance-registry`, `maintenance-registry` or
+`carrier-registry` directly would hard-code a dependency on the mock layer into
+the one module whose whole purpose is to read across every other module. That is
+the parallel system this audit exists to prevent, arriving by the back door.
+The rule admits no partial form: **every** domain in the §2 ownership map it
+reads, through **an approved contract in `src/lib/api/contracts/`**, before the
+first line of Solicitation code — not alongside it, and not afterwards.
+
+**P5 — the Insurance, Maintenance and Carrier Profile boundaries belong to Plan
+A7, and this audit does not defer them.** The first draft said they "belong to
+whichever milestone first needs them through a boundary." That was too loose and
+is withdrawn. They are already owned by Plan A7. What this audit is entitled to
+say is narrow: **they may wait for *this documentation audit*** — nothing here
+needed them, which is why no service contract was added. **They may not wait for
+the Solicitation module.** By P4 they are a precondition of it, so A7 lands
+first or Solicitation does not start. Reading this document as a licence to
+postpone A7 inverts it.
+
+### What this does not change
+
+The audit's conclusion stands: **no production code change was required, and
+none was made.** Every prerequisite above is a known gap in an existing
+subsystem, owned by an existing plan, and none of them is made better or worse
+by a Contract Opportunity module existing. They are recorded here because a
+future-compatibility audit that listed only the architecture's strengths would
+be a marketing document, and because P1 in particular is easy to read past:
+a versioned envelope and a version-checking subscriber look like a complete
+story until you notice the identity in between does not carry the version.
 
 ---
 
@@ -153,10 +266,17 @@ read surfaces have no agreed interface yet.**
 
 We did **not** add `InsuranceService`, `MaintenanceService` or `CarrierService`
 in this audit. Adding them now would be exactly the thing the brief forbids: more
-backend contract for Taqi to implement before anything needs it. They should be
-added **in the milestone that first needs them through a boundary**, and the
-Contract Opportunity module is one candidate for that milestone — not a reason
-to do it today.
+backend contract for Taqi to implement before anything needs it — and nothing in
+*this document* needed them.
+
+That is the whole of the deferral, and it must not be read wider. **These
+boundaries are owned by Plan A7, and this audit neither defers them nor has the
+standing to.** By **P4** no Solicitation module may read a domain that is not
+behind an approved contract, and by **P5** these three are therefore a
+*precondition* of that module rather than a task it could absorb. A7 lands
+first. A Solicitation module that imported `insurance-registry` directly would
+hard-code the mock layer into the one module that reads across every other
+one — see §0.1.
 
 ---
 
@@ -202,33 +322,59 @@ decision is recorded against it* (§8). At every other moment the resolver
 derives live. A frozen snapshot is evidence of what was believed; it is never
 the source of truth about what is true now.
 
+**Two gates on building it, from §0.1.** A capability snapshot concentrates a
+carrier's insurance, safety, compliance and driver posture into one payload —
+the most sensitive read in this design. It may not be built until **P4** is met
+(every domain it reads is behind an approved contract, not a mock registry) and
+**P3** is met (the event and subscription path enforces `FactScope`'s
+relationship fields, so a workspace whose relationship has ended is not offered
+it). `ComplianceShare` already makes this argument for a narrower case: *"There
+is deliberately no 'share everything' form."* A resolver is the closest thing to
+a "share everything" form this architecture will ever have, which is exactly why
+its authorization has to be settled before it exists rather than after.
+
 ---
 
 ## 5. Structured requirements and evidence principle
 
-### Reuse, do not invent
+### Reuse, do not invent — but know what "already there" means
 
-`CanonicalFact<T>` in `src/types/propagation.ts` already carries almost the whole
-list the brief asks for:
+**Read this table against P2.** `CanonicalFact<T>` in `src/types/propagation.ts`
+**models** almost the whole list the brief asks for. It is a designed type with
+no producer, no consumer and no test: the repository has this vocabulary, but it
+does not yet run a canonical fact system on it. The right-hand column below says
+where each idea is *modelled*; the **Adopted** column says whether anything in
+the repository operates on it today.
 
-| Needed | Already there |
-|---|---|
-| original extracted value | `CanonicalFact.originalValue` — *"Absent means nothing was changed — NOT that the original is unknown."* |
-| corrected value | `CanonicalFact.value`, with `verification: "corrected"` |
-| extraction confidence | `CanonicalFact.confidence` (0–1); also `Provenance.confidence` |
-| reviewer | `CanonicalFact.actor` (`ActorRef`) |
-| review state | `FactVerification` — `extracted` / `inferred` / `pending` / `confirmed` / `corrected` / `rejected` / `failed`, plus `FACT_VERIFICATION_NEEDS_PERSON` |
-| observation time | `occurredAt` vs `receivedAt`, kept apart deliberately |
-| source mechanism | `FactSourceKind` — including `document_extraction` and `document_upload` |
-| provenance | `Provenance` (`src/types/integration.ts`) |
-| correction lineage | `correctsFactId` — *"Corrections point back at what they correct. History is never rewritten."* |
-| org / carrier / authority scope | `FactScope` |
+The distinction matters to the reader of this document in one specific way: a
+future module can **reuse** these shapes without inventing rivals — that part of
+the conclusion stands — but it cannot **inherit** behaviour from them, because
+there is none to inherit. Whoever builds the module is the first adopter of
+`CanonicalFact<T>`, and should expect to find the gaps that first adoption
+always finds.
+
+
+
+| Needed | Modelled as | Adopted today? |
+|---|---|---|
+| original extracted value | `CanonicalFact.originalValue` — *"Absent means nothing was changed — NOT that the original is unknown."* | **No** (generic). Implemented per-module by `RateConfirmationFact.extractedValue` |
+| corrected value | `CanonicalFact.value`, with `verification: "corrected"` | **No** (generic). Per-module: `RateConfirmationFact.confirmedValue` / `.correctedValue` |
+| extraction confidence | `CanonicalFact.confidence` (0–1) | **No** (generic). `Provenance.confidence` and `ExtractedField.confidence` are in use |
+| reviewer | `CanonicalFact.actor` (`ActorRef`) | **No** (generic). `ActorRef` itself is used everywhere |
+| review state | `FactVerification` — `extracted` / `inferred` / `pending` / `confirmed` / `corrected` / `rejected` / `failed`, plus `FACT_VERIFICATION_NEEDS_PERSON` | **Yes** — rate confirmations, driver workflow, the meter ledger |
+| observation time | `occurredAt` vs `receivedAt`, kept apart deliberately | **Yes** — on `DomainEvent`, `LoadEvent`, `AuditEvent`, `Provenance` |
+| source mechanism | `FactSourceKind` — including `document_extraction` and `document_upload` | Partly — the union is used for labelling, not as a fact's own field |
+| provenance | `Provenance` (`src/types/integration.ts`) | **Yes** — widely |
+| correction lineage | `correctsFactId` — *"Corrections point back at what they correct. History is never rewritten."* | **No** (generic). The idea is live as `AuditEvent.correctsEventId` and `supersededByDocumentId` |
+| org / carrier / authority scope | `FactScope` | **Yes** as a carried shape — `DomainEvent`, `src/types/meter.ts`. **Not enforced:** see **P3** |
 
 The brief's `reviewStatus: "unreviewed" | "confirmed" | "corrected" |
 "needs_review"` is a strict subset of `FactVerification`. **Use
 `FactVerification`.** A second review vocabulary is how one word comes to mean
 two things, which `ResponsibilitySeverity` was explicitly defined to avoid
 (*"Severity shares Needs You's vocabulary so one word never means two things"*).
+This is the one row of the table where reuse is unambiguous: `FactVerification`
+is adopted, exercised and tested.
 
 ### The two things `CanonicalFact` does not carry
 
@@ -419,14 +565,14 @@ What the frontend already **shapes**, in `src/types/propagation.ts` and
 
 | Guarantee | Where the contract is stated |
 |---|---|
-| organization scope | `DomainEvent.scope: FactScope` — org, carrier, dispatch org, operating authority, kept as four fields on purpose |
+| organization scope | `DomainEvent.scope: FactScope` — org, carrier, dispatch org, operating authority, kept as four fields on purpose. **Carried, not enforced — see P3:** the bus reads `organizationId` only |
 | actor | `DomainEvent.actor: ActorRef` (a snapshot, readable after the person leaves) |
 | aggregate identity | `DomainEvent.subjectId` / `subjectKind` |
 | event version | `DomainEvent.version` — *"on the envelope rather than in the kind because a subscriber that only understands v1 must be able to say so out loud"* |
 | correlation and causation | `correlationId`, `causationId` |
-| idempotency | `idempotencyKey`, and `domainEventId(kind, key)` in `src/lib/propagation/bus.ts` — republishing returns `duplicate: true` and re-runs nothing |
+| idempotency | `idempotencyKey`, and `domainEventId(kind, key)` in `src/lib/propagation/bus.ts` — republishing returns `duplicate: true` and re-runs nothing. **Version-blind — see P1:** a v2 event with a v1 key is swallowed |
 | provenance | `DomainEvent.provenance: Provenance` |
-| unknown version handling | a subscriber declares `versions`; anything else is `needs_review`, not a guess |
+| unknown version handling | a subscriber declares `versions`; anything else is `needs_review`, not a guess — **but only for events that reach `run()`**, which P1's duplicate short-circuit prevents |
 | failure isolation | one throwing subscriber becomes a `failed` `ProjectionRecord`; the next still runs |
 
 What the frontend **does not and cannot** provide — stated plainly so nobody
@@ -439,7 +585,14 @@ mistakes the shape for the guarantee:
   `attempts` describe the contract; *"nothing in the frontend retries on a
   timer."*
 - **Persistent deduplication.** `idempotencyKey` needs a **unique constraint** in
-  the database. An in-memory map is not deduplication.
+  the database. An in-memory map is not deduplication. **That constraint must be
+  over the payload version as well as the kind and the key** — otherwise the
+  backend reproduces P1 durably, which is considerably worse than reproducing it
+  in a tab.
+- **Relationship-aware authorization on the event path (P3).** Publication must
+  be authorized, and a subscriber must be offered only the events its
+  relationship entitles it to. The bus does neither, and for a capability
+  payload that is a disclosure boundary, not an optimisation.
 - **Ordering, and exactly-once delivery.** Neither exists here.
 - **Server-side authorization.** The mock enforces permissions at the seam, which
   *"proves the shape the real API must meet"* — it is not enforcement.
@@ -474,6 +627,13 @@ unpublishable kinds and six labels today would put six dead entries in a union
 the UI reads from, with nothing constructing them — the definition of a
 speculative abstraction.
 
+**What the module does require first is P1.** A solicitation is re-issued and
+re-evaluated; its payloads will be versioned, and `solicitation.eligibility_evaluated`
+v2 arriving under a v1 idempotency key must not vanish. Fixing the event
+identity is cheap now and expensive once six kinds and their projections depend
+on it, so it belongs to the propagation plan, ahead of this module rather than
+inside it.
+
 The payload rule, which matters more than the names: *"A payload is what the
 SUBJECT'S OWNER guarantees, not what any particular consumer wants … a consumer
 that needs a field the owner does not hold has to go and read that other module
@@ -499,10 +659,17 @@ for an oversight.
 - New permission keys and permission groups.
 - A `SolicitationService` on `AntcolosServices`.
 - A `CarrierCapability` store, table or snapshot type.
-- `InsuranceService`, `MaintenanceService`, `CarrierService` — see §3.
+- A generic adoption of `CanonicalFact<T>` — modelled, unadopted (P2), and first
+  adoption belongs to whoever needs it, not to this audit.
 - A generic document locator type widened out of `rate-confirmation.ts` — see §5.
 - Any new `DomainEventKind`, `NeedsYouCategory`, `AuditModule` or
   `AuditEntityKind` member.
+
+**Not deferred, and not this audit's to defer:** `InsuranceService`,
+`MaintenanceService` and `CarrierService` (Plan A7, per **P5**); the event
+identity fix (**P1**); and relationship enforcement on the event path (**P3**).
+Those are preconditions of the module, listed here only so nobody finds them by
+their absence from this list and concludes they were dropped.
 
 ---
 
@@ -514,6 +681,13 @@ unused product feature; no new store, route, screen, navigation entry,
 permission group or workflow; and provable with a focused test or a compile-time
 contract. **Nothing cleared it.**
 
+Note what the bar does and does not select for. It selects for *missing
+extension points*. It does not select for *defects in existing subsystems* —
+P1 and P3 are both real, both verified, and neither is a missing extension point
+for this module, so neither was fixed here. They are recorded in §0.1 instead,
+which is the correct disposition for a documentation audit and not a judgement
+that they are minor.
+
 | Candidate | Why not |
 |---|---|
 | Generic `DomainEvidence` with a document locator and expiry | Locator: the shape exists as `DocumentRegion`; widening it now with one consumer would fix the wrong shape (tabular data needs row/column). Expiry: already owned by Insurance, Compliance and the Document Center — a second one would be a second answer. |
@@ -523,21 +697,59 @@ contract. **Nothing cleared it.**
 | `InsuranceService` / `MaintenanceService` / `CarrierService` | Real gap (§3), but adding three contracts today *increases* MVP backend work before anything needs them — exactly what the brief says not to do. Documented instead; belongs to whichever milestone first needs them through a boundary. |
 | A Needs You contributor registry, so modules self-register derived items | Speculative abstraction with no current consumer. `allItems()` in `src/lib/api/mock/needs-you.ts` takes one line per module and the ordering comments there exist for a reason a registry would have to re-learn. |
 | A `"solicitation"` entry in `ComplianceExtensionPoint` / `RiskExtensionPoint` | These describe extensions *to those modules*. A solicitation is not a compliance record or a risk case, and the entry would prevent no rewrite. |
+| Fixing `domainEventId()` to include the event version (**P1**) | A real defect and a real prerequisite, but it is a change to the propagation subsystem's own identity function, with its own tests and its own owning plan — not a Contract Opportunity extension point. Recording it (§0.1) is this audit's job; changing it is not, and a documentation audit is the wrong change window for it. |
 | Renaming the existing `Opportunity` module to free the name | Large, risky, and touches `src/features/opportunities/`, routes and the `IntegrationModule` union — a refactor with no current beneficiary. Settled by naming the future module `Solicitation` instead (§0). |
 
 ---
 
 ## 12. Verdict
 
-The architecture is future-compatible. A Contract Opportunity Intelligence
-module built on this base is a new bounded module that **reads** through existing
-seams, **raises** work through the one Needs You queue, **routes** it through the
-one responsibility engine, **stores** its documents in the one Document Center,
+**The architecture does not block the future module, and nothing about it needs
+redesigning to admit one.** A Contract Opportunity Intelligence module built on
+this base is a new bounded module that **reads** through existing seams,
+**raises** work through the one Needs You queue, **routes** it through the one
+responsibility engine, **stores** its documents in the one Document Center,
 **publishes** through the one versioned event envelope and **projects** into the
-one audit ledger.
+one audit ledger. That was the question this audit was asked, and the answer is
+yes.
+
+**It is not yet ready to admit one.** Five prerequisites stand between here and
+the first line of Solicitation code, all of them already owned:
+
+| | Prerequisite | Owner |
+|---|---|---|
+| **P1** | Event identity must include the payload version | Propagation plan |
+| **P2** | `CanonicalFact<T>` is modelled, not adopted — first adopter pays | Whoever adopts it |
+| **P3** | `FactScope`'s relationship fields must be enforced on the event path | Backend / propagation |
+| **P4** | Every domain read must be behind an approved service contract first | Precondition of the module |
+| **P5** | Insurance, Maintenance and Carrier Profile boundaries land before, not after | Plan A7 |
 
 The three things most likely to be got wrong later are not missing types. They
 are decisions, and they are recorded here: **do not name it `Opportunity`**, **do
 not copy carrier data into it**, and **do not let `unknown` become `fail`.**
 
-**Additional MVP backend workload created by this audit: zero.**
+**Additional MVP backend workload created by this audit: zero.** No prerequisite
+above was created by this audit, and none is discharged by it. The register
+exists so that the zero is read as "this document added nothing" and never as
+"nothing is outstanding."
+
+---
+
+## 13. Verification
+
+Documentation-only change; no production code was touched.
+
+- `npm run typecheck` (`tsc --noEmit`) — clean, exit 0.
+- **Vitest** (`npm run test:unit`, `vitest.config.ts`: `src/**/*.test.ts` plus
+  the `tests/{fleet,compliance,contracts,audit,eld,responsibility}/` suites) —
+  **68 files, 1265 tests, all passing.**
+- **Node test runner** (`npm run test:node`, glob `tests/*.test.ts`, top level
+  only) — **79 suites, 595 tests, all passing.**
+- **Playwright** (`npm run test:browser`, `tests/browser/*.spec.ts`, 4 specs) —
+  **not run.** A documentation-only change does not warrant it.
+
+`npm test` runs the first two and not the third, so neither figure above is "the
+repository test suite" on its own. Every file path and symbol cited in this
+document was checked against the repository at the commit named at the top; the
+only names that do not resolve are the ones this document says do not and should
+not exist.
