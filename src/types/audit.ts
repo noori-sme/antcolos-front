@@ -132,6 +132,7 @@ export type AuditAction =
   /* Operational modules, projected from their own histories ---------------- */
   | "loads.timeline_appended"
   | "dispatch.assignment_changed"
+  | "dispatch.tracking_changed"
   | "fleet.record_changed"
   | "drivers.record_changed"
   | "directory.party_changed"

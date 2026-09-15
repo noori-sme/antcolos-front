@@ -8,6 +8,7 @@ import { PermissionDeniedError, type ServiceContext } from "../contracts/context
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { mtLoopBoardSync } from "./mt-loop";
+import { publishAvailability } from "./tracking-board";
 import { syncDerivedNeedsYou } from "./needs-you-derive";
 import { trailerFleetSync } from "./trailer-registry";
 
@@ -268,6 +269,13 @@ export function dispatchWorkspaceSummarySync(ctx: WorkspaceContext): DispatchWor
   // It runs before Needs You on purpose: the loops are reconciled against the
   // trucks here, and the Needs You rules then read the reconciled loops. One
   // direction, so the two can never disagree about the same truck.
+  //
+  // Availability is decided and published just before it. The decisions are
+  // recomputed from the evidence on every read and the loop service
+  // deduplicates them by operational cycle, so doing it here keeps the empty
+  // board current without a scheduler — and without a second MT Loop record
+  // system, which is the point: the loops below are the same loops.
+  if (ctx.permissions.has("tracking:view")) publishAvailability(ctx);
   const mtLoop = mtLoopBoardSync(ctx);
 
   // Needs You is generated from live state rather than stored, so it is

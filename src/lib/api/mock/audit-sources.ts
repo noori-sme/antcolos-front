@@ -9,6 +9,7 @@ import { mockFuelService } from "./fuel";
 import { mockInvoicesService } from "./invoices";
 import { mockSettlementsService } from "./settlements";
 import { mockStore } from "./store";
+import { sessionLoadRef, trackingAuditForLedger } from "./tracking-registry";
 import { hoursFromNow } from "./time";
 
 /**
@@ -264,6 +265,55 @@ const settlementsFeed: ModuleAuditFeed<ServiceContext> = {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Load tracking and customer visibility                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The tracking module's own append-only history, projected.
+ *
+ * Tracking already keeps every link issued, opened, refused and withdrawn,
+ * every visibility change, every update and every availability decision — with
+ * the provenance that produced it. That history stays where it is and stays
+ * canonical; this is the read-only second view, so "who shared what, with whom,
+ * and when did they open it" is answerable from the one ledger alongside
+ * everything else that happened that day.
+ */
+const trackingFeed: ModuleAuditFeed<ServiceContext> = {
+  module: "dispatch",
+  requires: ["tracking:view"],
+  mock: false,
+  read(ctx) {
+    return trackingAuditForLedger(ctx).map((entry): ModuleAuditRecord => {
+      const load = sessionLoadRef(ctx.organizationId, entry.subjectId);
+      return {
+        entryId: entry.id,
+        // The load when the line is about a session, the subject itself
+        // otherwise — a truck's availability decision belongs to the truck.
+        recordId: load?.loadId ?? entry.subjectId,
+        action: "dispatch.tracking_changed",
+        sourceAction: entry.action,
+        occurredAt: entry.at,
+        actor: {
+          userId: entry.actorMembershipId ? "usr_sam" : "system",
+          membershipId: entry.actorMembershipId ?? "system",
+          displayNameSnapshot: entry.actorName,
+          source: entry.actorMembershipId ? "web" : "system",
+        },
+        entity: load
+          ? ref("load", load.loadId, load.loadReference, `/dispatch/tracking/${load.loadId}`)
+          : ref("truck", entry.subjectId, entry.subjectId),
+        summary: entry.detail ? `${entry.summary} ${entry.detail}` : entry.summary,
+        // A conclusion a machine reached is an integration's word; a person's
+        // is a person's. The distinction the tracking module keeps survives the
+        // projection rather than being flattened into "something changed".
+        source: entry.actorMembershipId ? "human" : "integration",
+        outcome: entry.action === "link_access_refused" ? "denied" : undefined,
+      };
+    });
+  },
+};
+
+/* -------------------------------------------------------------------------- */
 /* The registry                                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -273,6 +323,7 @@ export const AUDIT_FEEDS: readonly ModuleAuditFeed<ServiceContext>[] = [
   complianceFeed,
   invoicesFeed,
   settlementsFeed,
+  trackingFeed,
 ];
 
 /** Reads every feed the caller is entitled to. A feed that throws is skipped

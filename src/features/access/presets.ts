@@ -37,6 +37,7 @@ const DISPATCH_ORG: InvitationPreset = {
   permissions: [
     "loads:view", "loads:create", "loads:edit", "loads:status:update",
     "dispatch:view", "loads:assign",
+    "tracking:view",
     "drivers:view", "trucks:view", "trailers:view",
     "customers:view", "documents:view", "documents:upload",
   ],
@@ -60,6 +61,7 @@ const DISPATCHER: InvitationPreset = {
   permissions: [
     "loads:view", "loads:create", "loads:edit", "loads:status:update",
     "dispatch:view", "loads:assign",
+    "tracking:view", "tracking:share", "tracking:update:send",
     "drivers:view", "trucks:view", "trailers:view",
     "customers:view", "documents:view", "documents:upload", "compliance:view",
   ],

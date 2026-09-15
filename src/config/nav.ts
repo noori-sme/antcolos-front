@@ -37,6 +37,7 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Home", href: "/home", icon: Home, requires: [], primaryMobile: true },
       { label: "Needs You", href: "/needs-you", icon: Inbox, requires: [], primaryMobile: true, showsNeedsYouCount: true },
       { label: "Dispatch", href: "/dispatch", icon: Route, requires: ["loads:view", "loads:assign"], primaryMobile: true },
+      { label: "Tracking", href: "/dispatch/tracking", icon: Radar, requires: ["tracking:view", "loads:view"] },
       { label: "Opportunities", href: "/dispatch/opportunities", icon: Layers, requires: ["loads:view", "trucks:view"] },
       { label: "Loads", href: "/loads", icon: Package, requires: ["loads:view"], primaryMobile: true },
     ],

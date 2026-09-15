@@ -56,6 +56,10 @@ export const AUDIT_ACTIONS: readonly AuditActionMeta[] = [
 
   { key: "loads.timeline_appended", label: "Load timeline entry", module: "loads" },
   { key: "dispatch.assignment_changed", label: "Assignment changed", module: "dispatch" },
+  // Sharing a load's tracking with somebody outside the organization is a
+  // disclosure, so the whole tracking history is marked permission-sensitive
+  // rather than only the lines that mint a link.
+  { key: "dispatch.tracking_changed", label: "Load tracking entry", module: "dispatch", permissionSensitive: true },
   { key: "fleet.record_changed", label: "Fleet record changed", module: "fleet" },
   { key: "drivers.record_changed", label: "Driver record changed", module: "drivers" },
   { key: "directory.party_changed", label: "Directory record changed", module: "directory" },

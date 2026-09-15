@@ -30,6 +30,15 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "dispatch:view", label: "Open the dispatch board", description: "See the planning board of trucks and available freight.", group: "dispatch" },
   { key: "loads:assign", label: "Assign loads", description: "Put a driver, truck and trailer on a load.", group: "dispatch" },
 
+  // ---- Tracking ----------------------------------------------------------
+  // Three keys, because they are three different exposures. Watching your own
+  // fleet run is an everyday thing; handing a stranger a link that shows where
+  // one of your trucks is, is not, and sending words to a broker in the
+  // carrier's name is different again.
+  { key: "tracking:view", label: "Open load tracking", description: "See where loads are, how fresh the tracking is, and what has gone wrong with them.", group: "tracking" },
+  { key: "tracking:share", label: "Share tracking with customers", description: "Create and withdraw tracking links for a broker, shipper or receiver, and decide what each of them may see.", group: "tracking", sensitive: true },
+  { key: "tracking:update:send", label: "Approve tracking updates", description: "Approve the progress updates that go out to a customer, or decide they should not go.", group: "tracking" },
+
   // ---- Driver decision and trip workflow ---------------------------------
   { key: "proposals:view", label: "See load proposals", description: "See load opportunities dispatch sends you before they are booked.", group: "driver_workflow" },
   { key: "proposals:respond", label: "Answer load proposals", description: "Approve, reject, pause, comment on or counter a load proposal.", group: "driver_workflow" },
@@ -219,6 +228,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   loads: "Loads",
   dispatch: "Dispatch",
+  tracking: "Tracking and customer visibility",
   driver_workflow: "Driver proposals and trips",
   drivers: "Drivers",
   trucks: "Trucks",
@@ -245,7 +255,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 
 /** The reading order of the modules in every permission list. */
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
-  "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers",
+  "loads", "dispatch", "tracking", "driver_workflow", "drivers", "trucks", "trailers",
   "fleet", "eld", "customers", "documents", "settlements", "invoices", "reports",
   "accounting", "fuel", "compliance", "maintenance", "insurance", "claims",
   "contracts", "members", "invitations", "organization", "audit",
