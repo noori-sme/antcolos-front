@@ -1603,28 +1603,80 @@ difference is what makes delegation and reassignment different actions:
 delegating moves who *does* it and pins who *answers*; reassigning lets
 accountability re-derive from where the work lands.
 
-### The Owner is a fallback, not a competitor
+### ★ Three views, and nothing leaks between them ★
 
-An Owner holds every permission by definition, so left to compete on points they
-win most ties — and a Carrier who hired a bookkeeper still finds every invoice in
-their own queue. So `routeResponsibility` removes the Owner from the field
-whenever anybody else can do the work, and the source it records says which
-happened:
+The hardest thing in this module, and the one it got wrong first. A Carrier
+Owner is accountable for everything in their workspace; if that counts as a
+claim on their attention, they open the app to their entire organization. The
+first cut did exactly that — **119 of Northline's 145 items in the Owner's
+personal queue, and a Home badge reading "142 open"**.
 
-- `default_policy` — routed to somebody by the rules.
-- `delegation` — follows a carrier grant or a truck assignment.
-- `fallback` — **nobody else could do it**, so the Owner has it. This is what
-  fills the Unassigned queue, and it is a real signal rather than a tidy-up job.
+So "can I see it", "do I answer for it" and "does it need me today" are three
+different questions with three different answers:
 
-A one-person carrier is the deliberate exception: their work is `default_policy`
-and their Unassigned queue is empty, because work you are doing alone is owned,
-not ownerless.
+| View | Holds | Is it a to-do list? |
+|---|---|---|
+| **My Needs You** | work that stops unless *this* person acts | **yes — the only one** |
+| **Team oversight** | work held by people they answer for, with health, SLA risk and escalation state | no |
+| **All organization** | the complete inventory, for deliberate inspection | no |
 
-Oversight and overload are answered by different queues. The Owner is
-accountable for everything — `all_organization`, `at_risk`, `escalated` and the
-`oversight` count all hold it — while `my_mt_loop` and `my_needs_you` admit only
-work they are actually doing, plus delegated work that is critical, escalated,
-or waiting on them for an approval.
+`src/lib/responsibility/attention.ts` is the whole of it. Work enters a personal
+queue for exactly seven reasons, and for nothing else:
+
+```
+responsible             you are the one doing it
+owner_fallback          nobody qualified, so it fell to you
+needs_assignment        nobody in the workspace can do it at all
+explicit_accountable    a PERSON named you accountable, by hand
+approval_required       you are the approver and it is waiting on you
+escalation_reached_you  a recorded escalation actually named you
+help_requested          whoever holds it asked you, by hand
+```
+
+What deliberately does **not** put work in somebody's queue, however true: you
+hold every permission; you may view the organization; you manage the assignee;
+it is critical but somebody is on it and inside SLA; you are an escalation
+destination the ladder has not reached; you "answer for" the team.
+
+**"Reached" is a recorded fact, not a computed level.** `escalation.ts` works
+out which rungs are *due* from the clock — that is pressure, and it shows as
+pressure in Team oversight and At risk. It is not delivery: this is a frontend,
+nothing is scheduled and no reminder is sent anywhere, so treating a due rung as
+though somebody had been told is the same lie the SLA code is careful not to
+tell. It is what put eighty-two overdue items back in an Owner's lap. An
+escalation reaches a person when a **person** escalates it, or when the assignee
+asks for help — both real events, with an actor, kept on the timeline.
+
+The measured result, on the seeded fixtures:
+
+| Workspace | My Needs You | Team oversight | All organization | Home |
+|---|---|---|---|---|
+| Northline Owner | **119 → 10** | 132 | 142 | **142 → 10** |
+| Summit Owner | 5 → 4 | 16 | 20 | 20 → 4 |
+| Cascade driver | 2 | 0 | — | 9 → 2 |
+
+### One derivation, every surface
+
+Home used to build its own Needs You list — everything the membership could see,
+sliced to four. Two surfaces filtering separately is how they come to disagree,
+so now neither decides: `attentionViewsFor` in `mock/responsibility.ts` is the
+single derivation, the Needs You page reads it through
+`services.responsibility.attention`, `mockHomeService.summary` builds its
+`needsYouPreview` and `needsYouOpen` from the same function, and the nav badge
+counts the same set. `tests/responsibility/attention.test.ts` asserts they agree
+item for item, for every seeded membership.
+
+**Zero is a good answer on Home.** An Owner who has delegated well should see an
+empty Needs You block, and it is never padded with team work or org-wide totals.
+
+### Nothing is called unassigned while naming a person
+
+"Unassigned" was doing two jobs and was wrong about both. Work that fell to the
+Owner because nobody else qualified has a name, an accountable membership and a
+timeline. The derived states are now `owner_fallback` and `needs_assignment`,
+and `counts.trulyUnassigned` — work with no responsible membership at all — is
+reported precisely because it should always be zero. An invariant nobody
+measures is an invariant nobody notices breaking.
 
 ### ★ Escalation is not reassignment ★
 

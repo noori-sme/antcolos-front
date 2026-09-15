@@ -30,6 +30,26 @@ export function useResponsibilityBoard() {
   });
 }
 
+/**
+ * ★ THE shared derivation, for every surface that shows "what needs me". ★
+ *
+ * The Needs You page and Home both read this. Neither decides for itself what
+ * belongs in a personal queue, which is the only way two surfaces can be made
+ * to agree — Home used to filter separately and showed a Carrier Owner "142
+ * open" against a personal queue of 119, neither of which was a list of things
+ * needing them.
+ */
+export function useAttentionViews() {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx
+      ? queryKeys.responsibilityAttention(ctx.organizationId, ctx.membershipId)
+      : ["responsibility", "attention", "no-context"],
+    queryFn: () => services.responsibility.attention(ctx!),
+    enabled: Boolean(ctx),
+  });
+}
+
 export function useResponsibilityExplain(work: WorkKey | null) {
   const ctx = useServiceContext();
   return useQuery({
@@ -96,6 +116,7 @@ export type ResponsibilityAction =
   | { kind: "requestApproval"; approverMembershipId?: string; note: string }
   | { kind: "decideApproval"; decision: "approve" | "decline"; note: string }
   | { kind: "escalate"; note: string }
+  | { kind: "requestHelp"; note: string }
   | { kind: "addWatcher"; membershipId: string; note?: string }
   | { kind: "removeWatcher"; membershipId: string };
 
@@ -138,6 +159,7 @@ export function useResponsibilityAction(): ResponsibilityMutation {
             decision: action.decision, note: action.note,
           });
         case "escalate": return r.escalate(ctx, work, action.note);
+        case "requestHelp": return r.requestHelp(ctx, work, action.note);
         case "addWatcher":
           return r.addWatcher(ctx, work, {
             membershipId: action.membershipId, note: action.note,

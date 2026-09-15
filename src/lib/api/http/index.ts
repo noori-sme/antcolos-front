@@ -258,6 +258,7 @@ export const httpServices: AntcolosServices = {
   // the frontend cannot honestly provide will actually live.
   responsibility: {
     board: notImplemented("responsibility.board"),
+    attention: notImplemented("responsibility.attention"),
     get: notImplemented("responsibility.get"),
     explain: notImplemented("responsibility.explain"),
     acknowledge: notImplemented("responsibility.acknowledge"),
@@ -268,6 +269,7 @@ export const httpServices: AntcolosServices = {
     changeAccountable: notImplemented("responsibility.changeAccountable"),
     requestApproval: notImplemented("responsibility.requestApproval"),
     decideApproval: notImplemented("responsibility.decideApproval"),
+    requestHelp: notImplemented("responsibility.requestHelp"),
     escalate: notImplemented("responsibility.escalate"),
     addWatcher: notImplemented("responsibility.addWatcher"),
     removeWatcher: notImplemented("responsibility.removeWatcher"),

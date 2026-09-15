@@ -34,6 +34,9 @@ export {
   nextEligibleAfter, routeResponsibility,
   type RoutingInput, type RoutingResult,
 } from "./routing";
+export {
+  attentionFor, isOversight, oversightIsWorrying, requiresPersonalAttention,
+} from "./attention";
 export { policyFor, seedPolicies } from "./policies";
 export { describeReading, isAtRisk, slaFor, targetFor } from "./sla";
 export {

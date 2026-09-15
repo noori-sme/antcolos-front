@@ -20,13 +20,24 @@ export function useNeedsYouList(filters: NeedsYouFilters) {
   });
 }
 
+/**
+ * The nav badge, and it counts what needs YOU.
+ *
+ * Deliberately not `needsYou.openCount`, which is everything the membership may
+ * see: a Carrier Owner had a badge reading 142 sitting above a personal queue
+ * of ten, and a badge that disagrees with the page it points at is worse than
+ * no badge. It comes from the same derivation Home and the Needs You page use.
+ */
 export function useNeedsYouCount() {
   const ctx = useServiceContext();
   return useQuery({
     queryKey: ctx
       ? queryKeys.needsYouCount(ctx.organizationId, ctx.membershipId)
       : ["needs-you", "count", "no-context"],
-    queryFn: () => services.needsYou.openCount(ctx!),
+    queryFn: async () => {
+      const views = await services.responsibility.attention(ctx!);
+      return views.myNeedsYou.filter((a) => a.work.kind === "needs_you").length;
+    },
     enabled: Boolean(ctx),
   });
 }

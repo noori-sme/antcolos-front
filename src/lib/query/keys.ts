@@ -22,6 +22,8 @@ export const queryKeys = {
     [...orgKey(organizationId), "members"] as const,
   responsibilityBoard: (organizationId: string, membershipId: string) =>
     [...orgKey(organizationId), "responsibility", "board", membershipId] as const,
+  responsibilityAttention: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "responsibility", "attention", membershipId] as const,
   responsibilityItem: (organizationId: string, membershipId: string, workId: string) =>
     [...orgKey(organizationId), "responsibility", "item", membershipId, workId] as const,
   responsibilityExplain: (organizationId: string, membershipId: string, workId: string) =>

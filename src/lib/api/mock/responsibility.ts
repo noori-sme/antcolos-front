@@ -2,14 +2,16 @@ import {
   ASSIGNABLE_ROLES, KEEP_QUIETS_REMINDER_MINUTES,
 } from "@/config/responsibility";
 import {
-  appendTimeline, buildQueues, escalationsFor, fleetProfileFor, hasEscalated,
-  isAtRisk, nextEligibleAfter, pendingMoves, policyFor, queueCounts,
-  routeResponsibility, seedPolicies, slaFor, type CandidateWorkload,
-  type QueueInput, type ResponsibilityCandidate, type RoutingResult,
+  appendTimeline, attentionFor, buildQueues, escalationsFor, fleetProfileFor,
+  hasEscalated, isAtRisk, nextEligibleAfter, pendingMoves, policyFor,
+  queueCounts, routeResponsibility, seedPolicies, slaFor,
+  type CandidateWorkload, type QueueInput, type ResponsibilityCandidate,
+  type RoutingResult,
 } from "@/lib/responsibility";
 import { resolveWorkspace } from "@/lib/workspace/resolve";
 import type {
-  ApprovalState, EligibilityVerdict, EscalationPolicy, FleetProfile, Membership,
+  ApprovalState, AssignmentState, EligibilityVerdict, EscalationPolicy,
+  FleetProfile, Membership,
   MtLoop, NeedsYouItem, Organization, PermissionKey, ResponsibilityAbilities,
   ResponsibilityAssignment, ResponsibilityBoard, ResponsibilityContext,
   ResponsibilityHolder, ResponsibilityTimelineAction, ResponsibilityTimelineEntry,
@@ -19,8 +21,8 @@ import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
 } from "../contracts/context";
 import type {
-  ApprovalDecisionInput, BoardOptions, MoveWorkInput, PolicyPatch,
-  ResponsibilityService, WatcherInput, WorkKey,
+  ApprovalDecisionInput, AttentionViews, BoardOptions, MoveWorkInput,
+  PolicyPatch, ResponsibilityService, WatcherInput, WorkKey,
 } from "../contracts/responsibility";
 import { mockAuditService } from "./audit";
 import {
@@ -450,6 +452,9 @@ function abilitiesFor(
       && record.approvalState === "requested"
       && routing.approver?.membershipId === me,
     escalate: open && (mine || answersForIt || move),
+    // Asking for a hand is the assignee's move, and the one way work reaches
+    // somebody above them without a policy or a manager doing it.
+    requestHelp: open && mine,
     takeOver: open && move && !mine && couldDoIt,
     addWatcher: open && maySeeTeamWork(ctx),
     customizePolicy: mayCustomize(ctx),
@@ -463,6 +468,26 @@ function abilitiesFor(
  * Deduplicated by membership, first entry winning, so the Owner who watches
  * everything by default is not listed twice after somebody adds them by hand.
  */
+/**
+ * What the assignment amounts to, in a word a screen may show.
+ *
+ * "Unassigned" is deliberately not among them. Work the Owner holds because
+ * nobody else qualified has a name, an accountable membership and a timeline;
+ * calling that unassigned told an Owner nothing except that the product could
+ * not tell the two apart. `owner_fallback` and `needs_assignment` say which
+ * kind of fallback it actually is.
+ */
+function assignmentStateFor(
+  routing: RoutingResult,
+  responsibleIsOwner: boolean,
+): AssignmentState {
+  if (routing.noEligibleAssignee) return "needs_assignment";
+  if (routing.responsible.source === "fallback" && responsibleIsOwner) return "owner_fallback";
+  if (routing.responsible.source === "delegation") return "delegated";
+  if (routing.responsible.source === "default_policy") return "routed";
+  return "manual";
+}
+
 function watcherHolders(
   record: StoredRecord,
   candidates: readonly ResponsibilityCandidate[],
@@ -563,6 +588,11 @@ function buildAssignment(
     ? record.approvalState
     : (record.approvalState === "not_required" ? "not_required" : record.approvalState);
 
+  const responsibleIsOwner = Boolean(
+    candidates.find((c) => c.membershipId === routing.responsible.membershipId)?.isOwner,
+  );
+  const assignmentState = assignmentStateFor(routing, responsibleIsOwner);
+
   const assignment: ResponsibilityAssignment = {
     id: record.id,
     organizationId: context.organizationId,
@@ -585,9 +615,16 @@ function buildAssignment(
     sla,
     escalations,
     atRisk: isAtRisk(sla) || hasEscalated(escalations),
+    assignmentState,
+    noEligibleAssignee: routing.noEligibleAssignee,
+    // Filled in below: `attentionFor` reads the finished record, including the
+    // assignment state and the timeline, so it cannot be computed inline.
+    attention: [],
     can: abilitiesFor(ctx, routing, record, candidates, context),
     timeline: [...record.timeline],
   };
+
+  assignment.attention = attentionFor(assignment, ctx.membershipId);
 
   return { assignment, verdicts: routing.candidates };
 }
@@ -780,6 +817,11 @@ export const mockResponsibilityService: ResponsibilityService = {
     };
   },
 
+  async attention(ctx) {
+    await wait();
+    return attentionViewsFor(ctx);
+  },
+
   async get(ctx, work) {
     await wait();
     const { assignment } = await load(ctx, work);
@@ -943,6 +985,28 @@ export const mockResponsibilityService: ResponsibilityService = {
     return next;
   },
 
+  async requestHelp(ctx, work, note) {
+    await wait();
+    const { assignment, record } = await load(ctx, work);
+    if (!assignment.can.requestHelp) refuse([]);
+    const reason = requireNote(note, "A request for help");
+
+    // Asking for a hand does not hand the work over: the asker is still
+    // responsible afterwards. What it does is put the item on the accountable
+    // person's PERSONAL list, which a computed escalation rung deliberately
+    // cannot do — see `attention.ts`.
+    const asked = assignment.accountable;
+    mutate(
+      record, ctx, "help_requested",
+      `${reason} ${assignment.responsible.displayName} is still responsible.`,
+      { membershipId: asked.membershipId, displayName: asked.displayName },
+    );
+
+    const next = (await load(ctx, work)).assignment;
+    project(ctx, next, `Help asked of ${asked.displayName} on ${assignment.work.label}.`);
+    return next;
+  },
+
   async escalate(ctx, work, note) {
     await wait();
     const { assignment, record } = await load(ctx, work);
@@ -1077,6 +1141,70 @@ export const mockResponsibilityService: ResponsibilityService = {
       }));
   },
 };
+
+/* -------------------------------------------------------------------------- */
+/* THE shared derivation                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The three views, derived once for one membership.
+ *
+ * ★ Home and the Needs You page both come through here. ★
+ *
+ * Before this existed, Home built its own Needs You list — everything the
+ * membership could see, sliced to four — while the queue built another. A
+ * Carrier Owner saw "142 open" on Home and 119 items in their personal queue,
+ * neither of which was a list of things needing them. One derivation is the
+ * only way two surfaces can be made to agree, so there is exactly one, and
+ * `tests/responsibility/attention.test.ts` asserts Home's numbers come from it.
+ */
+export async function attentionViewsFor(ctx: ServiceContext): Promise<AttentionViews> {
+  const { assignments, fleetProfile } = await assemble(ctx);
+  const input = queueInputFor(ctx, assignments, fleetProfile);
+  const queues = buildQueues(input);
+  const counts = queueCounts(input);
+
+  const of = (q: string) => queues.find((x) => x.queue === q)?.items ?? [];
+  const myNeedsYou = assignments.filter(
+    (a) => !a.resolvedAt && attentionFor(a, ctx.membershipId).length > 0,
+  );
+  const teamOversight = of("team_oversight");
+  const allOrganization = of("all_organization");
+
+  return {
+    organizationId: ctx.organizationId,
+    membershipId: ctx.membershipId,
+    myNeedsYou,
+    teamOversight,
+    allOrganization,
+    maySeeTeam: maySeeTeamWork(ctx),
+    teamOversightApplies: queues.some((q) => q.queue === "team_oversight"),
+    counts: {
+      myNeedsYou: myNeedsYou.length,
+      myNeedsYouCritical: myNeedsYou.filter((a) => a.severity === "critical").length,
+      teamOversight: teamOversight.length,
+      teamOversightAtRisk: teamOversight.filter((a) => a.atRisk).length,
+      allOrganization: allOrganization.length,
+      ownerFallback: counts.ownerFallback,
+      needsAssignment: counts.needsAssignment,
+      trulyUnassigned: counts.trulyUnassigned,
+      escalated: counts.escalated,
+    },
+  };
+}
+
+/**
+ * The Needs You items that need this person, as the items themselves.
+ *
+ * What Home and the Needs You page render. Returned in the queue's own urgency
+ * order, and NEVER a count of everything the person may see.
+ */
+export async function personalNeedsYouIds(ctx: ServiceContext): Promise<string[]> {
+  const views = await attentionViewsFor(ctx);
+  return views.myNeedsYou
+    .filter((a) => a.work.kind === "needs_you")
+    .map((a) => a.work.id);
+}
 
 /* -------------------------------------------------------------------------- */
 /* For the modules that ask                                                    */

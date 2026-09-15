@@ -37,6 +37,48 @@ import type { ServiceContext } from "./context";
  * authorization belong to the backend.
  */
 
+/**
+ * The three views, derived once.
+ *
+ * ★ ONE DERIVATION, EVERY SURFACE ★
+ * Home and the Needs You page must agree about what needs somebody, and the
+ * only way to guarantee that is for neither of them to decide. Both read this,
+ * and `mockHomeService.summary` builds its Needs You numbers from the same
+ * function rather than filtering the queue a second time with its own rule.
+ */
+export interface AttentionViews {
+  organizationId: string;
+  membershipId: string;
+  /** Work that needs this person. The only one of the three that is a to-do list. */
+  myNeedsYou: ResponsibilityAssignment[];
+  /** Held by people they answer for. Watchable; never their work until it reaches them. */
+  teamOversight: ResponsibilityAssignment[];
+  /** The complete inventory, for deliberate inspection. */
+  allOrganization: ResponsibilityAssignment[];
+  /** False when the viewer may not see other people's work at all. */
+  maySeeTeam: boolean;
+  /**
+   * False in a workspace with nobody to oversee.
+   *
+   * Kept apart from `maySeeTeam` on purpose: "you are not allowed to see other
+   * people's work" and "there are no other people" are different statements,
+   * and a lone owner-operator shown an empty Team oversight tab would read the
+   * second as the first.
+   */
+  teamOversightApplies: boolean;
+  counts: {
+    myNeedsYou: number;
+    myNeedsYouCritical: number;
+    teamOversight: number;
+    teamOversightAtRisk: number;
+    allOrganization: number;
+    ownerFallback: number;
+    needsAssignment: number;
+    trulyUnassigned: number;
+    escalated: number;
+  };
+}
+
 export interface BoardOptions {
   /** Narrow to one queue. Absent builds every queue the viewer may see. */
   queue?: ResponsibilityQueue;
@@ -84,6 +126,14 @@ export interface ResponsibilityService {
    * rather than drifting until somebody notices.
    */
   board(ctx: ServiceContext, options?: BoardOptions): Promise<ResponsibilityBoard>;
+
+  /**
+   * The three separated views. THE shared derivation — see `AttentionViews`.
+   *
+   * Every surface that shows "what needs me" goes through this, so Home and the
+   * Needs You page cannot drift apart.
+   */
+  attention(ctx: ServiceContext): Promise<AttentionViews>;
 
   /** One piece of work, with its full timeline. */
   get(ctx: ServiceContext, work: WorkKey): Promise<ResponsibilityAssignment>;
@@ -138,6 +188,18 @@ export interface ResponsibilityService {
 
   decideApproval(
     ctx: ServiceContext, work: WorkKey, input: ApprovalDecisionInput,
+  ): Promise<ResponsibilityAssignment>;
+
+  /**
+   * "I need a decision on this." The assignee's own move.
+   *
+   * The one way work reaches somebody above the desk without a manager or a
+   * policy putting it there, and — with `escalate` — one of only two things
+   * that can move an item into another person's personal queue. It records who
+   * was asked; it does not move the work, and the asker stays responsible.
+   */
+  requestHelp(
+    ctx: ServiceContext, work: WorkKey, note: string,
   ): Promise<ResponsibilityAssignment>;
 
   /**

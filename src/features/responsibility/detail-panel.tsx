@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowUpCircle, CheckCircle2, ExternalLink, Gavel, HandHelping, Pin,
+  ArrowUpCircle, CheckCircle2, ExternalLink, Gavel, HandHelping, LifeBuoy, Pin,
   Share2, UserCog, UserPlus,
 } from "lucide-react";
 import Link from "next/link";
@@ -267,6 +267,12 @@ export function ResponsibilityPanel({
                 Approve
               </Button>
             ) : null}
+            {can.requestHelp ? (
+              <Button size="sm" variant="secondary" onClick={() => setNote("requestHelp")}>
+                <LifeBuoy aria-hidden />
+                Ask for help
+              </Button>
+            ) : null}
             {can.escalate ? (
               <Button size="sm" variant="secondary" onClick={() => setNote("escalate")}>
                 <ArrowUpCircle aria-hidden />
@@ -319,7 +325,9 @@ export function ResponsibilityPanel({
                     ? { kind: "takeOver", note: reason }
                     : note === "requestApproval"
                       ? { kind: "requestApproval", note: reason }
-                      : { kind: "keep", note: reason },
+                      : note === "requestHelp"
+                        ? { kind: "requestHelp", note: reason }
+                        : { kind: "keep", note: reason },
               )
             }
           />

@@ -238,6 +238,95 @@ export const ASSIGNMENT_SOURCE_LABEL: Record<AssignmentSource, string> = {
   takeover: "Taken over",
 };
 
+/**
+ * What the ASSIGNMENT amounts to, in words a screen may show.
+ *
+ * Derived from the source plus whether anybody was eligible at all. It exists
+ * because "unassigned" was being used for two different things and was wrong
+ * about both: work that fell to the Owner because nobody else qualified has an
+ * accountable person and a name on it, and calling that unassigned tells an
+ * Owner nothing except that the product is confused.
+ */
+export type AssignmentState =
+  /** The routing rules picked somebody. */
+  | "routed"
+  /** Follows a carrier grant, a truck assignment or a dispatch delegation. */
+  | "delegated"
+  /** A person chose, overrode, took over, or was moved by policy. */
+  | "manual"
+  /** Nobody else qualified, so the Owner holds it. NOT unassigned. */
+  | "owner_fallback"
+  /** Nobody in the workspace qualifies at all — this needs a person, not a queue. */
+  | "needs_assignment";
+
+export const ASSIGNMENT_STATE_LABEL: Record<AssignmentState, string> = {
+  routed: "Routed by default",
+  delegated: "Follows a delegation",
+  manual: "Assigned by a person",
+  owner_fallback: "Owner fallback",
+  needs_assignment: "Needs assignment",
+};
+
+export const ASSIGNMENT_STATE_DESCRIPTION: Record<AssignmentState, string> = {
+  routed: "The rules picked the best-placed person for it.",
+  delegated: "It follows a delegation somebody granted.",
+  manual: "Somebody chose this on purpose.",
+  owner_fallback:
+    "Nobody else in this workspace can do it yet, so it sits with the Owner. It has an owner — it is not unassigned.",
+  needs_assignment:
+    "Nobody here holds what this needs. Somebody has to be given the permission, or hired.",
+};
+
+/* -------------------------------------------------------------------------- */
+/* Attention                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Why a piece of work needs ONE specific person, personally.
+ *
+ * The narrow question a personal queue is built from. See
+ * `src/lib/responsibility/attention.ts` for the list of things that
+ * deliberately do NOT appear here — chief among them being accountable in the
+ * org-chart sense, which is oversight rather than action.
+ */
+export type AttentionReason =
+  /** You are the one doing it. */
+  | "responsible"
+  /** Nobody else qualified, so it fell to you. */
+  | "owner_fallback"
+  /** Nobody in the workspace can do it at all. */
+  | "needs_assignment"
+  /** A person named you accountable, by hand. Never a derived roll-up. */
+  | "explicit_accountable"
+  /** You are the approver and it is waiting on you. */
+  | "approval_required"
+  /** A recorded escalation actually named you. Not a rung that is merely due. */
+  | "escalation_reached_you"
+  /** Whoever holds it asked you for a decision or a hand. */
+  | "help_requested";
+
+export const ATTENTION_REASON_LABEL: Record<AttentionReason, string> = {
+  responsible: "Yours to do",
+  owner_fallback: "Nobody else can do this",
+  needs_assignment: "Needs somebody assigned",
+  explicit_accountable: "You were named accountable",
+  approval_required: "Waiting on your approval",
+  escalation_reached_you: "Escalated to you",
+  help_requested: "Help asked of you",
+};
+
+export const ATTENTION_REASON_DESCRIPTION: Record<AttentionReason, string> = {
+  responsible: "You are the person doing this.",
+  owner_fallback:
+    "Nobody else in this workspace holds what it needs, so it is yours until somebody does.",
+  needs_assignment:
+    "Nobody here can do this, including you. It needs a permission granted or a person hired.",
+  explicit_accountable: "Somebody put you in the accountable seat for this one.",
+  approval_required: "It cannot be finished until you approve it.",
+  escalation_reached_you: "Somebody escalated this to you, by hand, and it is recorded.",
+  help_requested: "The person holding it has asked you to decide or to step in.",
+};
+
 /** True for the sources that mean a person overrode the default. */
 export const ASSIGNMENT_IS_OVERRIDE: Record<AssignmentSource, boolean> = {
   default_policy: false,
@@ -489,6 +578,7 @@ export type ResponsibilityTimelineAction =
   | "watcher_removed"
   | "acknowledged"
   | "approval_requested"
+  | "help_requested"
   | "approved"
   | "approval_declined"
   | "escalated"
@@ -510,6 +600,7 @@ export const RESPONSIBILITY_TIMELINE_LABEL: Record<ResponsibilityTimelineAction,
   watcher_removed: "Watcher removed",
   acknowledged: "Acknowledged",
   approval_requested: "Approval requested",
+  help_requested: "Help requested",
   approved: "Approved",
   approval_declined: "Approval declined",
   escalated: "Escalated",
@@ -582,6 +673,21 @@ export interface ResponsibilityAssignment {
   escalations: EscalationState[];
   /** True when any clock is due soon or breached, or any trigger is live. */
   atRisk: boolean;
+  /**
+   * What the assignment amounts to, for a screen that has to name it.
+   *
+   * Never "unassigned": every assignment has a responsible membership, and
+   * `owner_fallback` and `needs_assignment` say which kind of fallback it is
+   * rather than pretending nobody holds it.
+   */
+  assignmentState: AssignmentState;
+  /** True when nobody in the workspace is eligible, the holder included. */
+  noEligibleAssignee: boolean;
+  /**
+   * Why this needs the VIEWER personally. Empty means it does not — which is
+   * the normal state of most of a workspace's work for most of its people.
+   */
+  attention: AttentionReason[];
   /** What this viewer may do to it. */
   can: ResponsibilityAbilities;
 
@@ -613,6 +719,8 @@ export interface ResponsibilityAbilities {
   changeAccountable: boolean;
   requestApproval: boolean;
   approve: boolean;
+  /** Ask whoever answers for this to decide or step in. Moves nothing. */
+  requestHelp: boolean;
   escalate: boolean;
   takeOver: boolean;
   addWatcher: boolean;
@@ -717,47 +825,69 @@ export interface FleetProfile {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The seven views. Simple daily work first; everything structural is behind
- * settings.
+ * The views, in the order a person reads them.
+ *
+ * The first three are the ones that matter and they are kept strictly apart,
+ * because collapsing any two of them is how an Owner ends up with their whole
+ * organization in their face:
+ *
+ *   my_needs_you      work that stops unless THIS person acts. See
+ *                     `attention.ts` — it is a much narrower question than
+ *                     "can they see it" or "do they answer for it".
+ *   team_oversight    work held by people they answer for. Health, SLA risk
+ *                     and escalation state, with no claim on their attention.
+ *   all_organization  the complete inventory, for deliberate inspection. Not
+ *                     an attention queue and never fed into one.
+ *
+ * The rest are lenses over the same work for the dispatch surface.
  */
 export type ResponsibilityQueue =
-  | "my_mt_loop"
   | "my_needs_you"
-  | "team"
-  | "unassigned"
+  | "team_oversight"
+  | "all_organization"
+  | "my_mt_loop"
   | "escalated"
   | "at_risk"
-  | "all_organization";
+  /** Work the Owner holds because nobody else qualified. It HAS an owner. */
+  | "owner_fallback"
+  /** Work nobody in the workspace can do. It needs a person, not a queue. */
+  | "needs_assignment";
 
 export const QUEUE_LABEL: Record<ResponsibilityQueue, string> = {
-  my_mt_loop: "My MT Loop",
   my_needs_you: "My Needs You",
-  team: "Team work",
-  unassigned: "Unassigned",
+  team_oversight: "Team oversight",
+  all_organization: "All organization",
+  my_mt_loop: "My MT Loop",
   escalated: "Escalated",
   at_risk: "At risk",
-  all_organization: "All organization",
+  owner_fallback: "Owner fallback",
+  needs_assignment: "Needs assignment",
 };
 
-/**
- * Both "my" queues say "and anything that needs you" because for an Owner they
- * hold two things: work they are doing, and work they answer for that has
- * escalated or is critical. A description that claimed only the first would be
- * wrong on the row right underneath it saying who actually has it.
- */
 export const QUEUE_DESCRIPTION: Record<ResponsibilityQueue, string> = {
-  my_mt_loop: "Truck cycles you are doing, plus any you answer for that need you.",
-  my_needs_you: "Items you are doing, plus any you answer for that need you.",
-  team: "What everybody else is holding.",
-  unassigned: "Nobody is responsible yet. This should normally be empty.",
-  escalated: "A trigger has fired. The original assignee still holds the work.",
+  my_needs_you:
+    "Only what needs you personally — yours to do, escalated to you, waiting on your approval, or nobody else can.",
+  team_oversight:
+    "Held by people you answer for. Watch it here; it is not your work unless it reaches you.",
+  all_organization:
+    "Everything open in this workspace, for when you want to look. Not an attention queue.",
+  my_mt_loop: "Truck cycles that need you personally.",
+  escalated: "Somebody was actually brought in, by hand. The original assignee still holds it.",
   at_risk: "An acknowledgement or resolution target is close, or already missed.",
-  all_organization: "Everything in this workspace, whoever holds it.",
+  owner_fallback:
+    "Nobody else in this workspace can do these yet, so they sit with the Owner. They are owned, not unassigned.",
+  needs_assignment:
+    "Nobody here holds what these need. Grant a permission, or bring somebody in.",
 };
 
-/** The two queues every workspace always shows, however small it is. */
+/** The three the Needs You page shows, in order. */
+export const NEEDS_YOU_VIEWS: readonly ResponsibilityQueue[] = [
+  "my_needs_you", "team_oversight", "all_organization",
+];
+
+/** The queues every workspace always shows, however small it is. */
 export const ALWAYS_VISIBLE_QUEUES: readonly ResponsibilityQueue[] = [
-  "my_mt_loop", "my_needs_you",
+  "my_needs_you", "my_mt_loop",
 ];
 
 export interface ResponsibilityQueueView {
@@ -783,11 +913,23 @@ export interface ResponsibilityBoard {
   queues: ResponsibilityQueueView[];
   counts: {
     total: number;
+    /** Work that needs the viewer personally. The only number that is a to-do list. */
     mine: number;
-    unassigned: number;
+    /** Held by the Owner because nobody else qualified. Owned, not unassigned. */
+    ownerFallback: number;
+    /** Nobody in the workspace can do it at all. */
+    needsAssignment: number;
+    /**
+     * Work with no responsible membership whatsoever.
+     *
+     * Structurally always zero — routing cannot produce it — and reported
+     * anyway, because an invariant nobody measures is an invariant nobody
+     * notices breaking.
+     */
+    trulyUnassigned: number;
     escalated: number;
     atRisk: number;
-    /** Work whose accountable membership is the viewer, but whose responsible is not. */
+    /** Work the viewer oversees but is not doing. Oversight, never a to-do list. */
     oversight: number;
   };
   /** Memberships the viewer may hand work to. Absent in a workspace of one. */

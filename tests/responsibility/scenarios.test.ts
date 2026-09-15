@@ -95,12 +95,12 @@ describe("a small self-dispatching carrier needs no setup at all", () => {
     expect(board.fleetProfile.eligibleMemberCount).toBe(1);
 
     // No team queue and no unassigned queue: both are meaningless alone.
-    expect(queue(board, "team")).toBeUndefined();
+    expect(queue(board, "team_oversight")).toBeUndefined();
 
     const mine = queue(board, "my_needs_you")!;
     expect(mine.count).toBeGreaterThan(0);
     // A one-person carrier's work is OWNED, never "nobody has it".
-    expect(queue(board, "unassigned")?.count ?? 0).toBe(0);
+    expect(queue(board, "owner_fallback")?.count ?? 0).toBe(0);
     for (const item of mine.items) {
       expect(item.responsible.membershipId).toBe(ctx.membershipId);
       expect(item.responsible.source).not.toBe("fallback");
@@ -236,7 +236,7 @@ describe("driver-action work goes to the driver and nobody else", () => {
     const mine = queue(board, "my_needs_you")!;
 
     // A driver sees no team and no whole-organization view.
-    expect(queue(board, "team")).toBeUndefined();
+    expect(queue(board, "team_oversight")).toBeUndefined();
     expect(queue(board, "all_organization")).toBeUndefined();
 
     for (const item of mine.items) {
@@ -367,12 +367,12 @@ describe("the Owner keeps oversight without getting every routine item", () => {
     expect(excluded.length).toBeGreaterThan(0);
 
     for (const item of excluded) {
-      // Everything kept out is somebody else's, and routine: not critical, not
-      // escalated, and not waiting on the Owner for anything.
+      // Everything kept out is somebody else's and needs nothing from the
+      // Owner. Note what is NOT asserted any more: severity. Critical work that
+      // is actively owned and inside its SLA is correctly excluded now — being
+      // severe is a fact about the work, not a claim on the Owner's day.
       expect(item.responsible.membershipId).not.toBe(ctx.membershipId);
-      expect(item.severity).not.toBe("critical");
-      expect(item.escalations.some((e) => e.level >= 2 && e.trigger !== "high_severity"))
-        .toBe(false);
+      expect(item.attention).toHaveLength(0);
     }
   });
 
@@ -409,8 +409,22 @@ describe("the Owner keeps oversight without getting every routine item", () => {
 /* -------------------------------------------------------------------------- */
 
 describe("SLA escalation never moves the work by itself", () => {
+  /**
+   * An item somebody has actually escalated.
+   *
+   * It has to be MADE, because a rung merely falling due no longer counts: an
+   * escalation is a recorded act by a person, which is what stopped eighty-two
+   * overdue items appearing as though a manager had been told about them.
+   */
   async function anEscalatedItem(): Promise<ResponsibilityAssignment> {
-    const board = await responsibility.board(contextFor(NORTHLINE_OWNER));
+    const ctx = contextFor(NORTHLINE_OWNER);
+    const items = await allWork(NORTHLINE_OWNER);
+    const target = items.find((i) => i.can.escalate)!;
+    await responsibility.escalate(
+      ctx, { kind: target.work.kind, id: target.work.id }, "Nobody has moved this.",
+    );
+
+    const board = await responsibility.board(ctx);
     const escalated = queue(board, "escalated")!;
     expect(escalated.count).toBeGreaterThan(0);
     return escalated.items[0];

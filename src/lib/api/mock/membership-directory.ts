@@ -145,6 +145,8 @@ const tpl = (orgId: string, name: string) => `tpl_${orgId}_${name}`;
  *   Ivy Delgado       a second Northline dispatcher, on nights, so shift scope
  *                     is a real thing rather than a field nobody sets.
  *   Ben Osei          Northline maintenance — the maintenance routing case.
+ *   Tess Ferraro      Northline safety and compliance — the desk whose absence
+ *                     was sending forty compliance items to the Owner.
  *   Renata Cruz       Northline bookkeeping — paperwork, and an example of
  *                     somebody who is eligible for nothing operational.
  *   Wes Abara         Northline company driver — driver-action routing.
@@ -207,6 +209,32 @@ const COLLEAGUES: readonly Membership[] = [
     scope: DEFAULT_SCOPE,
     isOwner: false,
     joinedAt: "2025-12-08T15:00:00.000Z",
+  },
+  {
+    // ★ The reason the Owner's queue was full of compliance ★
+    //
+    // Northline runs seven trucks and had nobody at all holding
+    // `compliance:manage`, `insurance:manage` or `claims:manage`, so forty
+    // items correctly fell to the Owner as fallback. That is the engine working
+    // — and it is also a carrier that has not hired a safety person. A
+    // seven-truck fleet has one, so now the fixture does too, and the Owner's
+    // personal queue shows what it should: the handful of decisions only an
+    // owner can make.
+    id: "mem_northline_safety",
+    userId: "usr_tess",
+    organizationId: "org_northline",
+    status: "active",
+    title: "Safety & compliance",
+    templateIds: [
+      tpl("org_northline", "safety"),
+      tpl("org_northline", "compliance"),
+      tpl("org_northline", "risk and insurance"),
+    ],
+    grants: ["trucks:view", "trailers:view", "drivers:view"],
+    revocations: [],
+    scope: DEFAULT_SCOPE,
+    isOwner: false,
+    joinedAt: "2026-01-26T15:00:00.000Z",
   },
   {
     id: "mem_northline_books",
@@ -379,6 +407,7 @@ const USER_NAMES: Record<string, string> = {
   usr_paige: "Paige Ellery",
   usr_ivy: "Ivy Delgado",
   usr_ben: "Ben Osei",
+  usr_tess: "Tess Ferraro",
   usr_renata: "Renata Cruz",
   usr_wes: "Wes Abara",
   usr_nadia: "Nadia Rahimi",
@@ -424,8 +453,14 @@ const PROFILES: readonly MembershipProfile[] = [
     availability: "available",
     supervisorMembershipId: "mem_northline_owner",
     functions: ["dispatch"],
-    // Two named trucks, which is what makes "work follows the assignment"
-    // something you can watch rather than something the docs claim.
+    // Not narrowed: Paige is the day desk and covers the carrier's dispatch.
+    //
+    // Scoped delegation is demonstrated at RUNTIME instead, through
+    // `setMembershipDelegationScope` — which is the better test anyway, because
+    // it proves the TRANSITION (grant a scope, watch the other trucks leave
+    // them; revoke it, watch them come back) rather than a static fixture.
+    // Baking a narrow scope in here also quietly uncovered five trucks, since
+    // the only other dispatcher works nights.
     truckIds: [],
     carrierOrganizationIds: ["org_northline"],
     shiftLabel: "Days",
@@ -449,6 +484,15 @@ const PROFILES: readonly MembershipProfile[] = [
     truckIds: [],
     carrierOrganizationIds: ["org_northline"],
     departmentLabel: "Shop",
+  },
+  {
+    membershipId: "mem_northline_safety",
+    availability: "available",
+    supervisorMembershipId: "mem_northline_owner",
+    functions: ["safety", "compliance"],
+    truckIds: [],
+    carrierOrganizationIds: ["org_northline"],
+    departmentLabel: "Safety",
   },
   {
     membershipId: "mem_northline_books",
@@ -622,12 +666,16 @@ const DEFAULT_PROFILE: Omit<MembershipProfile, "membershipId"> = {
 interface DirectoryOverrides {
   availability: Map<string, MembershipAvailability>;
   status: Map<string, Membership["status"]>;
+  /** Runtime delegation scope: which trucks and carriers somebody was given. */
+  scope: Map<string, { truckIds?: string[]; carrierOrganizationIds?: string[] }>;
 }
 
 let overrides: DirectoryOverrides | null = null;
 
 function ov(): DirectoryOverrides {
-  if (!overrides) overrides = { availability: new Map(), status: new Map() };
+  if (!overrides) {
+    overrides = { availability: new Map(), status: new Map(), scope: new Map() };
+  }
   return overrides;
 }
 
@@ -664,6 +712,26 @@ export function setMembershipStatus(
   ov().status.set(membershipId, status);
 }
 
+/**
+ * Give a membership a delegation scope, or take it away.
+ *
+ * An EMPTY list means "not narrowed", never "narrowed to nothing" — the same
+ * rule the eligibility gate applies — so `{ truckIds: [] }` hands somebody the
+ * whole carrier back and `undefined` clears the override entirely.
+ *
+ * This is how a scoped delegation is granted and revoked at runtime, which is
+ * what makes the transition testable: grant a dispatcher two trucks and the
+ * other five leave them; revoke it and they come back, with the work itself
+ * never duplicated or destroyed.
+ */
+export function setMembershipDelegationScope(
+  membershipId: string,
+  scope: { truckIds?: string[]; carrierOrganizationIds?: string[] } | undefined,
+) {
+  if (scope === undefined) ov().scope.delete(membershipId);
+  else ov().scope.set(membershipId, scope);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Resolution                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -683,6 +751,7 @@ function resolve(membership: Membership): DirectoryMember | undefined {
   const profile = PROFILE_BY_ID.get(membership.id)
     ?? { membershipId: membership.id, ...DEFAULT_PROFILE };
   const availability = ov().availability.get(membership.id) ?? profile.availability;
+  const scopeOverride = ov().scope.get(membership.id);
 
   // The real function, on the real record. A suspended or ended membership
   // resolves to the empty set, which is what makes removal work without a
@@ -707,8 +776,9 @@ function resolve(membership: Membership): DirectoryMember | undefined {
     availability,
     supervisorMembershipId: profile.supervisorMembershipId,
     functions: profile.functions,
-    truckIds: profile.truckIds,
-    carrierOrganizationIds: profile.carrierOrganizationIds,
+    truckIds: scopeOverride?.truckIds ?? profile.truckIds,
+    carrierOrganizationIds:
+      scopeOverride?.carrierOrganizationIds ?? profile.carrierOrganizationIds,
     shiftLabel: profile.shiftLabel,
     departmentLabel: profile.departmentLabel,
     endsAt: profile.endsAt,

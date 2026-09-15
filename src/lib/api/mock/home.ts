@@ -1,5 +1,6 @@
 import { missingRequiredDocuments, type FleetTrailer, type FleetTruck, type Load } from "@/types";
 import { assignableMembersOf } from "./membership-directory";
+import { personalNeedsYouItems } from "./attention-bridge";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { trailerFleetSync } from "./trailer-registry";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
@@ -117,6 +118,11 @@ export const mockHomeService: HomeService = {
       };
     }
 
+    // THE shared derivation. See `attentionViewsFor` in mock/responsibility.ts —
+    // the Needs You page and `/work` read exactly the same function, and
+    // `tests/responsibility/attention.test.ts` asserts these agree item for item.
+    const personal = await personalNeedsYouItems(ctx, needsYouAll);
+
     return {
       counts: {
         activeLoads: activeLoads.length,
@@ -127,10 +133,21 @@ export const mockHomeService: HomeService = {
         trucksAvailable: trucks.filter((t) => t.status === "available").length,
         trucksGoingEmpty: soonEmptyTrucks.length,
         documentsMissing,
-        needsYouOpen: needsYouAll.length,
-        needsYouCritical: needsYouAll.filter((i) => i.severity === "critical").length,
+        // ★ Home does NOT filter the queue itself. ★
+        //
+        // These three lines used to read `needsYouAll` — everything the
+        // membership could see — so a Carrier Owner opened Home to "142 open"
+        // and a preview of four items, none of which needed them. Home now
+        // shows the SAME personal derivation the Needs You page shows, from
+        // `attentionViewsFor`, and there is no second rule anywhere.
+        //
+        // Zero here is a correct and desirable answer: it means nothing in the
+        // workspace currently needs this person, which is what an Owner who has
+        // delegated well should see.
+        needsYouOpen: personal.length,
+        needsYouCritical: personal.filter((i) => i.severity === "critical").length,
       },
-      needsYouPreview: [...needsYouAll].sort((a, b) => urgencyScore(a) - urgencyScore(b)).slice(0, 4),
+      needsYouPreview: personal.slice(0, 4),
       activeLoads: activeLoads.slice(0, 6),
       upcomingLoads: upcomingLoads.slice(0, 5),
       soonEmptyTrucks: soonEmptyTrucks.slice(0, 6),

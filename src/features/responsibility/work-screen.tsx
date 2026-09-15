@@ -79,7 +79,7 @@ export function MyWorkScreen() {
 
   const data = board.data!;
   const counts = data.counts;
-  const hasTeam = queues.some((q) => q.queue === "team");
+  const hasTeam = queues.some((q) => q.queue === "team_oversight");
 
   return (
     <div className="space-y-section">
@@ -193,26 +193,31 @@ export function MyWorkScreen() {
  */
 function emptyTitle(queue: ResponsibilityQueue): string {
   switch (queue) {
-    case "unassigned": return "Nothing is ownerless";
-    case "escalated": return "Nothing has escalated";
-    case "at_risk": return "Nothing is slipping";
-    case "team": return "Your team is holding nothing";
-    case "my_mt_loop": return "No truck cycles are yours right now";
-    case "my_needs_you": return "Nothing is waiting on you";
+    case "my_needs_you": return "Nothing needs you";
+    case "team_oversight": return "Your team is holding nothing";
     case "all_organization": return "This workspace has no open work";
+    case "my_mt_loop": return "No truck cycles need you";
+    case "escalated": return "Nothing has been escalated";
+    case "at_risk": return "Nothing is slipping";
+    case "owner_fallback": return "Nothing is stuck with the Owner";
+    case "needs_assignment": return "Everything has somebody who can do it";
   }
 }
 
 function emptyDescription(queue: ResponsibilityQueue): string {
   switch (queue) {
-    case "unassigned":
-      return "Every piece of work in this workspace has somebody responsible for it. That is the intended state.";
+    case "my_needs_you":
+      return "Work reaches this list when it is yours to do, when somebody escalates it to you or asks for your help, when it is waiting on your approval, or when nobody else can do it. None of that is true right now.";
+    case "team_oversight":
+      return "Nobody you answer for has anything open. Work appears here as soon as somebody picks something up.";
     case "escalated":
-      return "No acknowledgement or resolution target has been missed long enough to involve anybody else.";
+      return "Nobody has escalated anything by hand. A target falling due is pressure, and it shows under At risk — it is not an escalation until a person makes it one.";
     case "at_risk":
       return "Every target is comfortably inside its window.";
-    case "team":
-      return "Nobody else has anything open. Work appears here as soon as somebody picks something up.";
+    case "owner_fallback":
+      return "Everything in this workspace has somebody qualified on it. That is the intended state.";
+    case "needs_assignment":
+      return "Nothing is waiting on a permission being granted or a person being brought in.";
     default:
       return "Antcolos routes work as it appears, so this fills itself.";
   }

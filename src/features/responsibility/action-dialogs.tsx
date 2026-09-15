@@ -165,7 +165,8 @@ export function MoveWorkDialog({
 /* Note-only actions                                                           */
 /* -------------------------------------------------------------------------- */
 
-export type NoteActionKind = "escalate" | "takeOver" | "requestApproval" | "keep";
+export type NoteActionKind =
+  | "escalate" | "takeOver" | "requestApproval" | "requestHelp" | "keep";
 
 const NOTE_COPY: Record<
   NoteActionKind,
@@ -196,6 +197,14 @@ const NOTE_COPY: Record<
     verb: "Request",
     required: true,
     placeholder: "Over the limit I can sign off.",
+  },
+  requestHelp: {
+    title: "Ask for help",
+    consequence:
+      "Puts this on the queue of whoever answers for it, as something needing them. You stay responsible for it — asking is not handing it over.",
+    verb: "Ask",
+    required: true,
+    placeholder: "The broker wants a rate I cannot sign off.",
   },
   keep: {
     title: "Keep this",
