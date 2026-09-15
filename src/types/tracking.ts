@@ -42,6 +42,11 @@ import type { TruckEquipmentType } from "./truck";
  * migration — see `TRACKING_SIGNAL_SOURCES`.
  */
 export type LocationSignalTransport =
+  /**
+   * The canonical source: a normalized observation from the ELD & Telematics
+   * module, read through its own share and permission scoping.
+   */
+  | "eld_telemetry"
   /** A reading that came through the existing fleet telemetry boundary. */
   | "fleet_telemetry"
   /** An electronic logging device, through the ELD boundary. */
@@ -60,6 +65,9 @@ export type LocationSignalTransport =
   | "dispatcher_entry"
   /** The driver said where they were. A person, not a device. */
   | "driver_report";
+
+/** How precisely a viewer may know a position. A permission outcome. */
+export type LocationPrecision = "exact" | "city_only";
 
 /**
  * One position, normalized.
@@ -83,7 +91,25 @@ export interface LocationSignal {
   state?: string;
   /** Free text as recorded — a yard, a customer, a mile marker. */
   description?: string;
+  /**
+   * Coordinates, present ONLY when `precision` is "exact".
+   *
+   * Never carried at city precision, and never zeroed to stand in for a
+   * withheld one: a 0,0 coordinate is a position in the Gulf of Guinea, and a
+   * proximity calculation cannot tell the difference between that and a
+   * withheld one. Absent, plus `precision`, says which.
+   */
   point?: GeoPoint;
+  /**
+   * How precisely this workspace is allowed to know where the truck is.
+   *
+   * `city_only` is a PERMISSION outcome, not a gap in the data: the provider
+   * reported a coordinate and this membership does not hold
+   * `eld:location:precise:view`. Anything derived from coordinates — distance,
+   * route progress, geofence proximity — must decline and say so rather than
+   * quietly return nothing.
+   */
+  precision: LocationPrecision;
   /** Miles per hour, where the source reports it. Absent is not zero. */
   speedMph?: number;
   /** When the position was true in the world. Staleness is measured on this. */
@@ -398,6 +424,21 @@ export interface TrackedAuthority {
   snapshotAt: IsoDateTime;
 }
 
+/** Where a displayed ETA came from. Nothing in this build computes one. */
+export type EtaSource =
+  /** The Load module's own `load.eta_updated` event. */
+  | "load_event"
+  /** No ETA exists; the delivery appointment is standing in for one. */
+  | "appointment"
+  /** Neither. There is nothing to derive an arrival time from. */
+  | "none";
+
+export const ETA_SOURCE_LABEL: Record<EtaSource, string> = {
+  load_event: "Reported on the load timeline",
+  appointment: "No ETA reported — showing the delivery appointment",
+  none: "No ETA and no appointment",
+};
+
 /** One live load, as the dispatch tracking board shows it. */
 export interface DispatchTrackingRow {
   loadId: string;
@@ -427,10 +468,34 @@ export interface DispatchTrackingRow {
   routeProgressPercent?: number;
   /** Straight-line miles to the final stop. Not a driving distance. */
   milesToDelivery?: number;
+  /**
+   * How precisely this viewer may know the position, and — when the answer is
+   * not "exact" — what that costs them.
+   *
+   * Route progress, miles to delivery and geofence proximity are all derived
+   * from coordinates. A membership without `eld:location:precise:view` cannot
+   * have them, and the row says exactly that instead of rendering three empty
+   * columns that read as "nothing is happening".
+   */
+  precision: LocationPrecision;
+  /** Present whenever `precision` is not "exact". Written for the dispatcher. */
+  precisionNote?: string;
 
   /* When */
   deliveryAppointmentAt?: IsoDateTime;
   etaAt?: IsoDateTime;
+  /**
+   * Where the ETA came from. Never a calculation this module made.
+   *
+   * ELD & Telematics owns raw observations and publishes `etaBasis:
+   * "not_computed"` on purpose; a future Trip / Route Intelligence module owns
+   * the computed ETA; Tracking consumes whatever exists and attributes it. Until
+   * that module lands, an ETA is the Load module's own `load.eta_updated` event,
+   * or the delivery appointment standing in for one — and the screen says which,
+   * because a planned-against ETA that turns out to be an appointment is how a
+   * dispatcher gets caught out.
+   */
+  etaSource: EtaSource;
   /** Minutes late against the appointment. Negative is early. */
   etaVarianceMinutes?: number;
   lastUpdateAt?: IsoDateTime;

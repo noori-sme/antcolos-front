@@ -66,6 +66,7 @@ export function duplicateCount(signals: readonly LocationSignal[]): number {
 }
 
 export const TRANSPORT_LABEL: Record<LocationSignalTransport, string> = {
+  eld_telemetry: "ELD & Telematics",
   fleet_telemetry: "Fleet telemetry",
   eld: "ELD",
   mobile_gps: "Driver phone GPS",

@@ -22,24 +22,37 @@ import type {
 
 export const TRACKING_SIGNAL_SOURCES: readonly TrackingSignalSourceDescriptor[] = [
   {
+    transport: "eld_telemetry",
+    label: "ELD & Telematics observations",
+    description:
+      "The canonical source. Normalized device observations from the ELD & Telematics module, "
+      + "read through its own per-truck sharing and its own precise-location permission. Every "
+      + "provider behind it is a mock, and no device in this build is real — but the scoping is.",
+    status: "not_connected",
+    wouldPopulate: [
+      "Current location", "Movement", "Route progress", "Geofence crossings", "Signal freshness",
+    ],
+    ownedBy: "ELD & Telematics (already merged)",
+  },
+  {
     transport: "fleet_telemetry",
     label: "Fleet telemetry readings",
     description:
-      "Location readings already held by the fleet layer — what a dispatcher or a driver "
-      + "called in, plus anything a future ELD or GPS integration writes there. This is the "
-      + "only source with data in it today, and every row of it is mock or hand-entered.",
+      "What a dispatcher or a driver called in, held by the fleet layer. A fallback behind the "
+      + "ELD observations and gated by the same sharing rules — a truck a carrier has not shared "
+      + "cannot be located from somebody's phone notes either.",
     status: "not_connected",
     wouldPopulate: ["Current location", "Last update", "Signal source"],
     ownedBy: "Fleet Management (already merged)",
   },
   {
     transport: "eld",
-    label: "Electronic logging device",
+    label: "Electronic logging device (legacy label)",
     description:
-      "Position and engine state straight from the device in the cab, at the cadence the "
-      + "provider pushes rather than when somebody remembers to ring in.",
+      "Kept for load-timeline events the Load module recorded with an ELD source before the "
+      + "ELD & Telematics module existed. New observations arrive as ELD & Telematics.",
     status: "not_connected",
-    wouldPopulate: ["Current location", "Movement", "Route progress", "Geofence crossings"],
+    wouldPopulate: ["Current location", "Movement"],
     ownedBy: "ELD & Telematics boundary",
   },
   {

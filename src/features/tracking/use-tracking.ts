@@ -60,7 +60,12 @@ export function useLoadTracking(loadId: string) {
     queryKey: ctx
       ? ["tracking", ctx.organizationId, ctx.membershipId, "load", loadId]
       : ["tracking", "no-context"],
-    queryFn: () => loadTracking(ctx!, loadId),
+    // `null`, not `undefined`: a load this workspace may not see is a real and
+    // expected answer — a stale link, a typo, an organization switched since
+    // the tab was opened. React Query treats `undefined` as a failed fetch and
+    // retries it, which would turn a clean "not available here" into three
+    // console errors and an error screen.
+    queryFn: async () => (await loadTracking(ctx!, loadId)) ?? null,
     enabled: Boolean(ctx),
   });
 }

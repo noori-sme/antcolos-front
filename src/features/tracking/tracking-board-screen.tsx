@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Building2, ChevronRight, MapPin, Share2, Truck as TruckIcon,
+  Building2, ChevronRight, Lock, MapPin, Share2, Truck as TruckIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -260,6 +260,19 @@ function Row({ row }: { row: DispatchTrackingRow }) {
               row.healthReason
             )}
           </p>
+
+          {row.precisionNote ? (
+            <p className="flex items-start gap-1.5 text-[0.75rem] leading-relaxed text-fg-muted">
+              <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              <span>
+                <span className="font-medium text-fg">
+                  Route progress, miles to delivery and geofence proximity need precise-location
+                  access.
+                </span>{" "}
+                {row.precisionNote}
+              </span>
+            </p>
+          ) : null}
 
           {worstAlert ? (
             <p className="text-[0.75rem] leading-relaxed text-st-warning">
