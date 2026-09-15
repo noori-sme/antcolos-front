@@ -249,7 +249,10 @@ export function blockersFor(input: CycleInput): MtLoopBlocker[] {
       label: "Rate confirmation outstanding",
       detail: `${loop.loadReference ?? "The booked load"} has no signed rate confirmation back from the broker. Until it does, the load is not final and the driver has nothing to run.`,
       stopsDispatch: true,
-      href: `/dispatch/rate-confirmations`,
+      // The truck's own dispatch workspace, which is where THIS cycle's rate
+      // confirmation panel is. There is no rate-confirmation index route, and
+      // linking to one that does not exist is worse than linking one level up.
+      href: `/dispatch/trucks/${loop.truckId}`,
     });
   }
 
@@ -345,7 +348,7 @@ export function nextActionFor(
     case "booked_unconfirmed":
       return {
         label: "Check the rate confirmation",
-        href: "/dispatch/rate-confirmations",
+        href: `/dispatch/trucks/${loop.truckId}`,
         reason: `${loop.loadReference ?? "The booked load"} is not final until the confirmation is reviewed, signed and returned to the broker.`,
         requires: ["loads:create"],
         notYours: !viewer.isMine && viewer.held,

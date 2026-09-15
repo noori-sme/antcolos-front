@@ -17,6 +17,8 @@ import {
 } from "@/lib/api/mock/rate-confirmation";
 import { mockNeedsYouService } from "@/lib/api/mock/needs-you";
 import { MT_LOOP_STAGE_ORDER } from "@/types";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * MT Loop and Needs You as the two surfaces a day is worked from.
@@ -113,7 +115,10 @@ test("a booked load with no signed confirmation is a cycle that is not finished"
     "the outstanding confirmation is named as a blocker",
   );
   assert.match(card.nextAction?.label ?? "", /rate confirmation/i);
-  assert.match(card.nextAction?.href ?? "", /rate-confirmations/);
+  // The truck's own dispatch workspace, which is where THIS cycle's rate
+  // confirmation panel is rendered. There is no rate-confirmation index route,
+  // and every link asserted here is checked against the real routes below.
+  assert.equal(card.nextAction?.href, `/dispatch/trucks/${card.truckId}`);
 
   await signIt(ctx, loopId);
 
@@ -295,3 +300,66 @@ async function signIt(ctx: MtLoopContext, loopId: string) {
   assert.equal(signed.status, "ok", JSON.stringify(signed));
   return signed;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Every link goes somewhere that exists                                       */
+/* -------------------------------------------------------------------------- */
+
+test("every deep link MT Loop and Needs You produce resolves to a real route", async () => {
+  const ctx = loopContextFor(CTX);
+  syncMtLoops(ctx);
+
+  const links = new Set<string>();
+  for (const card of mtLoopBoardSync(ctx).loops) {
+    if (card.nextAction) links.add(card.nextAction.href);
+    for (const b of card.blockers) if (b.href) links.add(b.href);
+    for (const e of card.evidence) if (e.href) links.add(e.href);
+  }
+  for (const item of await mockNeedsYouService.list(ctx)) {
+    if (item.recommendedAction.href) links.add(item.recommendedAction.href);
+    if (item.entity.href) links.add(item.entity.href);
+  }
+  assert.ok(links.size > 5, "the two surfaces produce links to check");
+
+  for (const link of links) {
+    assert.ok(
+      routeExists(link),
+      `${link} has no page. A deep link to a 404 is worse than no link.`,
+    );
+  }
+});
+
+/**
+ * Whether the App Router has a page for this path.
+ *
+ * Reads the route tree rather than a hardcoded list, so a link added to a route
+ * that is later renamed fails here instead of in somebody's browser. Dynamic
+ * segments match one path segment each.
+ */
+function routeExists(href: string): boolean {
+  const path = href.split("?")[0].split("#")[0];
+  const segments = path.split("/").filter(Boolean);
+  return ROUTES.some((route) => {
+    if (route.length !== segments.length) return false;
+    return route.every((part, i) => part.startsWith("[") || part === segments[i]);
+  });
+}
+
+/** Every page path under src/app, as segment arrays. */
+const ROUTES: string[][] = (() => {
+  const out: string[][] = [];
+  const root = join(process.cwd(), "src/app");
+  const walk = (dir: string, segments: string[]) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        // Route groups like (app) do not appear in the URL.
+        const next = entry.name.startsWith("(") ? segments : [...segments, entry.name];
+        walk(join(dir, entry.name), next);
+      } else if (entry.name === "page.tsx") {
+        out.push(segments);
+      }
+    }
+  };
+  walk(root, []);
+  return out;
+})();
