@@ -201,6 +201,7 @@ export async function truckDispatchWorkspaceFor(
 const NOTHING_ALLOWED: MtLoopAbilities = {
   claim: false, assign: false, reassign: false, pause: false,
   resume: false, block: false, unblock: false, close: false,
+  escalateToCarrier: false,
 };
 
 /* -------------------------------------------------------------------------- */

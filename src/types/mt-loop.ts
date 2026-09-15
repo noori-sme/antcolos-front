@@ -133,6 +133,26 @@ export interface MtLoop {
   loadId?: string;
   loadReference?: string;
 
+  /**
+   * A dispatch organization has raised this truck's cycle back to the carrier
+   * that granted them the truck.
+   *
+   * ★ THE ONLY ROUTINE WAY WORK CROSSES THE ORGANIZATION BOUNDARY ★
+   * The escalation order is Employee Dispatcher → Dispatch Organization Owner
+   * → Carrier Owner, and the first two rungs are internal: routing never
+   * considers a membership outside the workspace, so a dispatcher's ordinary
+   * work cannot fall on the carrier however badly it goes. This is the rung
+   * that crosses, and it is deliberate, attributed and dated — never derived
+   * from a clock.
+   *
+   * It lives on the loop rather than in either workspace's responsibility
+   * records because the loop is the one object both organizations legitimately
+   * share: the carrier's truck, covered by the dispatcher. It survives the
+   * loop being re-homed, which is the point — a carrier who takes the truck
+   * back can still read why.
+   */
+  carrierEscalation?: MtLoopCarrierEscalation;
+
   /** Set while the loop is blocked. Cleared when it is unblocked. */
   blockReason?: string;
   /**
@@ -247,6 +267,25 @@ export const isMtLoopOpen = (loop: MtLoop) => loop.status !== "closed";
  * workspaces holds them as two different memberships, and neither workspace
  * learns about the other.
  */
+/**
+ * One dispatch organization asking one carrier to step in.
+ *
+ * Kept rather than cleared when answered, so "they escalated this to us and we
+ * dealt with it" is still readable afterwards.
+ */
+export interface MtLoopCarrierEscalation {
+  at: IsoDateTime;
+  note: string;
+  /** The membership in the DISPATCH organization that raised it. */
+  byMembershipId: string;
+  byName: string;
+  fromOrganizationId: string;
+  fromOrganizationName: string;
+  /** Set once somebody at the carrier has answered it. */
+  answeredAt?: IsoDateTime;
+  answeredByName?: string;
+}
+
 export interface MtLoopAssignment {
   id: string;
   loopId: string;
@@ -273,6 +312,18 @@ export type MtLoopAction =
   | "blocked"
   | "unblocked"
   | "closed"
+  /**
+   * The workspace covering this truck changed — a grant given or revoked.
+   *
+   * NOT a close and a reopen. The truck never stopped being empty, so the
+   * cycle never ended: the same loop, with the same id and the same history,
+   * moves to whoever covers it now.
+   */
+  | "dispatch_changed"
+  /** Raised to the carrier that granted the truck. Crosses organizations. */
+  | "escalated_to_carrier"
+  /** The carrier answered a cross-organization escalation. */
+  | "carrier_answered"
   | "load_booked"
   /** The booked load's rate confirmation came back signed. */
   | "load_confirmed"
@@ -290,6 +341,9 @@ export const MT_LOOP_ACTION_LABEL: Record<MtLoopAction, string> = {
   blocked: "Blocked",
   unblocked: "Unblocked",
   closed: "Closed",
+  dispatch_changed: "Moved to another workspace",
+  escalated_to_carrier: "Escalated to the carrier",
+  carrier_answered: "Answered by the carrier",
   load_booked: "Load booked",
   load_confirmed: "Load confirmed",
   load_released: "Load released",
@@ -446,6 +500,14 @@ export interface MtLoopAbilities {
   block: boolean;
   unblock: boolean;
   close: boolean;
+  /**
+   * Raise this to the carrier that granted the truck.
+   *
+   * Only in a workspace dispatching somebody ELSE's truck, and only for
+   * somebody who holds the work or may move it. A carrier dispatching its own
+   * trucks has nobody to escalate to — it is already the top of the chain.
+   */
+  escalateToCarrier: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -598,6 +660,20 @@ export interface MtLoopBoard {
    * All organization. What they are not is a row of operational cards with
    * buttons on the Home screen of somebody who is not doing the work.
    */
+  /**
+   * Trucks this CARRIER has granted to somebody else to dispatch.
+   *
+   * The outward half of the same idea as `handledByOthers`: work that is
+   * genuinely somebody else's, summarised rather than rendered. A carrier who
+   * has handed twelve trucks to an agency should not get twelve operational
+   * cards about them, and should not get nothing either.
+   *
+   * Empty for a workspace that dispatches everything itself.
+   */
+  dispatchedOut: {
+    count: number;
+    byOrganization: Array<{ organizationId: string; name: string; count: number }>;
+  };
   handledByOthers: {
     count: number;
     /** Who is handling them, for a summary that names the team. */

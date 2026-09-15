@@ -111,7 +111,7 @@ interface StoredRecord {
     at: string;
   };
   /** A person's explicit choice of who answers for it. */
-  accountableOverride?: { membershipId: string; note: string };
+  accountableOverride?: { membershipId: string; note: string; pinned?: boolean };
   watchers: string[];
   acknowledgedAt?: string;
   acknowledgedByMembershipId?: string;
@@ -1028,6 +1028,11 @@ export const mockResponsibilityService: ResponsibilityService = {
     record.accountableOverride ??= {
       membershipId: assignment.accountable.membershipId,
       note: "Kept where it was when the work was delegated.",
+      // A PIN, not a naming. It stops accountability following the work to the
+      // delegate; it does not make the accountable person's queue longer. See
+      // `RoutingInput.accountableOverride.pinned` — handing out twenty loops
+      // must not hand twenty cards back.
+      pinned: true,
     };
     record.override = {
       membershipId: target.membershipId, source: "manual", note, at: nowIso(),

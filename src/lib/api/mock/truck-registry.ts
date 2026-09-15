@@ -1737,6 +1737,57 @@ export function truckDispatchAccessFor(dispatchOrganizationId: string): TruckDis
   );
 }
 
+/**
+ * The carrier takes a truck back off a dispatch organization.
+ *
+ * ★ THE OUTER END OF THE TWO-LEVEL CHAIN ★
+ * A carrier grants a truck to a dispatch agency, the agency's owner puts one of
+ * their dispatchers on it, and this is how the carrier ends that — the record
+ * already carried `endedAt`, `endReason` and a status, and nothing had ever
+ * been able to set them.
+ *
+ * The grant is ENDED, never removed. A dispatch organization that covered this
+ * truck for three months has a history worth keeping, and a relationship that
+ * can be deleted is one nobody can audit. `truckDispatchGrants` reads only
+ * active grants, so the truck goes back to its operating carrier on the next
+ * read and the loop follows it — see `responsibleOrganizationFor`.
+ */
+export function endTruckDispatchAccess(
+  truckId: string,
+  dispatchOrganizationId: string,
+  reason: string,
+): TruckDispatchAccess | undefined {
+  const grant = db().dispatchAccess.find(
+    (d) => d.truckId === truckId
+      && d.dispatchOrganizationId === dispatchOrganizationId
+      && d.status === "active",
+  );
+  if (!grant) return undefined;
+  grant.status = "ended";
+  grant.endedAt = new Date().toISOString();
+  grant.endReason = reason;
+  return grant;
+}
+
+/**
+ * The trucks a carrier has granted to somebody else to dispatch.
+ *
+ * Read from the GRANTS rather than from the loops, and that is the point: a
+ * carrier who has handed their whole fleet to an agency never opens a dispatch
+ * board, so no loop for their trucks exists until somebody at the agency looks.
+ * The grant is the thing the carrier actually signed, and it is there whether
+ * or not anybody has been reading a screen.
+ */
+export function dispatchGrantsByCarrier(
+  carrierOrganizationId: string,
+): TruckDispatchAccess[] {
+  return db().dispatchAccess.filter(
+    (d) => d.grantedByCarrierOrganizationId === carrierOrganizationId
+      && d.dispatchOrganizationId !== carrierOrganizationId
+      && d.status === "active",
+  );
+}
+
 export function truckOwnerName(truckId: string): string | undefined {
   return activeOwnership(truckId)?.ownerName;
 }

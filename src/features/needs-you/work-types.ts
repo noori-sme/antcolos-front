@@ -142,6 +142,7 @@ export const CATEGORY_MODULE: Record<NeedsYouCategory, NeedsYouModule> = {
   operating_authority: "mt_loop",
   blocked_loop: "mt_loop",
   assignment_conflict: "mt_loop",
+  dispatch_escalation: "mt_loop",
   sla_deadline: "mt_loop",
   no_search: "mt_loop",
   draft_waiting: "mt_loop",

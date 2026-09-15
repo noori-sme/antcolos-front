@@ -14,7 +14,7 @@ import {
   fleetSync, truckContextFrom, truckDispatchGrants, truckDocumentProblems,
   truckOperatingCarrier,
 } from "./truck-registry";
-import { openLoopsFor, type MtLoopContext } from "./mt-loop";
+import { carrierEscalationsFor, openLoopsFor, type MtLoopContext } from "./mt-loop";
 import { allMatches } from "./opportunity-matching";
 import { carriersForWorkspaceSync } from "./carrier-registry";
 import { sessionForCycle } from "./search-session";
@@ -218,6 +218,48 @@ function loopEntity(loop: MtLoop): NeedsYouEntityRef {
 }
 
 const LOOP_PERMS: PermissionKey[] = ["trucks:view", "loads:view"];
+
+/**
+ * A dispatch organization has raised one of this carrier's trucks back to them.
+ *
+ * ★ HOW WORK REACHES A CARRIER OWNER ACROSS AN ORGANIZATION BOUNDARY ★
+ * It does not route. Routing never looks outside a workspace, which is what
+ * stops a dispatcher's ordinary bad day landing on the carrier who hired them.
+ * Work crosses when somebody in the dispatch organization decides it has to,
+ * and this turns that decision into an item in the carrier's own queue — where
+ * the ordinary rules then apply to it, so it reaches whoever at the carrier can
+ * actually act rather than being addressed to "the Owner" by name.
+ *
+ * Scoped to loops on THIS carrier's trucks that somebody else is dispatching.
+ * The item says what was asked and by whom; it does not expose anything about
+ * how the dispatch organization has arranged itself internally, which is
+ * theirs and none of the carrier's business.
+ */
+function carrierEscalationRules(ctx: DeriveContext): Derived[] {
+  const loops = carrierEscalationsFor(ctx.organizationId);
+  return loops.map((loop) => {
+    const escalation = loop.carrierEscalation!;
+    return {
+      key: `carrier-escalation-${loop.truckId}`,
+      category: "dispatch_escalation" as const,
+      // Somebody has deliberately asked for the carrier. That is not a
+      // background condition to be triaged later.
+      severity: "high" as const,
+      title: `${escalation.fromOrganizationName} needs you on unit ${loop.truckUnit}`,
+      reason: `${escalation.byName} at ${escalation.fromOrganizationName} escalated this to you: "${escalation.note}"`,
+      detail: `They are still covering the truck. Escalating asks for a decision; it does not hand the cycle back.`,
+      entity: loopEntity(loop),
+      recommendedAction: {
+        kind: "assign_loop" as const,
+        label: "Look at this truck",
+        requires: LOOP_PERMS,
+        href: `/fleet/trucks/${loop.truckId}`,
+      },
+      requires: LOOP_PERMS,
+      source: "system" as const,
+    };
+  });
+}
 
 /**
  * Everything wrong with the loops this workspace is responsible for.
@@ -1443,6 +1485,16 @@ function derive(ctx: DeriveContext): Derived[] {
     items.push(...rateConRules(ctx));
     items.push(...driverReviewRules(ctx));
   }
+  /*
+   * Runs for every workspace, outside the block above.
+   *
+   * A carrier that has handed all its dispatch to an agency has no loops of
+   * its own, so `openLoopsFor` gives it nothing and none of those rules apply
+   * — and it is exactly that carrier who most needs to hear when the agency
+   * escalates. Putting this inside the block would have hidden it from the
+   * only people it is for.
+   */
+  items.push(...carrierEscalationRules(ctx));
   items.push(...loadRules(ctx));
   // Last, because it is about what the OTHER rules' records did when they
   // changed, and reading it after them keeps the reasoning in one direction.

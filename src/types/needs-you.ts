@@ -99,6 +99,11 @@ export type NeedsYouCategory =
   | "projection_needs_review"
   /** Two workspaces, or two loads, laying claim to the same thing. */
   | "assignment_conflict"
+  /**
+   * A dispatch organization has raised one of this carrier's trucks back to
+   * them. The only routine way work crosses an organization boundary.
+   */
+  | "dispatch_escalation"
   /** The truck goes empty sooner than the loop is being worked. */
   | "sla_deadline"
   /** A truck is empty and nobody has started looking for a load for it. */
@@ -414,7 +419,9 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   operating_authority: "Operating Authority conflict", blocked_loop: "Blocked MT Loop",
   projection_failed: "Update did not finish",
   projection_needs_review: "Needs your decision",
-  assignment_conflict: "Assignment conflict", sla_deadline: "Deadline approaching",
+  assignment_conflict: "Assignment conflict",
+  dispatch_escalation: "Your dispatcher needs you",
+  sla_deadline: "Deadline approaching",
   no_search: "Nobody is looking", draft_waiting: "Message waiting for you",
   expiring_opportunity: "Load about to go", broker_replied: "Broker answered",
   offer_expiring: "Offer about to lapse", agreed_not_booked: "Agreed, not booked",

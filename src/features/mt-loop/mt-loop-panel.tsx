@@ -12,8 +12,9 @@ import {
   type FactVerification, type MtLoopBoard, type MtLoopCard, type MtLoopStage,
 } from "@/types";
 import {
-  assignLoop, blockLoop, claimLoop, closeLoopById, pauseLoop, releaseLoop,
-  resumeLoop, unblockLoop, type MtLoopContext, type MtLoopOutcome,
+  assignLoop, blockLoop, claimLoop, closeLoopById, escalateLoopToCarrier,
+  pauseLoop, releaseLoop, resumeLoop, unblockLoop,
+  type MtLoopContext, type MtLoopOutcome,
 } from "@/lib/api/mock/mt-loop";
 import { AvailabilityChip, BasisChip } from "@/features/tracking/chips";
 import { cn } from "@/lib/utils";
@@ -187,6 +188,12 @@ export function MtLoopPanel({
                 onUnblock={() => run(loop.loopId, () => unblockLoop(loop.loopId, ctx!), "Unblocked.")}
                 onClose={(reason) =>
                   run(loop.loopId, () => closeLoopById(loop.loopId, reason, ctx!), "This cycle is closed.")}
+                onEscalateToCarrier={(reason) =>
+                  run(
+                    loop.loopId,
+                    () => escalateLoopToCarrier(loop.loopId, reason, ctx!),
+                    "The carrier has been asked. You still have the truck.",
+                  )}
               />
             ))}
           </ul>
@@ -194,6 +201,7 @@ export function MtLoopPanel({
       </div>
 
       {personal ? <HandledByOthers board={board} /> : null}
+      <DispatchedOut board={board} />
 
       <p className="mt-3 text-[0.75rem] leading-relaxed text-fg-subtle">
         Open a truck to search for a load for it. Contacting brokers and negotiating rates are not
@@ -206,6 +214,48 @@ export function MtLoopPanel({
 }
 
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Trucks this carrier has handed to somebody else to dispatch.
+ *
+ * ★ THE OUTWARD HALF OF THE SAME IDEA ★
+ * `HandledByOthers` summarises work a colleague is doing. This summarises work
+ * another ORGANIZATION is doing, and it is shown on every scope — a carrier
+ * looking at their complete board should still not be given operational cards
+ * for trucks an agency is covering, because those cycles are not theirs to
+ * work. They reach the carrier when the agency asks, and then they arrive as
+ * an item in Needs You with a name and a reason on it.
+ */
+function DispatchedOut({ board }: { board: MtLoopBoard }) {
+  const { count, byOrganization } = board.dispatchedOut;
+  if (count === 0) return null;
+
+  const who = byOrganization.length === 1
+    ? byOrganization[0].name
+    : byOrganization.length === 2
+      ? `${byOrganization[0].name} and ${byOrganization[1].name}`
+      : `${byOrganization.length} dispatch organizations`;
+
+  return (
+    <section
+      aria-label="Dispatched by another organization"
+      className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-dashed border-border px-3.5 py-2.5"
+    >
+      <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+        <span className="font-medium text-fg">
+          {count} of your {count === 1 ? "trucks is" : "trucks are"} dispatched by {who}
+        </span>
+        . They will ask if they need you.
+      </p>
+      <Link
+        href="/needs-you"
+        className="text-[0.75rem] font-medium text-primary hover:underline"
+      >
+        Anything they have asked
+      </Link>
+    </section>
+  );
+}
 
 /**
  * Everything the team is handling, as one line.
@@ -305,7 +355,7 @@ const EVIDENCE_TONE: Record<FactVerification, "neutral" | "info" | "success" | "
 };
 
 /** The three actions that need a reason before they are allowed to happen. */
-type ReasonAction = "pause" | "block" | "close";
+type ReasonAction = "pause" | "block" | "close" | "escalateToCarrier";
 
 const REASON_PROMPT: Record<ReasonAction, { title: string; placeholder: string; confirm: string }> = {
   pause: {
@@ -323,11 +373,19 @@ const REASON_PROMPT: Record<ReasonAction, { title: string; placeholder: string; 
     placeholder: "Carrier took the truck back",
     confirm: "Close this loop",
   },
+  escalateToCarrier: {
+    // The one action that crosses an organization boundary, so the wording
+    // says out loud what it does and what it does not do.
+    title: "What do you need the carrier to decide?",
+    placeholder: "Broker wants $200 over your floor. Your call.",
+    confirm: "Escalate to the carrier",
+  },
 };
 
 function LoopRow({
   loop, assignableTo, busy,
   onClaim, onRelease, onAssign, onPause, onResume, onBlock, onUnblock, onClose,
+  onEscalateToCarrier,
 }: {
   loop: MtLoopCard;
   assignableTo?: Array<{ membershipId: string; name: string }>;
@@ -338,6 +396,7 @@ function LoopRow({
   onPause: (reason: string) => void;
   onResume: () => void;
   onBlock: (reason: string) => void;
+  onEscalateToCarrier: (reason: string) => void;
   onUnblock: () => void;
   onClose: (reason: string) => void;
 }) {
@@ -358,6 +417,7 @@ function LoopRow({
     setReason("");
     if (action === "pause") onPause(text);
     else if (action === "block") onBlock(text);
+    else if (action === "escalateToCarrier") onEscalateToCarrier(text);
     else onClose(text);
   }
 
@@ -582,6 +642,16 @@ function LoopRow({
           {loop.can.block ? (
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => setAsking("block")}>
               Block
+            </Button>
+          ) : null}
+          {loop.can.escalateToCarrier ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => setAsking("escalateToCarrier")}
+            >
+              Ask the carrier
             </Button>
           ) : null}
           {loop.can.close ? (

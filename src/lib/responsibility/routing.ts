@@ -41,7 +41,24 @@ export interface RoutingInput {
    */
   override?: { membershipId: string; source: AssignmentSource; note?: string };
   /** The accountable membership, where a person has changed it by hand. */
-  accountableOverride?: { membershipId: string; note?: string };
+  accountableOverride?: {
+    membershipId: string;
+    note?: string;
+    /**
+     * True when this only PINS what was already derived, rather than naming
+     * somebody new.
+     *
+     * ★ THE DIFFERENCE IS WHOSE PROBLEM IT BECOMES ★
+     * Delegating pins accountability so it cannot drift to the delegate — that
+     * is what makes "delegation moves who does it, not who answers for it"
+     * true rather than merely stated. But a pin is a decision about the WORK,
+     * and being named accountable by hand is a decision about a PERSON: the
+     * second puts the work on their personal queue (`explicit_accountable`),
+     * and the first must not, or delegating twenty loops hands the delegator
+     * twenty cards straight back.
+     */
+    pinned?: boolean;
+  };
 }
 
 export interface RoutingResult {
@@ -342,7 +359,9 @@ export function routeResponsibility(input: RoutingInput): RoutingResult {
     ),
     accountable: holder(
       accountableCandidate, "accountable",
-      accountableChoice ? "manual" : (usedFallback ? "fallback" : "default_policy"),
+      accountableChoice && !input.accountableOverride?.pinned
+        ? "manual"
+        : (usedFallback ? "fallback" : "default_policy"),
       accountableReason,
     ),
     approver: approverChoice

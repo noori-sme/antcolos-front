@@ -12,7 +12,8 @@ import type { ServiceContext } from "../contracts/context";
 import { mockStore } from "./store";
 import {
   fleetSync, truckCarrierFor, truckContextFrom, truckDispatchGrants,
-  truckDocumentProblems, truckOperatingCarrier, truckApprovedCarriers,
+  truckDocumentProblems, truckOperatingCarrier, truckApprovedCarriers, organizationNameFor,
+  dispatchGrantsByCarrier,
 } from "./truck-registry";
 import { trailerFleetSync } from "./trailer-registry";
 import { assignableMembersOf, memberIn } from "./membership-directory";
@@ -354,6 +355,43 @@ function recordClaim(
   });
 }
 
+/**
+ * Move a live loop to the workspace that covers the truck now.
+ *
+ * Everything that identifies the cycle survives: `loopId`, `openedAt`, every
+ * event, every spell of responsibility. What does NOT survive is the claim —
+ * it named a membership in the workspace the truck just left, and a person who
+ * no longer works on this truck cannot still be holding it. That is recorded
+ * rather than quietly dropped.
+ *
+ * The responsibility record in the old workspace is left exactly where it is.
+ * It is that workspace's history of who held this truck, and deleting it to
+ * tidy up would destroy the only account of a relationship that really
+ * happened.
+ */
+function rehomeLoop(loop: MtLoop, toOrganizationId: string) {
+  const from = organizationNameFor(loop.dispatchOrganizationId);
+  const to = organizationNameFor(toOrganizationId);
+  const at = nowIso();
+
+  const current = loop.assignments.find((a) => !a.endedAt);
+  if (current) {
+    current.endedAt = at;
+    current.endReason = `${from} no longer dispatches this truck.`;
+  }
+  loop.claimedByMembershipId = undefined;
+  loop.claimedByName = undefined;
+  loop.claimedAt = undefined;
+  loop.dispatchOrganizationId = toOrganizationId;
+  if (loop.status === "working") loop.status = "unclaimed";
+
+  record(loop, "dispatch_changed", {
+    actorName: "Antcolos",
+    note: `${from} no longer dispatches unit ${loop.truckUnit}. The cycle moves to ${to} with its history; nobody has accepted it yet.`,
+    toStatus: loop.status,
+  });
+}
+
 function closeLoop(loop: MtLoop, reason: string, actor?: { membershipId: string; name: string }) {
   const at = nowIso();
   const current = loop.assignments.find((a) => !a.endedAt);
@@ -511,9 +549,26 @@ export function syncMtLoops(ctx: MtLoopContext): MtLoop[] {
     mine.add(truck.truckId);
 
     const existing = openLoopForTruck(truck.truckId);
-    // Rule 1, enforced on the way in: a truck another workspace is already
-    // working never gets a second loop here.
-    if (existing && existing.dispatchOrganizationId !== ctx.organizationId) continue;
+    /*
+     * Rule 1, enforced on the way in: a truck has at most one open loop
+     * anywhere, so a cycle another workspace is already working never gets a
+     * second one here.
+     *
+     * ★ AND THIS IS WHERE A CYCLE COMES HOME ★
+     * We only reach this line having established that THIS workspace is the
+     * responsible organization for the truck. So a live loop sitting in
+     * another workspace is one whose grant has ended — and the answer is to
+     * take the cycle over, not to skip it and open a rival. Skipping was how a
+     * revoked grant produced a closed loop in the old workspace and a brand-new
+     * one here, with a new id and a severed history.
+     *
+     * Doing it on the GAINING side matters. The losing workspace re-homes too,
+     * but only when somebody there next opens the board, and a carrier taking
+     * a truck back cannot be made to wait on the agency they just left.
+     */
+    if (existing && existing.dispatchOrganizationId !== ctx.organizationId) {
+      rehomeLoop(existing, ctx.organizationId);
+    }
 
     let loop = existing;
     const empty = EMPTY_STATUSES.has(truck.status);
@@ -541,14 +596,28 @@ export function syncMtLoops(ctx: MtLoopContext): MtLoop[] {
     }
   }
 
-  // A truck that left this workspace — grant revoked, relationship ended —
-  // takes its loop with it rather than leaving a card nobody can act on.
+  /*
+   * A truck that left this workspace — grant revoked, relationship ended.
+   *
+   * ★ THE LOOP GOES WITH IT. IT IS NOT CLOSED AND REOPENED. ★
+   * This used to close the loop, and the carrier's own next read then opened a
+   * fresh one for the same empty truck: a new id, a new opened-at, and the
+   * history split across two records that nothing joined. The truck had not
+   * stopped being empty — only who covers it changed — so the cycle had not
+   * ended, and this module's first rule is that a loop id is "never reused,
+   * rewritten or regenerated".
+   *
+   * It is closed only when nobody covers the truck at all, which is the one
+   * case where the cycle really is over as far as Antcolos can see.
+   */
   for (const loop of db().loops) {
     if (loop.dispatchOrganizationId !== ctx.organizationId) continue;
     if (loop.status === "closed") continue;
-    if (!mine.has(loop.truckId)) {
-      closeLoop(loop, "This truck is no longer dispatched by this workspace.");
-    }
+    if (mine.has(loop.truckId)) continue;
+
+    const next = responsibleOrganizationFor(loop.truckId);
+    if (next && next !== loop.dispatchOrganizationId) rehomeLoop(loop, next);
+    else closeLoop(loop, "Nobody covers this truck any more.");
   }
 
   return db().loops.filter(
@@ -619,6 +688,12 @@ function abilitiesFor(
     // A block the system raised is not a person's to lift: fix the truck.
     unblock: mayAct && loop.status === "blocked" && loop.blockOrigin === "person",
     close: mayAct && open,
+    // Only where there is a carrier on the other side of a grant, and only
+    // once: a second escalation about the same thing is noise, not urgency.
+    escalateToCarrier: open
+      && mayAct
+      && loop.carrierOrganizationId !== loop.dispatchOrganizationId
+      && !loop.carrierEscalation,
   };
 }
 
@@ -755,6 +830,20 @@ export async function buildMtLoopBoard(ctx: MtLoopContext): Promise<MtLoopBoard>
       counts: {
         open: 0, unclaimed: 0, needsYou: 0, mine: 0, blocked: 0, paused: 0, emptyNow: 0,
       },
+      /*
+       * Still answered, and deliberately.
+       *
+       * `maySeeBoard` asks whether this workspace DISPATCHES — a carrier that
+       * has handed every truck to an agency does not, and gets no board. But
+       * they are still the carrier, those are still their trucks, and "you
+       * have no board" is a very different statement from "nobody is working
+       * your fleet". Gating this behind the dispatch check is what left a
+       * carrier owner with a completely blank screen about eleven trucks
+       * somebody else was covering.
+       */
+      dispatchedOut: ctx.permissions.has("trucks:view")
+        ? dispatchedOutFor(ctx.organizationId)
+        : { count: 0, byOrganization: [] },
       handledByOthers: { count: 0, holders: [] },
     };
   }
@@ -776,6 +865,7 @@ export async function buildMtLoopBoard(ctx: MtLoopContext): Promise<MtLoopBoard>
 
   return {
     loops: cards,
+    dispatchedOut: dispatchedOutFor(ctx.organizationId),
     handledByOthers: handledByOthersFrom(cards),
     counts: {
       open: cards.length,
@@ -993,6 +1083,119 @@ export async function assignLoop(
   });
   /* ---- end critical section ---- */
   return { status: "ok", loop };
+}
+
+/**
+ * Raise this truck's cycle to the carrier that granted it.
+ *
+ * ★ THE ONE ROUTINE PATH ACROSS THE ORGANIZATION BOUNDARY ★
+ * Routing never looks outside the workspace, so a dispatcher's work cannot
+ * fall on the carrier by accident, by clock or by anybody leaving. It reaches
+ * them when somebody in the dispatch organization decides it has to — here —
+ * and the record says who decided and why.
+ *
+ * It does not move the work. The dispatch organization is still covering the
+ * truck and its dispatcher still holds the cycle; what changes is that the
+ * carrier is now looking, and has an item of their own saying so.
+ */
+export async function escalateLoopToCarrier(
+  loopId: string,
+  note: string,
+  ctx: MtLoopContext,
+): Promise<MtLoopOutcome> {
+  await sleep(LATENCY_MS);
+  if (!note.trim()) return { status: "needs_reason" };
+
+  const loop = actableLoop(loopId, ctx);
+  if (!loop) return { status: "not_found" };
+  if (!mayActOn(loop, ctx)) return { status: "not_permitted" };
+  // A carrier dispatching its own trucks is already the top of the chain.
+  if (loop.carrierOrganizationId === loop.dispatchOrganizationId) {
+    return { status: "not_permitted" };
+  }
+  if (loop.carrierEscalation) return { status: "ok", loop };
+
+  loop.carrierEscalation = {
+    at: nowIso(),
+    note: note.trim(),
+    byMembershipId: ctx.membershipId,
+    byName: ctx.actor.displayNameSnapshot,
+    fromOrganizationId: loop.dispatchOrganizationId,
+    fromOrganizationName: organizationNameFor(loop.dispatchOrganizationId),
+  };
+  record(loop, "escalated_to_carrier", {
+    actorMembershipId: ctx.membershipId,
+    actorName: ctx.actor.displayNameSnapshot,
+    note: note.trim(),
+  });
+  return { status: "ok", loop };
+}
+
+/**
+ * The carrier answers. The escalation stays on the record, marked as dealt with.
+ *
+ * Cleared would be tidier and would lose the only account of the dispatch
+ * organization having asked.
+ */
+export async function answerCarrierEscalation(
+  loopId: string,
+  ctx: MtLoopContext,
+): Promise<MtLoopOutcome> {
+  await sleep(LATENCY_MS);
+  const loop = db().loops.find((l) => l.loopId === loopId);
+  // The CARRIER answers this one, so the usual dispatch-workspace check is the
+  // wrong check: they are not the workspace covering the truck.
+  if (!loop || loop.carrierOrganizationId !== ctx.organizationId) {
+    return { status: "not_found" };
+  }
+  if (!loop.carrierEscalation || loop.carrierEscalation.answeredAt) {
+    return { status: "ok", loop };
+  }
+  loop.carrierEscalation.answeredAt = nowIso();
+  loop.carrierEscalation.answeredByName = ctx.actor.displayNameSnapshot;
+  record(loop, "carrier_answered", {
+    actorMembershipId: ctx.membershipId,
+    actorName: ctx.actor.displayNameSnapshot,
+    note: `${ctx.actor.displayNameSnapshot} at the carrier has picked this up.`,
+  });
+  return { status: "ok", loop };
+}
+
+/**
+ * Trucks this carrier has handed to somebody else to dispatch.
+ *
+ * Read by the carrier's own board, from the loops themselves rather than from
+ * the grant records, so the count is of live cycles somebody is actually
+ * covering — which is the thing worth knowing — and not of paperwork.
+ */
+export function dispatchedOutFor(carrierOrganizationId: string): MtLoopBoard["dispatchedOut"] {
+  const grants = dispatchGrantsByCarrier(carrierOrganizationId);
+  const byOrg = new Map<string, { organizationId: string; name: string; count: number }>();
+  for (const grant of grants) {
+    const existing = byOrg.get(grant.dispatchOrganizationId);
+    if (existing) existing.count += 1;
+    else {
+      byOrg.set(grant.dispatchOrganizationId, {
+        organizationId: grant.dispatchOrganizationId,
+        name: grant.dispatchOrganizationName,
+        count: 1,
+      });
+    }
+  }
+  return {
+    count: grants.length,
+    byOrganization: [...byOrg.values()].sort((a, b) => b.count - a.count),
+  };
+}
+
+/** Loops a dispatch organization has raised to this carrier, still unanswered. */
+export function carrierEscalationsFor(carrierOrganizationId: string): MtLoop[] {
+  return db().loops.filter(
+    (l) => l.carrierOrganizationId === carrierOrganizationId
+      && l.status !== "closed"
+      && l.carrierEscalation
+      && !l.carrierEscalation.answeredAt,
+  );
 }
 
 /** Put a loop back where anybody in the workspace can pick it up. */

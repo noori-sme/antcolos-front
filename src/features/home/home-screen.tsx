@@ -112,7 +112,9 @@ export function HomeScreen() {
           anything: this is a carrier's Home rather than a dispatch board, and
           an empty panel here would be noise on a screen with plenty to say. */}
       {mtLoop.data
-        && (mtLoop.data.counts.needsYou > 0 || mtLoop.data.handledByOthers.count > 0) ? (
+        && (mtLoop.data.counts.needsYou > 0
+          || mtLoop.data.handledByOthers.count > 0
+          || mtLoop.data.dispatchedOut.count > 0) ? (
         <MtLoopPanel
           board={mtLoop.data}
           ctx={mtLoopCtx}
