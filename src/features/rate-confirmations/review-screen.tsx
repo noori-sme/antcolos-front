@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/page-header";
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { ExtractedField, RateConFieldKey, RateConWorkflow } from "@/types";
-import { RATECON_STATUS_LABEL } from "@/types";
+import type {
+  DistributionOutcome, ExtractedField, RateConFieldKey, RateConWorkflow,
+} from "@/types";
+import { PROJECTION_STATE_LABEL, RATECON_STATUS_LABEL } from "@/types";
 import { relativeTime } from "@/lib/utils/format";
 import { useMtLoopContext } from "@/features/mt-loop/use-mt-loop";
 import { useOpportunityRefresh } from "@/features/opportunities/use-opportunity-refresh";
@@ -18,6 +20,7 @@ import {
   confirmAndSign, correctField, progressOf, rejectRateConfirmation, verifyField,
 } from "@/lib/api/mock/rate-confirmation";
 import { DocumentView } from "./document-view";
+import { PROJECTION_TONE } from "./projection-tone";
 import { useRateCon } from "./use-rate-con";
 import { cn } from "@/lib/utils";
 
@@ -515,8 +518,11 @@ function OutcomePanel({ workflow }: { workflow: RateConWorkflow }) {
     );
   }
 
-  const written = workflow.distribution.filter((d) => d.state === "written");
-  const queued = workflow.distribution.filter((d) => d.state === "queued");
+  const rows = workflow.distribution;
+  const processed = rows.filter((d) => d.state === "processed");
+  const pending = rows.filter((d) => d.state === "pending");
+  const needsReview = rows.filter((d) => d.state === "needs_review");
+  const failed = rows.filter((d) => d.state === "failed");
   const sig = workflow.signed?.signature;
 
   return (
@@ -528,38 +534,80 @@ function OutcomePanel({ workflow }: { workflow: RateConWorkflow }) {
           {" "}{relativeTime(sig.signedAt)}. {sig.statement}
         </p>
       ) : null}
-
-      <h3 className="mt-3 text-[0.8125rem] font-medium text-fg">Where it went</h3>
-      <ul className="mt-1 space-y-1">
-        {written.map((d) => (
-          <li key={d.key} className="text-[0.75rem] leading-relaxed">
-            <span className="inline-flex items-center gap-1.5 font-medium text-fg">
-              <Check className="size-3.5 text-st-success" aria-hidden />
-              {d.label}
-            </span>
-            <span className="block text-fg-muted">{d.detail}</span>
-          </li>
-        ))}
-      </ul>
-
-      <h3 className="mt-3 text-[0.8125rem] font-medium text-fg">What is waiting</h3>
-      <p className="text-[0.75rem] leading-relaxed text-fg-muted">
-        These modules are not built. The information is kept and named rather than dropped.
+      <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
+        This load was finalized once and one versioned event was published. Every row
+        below is one module&rsquo;s own outcome from that event — read back, not predicted.
+        A failure in one never stops the others.
       </p>
-      <ul className="mt-1 space-y-1">
-        {queued.map((d) => (
-          <li key={d.key} className="text-[0.75rem] leading-relaxed">
-            <span className="flex flex-wrap items-center gap-2 font-medium text-fg">
-              {d.label}
-              {d.waitingForMilestone ? (
-                <Badge tone="outline">Milestone {d.waitingForMilestone}</Badge>
-              ) : null}
-            </span>
-            <span className="block text-fg-muted">{d.detail}</span>
-          </li>
-        ))}
-      </ul>
+
+      {processed.length > 0 ? (
+        <>
+          <h3 className="mt-3 text-[0.8125rem] font-medium text-fg">Updated</h3>
+          <ul className="mt-1 space-y-1">
+            {processed.map((d) => (
+              <li key={d.key} className="text-[0.75rem] leading-relaxed">
+                <span className="inline-flex items-center gap-1.5 font-medium text-fg">
+                  <Check className="size-3.5 text-st-success" aria-hidden />
+                  {d.label}
+                </span>
+                <span className="block text-fg-muted">{d.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {needsReview.length > 0 ? (
+        <>
+          <h3 className="mt-3 text-[0.8125rem] font-medium text-fg">Needs a person</h3>
+          <p className="text-[0.75rem] leading-relaxed text-fg-muted">
+            These could not be decided without somebody looking. Guessing is how
+            duplicate records get made.
+          </p>
+          <ul className="mt-1 space-y-1">
+            {needsReview.map((d) => <ProjectionRow key={d.key} row={d} />)}
+          </ul>
+        </>
+      ) : null}
+
+      {failed.length > 0 ? (
+        <>
+          <h3 className="mt-3 text-[0.8125rem] font-medium text-fg">Failed</h3>
+          <ul className="mt-1 space-y-1">
+            {failed.map((d) => <ProjectionRow key={d.key} row={d} />)}
+          </ul>
+        </>
+      ) : null}
+
+      {pending.length > 0 ? (
+        <>
+          <h3 className="mt-3 text-[0.8125rem] font-medium text-fg">Waiting</h3>
+          <p className="text-[0.75rem] leading-relaxed text-fg-muted">
+            The receiving module is not built on this branch. What it will be given
+            is kept and named rather than dropped.
+          </p>
+          <ul className="mt-1 space-y-1">
+            {pending.map((d) => <ProjectionRow key={d.key} row={d} />)}
+          </ul>
+        </>
+      ) : null}
     </section>
+  );
+}
+
+/** One projection outcome, with why it is in that state and whether a retry helps. */
+function ProjectionRow({ row }: { row: DistributionOutcome }) {
+  return (
+    <li className="text-[0.75rem] leading-relaxed">
+      <span className="flex flex-wrap items-center gap-2 font-medium text-fg">
+        {row.label}
+        <Badge tone={PROJECTION_TONE[row.state]}>{PROJECTION_STATE_LABEL[row.state]}</Badge>
+        {row.mock ? <Badge tone="outline">Mock adapter</Badge> : null}
+        {row.retryable ? <Badge tone="outline">Retry-ready</Badge> : null}
+      </span>
+      <span className="block text-fg-muted">{row.detail}</span>
+      {row.reason ? <span className="block text-fg-subtle">{row.reason}</span> : null}
+    </li>
   );
 }
 

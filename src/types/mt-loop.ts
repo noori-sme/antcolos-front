@@ -1,4 +1,5 @@
 import type { IsoDateTime } from "./common";
+import type { FactVerification } from "./propagation";
 import type { AvailabilityBasis, AvailabilityState } from "./tracking";
 import type { TruckEquipmentType } from "./truck";
 
@@ -68,6 +69,18 @@ export interface MtLoop {
   responsibleMembershipId?: string;
   /** Snapshot, so an ended membership still reads sensibly in the history. */
   responsibleName?: string;
+
+  /**
+   * The committed rate confirmation behind the booked load, once there is one.
+   *
+   * Evidence, not a second copy: the record itself lives in the Rate
+   * Confirmation module and this is the id to go and read. Its presence is what
+   * distinguishes a cycle whose load is CONFIRMED from one whose load is merely
+   * booked — the second is not finished and a dispatcher has to be able to see
+   * which they are looking at.
+   */
+  rateConfirmationId?: string;
+  rateConfirmationSignedAt?: IsoDateTime;
 
   /** When the truck goes — or went — empty. */
   expectedEmptyAt?: IsoDateTime;
@@ -229,6 +242,8 @@ export type MtLoopAction =
   | "unblocked"
   | "closed"
   | "load_booked"
+  /** The booked load's rate confirmation came back signed. */
+  | "load_confirmed"
   | "load_released"
   | "availability_changed";
 
@@ -244,6 +259,7 @@ export const MT_LOOP_ACTION_LABEL: Record<MtLoopAction, string> = {
   unblocked: "Unblocked",
   closed: "Closed",
   load_booked: "Load booked",
+  load_confirmed: "Load confirmed",
   load_released: "Load released",
   availability_changed: "Availability changed",
 };
@@ -302,6 +318,18 @@ export interface MtLoopCard {
   openedAt: IsoDateTime;
   /** How many hands this loop has passed through, this one included. */
   handoffCount: number;
+
+  /* -- Derived on every read. Nothing below is stored. ------------------- */
+
+  /** Where the truck is in this cycle. See `MtLoopStage`. */
+  stage: MtLoopStage;
+  /** The facts behind the stage, so a dispatcher can argue with it. */
+  evidence: MtLoopEvidence[];
+  /** The one next thing, or absent when there is honestly nothing to do. */
+  nextAction?: MtLoopNextAction;
+  /** Everything unresolved standing in the cycle's way. */
+  blockers: MtLoopBlocker[];
+
   /** What this viewer may actually do to it, decided by the service. */
   can: MtLoopAbilities;
 }
@@ -322,6 +350,116 @@ export interface MtLoopAbilities {
   block: boolean;
   unblock: boolean;
   close: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* The cycle, as a dispatcher reads it                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where this truck is in its empty-to-empty cycle.
+ *
+ * Deliberately NOT the same thing as `MtLoopStatus`. Status is about the WORK —
+ * has somebody picked this up, is it paused, is it stopped. Stage is about the
+ * TRUCK's progress through one cycle, which is what a dispatcher scanning a board
+ * at 6am is actually asking. A loop can be `working` (somebody is on it) and
+ * `finding_work` (no load yet) at the same time, and collapsing the two loses the
+ * distinction between "nobody is looking" and "somebody is looking and has not
+ * found anything".
+ *
+ * Derived on every read from the truck, the load, the committed rate confirmation
+ * and the driver post. Nothing stores it.
+ */
+export type MtLoopStage =
+  /** Still on a load, with a known time it comes free. */
+  | "going_empty"
+  /** Empty, and nobody has picked the cycle up. */
+  | "empty_unworked"
+  /** Somebody is responsible and has not found work yet. */
+  | "finding_work"
+  /** A load is booked but its rate confirmation is not signed and returned. */
+  | "booked_unconfirmed"
+  /** The rate confirmation is committed. The load is final. */
+  | "confirmed"
+  /** The driver has the post and is heading for the pickup. */
+  | "dispatched"
+  /** Loaded and moving. The cycle ends when it is empty again. */
+  | "running"
+  /** Set aside by a person, or stopped by a problem. */
+  | "stopped";
+
+export const MT_LOOP_STAGE_LABEL: Record<MtLoopStage, string> = {
+  going_empty: "Going empty",
+  empty_unworked: "Empty, nobody on it",
+  finding_work: "Finding work",
+  booked_unconfirmed: "Booked, not confirmed",
+  confirmed: "Confirmed",
+  dispatched: "Dispatched",
+  running: "Running",
+  stopped: "Stopped",
+};
+
+/** In cycle order, for a board that groups by stage. */
+export const MT_LOOP_STAGE_ORDER: readonly MtLoopStage[] = [
+  "stopped", "empty_unworked", "going_empty", "finding_work",
+  "booked_unconfirmed", "confirmed", "dispatched", "running",
+];
+
+/**
+ * One fact behind the stage, with how much it is worth.
+ *
+ * Evidence is the answer to "why does the board say that". A stage asserted with
+ * nothing behind it is a stage a dispatcher cannot argue with, and the whole
+ * reason the availability engine keeps provenance is so they can.
+ */
+export interface MtLoopEvidence {
+  /** Short, e.g. "Empty", "Rate confirmation", "Trailer". */
+  label: string;
+  /** The fact itself, in a sentence. */
+  detail: string;
+  /** Confirmed, inferred, corrected, pending — kept visibly distinct. */
+  verification: FactVerification;
+  /** When it was observed, not when it was written up. */
+  observedAt?: IsoDateTime;
+  /** Where to go and read the record behind it. */
+  href?: string;
+}
+
+/**
+ * What to do next, as one thing rather than a menu.
+ *
+ * `undefined` means there is genuinely nothing to do — the loop is running and
+ * waiting on the road — which is a better answer than inventing busywork.
+ */
+export interface MtLoopNextAction {
+  label: string;
+  /** Deep link straight to where it is done. Never a dashboard. */
+  href: string;
+  /** Why this is the next thing, for a dispatcher who disagrees. */
+  reason: string;
+  /** What the viewer needs to hold to do it. The board renders accordingly. */
+  requires: readonly string[];
+  /** True when the viewer cannot do it themselves and must hand it on. */
+  notYours?: boolean;
+}
+
+/**
+ * Something standing in the cycle's way that nobody has cleared.
+ *
+ * Separate from `blockReason`, which is the single reason the loop is in the
+ * `blocked` STATUS. A cycle can be perfectly workable and still have two
+ * unresolved problems on it — an expired trailer inspection and no driver — and a
+ * board that shows only the one that stopped it hides the other.
+ */
+export interface MtLoopBlocker {
+  /** Stable within a loop, so it can be listed and deep-linked. */
+  key: string;
+  label: string;
+  detail: string;
+  /** Whether this alone prevents the truck being dispatched. */
+  stopsDispatch: boolean;
+  /** Straight to where it is fixed. */
+  href?: string;
 }
 
 /** The MT Loop section of the dispatch dashboard. */

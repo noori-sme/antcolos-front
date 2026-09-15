@@ -12,6 +12,8 @@ import type {
   FleetAssetKind, FleetAssignmentRecord, FleetEquipmentRow, FleetRecordLink,
   FleetRecordLinks, FleetTelemetryReading, FleetUtilizationSummary,
 } from "@/types";
+import { METER_SOURCE_LABEL } from "@/types";
+import { Badge } from "@/components/ui/badge";
 import { EQUIPMENT_LABEL } from "@/lib/fleet/equipment";
 import { TRAILER_TYPE_LABEL } from "@/lib/fleet/trailer-equipment";
 import { OperationalStatusChip, ReadinessChip, TelemetrySourceChip } from "./chips";
@@ -212,6 +214,9 @@ function TelemetryCard({
   row, history,
 }: { row: FleetEquipmentRow; history: FleetTelemetryReading[] }) {
   const latest = row.telemetry.reading;
+  // The meters are a different fact from the location: an odometer read at a
+  // fuel stop yesterday and a location reported an hour ago are both current.
+  const meter = row.telemetry.meter;
   return (
     <Card>
       <CardHeader className="flex-col items-start gap-1">
@@ -225,11 +230,17 @@ function TelemetryCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!latest ? (
+        {!latest && !meter?.odometer && !meter?.engineHours ? (
           <p className="rounded-md bg-st-warning-bg px-3 py-2.5 text-[0.8125rem] text-st-warning">
             Nobody has ever recorded a location, an odometer or engine hours for this equipment.
             No GPS, ELD or telematics feed is connected, so this stays empty until somebody
             records one.
+          </p>
+        ) : !latest ? (
+          <p className="rounded-md bg-surface-sunken px-3 py-2.5 text-[0.8125rem] text-fg-muted">
+            No location has been reported for this equipment. Its meters below come
+            from the canonical Equipment Meter Ledger, which is a different fact —
+            somebody read the dash without saying where they were.
           </p>
         ) : (
           <>
@@ -238,10 +249,26 @@ function TelemetryCard({
               {/* A trailer has no odometer and no engine. An empty cell would
                   read as missing data rather than as a question that does not
                   apply to this equipment. */}
+              {/* From the canonical Equipment Meter Ledger, not from the
+                  location reading beside it. One physical truck has one
+                  odometer, and it is contributed to by this screen, by
+                  maintenance and by a fuel receipt. */}
               {row.assetKind === "truck" ? (
                 <>
-                  <Fact label="Mileage" value={formatMiles(latest.odometerMiles)} />
-                  <Fact label="Engine hours" value={formatEngineHours(latest.engineHours)} />
+                  <Fact
+                    label="Mileage"
+                    value={formatMiles(meter?.odometer?.value)}
+                    hint={meter?.odometer
+                      ? `${METER_SOURCE_LABEL[meter.odometer.source]} · ${formatDateTime(meter.odometer.readAt)}`
+                      : undefined}
+                  />
+                  <Fact
+                    label="Engine hours"
+                    value={formatEngineHours(meter?.engineHours?.value)}
+                    hint={meter?.engineHours
+                      ? `${METER_SOURCE_LABEL[meter.engineHours.source]} · ${formatDateTime(meter.engineHours.readAt)}`
+                      : undefined}
+                  />
                 </>
               ) : null}
               <Fact
@@ -265,6 +292,38 @@ function TelemetryCard({
             ) : null}
           </>
         )}
+
+        {/* Readings the ledger would not accept as current. Kept as evidence
+            that somebody reported them, and shown so a wrong number is a
+            visible disagreement rather than a silently dropped row. */}
+        {meter && meter.disputed.length > 0 ? (
+          <div>
+            <p className="text-[0.8125rem] font-medium text-fg">Readings not in use</p>
+            <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+              A meter does not run backwards, so a reading below what was already
+              true for an earlier moment is kept as evidence and not used. Nothing
+              is deleted.
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {meter.disputed.slice(0, 5).map((r) => (
+                <li
+                  key={r.readingId}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-st-warning/40 bg-surface-sunken/30 px-3 py-2 text-[0.75rem] text-fg-muted"
+                >
+                  {r.odometerMiles != null ? (
+                    <span className="tnum font-medium text-fg">{formatMiles(r.odometerMiles)}</span>
+                  ) : null}
+                  {r.engineHours != null ? (
+                    <span className="tnum">{formatEngineHours(r.engineHours)}</span>
+                  ) : null}
+                  <Badge tone="outline">{METER_SOURCE_LABEL[r.source]}</Badge>
+                  <span>{r.contributor}</span>
+                  <span className="ml-auto">{formatDateTime(r.readAt)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {history.length > 1 ? (
           <div>

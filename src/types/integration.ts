@@ -78,14 +78,47 @@ export interface Provenance {
  */
 export type IdempotencyKey = string;
 
-/** Whether a handoff to another module has actually gone anywhere. */
+/**
+ * Whether a handoff to another module has actually gone anywhere.
+ *
+ * Five states, because four of them are things a dispatcher genuinely needs to
+ * tell apart, and collapsing any pair of them means lying on a screen.
+ */
 export type HandoffState =
   /** Recorded here, queued for a module that does not exist yet. */
   | "pending_integration"
+  /**
+   * A module that DOES exist in this build has consumed it and written what it
+   * owns. Not the same as `delivered`: nothing crossed a network.
+   */
+  | "processed"
   /** Handed to a real adapter and acknowledged. Never set by a mock. */
   | "delivered"
+  /**
+   * The receiver ran and threw. Kept with the reason and retryable — a failure
+   * here must never stop the other receivers of the same intent.
+   */
+  | "failed"
+  /**
+   * The receiver ran and could not decide without a person. A possible
+   * duplicate broker profile is the archetype: guessing is how duplicates are
+   * made, so it stops and asks instead.
+   */
+  | "needs_review"
   /** The adapter refused it. Kept, with the reason, never silently dropped. */
   | "rejected";
+
+export const HANDOFF_STATE_LABEL: Record<HandoffState, string> = {
+  pending_integration: "Pending",
+  processed: "Processed",
+  delivered: "Delivered",
+  failed: "Failed",
+  needs_review: "Needs review",
+  rejected: "Refused",
+};
+
+/** The states that are finished with, one way or another. */
+export const HANDOFF_SETTLED: readonly HandoffState[] = ["processed", "delivered"];
 
 /**
  * Something this workflow produced FOR another module. It is deliberately not
@@ -108,6 +141,26 @@ export interface PendingIntegrationEvent {
   refs: ExternalRef[];
   /** The typed body, shaped by the destination's contract. */
   payload: Record<string, unknown>;
+
+  /* ---- The retry contract ------------------------------------------------ */
+
+  /**
+   * How many times a receiver has been run for this handoff. 0 while nothing
+   * has tried yet, which is the normal state for `pending_integration`.
+   */
+  attempts?: number;
+  firstAttemptAt?: IsoDateTime;
+  lastAttemptAt?: IsoDateTime;
+  /**
+   * Whether running it again could change the outcome. A malformed payload is
+   * not retryable; an absent module is. The backend decides what it does with
+   * this — nothing in the frontend retries on a timer.
+   */
+  retryable?: boolean;
+  /** Set on `failed` and `needs_review`. Plain language, never a stack trace. */
+  failureReason?: string;
+  /** Groups this handoff with everything else the same intent produced. */
+  correlationId?: string;
 }
 
 /** Where an operational signal came from. Never a driver. */

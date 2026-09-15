@@ -1,13 +1,17 @@
 import type {
-  Document, Load, LoadEvent, LoadStatus, Page, PageRequest,
+  Document, Load, LoadEvent, LoadStatus, Page, PageRequest, PermissionKey,
 } from "@/types";
 import { missingRequiredDocuments } from "@/types";
 import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
 } from "../contracts/context";
 import type {
-  LoadFilters, LoadSort, LoadsService,
+  ApplyRateConfirmationInput, CreateBookedLoadInput, FinalizeLoadResult,
+  LoadFilters, LoadSort, LoadsService, RecordConsentInput,
 } from "../contracts/loads";
+import {
+  applyRateConfirmationToLoad, createBookedLoad, recordLoadConsent,
+} from "./load-commands";
 import { mockStore } from "./store";
 
 const LATENCY_MS = 160;
@@ -154,4 +158,71 @@ export const mockLoadsService: LoadsService = {
       )
       .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
   },
+
+  /* -- Commands ---------------------------------------------------------- */
+
+  async createBooked(ctx: ServiceContext, input: CreateBookedLoadInput): Promise<Load> {
+    await wait();
+    // Checked HERE, at the seam, not in whichever screen happened to call it.
+    if (!ctx.permissions.has("loads:create")) {
+      throw new PermissionDeniedError(["loads:create"]);
+    }
+    const load = createBookedLoad({
+      organizationId: ctx.organizationId,
+      actor: ctx.actor,
+      loadId: nextLoadId(),
+      ...input,
+    });
+    return redactFinancials(ctx, load);
+  },
+
+  async recordConsent(ctx: ServiceContext, input: RecordConsentInput): Promise<Load> {
+    await wait();
+    // `loads:assign` rather than `loads:edit`: answering for a driver is a
+    // dispatch act, and somebody who may correct a reference number is not
+    // thereby entitled to accept work on a driver's behalf.
+    if (!ctx.permissions.has("loads:assign")) {
+      throw new PermissionDeniedError(["loads:assign"]);
+    }
+    // Scoped, so a membership that cannot see the load cannot answer for it.
+    if (!scopedLoads(ctx).some((l) => l.id === input.loadId)) {
+      throw new NotFoundError("Load");
+    }
+    const load = recordLoadConsent({
+      organizationId: ctx.organizationId,
+      actor: ctx.actor,
+      ...input,
+    });
+    return redactFinancials(ctx, load);
+  },
+
+  async applyRateConfirmation(
+    ctx: ServiceContext,
+    input: ApplyRateConfirmationInput,
+  ): Promise<FinalizeLoadResult> {
+    await wait();
+    // Writing the agreed money requires being allowed to see it. Somebody who
+    // may not read a rate has no business setting one.
+    const needed: PermissionKey[] = ["loads:edit", "rates:view"];
+    const missing = needed.filter((k) => !ctx.permissions.has(k));
+    if (missing.length > 0) throw new PermissionDeniedError(missing);
+    if (!scopedLoads(ctx).some((l) => l.id === input.loadId)) {
+      throw new NotFoundError("Load");
+    }
+    mockStore.assertOwned(ctx.organizationId, input.record.organizationId);
+
+    const outcome = await applyRateConfirmationToLoad({
+      organizationId: ctx.organizationId,
+      actor: ctx.actor,
+      ...input,
+    });
+    return {
+      load: redactFinancials(ctx, outcome.load),
+      duplicate: outcome.duplicate,
+      eventId: outcome.eventId,
+    };
+  },
 };
+
+let loadSeq = 0;
+const nextLoadId = () => `ld_${(++loadSeq).toString(36)}${Date.now().toString(36)}`;

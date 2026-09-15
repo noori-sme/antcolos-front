@@ -83,8 +83,10 @@ export function EquipmentList({ rows }: { rows: FleetEquipmentRow[] }) {
                   <MapPin className="size-3" aria-hidden />
                   {formatPlace(row.telemetry.reading?.location)}
                 </span>
-                {row.telemetry.reading?.odometerMiles != null ? (
-                  <span className="tnum">{formatMiles(row.telemetry.reading.odometerMiles)}</span>
+                {/* From the canonical Equipment Meter Ledger, which every
+                    contributor appends to — not from the location reading. */}
+                {row.telemetry.meter?.odometer ? (
+                  <span className="tnum">{formatMiles(row.telemetry.meter.odometer.value)}</span>
                 ) : null}
               </p>
 

@@ -14,9 +14,9 @@ import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { useCan } from "@/lib/session/hooks";
 import { useNow } from "@/lib/utils/use-now";
 import {
-  DEFECT_AREA_LABEL, MAINTENANCE_CATEGORY_LABEL, formatDowntime,
-  formatEngineHours, formatMaintenanceDate, formatMaintenanceDateTime,
-  formatMiles, formatMoney,
+  DEFECT_AREA_LABEL, MAINTENANCE_CATEGORY_LABEL, MAINTENANCE_METER_SOURCE_LABEL,
+  formatDowntime, formatEngineHours, formatMaintenanceDate,
+  formatMaintenanceDateTime, formatMiles, formatMoney,
 } from "@/lib/maintenance/labels";
 import {
   equipmentAccess, equipmentSummary, listDefects, listRepairOrders,
@@ -598,10 +598,13 @@ function MeterPanel({
                 <span>Engine hours {formatEngineHours(latest.engineHours)}</span>
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-[0.75rem] text-fg-subtle">
-                {/* Always says who typed it. Nothing here came from a feed. */}
+                {/* Always says where the reading came from. Maintenance keeps no
+                    meter of its own: this is the canonical Equipment Meter
+                    Ledger's accepted value, and it may have been contributed by
+                    this screen, by fleet operations or by a fuel receipt. */}
                 Read {formatMaintenanceDate(latest.readAt)}
                 {latest.recordedBy ? ` · entered by ${latest.recordedBy.displayNameSnapshot}` : ""}
-                {latest.source === "driver_report" ? " (driver report)" : " (entered by hand)"}
+                {` (${MAINTENANCE_METER_SOURCE_LABEL[latest.source].toLowerCase()})`}
                 {stale ? <StaleMeterChip /> : null}
               </p>
             </>

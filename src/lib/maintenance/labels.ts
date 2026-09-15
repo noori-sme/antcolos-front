@@ -1,3 +1,4 @@
+import { METER_SOURCE_LABEL, type MeterSource } from "@/types";
 import type {
   DefectArea,
   DefectSeverity,
@@ -231,3 +232,17 @@ export function formatDowntime(hours?: number): string {
   const rest = Math.round(hours % 24);
   return rest ? `${days} d ${rest} h` : `${days} d`;
 }
+
+/**
+ * Where a meter reading came from, in the words a shop would use.
+ *
+ * Built on the canonical ledger's own vocabulary plus maintenance's older word
+ * for a reading typed into one of its screens. The maintenance panel used to say
+ * "(entered by hand)" for anything that was not a driver report, which became a
+ * lie the moment a fuel receipt could move the odometer — because it can, and
+ * that is the point of there being one ledger.
+ */
+export const MAINTENANCE_METER_SOURCE_LABEL: Record<MeterSource, string> = {
+  ...METER_SOURCE_LABEL,
+  manual: "Entered by hand",
+};

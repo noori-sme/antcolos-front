@@ -29,6 +29,9 @@ export const httpServices: AntcolosServices = {
     get: notImplemented("loads.get"),
     events: notImplemented("loads.events"),
     documents: notImplemented("loads.documents"),
+    createBooked: notImplemented("loads.createBooked"),
+    recordConsent: notImplemented("loads.recordConsent"),
+    applyRateConfirmation: notImplemented("loads.applyRateConfirmation"),
   },
   fuel: {
     dashboard: notImplemented("fuel.dashboard"),

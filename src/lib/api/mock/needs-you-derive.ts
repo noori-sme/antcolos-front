@@ -26,6 +26,7 @@ import { progressOf, rateConsFor } from "./rate-confirmation";
 import { reviewsFor } from "./driver-review";
 import { driversForWorkspaceSync, driverDocumentProblems } from "./driver-registry";
 import { nowIso } from "./time";
+import { propagationBus } from "@/lib/propagation";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -99,6 +100,101 @@ const hoursUntil = (iso?: string) =>
   iso === undefined ? Number.POSITIVE_INFINITY : (new Date(iso).getTime() - Date.now()) / HOUR;
 
 /* -------------------------------------------------------------------------- */
+/* Propagation rules — exceptions the data flow itself produced                 */
+/* -------------------------------------------------------------------------- */
+
+/** Where each projection's own work is finished, per subscriber. */
+const PROJECTION_RESOLUTION: Record<string, { href: string; label: string; requires: PermissionKey[] }> = {
+  directory_parties: {
+    href: "/directory/review",
+    label: "Resolve the companies",
+    requires: ["customers:resolve"],
+  },
+  driver_workflow: {
+    href: "/loads",
+    label: "Open the load",
+    requires: ["loads:view"],
+  },
+  fuel_economy: {
+    href: "/fuel/transactions",
+    label: "Correct the purchase",
+    requires: ["fuel:correct"],
+  },
+  ifta_preparation: {
+    href: "/fuel/ifta",
+    label: "Open the IFTA period",
+    requires: ["ifta:view"],
+  },
+  maintenance_meter: {
+    href: "/maintenance",
+    label: "Check the odometer",
+    requires: ["maintenance:view"],
+  },
+};
+
+/**
+ * Everything the propagation layer could not finish on its own.
+ *
+ * This is the rule that makes Needs You the surface for the whole data flow
+ * rather than for a handful of modules. When a canonical record changes, every
+ * authorized projection runs; the ones that FAILED or that need a person to
+ * decide something appear here, deep-linked to where that decision is made.
+ *
+ * `pending` projections are deliberately NOT here. A projection waiting for a
+ * module that has not been built is the honest state of this build, not
+ * something a dispatcher can do anything about, and a queue full of items
+ * nobody can action is a queue people stop reading.
+ */
+function propagationRules(ctx: DeriveContext): Derived[] {
+  const out: Derived[] = [];
+
+  for (const record of propagationBus.projections(ctx.organizationId, {
+    state: ["failed", "needs_review"],
+  })) {
+    const event = propagationBus.event(ctx.organizationId, record.eventId);
+    if (!event) continue;
+
+    const resolution = PROJECTION_RESOLUTION[record.subscriberId];
+    const subject = event.subjectKind === "load"
+      ? { kind: "load" as const, id: event.subjectId, label: `Load ${event.subjectId.slice(-6)}` }
+      : event.subjectKind === "fuel_transaction"
+        ? { kind: "fuel_transaction" as const, id: event.subjectId, label: "Fuel purchase" }
+        : { kind: "truck" as const, id: event.subjectId, label: `Equipment ${event.subjectId.slice(-6)}` };
+
+    out.push({
+      // Stable for as long as the projection is in this state. Fix it, re-run it,
+      // and the item stops existing — the same mechanism as every other rule.
+      key: `projection-${record.state}-${record.subscriberId}-${record.eventId}`,
+      category: record.state === "failed" ? "projection_failed" : "projection_needs_review",
+      // A failure is a thing that should have worked and did not. A decision is a
+      // thing that was always going to need a person, so it is not an alarm.
+      severity: record.state === "failed" ? "high" : "medium",
+      title: record.state === "failed"
+        ? `${record.subscriberLabel} was not updated`
+        : `${record.subscriberLabel} needs your decision`,
+      reason: record.reason ?? record.detail,
+      detail: `${record.detail} Ran ${record.attempts} time${record.attempts === 1 ? "" : "s"}.${record.retryable ? " Running it again could change the outcome." : ""}${record.mock ? " The receiving module is a labelled mock on this branch." : ""}`,
+      entity: {
+        ...subject,
+        href: resolution?.href ?? "/audit/events",
+      },
+      recommendedAction: {
+        kind: "review",
+        label: resolution?.label ?? "Look at it",
+        requires: resolution?.requires ?? ["audit:view"],
+        href: resolution?.href,
+        // Honest about the ones whose destination this branch does not have.
+        deferred: !resolution,
+      },
+      source: "system",
+      requires: resolution?.requires ?? ["audit:view"],
+    });
+  }
+
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
 /* MT Loop rules                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -108,9 +204,16 @@ function loopEntity(loop: MtLoop): NeedsYouEntityRef {
     kind: "mt_loop",
     id: loop.loopId,
     label: `Unit ${loop.truckUnit}${where ? ` · ${where}` : ""}`,
-    // The board lives on Home. There is no separate loop screen yet, and
-    // pointing at one that does not exist would be worse than pointing here.
-    href: "/home",
+    /*
+     * The truck's own dispatch workspace, which is where a cycle is actually
+     * worked — not the Home board it happens to be listed on.
+     *
+     * Every rule below also sets `recommendedAction.href`, which takes a person
+     * to the thing that FIXES it: trailers for a missing trailer, rate
+     * confirmations for an unconfirmed load, the truck for expired paperwork.
+     * That is the difference between a queue and a to-do list.
+     */
+    href: `/dispatch/trucks/${loop.truckId}`,
   };
 }
 
@@ -155,6 +258,8 @@ function loopRules(loops: MtLoop[]): Derived[] {
           kind: "assign_loop",
           label: "Take this loop",
           requires: ["loads:view"],
+          // The board is where a loop is claimed, and it is on Home.
+          href: "/home",
         },
         dueAt: loop.respondBy,
         source: "system",
@@ -178,6 +283,9 @@ function loopRules(loops: MtLoop[]): Derived[] {
           kind: "review",
           label: "Open the truck",
           requires: ["trucks:view"],
+          // A system block clears when the underlying record is fixed, and the
+          // record is on the truck.
+          href: `/dispatch/trucks/${loop.truckId}`,
         },
         dueAt: loop.respondBy,
         source: "system",
@@ -204,8 +312,9 @@ function loopRules(loops: MtLoop[]): Derived[] {
         entity: loopEntity(loop),
         recommendedAction: {
           kind: "update_availability",
-          label: "Open the truck",
+          label: "Record where and when it goes empty",
           requires: ["trucks:view"],
+          href: `/dispatch/trucks/${loop.truckId}`,
         },
         source: "system",
         requires: LOOP_PERMS,
@@ -223,8 +332,9 @@ function loopRules(loops: MtLoop[]): Derived[] {
         entity: loopEntity(loop),
         recommendedAction: {
           kind: "review",
-          label: "Open trailers",
+          label: "Find a trailer for it",
           requires: ["trailers:view"],
+          href: "/fleet/trailers",
         },
         dueAt: loop.respondBy,
         source: "system",
@@ -1329,6 +1439,9 @@ function derive(ctx: DeriveContext): Derived[] {
     items.push(...driverReviewRules(ctx));
   }
   items.push(...loadRules(ctx));
+  // Last, because it is about what the OTHER rules' records did when they
+  // changed, and reading it after them keeps the reasoning in one direction.
+  items.push(...propagationRules(ctx));
 
   return items;
 }

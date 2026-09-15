@@ -30,6 +30,9 @@ import {
 } from "./fuel-store";
 import { truckAuthorityHistory, truckIdsRelatedTo, truckUnitNumber } from "./truck-registry";
 import { mockStore } from "./store";
+import {
+  contributeMileageOdometer, publishFuelTransaction,
+} from "./fuel-propagation";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -756,6 +759,13 @@ export const mockFuelService: FuelService = {
       { kind: "transaction", id, label: `${input.location.merchantName ?? "Fuel"} · ${input.location.jurisdiction}` },
       `Fuel purchase recorded for unit ${transaction.truckUnitSnapshot ?? "—"}, attributed to ${attribution.carrierNameSnapshot} (${attribution.basis.replace(/_/g, " ")}).`,
     );
+
+    // One canonical transaction, one event. The pump odometer reaches the
+    // Equipment Meter Ledger from here, which is what makes an oil change come
+    // due from a fuel receipt without anybody re-typing mileage.
+    await publishFuelTransaction(transaction, ctx.actor, {
+      extracted: input.extracted,
+    });
     return redact(db, ctx, transaction);
   },
 
@@ -781,6 +791,10 @@ export const mockFuelService: FuelService = {
       "Purchase accepted after review.",
       { state: before }, { state: "verified" },
     );
+    // Republished so every projection learns the value is now confirmed rather
+    // than somebody's unreviewed typing. The event id is the transaction's, so
+    // nothing is duplicated — the projections are re-run against it.
+    await publishFuelTransaction(t, ctx.actor);
     return redact(db, ctx, t);
   },
 
@@ -913,6 +927,23 @@ export const mockFuelService: FuelService = {
 
     // A correction inside a filed quarter is an amendment, not an edit.
     markAmended(db, ctx, revised, input.reason.trim());
+
+    // The corrected revision publishes with what the receipt ORIGINALLY said
+    // beside it, so every downstream can show "shown as X, corrected to Y"
+    // instead of quietly replacing one number with another.
+    await publishFuelTransaction(revised, ctx.actor, {
+      supersedesTransactionId: original.id,
+      correctionReason: input.reason.trim(),
+      extracted: {
+        gallonsThousandths: original.gallonsThousandths,
+        totalCostCents: original.cost?.totalCostCents,
+        pricePerGallonMills: original.cost?.pricePerGallonMills,
+        odometerMiles: original.odometerMiles,
+        jurisdiction: original.location.jurisdiction,
+        merchantName: original.location.merchantName,
+        purchasedAt: original.purchasedAt,
+      },
+    });
     return redact(db, ctx, revised);
   },
 
@@ -1035,6 +1066,8 @@ export const mockFuelService: FuelService = {
       { kind: "mileage", id, label: `${record.jurisdiction} · ${record.totalMiles} mi` },
       `${record.totalMiles} miles in ${record.jurisdiction} recorded for unit ${record.truckUnitSnapshot ?? "—"}, attributed to ${attribution.carrierNameSnapshot}.`,
     );
+    // The odometer at the end of the leg is a meter reading like any other.
+    await contributeMileageOdometer(record, ctx.actor);
     return record;
   },
 

@@ -14,6 +14,9 @@ import {
 } from "./truck-registry";
 import { trailerFleetSync } from "./trailer-registry";
 import { nowIso } from "./time";
+import {
+  blockersFor, cycleInputFor, evidenceFor, nextActionFor, stageOf,
+} from "./mt-loop-cycle";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -593,8 +596,16 @@ function abilitiesFor(
   };
 }
 
-function toCard(loop: MtLoop, ctx: MtLoopContext, workspace: Workspace): MtLoopCard {
+function toCard(
+  loop: MtLoop,
+  ctx: MtLoopContext,
+  workspace: Workspace,
+  truck?: FleetTruck,
+): MtLoopCard {
   const emptyAt = loop.expectedEmptyAt ? new Date(loop.expectedEmptyAt).getTime() : undefined;
+  const isMine = loop.responsibleMembershipId === ctx.membershipId;
+  // Derived on every read from records other modules own. See `mt-loop-cycle.ts`.
+  const cycle = cycleInputFor(loop, truck);
   return {
     loopId: loop.loopId,
     truckId: loop.truckId,
@@ -607,7 +618,7 @@ function toCard(loop: MtLoop, ctx: MtLoopContext, workspace: Workspace): MtLoopC
     trailerRequired: loop.trailerRequired,
     responsibleName: loop.responsibleName,
     responsibleMembershipId: loop.responsibleMembershipId,
-    isMine: loop.responsibleMembershipId === ctx.membershipId,
+    isMine,
     expectedEmptyAt: loop.expectedEmptyAt,
     expectedEmptyCity: loop.expectedEmptyCity,
     expectedEmptyState: loop.expectedEmptyState,
@@ -619,6 +630,13 @@ function toCard(loop: MtLoop, ctx: MtLoopContext, workspace: Workspace): MtLoopC
     pauseReason: loop.pauseReason,
     openedAt: loop.openedAt,
     handoffCount: loop.assignments.length,
+    stage: stageOf(cycle),
+    evidence: evidenceFor(cycle),
+    nextAction: nextActionFor(cycle, {
+      isMine,
+      held: Boolean(loop.responsibleMembershipId),
+    }),
+    blockers: blockersFor(cycle),
     can: abilitiesFor(loop, ctx, workspace),
   };
 }
@@ -645,7 +663,14 @@ export function mtLoopBoardSync(ctx: MtLoopContext): MtLoopBoard {
   }
 
   const loops = syncMtLoops(ctx);
-  const cards = loops.map((l) => toCard(l, ctx, workspace!)).sort(byUrgency);
+  // The trucks are read once and handed to each card, so the board does not do
+  // one registry lookup per loop to answer the same question.
+  const trucks = new Map(
+    fleetSync(truckContextFrom(ctx)).map((t) => [t.truckId, t] as const),
+  );
+  const cards = loops
+    .map((l) => toCard(l, ctx, workspace!, trucks.get(l.truckId)))
+    .sort(byUrgency);
   const mayMoveWork = workspace!.supportsTeam && ctx.permissions.has("loads:assign");
 
   return {
@@ -704,6 +729,64 @@ export function markLoopBooked(loop: MtLoop, opts: {
     actorName: opts.actorName,
     note: opts.note,
   });
+}
+
+/**
+ * Record that the loop's load is CONFIRMED, not merely booked.
+ *
+ * Booked and confirmed are different states of the same cycle, and a dispatcher
+ * needs to see the difference: a booked load whose rate confirmation never came
+ * back is exactly the cycle that is not finished. The loop keeps the confirmation
+ * as its own dated event and as evidence on the card.
+ *
+ * Unscoped by design — it is called by a projection of a `load.finalized` event,
+ * which already established who signed what and under whose authority. Returns
+ * `undefined` when the loop cannot be read, which the projection reports as a
+ * failure rather than swallowing.
+ */
+export function recordFinalizationOnLoop(
+  loopId: string,
+  opts: {
+    loadId: string;
+    loadReference: string;
+    actorName: string;
+    actorMembershipId?: string;
+    rateConfirmationId: string;
+    signedAt: string;
+  },
+): MtLoop | undefined {
+  const loop = db().loops.find((l) => l.loopId === loopId);
+  if (!loop) return undefined;
+
+  loop.loadId = opts.loadId;
+  loop.loadReference = opts.loadReference;
+  loop.rateConfirmationId = opts.rateConfirmationId;
+  loop.rateConfirmationSignedAt = opts.signedAt;
+
+  // Appended once. Re-publishing the same finalization does not add a second
+  // line to a truck's history.
+  const already = loop.history.some(
+    (e) => e.action === "load_confirmed" && e.note?.includes(opts.rateConfirmationId),
+  );
+  if (!already) {
+    record(loop, "load_confirmed", {
+      actorMembershipId: opts.actorMembershipId,
+      actorName: opts.actorName,
+      note: `${opts.loadReference} confirmed: the rate confirmation was signed and returned to the broker. Record ${opts.rateConfirmationId}.`,
+    });
+  }
+
+  // A cycle that was merely covered is now covered on a confirmed load. It does
+  // not jump to `running` — the driver has not started rolling.
+  if (loop.status === "working" || loop.status === "unassigned") {
+    setStatus(loop, "covered", "load_booked", {
+      actorMembershipId: opts.actorMembershipId,
+      actorName: opts.actorName,
+      note: `${opts.loadReference} is confirmed.`,
+    });
+  }
+
+  return loop;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -88,6 +88,15 @@ export type NeedsYouCategory =
   | "operating_authority"
   /** An MT Loop stopped by a problem rather than by a choice. */
   | "blocked_loop"
+  /**
+   * A downstream projection of a canonical change could not finish on its own.
+   *
+   * Two shapes, both actionable: it FAILED and can be run again, or it needs a
+   * person to decide something a rule must not decide for them — which a
+   * possible duplicate broker profile is the archetype of.
+   */
+  | "projection_failed"
+  | "projection_needs_review"
   /** Two workspaces, or two loads, laying claim to the same thing. */
   | "assignment_conflict"
   /** The truck goes empty sooner than the loop is being worked. */
@@ -276,6 +285,15 @@ export interface NeedsYouRecommendedAction {
   label: string;
   /** Permission required to perform it. */
   requires: PermissionKey[];
+  /**
+   * Straight to where the thing is FIXED, not to the dashboard it was noticed on.
+   *
+   * Needs You only earns its place as a daily surface if an item takes a person
+   * to the action. Absent falls back to `entity.href`, which points at the record
+   * rather than at the resolution — a worse answer, and the reason this field
+   * exists.
+   */
+  href?: string;
   /** Set when the destination screen is not built yet. */
   deferred?: boolean;
 }
@@ -393,6 +411,8 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   unassigned_loop: "MT Loop with nobody on it",
   missing_availability: "Missing availability",
   operating_authority: "Operating Authority conflict", blocked_loop: "Blocked MT Loop",
+  projection_failed: "Update did not finish",
+  projection_needs_review: "Needs your decision",
   assignment_conflict: "Assignment conflict", sla_deadline: "Deadline approaching",
   no_search: "Nobody is looking", draft_waiting: "Message waiting for you",
   expiring_opportunity: "Load about to go", broker_replied: "Broker answered",

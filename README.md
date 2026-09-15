@@ -1437,6 +1437,135 @@ while dispatched, a policy lapsed under a running load — arrive through the
 **centralized mock adapters** in `src/lib/api/mock/audit-sources.ts`, labelled
 `mockSource: true`, which travels with the data onto the screen.
 
+## Zero-entry data propagation
+
+Antcolos captures or confirms each fact once, stores it in one canonical
+location, and distributes derived information across the workspace. The shape of
+that is one flow, and every module speaks it:
+
+```
+Input → Extraction candidate → Verification → Canonical record
+      → Domain event → Authorized projections
+```
+
+- **The fact envelope** — `src/types/propagation.ts`. Every important fact keeps
+  its canonical entity UUID, organization and relationship scope, source,
+  ORIGINAL value beside the corrected one, confidence, verification state, when
+  it happened and when we heard, correlation/causation/idempotency ids, and the
+  audit line that proves it. `confirmed`, `corrected`, `inferred`, `pending` and
+  `failed` stay visibly distinct on every screen: a geofence suggesting a truck is
+  empty and a driver saying so are different things to book a load against.
+- **The bus** — `src/lib/propagation/bus.ts`. Publishing the same event twice runs
+  nothing twice. Every subscriber runs in its own try/catch, so one failing
+  projection cannot block the others. A payload version a subscriber has not been
+  taught is `needs_review`, never a guess. Four honest states — **Pending,
+  Processed, Failed, Needs Review** — each with an attempt count, a reason and
+  whether a retry could help.
+- **Who listens** — `src/lib/api/mock/projections/`. One subscriber per
+  destination. A projection writes only what its own module owns, through that
+  module's own entry point, and never touches the canonical record that produced
+  the event.
+
+### One equipment meter, not three
+
+A truck's odometer used to be written in three places with different values for
+the same truck: the fleet telemetry store said unit NL-104 read 118,442, the
+maintenance registry said 118,450, and the fuel ledger kept a third series. So
+mileage was typed into three screens and an oil change never came due from a fuel
+receipt.
+
+`src/lib/api/mock/meter-ledger.ts` is now the one canonical ledger, **keyed by the
+permanent equipment UUID and nothing else**. Readings are append-only; each
+carries its own source, scope, timestamps, confidence and verification state as
+metadata rather than as a partition. One accepted odometer and one accepted
+engine-hours value are DERIVED from the series on every read — a value below what
+was already true for an earlier moment is a regression, kept as evidence and
+reported as disputed, never used. The derivation is order-independent, which is
+what stopped three modules disagreeing.
+
+Because the key is the equipment and not the organization, **meter history is
+never reset or split when ownership, the carrier or the Operating Authority
+changes.** A truck that leaves one carrier and joins another keeps one odometer,
+because it is one truck.
+
+Maintenance keeps no meter store: `meterFor()` projects from the ledger. Fleet
+operations keeps location, which is the fact it owns. Fuel contributes the
+odometer off the pump receipt and off the end of a jurisdiction leg. Which is why
+an oil change due at 122,000 miles now comes due from a fuel purchase with nobody
+typing mileage into maintenance a second time.
+
+### A finalized Rate Confirmation, once
+
+`RateConWorkflow` is canonical *during* review — it is where a person checks every
+required field and where the authorized carrier signature is applied. Downstream
+modules never read it, because "the rate on this load" cannot be a field somebody
+is still editing.
+
+At the single moment all four gates are true — every required field reviewed,
+Dispatch approved, the carrier signature applied, the signed copy confirmed as
+returned to the broker — the workflow is frozen into an **immutable canonical Rate
+Confirmation record** (`rate-confirmation-record.ts`), the canonical Load is
+finalized through `loads.applyRateConfirmation`, and **one versioned
+`load.finalized` event** is published. Every field keeps what the document said
+beside what a person confirmed, so a dispute a year later is argued from the
+record rather than from memory. An amendment commits version + 1 pointing back at
+what it supersedes; both survive.
+
+Retrying is safe at three levels: the commit is keyed on the signed document, the
+finalization on the committed record, and the event id is derived from the same
+key. Signing twice produces one record, one event and one run of every projection.
+
+The projections, and what each honestly reports:
+
+| Destination | Outcome |
+|---|---|
+| Driver Load Post and Trip Workflow | **Processed.** The driver-workflow gate now reads the canonical record, so signing in Dispatch is what unlocks the post. |
+| Invoice and Settlement preparation | **Processed.** The signed document satisfies the load's requirement, and the agreed linehaul is frozen for the readiness check — which can now actually fail. |
+| MT Loop | **Processed.** The cycle carries the confirmation as evidence: confirmed, not merely booked. |
+| Reports | **Processed.** Derived from the canonical records on each run; nothing needed pushing. |
+| Broker, Shipper, Receiver, Facility, Contact | **Needs review.** The Directory matches against every canonical record and refuses to create or merge a profile without a person confirming it. A rate confirmation that minted a broker is how a carrier ends up with four profiles for one broker. |
+| GPS and Broker Tracking session | **Pending, deliberately.** Minting a link discloses a truck's position outside the organization, so a person opens it with their name on it. |
+| Accounting / expected revenue | **Pending.** No accounts-receivable store on this branch; the exact figures it will be handed are queued with an idempotency key. |
+| Load documents | **Pending.** The Document Center refuses to create a load-subject document here, and a second document system is worse than an honest gap. |
+
+### MT Loop and Needs You
+
+Daily work happens on two surfaces, and the specialist pages stay as drill-down
+destinations rather than mandatory stops.
+
+**MT Loop** answers four questions per truck without opening anything: the
+**stage** of its empty-to-empty cycle, the **evidence** behind that stage with each
+fact's verification state, the one **next recommended action** deep-linked to where
+it is done, and every **unresolved blocker** — a list, not just whichever one
+stopped the loop, so a truck owing an expired inspection AND a driver shows both.
+All of it derived on every read from records other modules own.
+
+**Needs You** aggregates only actionable human exceptions, assigns them to a
+Membership, and deep-links to the resolution — trailers for a missing trailer,
+rate confirmations for an unconfirmed load, `/directory/review` for companies
+waiting to be resolved. An item exists because its condition does and disappears
+when the condition goes, while its snooze, assignee and history survive. Failed
+and needs-review projections appear here; `pending` ones deliberately do not,
+because nobody can action them and a queue of those is a queue people stop
+reading.
+
+### Every mock in one place
+
+`src/lib/api/mock/registry.ts` lists all 40 mock stores with one
+`resetAllMocks()`, and `tests/mock-registry.test.ts` fails if a store is added
+without registering it.
+
+### What this is NOT
+
+Frontend only. There is no database, no message broker, no persistence, no
+transport, no delivery guarantee and no external integration. `idempotencyKey`,
+`eventId` and the four handoff states describe the contract a backend must
+honour; here they are honoured by a `Map` that lives as long as the tab. Real
+authorization, persistence, transactional integrity, exactly-once delivery,
+ordering and security are the backend's to enforce.
+`docs/zero-entry-data-audit.md` lists every one of those responsibilities and
+every remaining mock boundary.
+
 ## For backend integration
 
 `src/lib/api/contracts/` is the seam. Every method takes a `ServiceContext` carrying the organization, membership, permission set, record scope and an actor snapshot — there is no method that accepts a `User`. The mock adapter enforces permissions and organization ownership itself, so a UI bug that renders a forbidden button still fails at the seam.
@@ -1553,6 +1682,32 @@ Contracts add 201 of their own, split between the pure domain and the seam:
 - **Existing behaviour** (`tests/contracts/existing-behaviour.test.ts`) — the
   canonical-record snapshot guard described above, plus the permission keys and
   routes that worked before still working.
+
+### Zero-entry data propagation
+
+```
+npm test
+```
+
+- `tests/propagation-bus.test.ts` — publishing twice runs nothing twice, one
+  failing projection cannot stop the others, an unknown payload version is a
+  question, a failure retries without republishing the event.
+- `tests/meter-ledger.test.ts` — the seeded series climbs with no disputes, the
+  accepted value is derived and order-independent, a backwards reading is kept
+  and not used, a correction appends, and history is never reset or split when
+  the carrier or Operating Authority changes.
+- `tests/rate-confirmation-propagation.test.ts` — the whole flow, from an MT Loop
+  to a signed confirmation: one immutable record, one event, one Driver Load
+  Post, nothing double-run on retry, and a reason on every projection that is
+  not `processed`.
+- `tests/fuel-propagation.test.ts` — one receipt, one transaction, one event;
+  both values kept on a correction; and an oil change moving from a fuel purchase
+  with nobody re-entering mileage.
+- `tests/mt-loop-needs-you.test.ts` — every card carries a stage, its evidence
+  and its blockers; a stopping problem outranks finding work; every Needs You item
+  deep-links to where it is fixed; an item disappears because its condition did.
+- `tests/mock-registry.test.ts` — reads the mock folder and fails if a store was
+  added without being registered.
 
 ### Audit & Risk
 

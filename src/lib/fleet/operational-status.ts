@@ -3,7 +3,7 @@ import type {
   FleetReadinessState, FleetReadinessSummary, FleetStatusDerivation, FleetStatusInput,
   FleetTelemetryReading, FleetTelemetrySnapshot, FleetUtilizationSummary,
   OperatingLeaseStatus, TrailerAttachmentState, TrailerOperatingStatus,
-  TruckOperatingStatus, FleetAuthorityLock,
+  TruckOperatingStatus, FleetAuthorityLock, EquipmentMeterState,
 } from "@/types";
 
 /**
@@ -282,17 +282,29 @@ export function telemetrySnapshot(
   reading: FleetTelemetryReading | undefined,
   assetKind: FleetAssetKind,
   nowMs: number = Date.now(),
+  /**
+   * The odometer and engine hours, from the canonical Equipment Meter Ledger.
+   *
+   * Passed in rather than read here because this module is pure. It is a
+   * different fact from the reading: a location reported an hour ago and an
+   * odometer read at a fuel stop yesterday are both current, and staleness is
+   * judged per fact rather than for the pair.
+   */
+  meter?: EquipmentMeterState,
 ): FleetTelemetrySnapshot {
   const freshnessExpectationHours = freshnessExpectationFor(assetKind);
-  if (!reading) return { stale: true, freshnessExpectationHours };
+  if (!reading) return { stale: true, freshnessExpectationHours, meter };
   const observedMs = Date.parse(reading.observedAt);
-  if (!Number.isFinite(observedMs)) return { reading, stale: true, freshnessExpectationHours };
+  if (!Number.isFinite(observedMs)) {
+    return { reading, stale: true, freshnessExpectationHours, meter };
+  }
   const ageHours = Math.max(0, (nowMs - observedMs) / HOUR_MS);
   return {
     reading,
     ageHours,
     stale: ageHours > freshnessExpectationHours,
     freshnessExpectationHours,
+    meter,
   };
 }
 
