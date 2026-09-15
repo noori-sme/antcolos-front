@@ -379,6 +379,63 @@ export interface RankingPreferences {
 }
 
 /**
+ * ★ WHAT A WORKSPACE HAS AGREED TO ABOUT CROSS-ORGANIZATION LEARNING ★
+ *
+ * TWO CHOICES, NOT ONE. Giving your decisions to the shared pool and taking a
+ * suggestion out of it are different decisions carrying different risks, and a
+ * single "learning on/off" switch forces a workspace that is happy to benefit
+ * into also contributing — which is the one direction that cannot be undone.
+ *
+ * ███ FRONTEND ONLY ███
+ * This is an in-memory record that lives as long as the tab. It is not a
+ * durable consent record, it is not enforced against anything except this
+ * app's own code path, and a real backend must enforce it server-side against
+ * a caller who never runs this code at all.
+ */
+export interface LearningConsent {
+  organizationId: string;
+  /**
+   * Whether this workspace's decisions may enter the shared pool.
+   *
+   * OFF until somebody with `organization:manage` turns it on, and that
+   * default is the whole point: data that has left cannot be recalled, so the
+   * safe default is the one that keeps it.
+   */
+  contribute: boolean;
+  /**
+   * Whether this workspace may be offered a suggestion derived from the pool.
+   *
+   * ON by default, and that is defensible only because of what the pool holds.
+   * `sharedFields` is an equipment type, four rounded bands and a boolean; the
+   * pool carries no organization id at all; and no suggestion is offered below
+   * a minimum number of observations. Nothing a consumer can see names a
+   * workspace, a user, a carrier, a truck, a driver, a load, a contract or a
+   * credential. If that ever stops being true, this default is wrong.
+   */
+  consume: boolean;
+  updatedAt: IsoDateTime;
+  /** Absent while the workspace is still on the shipped defaults. */
+  updatedByMembershipId?: string;
+  updatedByName?: string;
+}
+
+/** Whether network learning is being used, and if not, why not. */
+export type NetworkLearningAvailability =
+  /** Consumption is on and the pool holds enough to speak. */
+  | "available"
+  /** The workspace has turned consumption off. No network suggestion is made. */
+  | "consumption_disabled"
+  /** Consumption is on, and the pool does not yet hold enough to say anything. */
+  | "insufficient_evidence";
+
+/** Which body of evidence produced a suggestion. Never both at once. */
+export type LearningEvidenceSource =
+  /** This workspace's own decisions. They never leave it. */
+  | "local"
+  /** The anonymised cross-organization pool. */
+  | "network";
+
+/**
  * What the ranking has learned, and exactly what leaves this workspace.
  *
  * Antcolos can get better at ranking by watching which loads dispatchers
@@ -387,19 +444,48 @@ export interface RankingPreferences {
  * credential of any kind. Both lists are spelled out in the data rather than
  * described in a policy document, so a test can assert them and a dispatcher
  * can read them.
+ *
+ * Local and network evidence are reported SEPARATELY on purpose. "Antcolos
+ * suggests this" and "the workspaces around you suggest this" are different
+ * claims, and a summary that could not tell them apart would make the consent
+ * switches below meaningless.
  */
 export interface LearningSummary {
-  /** Decisions this workspace has contributed. */
-  observations: number;
-  /** Observations across Antcolos that fed the suggestion. */
+  /** What this workspace has agreed to. Always present, defaults included. */
+  consent: LearningConsent;
+  /**
+   * Decisions this workspace has recorded. These never leave it, whatever
+   * consent says, which is what keeps the ranking useful with contribution off.
+   */
+  localObservations: number;
+  /**
+   * How many of those were also contributed to the shared pool.
+   *
+   * Zero for every decision made while contribution was off, and it stays zero
+   * for them afterwards: enabling contribution never reaches back.
+   */
+  contributedObservations: number;
+  /** Observations across Antcolos. An aggregate count, joined to nothing. */
   networkObservations: number;
+  /** Why network learning is or is not in use. */
+  networkAvailability: NetworkLearningAvailability;
   /** Weights the learning would suggest. Never applied without a person. */
   suggested?: Record<RankingFactorKey, number>;
+  /** Which evidence produced `suggested`. Absent when there is no suggestion. */
+  suggestedFrom?: LearningEvidenceSource;
   lastLearnedAt?: IsoDateTime;
   /** Field names that leave the workspace, anonymised. */
   sharedFields: string[];
   /** Field names that never leave it, whatever happens. */
   withheldFields: string[];
+  /**
+   * What turning contribution off cannot undo, in the words a screen shows.
+   *
+   * Carried in the data rather than written into one component, because the
+   * limitation is a property of the design and every surface that offers the
+   * switch owes the reader the same sentence.
+   */
+  contributionHistoryNote: string;
 }
 
 /* -------------------------------------------------------------------------- */

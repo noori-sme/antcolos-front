@@ -34,6 +34,9 @@ export const queryKeys = {
     [...orgKey(organizationId), "responsibility", "fleet-profile"] as const,
   responsibilityAssignable: (organizationId: string, role?: string) =>
     [...orgKey(organizationId), "responsibility", "assignable", role ?? "any"] as const,
+  /** What a workspace has agreed to about cross-organization learning. */
+  learningConsent: (organizationId: string) =>
+    [...orgKey(organizationId), "learning", "consent"] as const,
   loads: (organizationId: string, filters?: unknown) =>
     [...orgKey(organizationId), "loads", filters ?? null] as const,
   eldDashboard: (organizationId: string, membershipId: string) =>
