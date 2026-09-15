@@ -22,6 +22,7 @@ import { resetInvoiceRegistry } from "./invoice-registry";
 import { resetListings } from "./listing-registry";
 import { resetLoadCommands, resetLoadFinalizations } from "./load-commands";
 import { resetMaintenanceRegistry } from "./maintenance-registry";
+import { resetMembershipDirectory } from "./membership-directory";
 import { resetMeterLedger } from "./meter-ledger";
 import { resetMtLoops } from "./mt-loop";
 import { resetNegotiations } from "./negotiation";
@@ -32,6 +33,7 @@ import { resetRanking } from "./ranking";
 import { resetExtractionQueue } from "./rate-con-extractions";
 import { resetRateConfirmationRecords } from "./rate-confirmation-record";
 import { resetRateConfirmations } from "./rate-confirmation";
+import { resetResponsibility } from "./responsibility";
 import { resetRiskStore } from "./risk-store";
 import { resetSearchSessions } from "./search-session";
 import { settlementStore } from "./settlement-registry";
@@ -44,6 +46,7 @@ import { resetTruckRegistry } from "./truck-registry";
 import { resetIntegrationMocks } from "@/lib/integrations/mock/adapters";
 import { resetMockSequence } from "@/lib/integrations/mock/support";
 import { resetPropagationBus } from "@/lib/propagation";
+import { resetTimelineSequence } from "@/lib/responsibility";
 
 /**
  * ★ EVERY MOCK STORE, IN ONE PLACE ★
@@ -97,6 +100,11 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   { id: "carriers", holds: "Carrier organizations and operating authority", module: "carrier-registry.ts", reset: resetCarrierRegistry },
   { id: "parties", holds: "Brokers, shippers, receivers, facilities and contacts", module: "party-registry.ts", reset: resetPartyRegistry },
   { id: "agreements", holds: "Contracts, relationships, versions and signatures", module: "agreement-registry.ts", reset: resetAgreementRegistry },
+  // THE membership roster. Before the operational layers, because the MT Loop
+  // board and the responsibility engine both read who is in a workspace from
+  // it, and a stale directory would make both of them wrong about the same
+  // person.
+  { id: "membership_directory", holds: "Every membership, its availability and who supervises whom", module: "membership-directory.ts", reset: resetMembershipDirectory },
 
   /* -- The canonical equipment meter ------------------------------------- */
   // Before the operational layers, because maintenance and fleet both PROJECT
@@ -151,6 +159,10 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   /* -- Audit, risk and the integration boundary -------------------------- */
   { id: "audit", holds: "The ONE audit ledger", module: "audit-ledger.ts", reset: resetAuditLedger },
   { id: "risk", holds: "Signals and cases", module: "risk-store.ts", reset: resetRiskStore },
+  // Responsibility holds only the answer to "who" — overrides, acknowledgements,
+  // approvals, watchers and the timeline. The work itself belongs to MT Loop and
+  // Needs You, which reset above, so this one carries no copy of it.
+  { id: "responsibility", holds: "Who holds which work, and the immutable timeline of how that changed", module: "responsibility.ts", reset: () => { resetResponsibility(); resetTimelineSequence(); } },
   { id: "integration_mocks", holds: "Queued handoffs and injected proposals", module: "integrations/mock/adapters.ts", reset: resetIntegrationMocks },
   { id: "integration_sequence", holds: "The mock id sequence, so ids are stable per run", module: "integrations/mock/support.ts", reset: resetMockSequence },
 

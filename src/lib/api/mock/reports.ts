@@ -18,7 +18,7 @@ import type {
 import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
 } from "../contracts/context";
-import { MOCK_ORG_MEMBERS } from "./home";
+import { orgMembers } from "./home";
 import { mockLoadsService } from "./loads";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
@@ -110,7 +110,7 @@ async function assemble(
   // Attribution must not depend on who is asking: the same load belongs to the
   // same dispatcher whether or not the caller may see the roster. What changes
   // with members:view is which reports can be run, not who owns a load.
-  const members = MOCK_ORG_MEMBERS[ctx.organizationId] ?? [];
+  const members = orgMembers(ctx.organizationId);
 
   const dataset = assembleDataset({
     organizationId: ctx.organizationId,

@@ -13,6 +13,7 @@ import {
   truckDocumentProblems, truckOperatingCarrier, truckApprovedCarriers,
 } from "./truck-registry";
 import { trailerFleetSync } from "./trailer-registry";
+import { assignableMembersOf, memberIn } from "./membership-directory";
 import { nowIso } from "./time";
 import {
   blockersFor, cycleInputFor, evidenceFor, nextActionFor, stageOf,
@@ -226,12 +227,24 @@ function setStatus(loop: MtLoop, next: MtLoopStatus, action: MtLoopAction, opts:
  * the fixtures. Everything not listed here opens with NOBODY on it, which is
  * the honest default and is exactly what Needs You is meant to catch.
  */
-const SEEDED_RESPONSIBILITY: Record<string, { membershipId: string; name: string }> = {
-  "org_summit:131": { membershipId: "mem_summit_owner", name: "Sam Murtaza" },
-  "org_meridian:B-04": { membershipId: "mem_meridian_dispatcher", name: "Sam Murtaza" },
-  "org_meridian:A-18": { membershipId: "mem_meridian_lane", name: "Lane Okafor" },
-  "org_northline:104": { membershipId: "mem_northline_owner", name: "Sam Murtaza" },
-  "org_solo:47": { membershipId: "mem_solo_dispatcher", name: "Sam Murtaza" },
+/**
+ * Which loop starts out in whose hands.
+ *
+ * Membership ids only. The NAME is resolved from the membership directory at
+ * the moment the loop opens, so a person who is renamed or suspended is not
+ * frozen into a fixture here — and so this file holds no second opinion about
+ * who these people are.
+ *
+ * Deliberately not exhaustive. Loops with no entry open UNASSIGNED, which is
+ * the state the board exists to show and the one the responsibility engine
+ * routes with its Owner fallback.
+ */
+const SEEDED_RESPONSIBILITY: Record<string, string> = {
+  "org_summit:131": "mem_summit_owner",
+  "org_meridian:B-04": "mem_meridian_dispatcher",
+  "org_meridian:A-18": "mem_meridian_lane",
+  "org_northline:104": "mem_northline_owner",
+  "org_solo:47": "mem_solo_dispatcher",
 };
 
 /** Which seeds have already been handed out. Cleared with the registry. */
@@ -267,12 +280,13 @@ function openLoop(truck: FleetTruck, organizationId: string): MtLoop {
   // takes it, and quietly handing it back to the same person would hide exactly
   // the gap this board exists to show.
   const seedKey = `${organizationId}:${truck.unit}`;
-  const seeded = seededAlready.has(seedKey) ? undefined : SEEDED_RESPONSIBILITY[seedKey];
+  const seededId = seededAlready.has(seedKey) ? undefined : SEEDED_RESPONSIBILITY[seedKey];
   seededAlready.add(seedKey);
+  const seeded = seededId ? memberIn(organizationId, seededId) : undefined;
   if (seeded) {
-    takeResponsibility(loop, seeded.membershipId, seeded.name, {
+    takeResponsibility(loop, seeded.membershipId, seeded.displayName, {
       byMembershipId: seeded.membershipId,
-      byName: seeded.name,
+      byName: seeded.displayName,
       action: "claimed",
     });
   }
@@ -538,27 +552,24 @@ export function syncMtLoops(ctx: MtLoopContext): MtLoop[] {
 /**
  * Who this workspace can hand a loop to.
  *
- * A stand-in until the members service is wired to the dashboard, in the same
- * spirit as the team counts on the workspace summary. A workspace of one is
- * absent from this map on purpose: there is nobody to hand anything to, which
- * is a different statement from "the list is empty".
+ * A view of THE membership directory rather than a roster of its own. It was a
+ * hand-written map here and a different hand-written map in `home.ts`, and the
+ * two disagreed about who worked at Meridian — which meant the MT Loop board
+ * and the Needs You drawer offered different people for the same handoff.
+ *
+ * A workspace of one is still ABSENT from the board rather than empty: that
+ * decision belongs to `mtLoopBoardSync` below, which asks whether the workspace
+ * supports a team at all. There being nobody to hand work to and there being an
+ * empty list are different statements.
  */
-const TEAM_ROSTER: Record<string, Array<{ membershipId: string; name: string }>> = {
-  org_summit: [
-    { membershipId: "mem_summit_owner", name: "Sam Murtaza" },
-    { membershipId: "mem_summit_rosa", name: "Rosa Delgado" },
-    { membershipId: "mem_summit_dev", name: "Devon Pike" },
-  ],
-  org_meridian: [
-    { membershipId: "mem_meridian_dispatcher", name: "Sam Murtaza" },
-    { membershipId: "mem_meridian_lane", name: "Lane Okafor" },
-    { membershipId: "mem_meridian_ines", name: "Inés Vidal" },
-  ],
-  org_northline: [
-    { membershipId: "mem_northline_owner", name: "Sam Murtaza" },
-    { membershipId: "mem_northline_paige", name: "Paige Ellery" },
-  ],
-};
+function teamRosterFor(
+  organizationId: string,
+): Array<{ membershipId: string; name: string }> {
+  return assignableMembersOf(organizationId).map((m) => ({
+    membershipId: m.membershipId,
+    name: m.displayName,
+  }));
+}
 
 /**
  * What one membership may do to one loop.
@@ -684,7 +695,7 @@ export function mtLoopBoardSync(ctx: MtLoopContext): MtLoopBoard {
       emptyNow: cards.filter((c) => c.emptyNow).length,
     },
     // Absent, not empty, in a workspace of one.
-    assignableTo: mayMoveWork ? (TEAM_ROSTER[ctx.organizationId] ?? []) : undefined,
+    assignableTo: mayMoveWork ? teamRosterFor(ctx.organizationId) : undefined,
   };
 }
 

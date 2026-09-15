@@ -9,6 +9,7 @@ import { useActiveMembership } from "@/lib/session/hooks";
 import type { NeedsYouFilters, NeedsYouItem } from "@/types";
 import { NeedsYouDrawer } from "./detail-drawer";
 import { NeedsYouFilterBar } from "./filter-bar";
+import { useRoutedHolders } from "@/features/responsibility/hooks";
 import {
   useAssignableMembers, useNeedsYouAction, useNeedsYouList,
 } from "./hooks";
@@ -36,13 +37,26 @@ export function NeedsYouWorkspace() {
 
   const items = useMemo(() => list.data ?? [], [list.data]);
 
+  // Who a row is routed to, when nobody has explicitly taken it. Read from the
+  // responsibility board the viewer already has cached rather than one query
+  // per row — and used only as a label. Without it the queue says "Unassigned"
+  // about items the routing engine has given somebody, which is the one thing
+  // this milestone must never let a screen claim.
+  const routed = useRoutedHolders();
+
   const memberName = useCallback(
-    (membershipId?: string) =>
-      membershipId
-        ? (members.data?.find((m) => m.membershipId === membershipId)?.displayName ??
-          "Assigned")
-        : undefined,
-    [members.data],
+    (item: NeedsYouItem) => {
+      if (item.assigneeMembershipId) {
+        return members.data?.find((m) => m.membershipId === item.assigneeMembershipId)
+          ?.displayName ?? "Assigned";
+      }
+      const holder = routed.get(item.id);
+      if (!holder) return undefined;
+      return holder.isFallback
+        ? `${holder.displayName} (owner fallback)`
+        : holder.displayName;
+    },
+    [members.data, routed],
   );
 
   const openCount = (all.data ?? []).filter(
@@ -106,7 +120,7 @@ export function NeedsYouWorkspace() {
               <NeedsYouCard
                 item={item}
                 selected={item.id === selected?.id}
-                assigneeName={memberName(item.assigneeMembershipId)}
+                assigneeName={memberName(item)}
                 onOpen={() => setSelected(item)}
               />
             </li>

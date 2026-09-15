@@ -17,6 +17,7 @@ import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
 import { canAll } from "@/lib/permissions/can";
 import { dateTimeIn, relativeTime, useNow } from "@/lib/utils";
 import { CATEGORY_LABEL, type NeedsYouItem } from "@/types";
+import { ResponsibilitySummary } from "@/features/responsibility/inline-summary";
 import { EscalateDialog, ResolveDialog, SnoozeDialog } from "./action-dialogs";
 import { DueLabel } from "./due-label";
 import { SeverityBadge } from "./severity";
@@ -38,7 +39,10 @@ export function NeedsYouDrawer({
   onOpenChange: (v: boolean) => void;
   action: NeedsYouMutation;
   members: { membershipId: string; displayName: string; title?: string }[];
-  memberName: (membershipId?: string) => string | undefined;
+  /** The name to show for whoever holds this item. Takes the item, not an
+   *  id, because an item nobody has explicitly taken still has somebody
+   *  routed to it — see the responsibility module. */
+  memberName: (item: NeedsYouItem) => string | undefined;
   /** Receives the updated record so the panel shows the result of the action. */
   onItemUpdated: (next: NeedsYouItem) => void;
 }) {
@@ -151,6 +155,11 @@ export function NeedsYouDrawer({
               ) : null}
             </section>
           ) : null}
+
+          {/* Who this is routed to, read from the responsibility service rather
+              than worked out here. The drawer has no opinion about who anybody
+              is, and no name is written in this file. */}
+          <ResponsibilitySummary work={{ kind: "needs_you", id: item.id }} />
 
           <section>
             <h3 className="text-[0.6875rem] font-semibold tracking-wider text-fg-subtle uppercase">
@@ -269,7 +278,7 @@ export function NeedsYouDrawer({
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" disabled={pending}>
                     <UserPlus aria-hidden />
-                    {memberName(item.assigneeMembershipId) ?? "Assign"}
+                    {memberName(item) ?? "Assign"}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

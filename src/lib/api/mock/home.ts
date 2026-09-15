@@ -1,4 +1,5 @@
 import { missingRequiredDocuments, type FleetTrailer, type FleetTruck, type Load } from "@/types";
+import { assignableMembersOf } from "./membership-directory";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { trailerFleetSync } from "./trailer-registry";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
@@ -164,27 +165,23 @@ export const mockDirectoryService = {
   },
   async assignableMembers(ctx: ServiceContext) {
     if (!ctx.permissions.has("members:view")) return [];
-    return MOCK_ORG_MEMBERS[ctx.organizationId] ?? [];
+    return orgMembers(ctx.organizationId);
   },
 };
 
-/** Org-scoped member directory for assignment menus. */
-export const MOCK_ORG_MEMBERS: Record<
-  string,
-  { membershipId: string; displayName: string; title?: string }[]
-> = {
-  org_northline: [
-    { membershipId: "mem_northline_owner", displayName: "Sam Murtaza", title: "Owner" },
-    { membershipId: "mem_northline_disp1", displayName: "Ivy Delgado", title: "Dispatcher" },
-    { membershipId: "mem_northline_disp2", displayName: "Ben Osei", title: "Dispatcher" },
-    { membershipId: "mem_northline_books", displayName: "Renata Cruz", title: "Bookkeeper" },
-  ],
-  org_meridian: [
-    { membershipId: "mem_meridian_dispatcher", displayName: "Sam Murtaza", title: "Senior dispatcher" },
-    { membershipId: "mem_meridian_ops", displayName: "Tara Whitfield", title: "Operations lead" },
-    { membershipId: "mem_meridian_night", displayName: "Jonas Petit", title: "Night dispatcher" },
-  ],
-  org_cascade: [
-    { membershipId: "mem_cascade_driver", displayName: "Sam Murtaza", title: "Company driver" },
-  ],
-};
+/**
+ * Org-scoped member directory for assignment menus.
+ *
+ * A VIEW of the one membership directory, not a list of its own. It used to be
+ * a hand-written map right here, and it disagreed with the MT Loop board's
+ * roster about who worked at Meridian — so "who can I hand this to?" had two
+ * answers depending on which screen asked. A function rather than a constant
+ * because the directory answers from live membership state, which a frozen map
+ * cannot do.
+ */
+export function orgMembers(
+  organizationId: string,
+): Array<{ membershipId: string; displayName: string; title?: string }> {
+  return assignableMembersOf(organizationId);
+}
+

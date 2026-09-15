@@ -37,6 +37,11 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/rate-cons": ["loads:view"],
   "/reports": ["reports:view"],
   "/settings": ["members:view"],
+  // Responsibility settings sit under /settings but are a stronger power than
+  // reading the member list: changing an SLA or an escalation ladder changes
+  // what happens to everybody's work. Gated above its parent rather than
+  // inheriting it.
+  "/settings/responsibility": ["organization:manage"],
   "/account": [],
 };
 

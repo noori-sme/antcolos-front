@@ -60,6 +60,7 @@ files rather than a copy. `npm test` runs both.
 | GPS-driven availability, MT Loop entry & broker tracking | `/dispatch/tracking`, `/dispatch/tracking/[loadId]`, `/track/[token]` (public) |
 | Contracts & Relationships foundation | `/contracts`, `/contracts/new`, `/contracts/[contractId]`, `/contracts/[contractId]/versions/[versionId]` |
 | ELD & Telematics foundation | `/eld`, `/eld/devices/[deviceId]` |
+| Hierarchical responsibility, delegation & escalation | `/work`, `/settings/responsibility` |
 
 Everything else is a placeholder screen that says so.
 
@@ -1566,6 +1567,146 @@ ordering and security are the backend's to enforce.
 `docs/zero-entry-data-audit.md` lists every one of those responsibilities and
 every remaining mock boundary.
 
+## Hierarchical responsibility, delegation & escalation
+
+Who holds every piece of work in a workspace, who answers for it, and what
+happens when nobody acts. It sits over MT Loop and Needs You and owns neither:
+both of those keep their records, emit a typed `ResponsibilityContext`, and are
+never asked who should do anything.
+
+### Zero friction is the constraint, not a goal
+
+A one-truck Carrier signing up answers **one question — how many trucks** — and
+even that is skippable, asked inline on a working screen, and never asked at all
+when the truck registry already knows. There is no wizard, no hierarchy step and
+no policy to choose. Everything else is derived:
+
+| What is derived | From |
+|---|---|
+| Team queues, supervisors, escalation levels | Fleet band (`src/config/responsibility.ts`) **AND** how many people are actually in the workspace |
+| Who is responsible | Permissions, record scope, asset and carrier assignment, availability |
+| Who is accountable | The nearest active supervisor, ending at the Owner |
+| Targets and escalation state | The records and the clock, recomputed on every read |
+
+The second column of the first row is the half that is easy to get wrong. A tier
+*allows* a capability; the people *decide* it. A forty-truck carrier that has not
+invited anybody yet gets no team queue, because a queue you cannot hand work to
+is worse than no queue — and the milestone forbids assigning work to people who
+do not exist.
+
+### Four roles, kept apart
+
+`Responsible` does the work. `Accountable` owns the result and receives the
+escalation. `Approver` signs off. `Watchers` see it, own nothing and are never
+escalated to. They are separate fields on `ResponsibilityAssignment` because the
+difference is what makes delegation and reassignment different actions:
+delegating moves who *does* it and pins who *answers*; reassigning lets
+accountability re-derive from where the work lands.
+
+### The Owner is a fallback, not a competitor
+
+An Owner holds every permission by definition, so left to compete on points they
+win most ties — and a Carrier who hired a bookkeeper still finds every invoice in
+their own queue. So `routeResponsibility` removes the Owner from the field
+whenever anybody else can do the work, and the source it records says which
+happened:
+
+- `default_policy` — routed to somebody by the rules.
+- `delegation` — follows a carrier grant or a truck assignment.
+- `fallback` — **nobody else could do it**, so the Owner has it. This is what
+  fills the Unassigned queue, and it is a real signal rather than a tidy-up job.
+
+A one-person carrier is the deliberate exception: their work is `default_policy`
+and their Unassigned queue is empty, because work you are doing alone is owned,
+not ownerless.
+
+Oversight and overload are answered by different queues. The Owner is
+accountable for everything — `all_organization`, `at_risk`, `escalated` and the
+`oversight` count all hold it — while `my_mt_loop` and `my_needs_you` admit only
+work they are actually doing, plus delegated work that is critical, escalated,
+or waiting on them for an approval.
+
+### ★ Escalation is not reassignment ★
+
+The rule the module is built around. When a trigger fires, the original assignee
+is **still responsible**; what changes is that somebody above them can see it.
+`ESCALATION_ACTION_MOVES_WORK` is the machine-readable form of that sentence,
+`movesWork()` is the only place anything asks the question, and **no seeded
+policy contains a step that moves work**. A Carrier can add one; Antcolos never
+does it for them.
+
+`escalate()` in the service is where this would most plausibly be broken by
+accident, so it is worth reading: it adds the accountable membership as a
+watcher and touches the responsible membership not at all.
+
+Ten triggers ship on by default, and one of them behaves differently from the
+rest. `high_severity` is a *standing condition* — true the moment the work opens
+and true however well it is being handled — so it gets one rung at minute zero
+(the manager can see it) and never climbs, and it does not count as "escalated".
+Without that, every high-severity item in a workspace reads as escalated half an
+hour after it appears.
+
+### The one thing that moves work by itself
+
+A membership **ending**. Unresolved work routes to the next eligible membership,
+or to the Owner, and nothing is deleted: the timeline gains a line naming who
+lost it and why, and another naming who has it now.
+
+Deliberately *not* on that list: being on leave, being off shift, and losing a
+permission. All three raise escalation triggers instead. The last one matters
+most — a manager handing somebody work on Friday and granting the permission on
+Monday is normal, and silently routing it back would undo a decision they made
+on purpose.
+
+### Where things are
+
+```
+src/types/responsibility.ts        the vocabulary
+src/config/responsibility.ts       EVERY threshold and default, in one file
+src/lib/responsibility/            the pure engine — no mocks, no stores, no React
+  candidate.ts                     what a membership looks like to the engine
+  fleet-profile.ts                 the one question, and all it decides
+  eligibility.ts                   the hard gate, and the score, kept apart
+  routing.ts                       the four roles. Accountable is never absent
+  policies.ts                      which policy governs which work
+  sla.ts                           two clocks, computed. No timers
+  escalation.ts                    triggers and rungs
+  queues.ts                        the seven views, and the Owner rule
+  timeline.ts                      append-only history
+src/lib/api/mock/membership-directory.ts   THE roster — one, not four
+src/lib/api/mock/responsibility-context.ts where MT Loop and Needs You emit
+src/lib/api/mock/responsibility.ts         the service
+src/features/responsibility/               the screens
+```
+
+`src/config/responsibility.ts` is the whole of "configurable, not scattered
+hardcoded checks": nothing in the engine compares a truck count to a literal or
+names an SLA in minutes.
+
+The membership directory replaced **three** hand-written rosters that disagreed
+with each other — `MOCK_ORG_MEMBERS` in `home.ts`, and `TEAM_ROSTER` plus
+`SEEDED_RESPONSIBILITY` in `mt-loop.ts`. Meridian had different people on
+different screens, so "who can I hand this to?" had two answers depending on who
+asked. Both now derive from the one directory, and a colleague there is a real
+`Membership` run through the real `effectivePermissions` — so nobody can be
+eligible for work the product would not actually let them do.
+
+### What this is not
+
+Frontend only, and the limits are worth stating rather than discovering:
+
+- **No timers.** SLA state and escalation level are computed from `openedAt`,
+  `acknowledgedAt`, `resolvedAt` and the clock on every read. Close the tab and
+  nothing is missed, because nothing was scheduled.
+- **No delivery.** A reminder rung and an approval request produce a line on a
+  record and a row in a queue. No email, push or Telegram message leaves the app.
+- **No enforcement.** The permission checks are the same honest mock the rest of
+  Antcolos uses: they make the UI behave correctly and prove the shape the real
+  API must meet.
+- **No persistence.** Everything lives in memory for the life of the tab.
+
+Every screen in the module says so on the screen, not only here.
+
 ## For backend integration
 
 `src/lib/api/contracts/` is the seam. Every method takes a `ServiceContext` carrying the organization, membership, permission set, record scope and an actor snapshot — there is no method that accepts a `User`. The mock adapter enforces permissions and organization ownership itself, so a UI bug that renders a forbidden button still fails at the seam.
@@ -1597,6 +1738,55 @@ They cover the service layer, which is where the rules actually live:
   invoice that was already issued.
 - **Needs You** — invoice items land in the shared queue, are gated on
   `invoices:view`, and snooze and resolve like any other item.
+
+### Responsibility, delegation and escalation
+
+`tests/responsibility/policy-engine.test.ts` and
+`tests/responsibility/scenarios.test.ts` add 77 cases. The first runs against the
+pure engine and never touches a store, which is what lets it prove the workspace
+no fixture can supply — a brand-new one-truck Carrier with nobody in it but its
+Owner. The second runs every scenario through the real service, so it fails if
+MT Loop or Needs You ever stop emitting responsibility context.
+
+- **A new one-truck Carrier with no setup** — solo tier, no team queue, no
+  supervisors, one escalation level, and the work still routed and still owned.
+- **Thresholds are configuration** — the engine agrees with `FLEET_BANDS` for
+  every band, so editing the config moves the product.
+- **Capability needs people** — a forty-truck workspace with one member gets no
+  team queue; queues and supervisors switch on as colleagues arrive, with nobody
+  asked anything.
+- **Never a role name** — a "Senior Operations Director" without the permission
+  is refused; an empty carrier list means *not narrowed*, never *narrowed to
+  nothing*; a driver membership is refused dispatch work whatever it holds.
+- **Stable ordering** — the same state ranks the same way twice, so a board does
+  not reshuffle while somebody reads it.
+- **Nothing is ownerless** — every assignment in every workspace, for eight
+  different memberships, has a responsible AND an accountable membership with a
+  reason attached.
+- **Carrier delegation** — Baxter's truck routes to the dispatcher who holds
+  Baxter, with source `delegation`; a dispatcher holding a different carrier is
+  refused `out_of_scope` and **not** `missing_permission`, which is the
+  distinction that proves it is scope and not access.
+- **Cross-organization isolation** — one workspace never sees another's work,
+  and reassigning to a membership in another workspace gives the same answer as
+  a membership that does not exist.
+- **Owner oversight without overload** — routine delegated work is absent from
+  the Owner's personal queue and present in the organization view, and the Owner
+  is still accountable for every item kept out of it.
+- **Escalation moves nothing** — an escalated item's timeline has no
+  `reassigned` line, and escalating by hand leaves the responsible membership
+  exactly where it was while adding the accountable one as a watcher.
+- **Assign ahead of a permission** — a manager may hand somebody work before
+  granting the permission; it raises `missing_permission` rather than being
+  silently routed back.
+- **Assignee removal** — work moves to the next eligible membership, the source
+  becomes `fallback`, and the timeline keeps both the person who lost it and the
+  person who has it. Being merely *away* does not move anything.
+- **The timeline is append-only** — every earlier entry is byte-identical after
+  three more actions, and a name still reads after the person has left.
+- **Progressive disclosure** — policies are seeded without anybody choosing,
+  editable by an Owner, refused to a dispatcher, and there is no `deletePolicy`
+  method at all.
 
 ### Tracking, availability and MT Loop deduplication
 

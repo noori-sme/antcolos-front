@@ -20,7 +20,13 @@ export default defineConfig({
       "tests/contracts/**/*.test.ts",
       "tests/audit/**/*.test.ts",
       "tests/eld/**/*.test.ts",
+      "tests/responsibility/**/*.test.ts",
     ],
     restoreMocks: true,
+    // The mock services deliberately sleep, so a scenario that walks a piece of
+    // work through several actions spends most of its time in simulated
+    // latency rather than in logic. The default 5s is not enough for those and
+    // is not a useful signal about them.
+    testTimeout: 30_000,
   },
 });
