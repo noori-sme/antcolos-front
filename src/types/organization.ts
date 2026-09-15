@@ -50,6 +50,18 @@ export function workspaceKindOf(
   return organization.soloDispatcher ? "individual_dispatcher" : "dispatch_organization";
 }
 
+/**
+ * The organization type a workspace kind belongs to.
+ *
+ * The inverse of workspaceKindOf, and lossy on purpose: a dispatch
+ * organization and an individual dispatch workspace are both DISPATCH_AGENCY.
+ * Callers that only need "carrier or agency" — a report's audience, say — use
+ * this rather than carrying a second field on the context.
+ */
+export function organizationTypeOf(kind: WorkspaceKind): OrganizationType {
+  return kind === "carrier_organization" ? "CARRIER" : "DISPATCH_AGENCY";
+}
+
 export const WORKSPACE_KIND_LABEL: Record<WorkspaceKind, string> = {
   carrier_organization: "Carrier organization",
   dispatch_organization: "Dispatch organization",

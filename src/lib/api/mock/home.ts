@@ -169,7 +169,7 @@ export const mockDirectoryService = {
 };
 
 /** Org-scoped member directory for assignment menus. */
-const MOCK_ORG_MEMBERS: Record<
+export const MOCK_ORG_MEMBERS: Record<
   string,
   { membershipId: string; displayName: string; title?: string }[]
 > = {

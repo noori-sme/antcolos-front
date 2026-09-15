@@ -9,6 +9,7 @@ import { mockDriverWorkflowService } from "./mock/driver-workflow";
 import { mockInvoicesService } from "./mock/invoices";
 import { mockLoadsService } from "./mock/loads";
 import { mockNeedsYouService } from "./mock/needs-you";
+import { mockReportsService } from "./mock/reports";
 import { mockSettlementsService } from "./mock/settlements";
 
 /**
@@ -21,6 +22,7 @@ const mockServices: AntcolosServices = {
   home: mockHomeService,
   directory: mockDirectoryService,
   loads: mockLoadsService,
+  reports: mockReportsService,
   compliance: mockComplianceService,
   fleet: mockFleetService,
   settlements: mockSettlementsService,

@@ -23,6 +23,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "drivers:view", "trucks:view", "trailers:view",
       "customers:view", "customers:create", "customers:private:manage", "customers:resolve",
       "documents:view", "documents:upload", "compliance:view",
+      // Their own income, loads and activity — never the organization's.
+      "reports:view",
       "fleet:view", "fleet:telemetry:record",
       "maintenance:view",
       // A dispatcher is usually the first to hear about a wreck, so they can
@@ -59,6 +61,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "settlements:view", "settlements:create", "settlements:export",
       "settlements:dispute:resolve", "settlements:pay",
       "invoices:view", "invoices:create", "customers:view", "documents:view",
+      "reports:view", "reports:export",
       "insurance:view", "insurance:sensitive:view", "claims:view", "claims:financials:view",
     ],
   },

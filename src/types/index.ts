@@ -17,6 +17,7 @@ export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
 export type * from "./trailer";
+export type * from "./report";
 export type * from "./compliance";
 export type * from "./settlement";
 export type * from "./maintenance";
@@ -80,4 +81,4 @@ export {
   invoiceSubtotalCents, isInvoiceEditable, isInvoiceOverdue, isInvoiceTerminal,
   missingInvoiceDocuments, rejectedInvoiceDocuments,
 } from "./invoice";
-export { workspaceKindOf, WORKSPACE_KIND_LABEL } from "./organization";
+export { workspaceKindOf, organizationTypeOf, WORKSPACE_KIND_LABEL } from "./organization";

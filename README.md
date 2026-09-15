@@ -39,6 +39,8 @@ files rather than a copy. `npm test` runs both.
 | 1. Foundation and shell | Design tokens, theme and density, identity and membership switching, permissions, responsive navigation, shared states |
 | 2. Home + Needs You | `/home` (adapts to the membership), `/needs-you`, `/driver/home` |
 | Canonical Load slice | `/loads`, `/loads/[loadId]` — read-only |
+| Truck and trailer registries | `/fleet/trucks`, `/fleet/trailers` and their profiles |
+| Reports | `/reports`, `/reports/[reportId]` — read-only analysis of other modules' records |
 | Safety & Compliance foundation | `/compliance`, `/compliance/[requirementId]` |
 | Permanent Truck and Trailer | `/fleet/trucks`, `/fleet/trailers` and their profiles |
 | Fleet Management Foundation | `/fleet`, `/fleet/equipment/[assetKind]/[assetId]` |
@@ -57,6 +59,63 @@ files rather than a copy. `npm test` runs both.
 
 Everything else is a placeholder screen that says so.
 
+## Reports
+
+Reporting **analyses** records; it never creates them. There is no write method
+on its service contract, and no load, invoice, settlement, document, carrier,
+driver, truck, trailer, broker, shipper or receiver record is written anywhere
+in `src/lib/reports` or `src/features/reports`.
+
+Three audiences, resolved in the service from the organization type and the
+permissions held — never from a role name:
+
+| Audience | Who | Reports |
+|---|---|---|
+| Carrier organization | `reports:view` + `revenue:view` in a carrier | Revenue, profit and margin, RPM, deadhead, truck performance, expenses, invoice status, accounts receivable, settlements, broker performance, lane performance, equipment utilization |
+| Dispatch organization | `reports:view` + `revenue:view` in a dispatch agency | Commission revenue, performance by carrier, performance by dispatcher, booked loads, average RPM, booking success, empty trucks, time to find a load, broker response rates |
+| Individual dispatcher | `reports:view` without `revenue:view` | Their own income, loads, carriers, performance and activity — and nothing organization-wide |
+
+Every report carries a date-range and organization filter, summary metrics with
+a like-for-like comparison against the previous period, a written definition and
+formula for every number, and a drill-down from any metric or row to the source
+records in the module that owns them. Four views — table, bar, line and summary
+text — share one calculation: switching view changes nothing but the drawing,
+and a report is only offered a chart its data can honestly carry (a line only
+where rows are ordered in time). The chosen view is remembered per report, in
+the browser.
+
+### Where the numbers come from
+
+Reporting reads other modules through typed adapters in
+`src/lib/reports/sources/`. `SOURCE_AVAILABILITY` in `sources/types.ts` is the
+honesty contract — it is the one place that decides whether a source is live,
+mock or unavailable, and every screen renders what it says:
+
+- **Live**: Loads (through its service contract), Rate Confirmation and
+  Documents (from each load's own requirements), Trucks (the permanent registry).
+- **Mock adapter**, clearly marked on every screen it reaches: Invoices,
+  Settlements, MT Loop, Search Sessions, Opportunities, carrier sharing
+  agreements, load attribution, dispatcher earnings — and Expenses, which no
+  module owns at all. No money is invented where a confirmed figure exists: a
+  mock invoice bills the load's own rate, and mock driver pay is the load's own
+  driver share.
+- **Unavailable**: a workspace the Loads module cannot serve says so, rather
+  than showing an empty report as if nothing had happened.
+
+### What the service enforces
+
+`src/lib/api/mock/reports.ts`, not the screens: `reports:view` to open the
+module and each report's own keys to run it; the audience, so an individual
+membership is refused an organization-wide report instead of quietly given a
+smaller one; the workspace, because records arrive through the Loads module and
+the truck registry with their own scoping already applied; and carrier sharing —
+a dispatch workspace analyses only carriers that have shared their records, says
+how many records it excluded, and will not let a drill-down reach one.
+
+Known gap in the fixtures, not in the module: `Summit Dispatch` is seeded with
+no loads, so the dispatch-organization reports are only viewable in their empty
+state in the running app. The calculations behind them are covered by tests
+against Meridian's records.
 ### Safety & Compliance
 
 The one idea the module is built around: **a requirement and a document are not
@@ -386,6 +445,8 @@ back-fills a timestamp to make a timeline look tidy.
 The app ships with one permanent user and six memberships. Use the organization switcher at the top of the sidebar:
 
 - **Northline Freight** — you are the Owner. You see everything, including rates and revenue.
+- **Meridian Dispatch** — you are a Senior dispatcher with `rates:view` and `revenue:view` withheld. The rate column, revenue tile, settlements, invoices and the whole settings section are *absent*, not disabled. Reports are present but personal: your own income, loads, carriers, performance and activity, with organization-wide reports refused at the service. Trucks show the partner carrier they run under.
+- **Cascade Haul** — you are a Company driver scoped to your own loads. `/home` hands off to `/driver/home`, and you see three of the four loads that exist.
 - **Meridian Dispatch** — you are a Senior dispatcher with `rates:view` withheld. The rate column, revenue tile, settlements, invoices, reports and the whole settings section are *absent*, not disabled — `/finance/invoices` typed into the address bar gives a proper 403 screen, and the service refuses the call underneath it. Trucks show the partner carrier they run under.
 - **Baxter Transit** — a second carrier, so an operating lease can be read from both ends. It shares exactly two of its documents with Meridian Dispatch, and nothing else.
 - **Sam Murtaza Dispatch** — an *individual* dispatch workspace. Not a dispatch organization: it is asked for a photo ID, and never for operating authority or cargo insurance. `/documents` grows an **Upgrade** tab there.
@@ -405,6 +466,7 @@ src/
     layout/             AppShell, Sidebar, Topbar, OrgSwitcher, AccountMenu
     auth/               Can, PermissionBadge, ActorLabel
     data/               loading / empty / error states
+  features/             home, needs-you, loads, reports
   features/             home, needs-you, loads, compliance
   features/             home, needs-you, loads, fleet, fleet-ops, trailers
   features/             home, needs-you, loads, settlements
@@ -416,6 +478,7 @@ src/
       contracts/        ★ typed service interfaces — the backend seam
       mock/             in-memory adapter, PARTITIONED BY ORGANIZATION
       http/             real adapter, deliberately unimplemented
+    reports/            catalog, metric definitions, source adapters, calculations
     compliance/         ★ requirement catalog, applicability rules, status machine
     insurance/          ★ coverage rules, requirements, claim states, seams
     directory/          ★ normalization and entity-resolution matching (pure)
