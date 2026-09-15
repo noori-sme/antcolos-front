@@ -3,6 +3,7 @@ import type {
   OperationalSignal, PendingIntegrationEvent,
 } from "@/types";
 import { mockStore } from "@/lib/api/mock/store";
+import { rateConfirmationForLoad } from "@/lib/api/mock/rate-confirmation-record";
 import type {
   AssignmentPort, AssignmentSnapshot, DispatchOpportunityPort,
   DocumentCenterPort, DownstreamPort, InboundLoadProposal, IntegrationPorts,
@@ -60,12 +61,57 @@ const loadSource: LoadSourcePort = {
     return mockStore.org(organizationId).loads.find((l) => l.id === loadId);
   },
 
+  /**
+   * The finalization gate's source of truth.
+   *
+   * It reads the CANONICAL committed rate confirmation first. That record only
+   * exists once a person reviewed every required field, Dispatch approved it, the
+   * authorized carrier signature went on, and the signed copy was confirmed as
+   * returned to the broker — which is exactly the three-part gate this port's
+   * type describes, so the projection is a straight read rather than an
+   * interpretation.
+   *
+   * This used to read `RATE_CONFIRMATIONS` and nothing else: a hardcoded table
+   * keyed by load reference. Which meant signing a rate confirmation in Dispatch
+   * did NOT unlock the Driver Load Post, and loads the table named were reported
+   * as signed and returned though nobody had ever confirmed them.
+   *
+   * The table survives as a fallback for exactly that seeded data, and says so:
+   * it is how the fixture loads that were "already finalized before this session
+   * started" keep working. A load with neither is a load with no rate
+   * confirmation, which is a first-class answer.
+   */
   async getRateConfirmation(organizationId, loadId): Promise<RateConfirmationState | undefined> {
     await wait();
     const load = mockStore.org(organizationId).loads.find((l) => l.id === loadId);
     if (!load) return undefined;
-    // Keyed by the human reference because that is what the Rate Confirmation
-    // module quotes back. A load with no entry has no rate confirmation.
+
+    const committed = rateConfirmationForLoad(organizationId, loadId);
+    if (committed) {
+      return {
+        documentRef: externalRef("rate_confirmation", committed.signedDocumentId, {
+          entityId: committed.rateConfirmationId,
+          entityKind: "rate_confirmation",
+        }),
+        reviewedByDispatch: true,
+        reviewedAt: committed.committedAt,
+        reviewedByName: committed.committedByName,
+        carrierSignature: {
+          signed: true,
+          signedAt: committed.signature.signedAt,
+          signerName: committed.signature.signedName,
+        },
+        sentToBroker: {
+          sent: true,
+          sentAt: committed.returnedToBroker.at,
+          channel: committed.returnedToBroker.channel,
+        },
+        provenance: committed.provenance,
+      };
+    }
+
+    // Seeded loads only. Keyed by the human reference because that is what the
+    // fixture table was written against.
     return RATE_CONFIRMATIONS[load.reference];
   },
 };

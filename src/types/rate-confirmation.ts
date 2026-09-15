@@ -1,6 +1,6 @@
 import type { Address, IsoDateTime } from "./common";
-import type { Provenance } from "./integration";
-import type { FactVerification } from "./propagation";
+import type { IntegrationModule, Provenance } from "./integration";
+import type { FactVerification, ProjectionState } from "./propagation";
 import type { ActorRef } from "./user";
 import type {
   Facility, Party, PartyContact, PartyRole, PartySnapshot,
@@ -577,31 +577,40 @@ export interface RateConAuditEntry {
  * Every destination is listed either way. A dispatcher who cannot see that
  * accounting has not received anything will assume it has.
  */
-export type DistributionTargetKey =
-  | "load_record"
-  | "accounting"
-  | "driver_notification"
-  | "detention_rules"
-  | "layover_rules"
-  | "broker_profile"
-  | "shipper_profile"
-  | "receiver_profile"
-  | "trip";
-
-export type DistributionState =
-  /** Actually written, now, to a module that exists. */
-  | "written"
-  /** Held, with the milestone that will receive it named. */
-  | "queued";
-
+/**
+ * Where the confirmed information went, per receiving module.
+ *
+ * This used to be a hand-written list of nine rows, one `written` and eight
+ * `queued` with prose like "waiting for the accounting module" — at a point when
+ * accounting, the driver workflow, tracking and the directory had all been
+ * merged and could have received a typed projection. The screen was telling a
+ * dispatcher that eight modules had received nothing when four of them could
+ * have.
+ *
+ * It is now a PROJECTION of the `load.finalized` event's own records. Every row
+ * is a real subscriber with a real outcome, and the four states are the
+ * propagation layer's: pending, processed, failed and needs review. A failed row
+ * says what failed and whether running it again could help; a `needs_review` row
+ * says what a person has to decide, which is what a possible duplicate broker
+ * profile actually is.
+ */
 export interface DistributionOutcome {
-  key: DistributionTargetKey;
+  /** The subscriber's id. Stable, so a retry can be addressed to it. */
+  key: string;
   label: string;
-  state: DistributionState;
-  /** What was written, or what is waiting and for whom. */
+  state: ProjectionState;
+  /** The module that owns the records this projection writes. */
+  targetModule: IntegrationModule;
+  /** What it did, or what it is waiting for. Always populated. */
   detail: string;
-  /** Set on everything queued. */
-  waitingForMilestone?: number;
+  /** Set on `failed` and `needs_review`. Plain language, never a stack trace. */
+  reason?: string;
+  /** Whether running it again could change the outcome. */
+  retryable: boolean;
+  /** True while the receiving module is a labelled mock or on another branch. */
+  mock: boolean;
+  /** How many times it has run. */
+  attempts: number;
 }
 
 export interface RateConWorkflow {

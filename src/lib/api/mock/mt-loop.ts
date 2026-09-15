@@ -706,6 +706,64 @@ export function markLoopBooked(loop: MtLoop, opts: {
   });
 }
 
+/**
+ * Record that the loop's load is CONFIRMED, not merely booked.
+ *
+ * Booked and confirmed are different states of the same cycle, and a dispatcher
+ * needs to see the difference: a booked load whose rate confirmation never came
+ * back is exactly the cycle that is not finished. The loop keeps the confirmation
+ * as its own dated event and as evidence on the card.
+ *
+ * Unscoped by design — it is called by a projection of a `load.finalized` event,
+ * which already established who signed what and under whose authority. Returns
+ * `undefined` when the loop cannot be read, which the projection reports as a
+ * failure rather than swallowing.
+ */
+export function recordFinalizationOnLoop(
+  loopId: string,
+  opts: {
+    loadId: string;
+    loadReference: string;
+    actorName: string;
+    actorMembershipId?: string;
+    rateConfirmationId: string;
+    signedAt: string;
+  },
+): MtLoop | undefined {
+  const loop = db().loops.find((l) => l.loopId === loopId);
+  if (!loop) return undefined;
+
+  loop.loadId = opts.loadId;
+  loop.loadReference = opts.loadReference;
+  loop.rateConfirmationId = opts.rateConfirmationId;
+  loop.rateConfirmationSignedAt = opts.signedAt;
+
+  // Appended once. Re-publishing the same finalization does not add a second
+  // line to a truck's history.
+  const already = loop.history.some(
+    (e) => e.action === "load_confirmed" && e.note?.includes(opts.rateConfirmationId),
+  );
+  if (!already) {
+    record(loop, "load_confirmed", {
+      actorMembershipId: opts.actorMembershipId,
+      actorName: opts.actorName,
+      note: `${opts.loadReference} confirmed: the rate confirmation was signed and returned to the broker. Record ${opts.rateConfirmationId}.`,
+    });
+  }
+
+  // A cycle that was merely covered is now covered on a confirmed load. It does
+  // not jump to `running` — the driver has not started rolling.
+  if (loop.status === "working" || loop.status === "unassigned") {
+    setStatus(loop, "covered", "load_booked", {
+      actorMembershipId: opts.actorMembershipId,
+      actorName: opts.actorName,
+      note: `${opts.loadReference} is confirmed.`,
+    });
+  }
+
+  return loop;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Mutations                                                                   */
 /* -------------------------------------------------------------------------- */

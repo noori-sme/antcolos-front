@@ -10,6 +10,8 @@ import { RATECON_STATUS_LABEL } from "@/types";
 import { relativeTime } from "@/lib/utils/format";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
 import { progressOf, receiveRateConfirmation } from "@/lib/api/mock/rate-confirmation";
+import { PROJECTION_STATE_LABEL } from "@/types";
+import { PROJECTION_TONE } from "./projection-tone";
 
 /**
  * Where the rate confirmation is, on the truck's own page.
@@ -56,8 +58,8 @@ export function RateConSummary({ rateCon }: { rateCon: RateConWorkflow }) {
         <ul className="mt-3 space-y-0.5">
           {rateCon.distribution.map((d) => (
             <li key={d.key} className="flex flex-wrap items-center gap-2 text-[0.75rem] text-fg-muted">
-              <Badge tone={d.state === "written" ? "success" : "outline"}>
-                {d.state === "written" ? "Written" : "Waiting"}
+              <Badge tone={PROJECTION_TONE[d.state]}>
+                {PROJECTION_STATE_LABEL[d.state]}
               </Badge>
               {d.label}
             </li>

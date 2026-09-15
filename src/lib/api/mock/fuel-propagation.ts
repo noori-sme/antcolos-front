@@ -7,6 +7,9 @@ import {
   type FuelExtractedValues, type FuelTransactionConfirmedPayload,
 } from "@/lib/propagation";
 import { contributeMeterReading } from "./meter-ledger";
+// Side-effect import: wires every projection to the bus before anything is
+// published. A publisher with no subscribers registered would drop events.
+import "./projections";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███

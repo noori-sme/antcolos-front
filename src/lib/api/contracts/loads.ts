@@ -111,6 +111,22 @@ export interface ApplyRateConfirmationInput {
   loadId: string;
   record: RateConfirmationRecord;
   at?: string;
+  /** The operational cycle the load was booked into, where there was one. */
+  mtLoopId?: string;
+  dispatchCycleId?: string;
+  bookingId?: string;
+  /**
+   * Driver, truck and trailer LABELS, where the caller already knows them.
+   *
+   * Labels only — the ids are on the load's own assignment. Passed so a
+   * downstream projection can render "Unit 104 with Dmitri" without reading the
+   * fleet registry, and absent rather than guessed when the caller does not know.
+   */
+  assignmentLabels?: {
+    driverName?: string;
+    truckUnit?: string;
+    trailerUnit?: string;
+  };
 }
 
 /** What finalizing produced, including every downstream projection's outcome. */

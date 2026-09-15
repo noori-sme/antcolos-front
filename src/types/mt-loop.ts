@@ -69,6 +69,18 @@ export interface MtLoop {
   /** Snapshot, so an ended membership still reads sensibly in the history. */
   responsibleName?: string;
 
+  /**
+   * The committed rate confirmation behind the booked load, once there is one.
+   *
+   * Evidence, not a second copy: the record itself lives in the Rate
+   * Confirmation module and this is the id to go and read. Its presence is what
+   * distinguishes a cycle whose load is CONFIRMED from one whose load is merely
+   * booked — the second is not finished and a dispatcher has to be able to see
+   * which they are looking at.
+   */
+  rateConfirmationId?: string;
+  rateConfirmationSignedAt?: IsoDateTime;
+
   /** When the truck goes — or went — empty. */
   expectedEmptyAt?: IsoDateTime;
   expectedEmptyCity?: string;
@@ -229,6 +241,8 @@ export type MtLoopAction =
   | "unblocked"
   | "closed"
   | "load_booked"
+  /** The booked load's rate confirmation came back signed. */
+  | "load_confirmed"
   | "load_released"
   | "availability_changed";
 
@@ -244,6 +258,7 @@ export const MT_LOOP_ACTION_LABEL: Record<MtLoopAction, string> = {
   unblocked: "Unblocked",
   closed: "Closed",
   load_booked: "Load booked",
+  load_confirmed: "Load confirmed",
   load_released: "Load released",
   availability_changed: "Availability changed",
 };

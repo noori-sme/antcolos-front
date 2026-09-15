@@ -5,8 +5,9 @@ import type {
 import type {
   BillingPartySnapshot, CarrierSnapshot, Document, InvoiceLineItemKind, Load,
 } from "@/types";
-import { destinationStop, originStop } from "@/types";
+import { destinationStop, originStop, rateConfirmationValue } from "@/types";
 import { mockStore } from "./store";
+import { rateConfirmationForLoad } from "./rate-confirmation-record";
 import { hoursFromNow } from "./time";
 
 /**
@@ -225,10 +226,53 @@ const DRIVER_DISPLAY_NAMES: Record<string, string> = {
 /* Rate confirmations — the Rate Confirmation module's job                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The rate confirmation behind the money on an invoice.
+ *
+ * Reads the CANONICAL committed record where one exists. That matters for a
+ * reason that is easy to miss: `evaluateReadiness` compares the invoice's
+ * linehaul against `agreedLinehaulCents`, and this function used to read
+ * `load.financials.linehaulCents` — the same field the rate confirmation flow
+ * had already written. So the check compared a number against itself and could
+ * never fail. It now compares against the amount frozen on the signed
+ * confirmation, which is the number the broker actually agreed to.
+ *
+ * It also used to mint `rcon_${load.id}`, an id belonging to no record anywhere.
+ * A committed confirmation carries its own permanent UUID and its own version,
+ * and both travel onto the invoice.
+ *
+ * The document fallback below is for seeded loads whose confirmation was never
+ * put through the review workflow in this session. It is honest about what it
+ * knows: the document is on file, and nobody signed anything in front of us.
+ */
 export function rateConfirmationInput(
   load: Load,
   documents: Document[],
 ): ConfirmedRateConfirmationInput | undefined {
+  const committed = rateConfirmationForLoad(load.organizationId, load.id);
+  if (committed) {
+    const agreed = rateConfirmationValue(committed, "rate_total");
+    const cents = agreed
+      ? Math.round(Number.parseFloat(agreed.replace(/[^0-9.]/g, "")) * 100)
+      : undefined;
+    return {
+      rateConfirmationId: committed.rateConfirmationId,
+      loadId: load.id,
+      documentId: committed.signedDocumentId,
+      // The amount on the SIGNED confirmation, not the amount currently on the
+      // load. If somebody later edits the load, this check starts failing —
+      // which is the whole point of it existing.
+      agreedLinehaulCents: Number.isFinite(cents) && cents !== undefined
+        ? cents
+        : load.financials?.linehaulCents ?? 0,
+      preApprovedAccessorialCodes: ["detention"],
+      receivedAt: committed.committedAt,
+      // A person reviewed every required field and applied the carrier
+      // signature. That IS the verification, and it has a name and a time.
+      verifiedAt: committed.committedAt,
+    };
+  }
+
   const rateCon = documents.find((d) => d.kind === "rate_confirmation");
   if (!rateCon) return undefined;
   return {

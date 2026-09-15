@@ -1,5 +1,5 @@
 import type {
-  AppliedSignature, BookingRecord, DistributionOutcome, ExtractedField, Load,
+  AppliedSignature, BookingRecord, DistributionOutcome, ExtractedField,
   InboundRateConEmail, RateConAuditAction, RateConFieldKey, RateConMatchEvidence,
   RateConProgress, RateConWorkflow,
 } from "@/types";
@@ -13,7 +13,10 @@ import { negotiationsForCycle } from "./negotiation";
 import { prepareMessageSync, recordAutoSend, messageById } from "./communications";
 import { buildRateConDocument, documentDate, signDocument } from "./ratecon-document";
 import { truckContextFrom } from "./truck-registry";
-import { mockStore } from "./store";
+import { commitRateConfirmation } from "./rate-confirmation-record";
+import { mockLoadsService } from "./loads";
+import { propagationBus } from "@/lib/propagation";
+import { newCorrelationId, withCorrelation } from "@/lib/audit/correlation";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -656,14 +659,115 @@ export async function confirmAndSign(
     );
   }
 
-  /* ---- And out to the rest of Antcolos ---- */
-  workflow.distribution = distribute(workflow, ctx);
+  /* ---- And out to the rest of Antcolos ---------------------------------- */
+
+  /*
+   * One intent, one correlation id, one canonical commit, one event.
+   *
+   * Everything below happens under a single correlation id, so the committed
+   * rate confirmation, the load's three timeline entries, the audit lines and
+   * every projection read back as one act a week later.
+   *
+   * The sequence matters and is the answer to "finalize the canonical Load once":
+   *   1. FREEZE the workflow into the immutable canonical record. Nothing
+   *      downstream may read a workflow somebody is still editing.
+   *   2. Hand that record to the Loads module's own command, which writes the
+   *      fields the Load owns and publishes ONE versioned `load.finalized`.
+   *   3. Read back what every projection did, and show it.
+   *
+   * Retrying any of it is safe: the commit is keyed on the signed document, the
+   * finalization is keyed on the committed record, and the event id is derived
+   * from the same key, so a second attempt writes nothing and re-runs nothing.
+   */
+  const correlationId = newCorrelationId();
+  const commit = withCorrelation(correlationId, () => commitRateConfirmation({
+    workflow,
+    actor: ctx.actor,
+    membershipId: ctx.membershipId,
+    channel: "email",
+    correlationId,
+  }));
+
   record(
     workflow, "distributed", "Antcolos",
-    `${workflow.distribution.filter((d) => d.state === "written").length} written, ${workflow.distribution.filter((d) => d.state === "queued").length} waiting for the module that owns them.`,
+    `Committed as rate confirmation ${commit.record.rateConfirmationId} v${commit.record.version}. That record is immutable: an amendment would commit a new version beside it, never edit this one.`,
+  );
+
+  const loop = mtLoopById(workflow.dispatchCycleId, ctx);
+  const booking = bookingById(workflow.bookingId, ctx);
+
+  const finalized = await mockLoadsService.applyRateConfirmation(ctx, {
+    idempotencyKey: `ratecon-finalize:${commit.record.rateConfirmationId}`,
+    loadId: workflow.loadId,
+    record: commit.record,
+    mtLoopId: loop?.loopId,
+    dispatchCycleId: workflow.dispatchCycleId,
+    bookingId: workflow.bookingId,
+    assignmentLabels: {
+      driverName: booking?.driverName ?? loop?.driverName,
+      truckUnit: booking?.truckUnit ?? loop?.truckUnit,
+      trailerUnit: booking?.trailerUnit ?? loop?.trailerUnit,
+    },
+  });
+
+  workflow.distribution = distributionFrom(finalized.eventId);
+  const counts = summarizeDistribution(workflow.distribution);
+  record(
+    workflow, "distributed", "Antcolos",
+    `${workflow.loadReference} finalized once and one load.finalized event published. ${counts}`,
   );
 
   return { status: "ok", workflow };
+}
+
+/**
+ * What the published event's subscribers actually did, for the screen.
+ *
+ * Read back rather than predicted. A projection that failed says so here, with
+ * its reason, instead of the screen claiming a module was updated because the
+ * code meant to update it.
+ */
+export function distributionFrom(eventId: string): DistributionOutcome[] {
+  return propagationBus.projectionsFor(eventId).map((p) => ({
+    key: p.subscriberId,
+    label: p.subscriberLabel,
+    state: p.state,
+    targetModule: p.targetModule,
+    detail: p.detail,
+    reason: p.reason,
+    retryable: p.retryable,
+    mock: p.mock,
+    attempts: p.attempts,
+  }));
+}
+
+function summarizeDistribution(rows: DistributionOutcome[]): string {
+  const by = (state: DistributionOutcome["state"]) =>
+    rows.filter((r) => r.state === state).length;
+  const parts = [
+    `${by("processed")} processed`,
+    `${by("pending")} pending`,
+    `${by("needs_review")} needing a person`,
+    `${by("failed")} failed`,
+  ];
+  return `${parts.join(", ")}. A failure in one projection never stops the others.`;
+}
+
+/**
+ * Run one projection again, for a screen offering a retry.
+ *
+ * Only ever a re-run: the event is a statement about the past and is untouched.
+ * Returns the refreshed distribution so the caller re-renders from the record
+ * rather than from an optimistic guess.
+ */
+export async function retryDistribution(
+  workflow: RateConWorkflow,
+  eventId: string,
+  subscriberId: string,
+): Promise<DistributionOutcome[]> {
+  await propagationBus.retry(eventId, subscriberId);
+  workflow.distribution = distributionFrom(eventId);
+  return workflow.distribution;
 }
 
 export async function rejectRateConfirmation(
@@ -685,145 +789,27 @@ export async function rejectRateConfirmation(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Distribution                                                                */
+/* Distribution — see `distributionFrom` above                                 */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Where the confirmed information goes.
+/*
+ * `distribute()` and `applyToLoad()` used to live here.
  *
- * The load record exists, so it is written to — now, for real, with the values
- * a person actually approved. Everything else on this list is a module that has
- * not been built, and each one says so with the milestone that will receive it.
+ * `applyToLoad` reached into the mock store and wrote the canonical Load in
+ * place — the customer reference, both facilities, both addresses, the rate, the
+ * satisfied requirement and the status — without appending a single LoadEvent,
+ * even though `types/event.ts` says the timeline is the record and the status is
+ * derived from it. That is now `loads.applyRateConfirmation`, which takes the
+ * immutable committed record, appends the three timeline entries and publishes
+ * one `load.finalized`.
  *
- * Nothing is dropped silently, and nothing pretends. A dispatcher who cannot
- * see that accounting has received nothing will assume it has.
+ * `distribute` returned nine hand-written rows: one "written" and eight "queued"
+ * with prose naming a milestone that would one day receive them. Four of those
+ * eight modules were already merged. The rows are now read back off the event's
+ * real projection records by `distributionFrom`, so the screen shows what
+ * actually happened per module rather than what the code intended.
  */
-function distribute(workflow: RateConWorkflow, ctx: MtLoopContext): DistributionOutcome[] {
-  const out: DistributionOutcome[] = [];
-  const org = mockStore.org(ctx.organizationId);
-  const load = org.loads.find((l) => l.id === workflow.loadId);
-  const value = (key: RateConFieldKey) => workflow.fields.find((f) => f.key === key)?.value;
 
-  /* ---- The load record: real, and written now ---- */
-  if (load) {
-    applyToLoad(load, workflow, value);
-    out.push({
-      key: "load_record",
-      label: "Load record",
-      state: "written",
-      detail: `${workflow.loadReference} updated: the broker's load number, both facilities and appointments, and the confirmed rate. The signed confirmation satisfies the load's rate confirmation requirement.`,
-    });
-  }
-
-  const money = value("rate_total") ?? "the confirmed rate";
-  out.push({
-    key: "accounting",
-    label: "Accounting",
-    state: "queued",
-    detail: `${money} on ${workflow.loadReference}, with ${value("payment_terms") ?? "the payment terms as written"}. Waiting for the accounting module.`,
-    waitingForMilestone: 12,
-  });
-
-  out.push({
-    key: "driver_notification",
-    label: "Driver notification",
-    state: "queued",
-    detail: `Tell the driver ${workflow.loadReference} is confirmed, picking up ${value("pickup_at") ?? "as scheduled"}. Waiting for dispatch and pickup.`,
-    waitingForMilestone: 9,
-  });
-
-  // Detention and layover stay apart. They are different money on different
-  // clocks, and a system that merges them cannot bill either correctly.
-  out.push({
-    key: "detention_rules",
-    label: "Detention rules",
-    state: "queued",
-    detail: `${value("detention_terms") ?? "Not stated on this confirmation."} Waiting for in transit, where detention is actually clocked.`,
-    waitingForMilestone: 10,
-  });
-  out.push({
-    key: "layover_rules",
-    label: "Layover and accessorial rules",
-    state: "queued",
-    detail: `${value("layover_terms") ?? "Not stated on this confirmation."} Kept separate from detention on purpose. Waiting for in transit.`,
-    waitingForMilestone: 10,
-  });
-
-  for (const [key, label, name] of [
-    ["broker_profile", "Broker profile", value("broker_name") ?? workflow.brokerName],
-    ["shipper_profile", "Shipper profile", value("pickup_facility") ?? "the shipper"],
-    ["receiver_profile", "Receiver profile", value("delivery_facility") ?? "the receiver"],
-  ] as const) {
-    out.push({
-      key,
-      label,
-      state: "queued",
-      detail: `${name} is written on the load exactly as the confirmation gave it. Linking it to a permanent profile belongs to the profile module, which owns the matching rules that stop duplicates.`,
-    });
-  }
-
-  out.push({
-    key: "trip",
-    label: "Trip",
-    state: "queued",
-    detail: `Both stops, their appointments and the equipment are on ${workflow.loadReference} ready for the trip to be built. Waiting for dispatch and pickup.`,
-    waitingForMilestone: 9,
-  });
-
-  return out;
-}
-
-/**
- * The confirmed values, onto the real load.
- *
- * Only what a person approved, and only fields the load actually owns. The
- * broker's name is written as given and NOT turned into a customer record —
- * that is the profile module's decision, and guessing it here is how duplicate
- * profiles are made.
- */
-function applyToLoad(
-  load: Load,
-  workflow: RateConWorkflow,
-  value: (key: RateConFieldKey) => string | undefined,
-) {
-  const at = nowIso();
-  load.customerReference = value("load_reference") ?? load.customerReference;
-
-  const pickup = load.stops.find((s) => s.kind === "pickup");
-  const delivery = load.stops.find((s) => s.kind === "delivery");
-  if (pickup) {
-    pickup.facilityName = value("pickup_facility") ?? pickup.facilityName;
-    const line = value("pickup_address");
-    if (line) pickup.address = { ...pickup.address, line1: line.split(",")[0]?.trim() };
-  }
-  if (delivery) {
-    delivery.facilityName = value("delivery_facility") ?? delivery.facilityName;
-    const line = value("delivery_address");
-    if (line) delivery.address = { ...delivery.address, line1: line.split(",")[0]?.trim() };
-  }
-
-  const rate = parseMoney(value("rate_total"));
-  if (rate !== undefined && load.financials) {
-    load.financials.linehaulCents = rate;
-    load.financials.totalRateCents = rate;
-    load.financials.ratePerMileCents = Math.round(rate / Math.max(load.financials.loadedMiles, 1));
-  }
-
-  // The requirement is satisfied by the SIGNED document, which is the one that
-  // matters: an unsigned confirmation on file is not a confirmed load.
-  const requirement = load.documentRequirements.find((r) => r.kind === "rate_confirmation");
-  if (requirement && workflow.signed) {
-    requirement.satisfiedByDocumentId = workflow.signed.documentId;
-  }
-  load.status = load.status === "offered" ? "offered" : "planned";
-  load.updatedAt = at;
-}
-
-function parseMoney(text?: string): number | undefined {
-  if (!text) return undefined;
-  const n = Number.parseFloat(text.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(n) ? Math.round(n * 100) : undefined;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Audit                                                                       */

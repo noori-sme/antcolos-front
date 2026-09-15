@@ -274,3 +274,80 @@ export const MOCK_EXTRACTION_LABELS: Record<string, { title: string; blurb: stri
 export function mockExtraction(documentId: string): RateConfirmationExtraction | undefined {
   return MOCK_EXTRACTIONS.find((e) => e.documentId === documentId);
 }
+
+/* -------------------------------------------------------------------------- */
+/* The live queue                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Extractions produced by REAL finalizations in this session.
+ *
+ * The four fixtures above stand in for a workflow that was not built when they
+ * were written. It is built now: signing a rate confirmation commits a canonical
+ * record and publishes `load.finalized`, and the Directory projection queues the
+ * confirmed parties here for the same confirmation screen.
+ *
+ * Kept apart from the fixtures rather than mixed into them, so a dispatcher can
+ * always tell a demo from a load they actually booked. Organization-partitioned,
+ * like everything else in this layer.
+ */
+export interface QueuedExtraction {
+  id: string;
+  organizationId: string;
+  extraction: RateConfirmationExtraction;
+  /** The load it came off, for the screen's own labelling. */
+  loadReference: string;
+  /** The committed rate confirmation that produced it. */
+  rateConfirmationId: string;
+  queuedAt: string;
+  /** Set once a dispatcher has confirmed it, so it stops being asked about. */
+  resolvedAt?: string;
+}
+
+const queue = new Map<string, QueuedExtraction[]>();
+let queueSeq = 0;
+
+/** Test hook. Never called by the UI. */
+export function resetExtractionQueue() {
+  queue.clear();
+  queueSeq = 0;
+}
+
+/**
+ * Queue one reviewed extraction for confirmation.
+ *
+ * Idempotent on the rate confirmation: re-publishing the same finalization does
+ * not ask a dispatcher to resolve the same broker twice.
+ */
+export function enqueueExtraction(
+  organizationId: string,
+  extraction: RateConfirmationExtraction,
+  meta: { loadReference: string; rateConfirmationId: string },
+): QueuedExtraction {
+  const rows = queue.get(organizationId) ?? [];
+  const existing = rows.find((r) => r.rateConfirmationId === meta.rateConfirmationId);
+  if (existing) return existing;
+
+  queueSeq += 1;
+  const entry: QueuedExtraction = {
+    id: `rqe_${queueSeq.toString(36)}${Date.now().toString(36)}`,
+    organizationId,
+    extraction,
+    loadReference: meta.loadReference,
+    rateConfirmationId: meta.rateConfirmationId,
+    queuedAt: new Date().toISOString(),
+  };
+  queue.set(organizationId, [...rows, entry]);
+  return entry;
+}
+
+/** Everything still waiting for a person, oldest first. */
+export function pendingExtractions(organizationId: string): QueuedExtraction[] {
+  return (queue.get(organizationId) ?? []).filter((r) => !r.resolvedAt);
+}
+
+/** Mark one resolved. The entry is KEPT — the history is the point. */
+export function markExtractionResolved(organizationId: string, id: string): void {
+  const entry = (queue.get(organizationId) ?? []).find((r) => r.id === id);
+  if (entry && !entry.resolvedAt) entry.resolvedAt = new Date().toISOString();
+}
