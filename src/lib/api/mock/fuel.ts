@@ -1067,7 +1067,7 @@ export const mockFuelService: FuelService = {
       `${record.totalMiles} miles in ${record.jurisdiction} recorded for unit ${record.truckUnitSnapshot ?? "—"}, attributed to ${attribution.carrierNameSnapshot}.`,
     );
     // The odometer at the end of the leg is a meter reading like any other.
-    contributeMileageOdometer(record, ctx.actor);
+    await contributeMileageOdometer(record, ctx.actor);
     return record;
   },
 

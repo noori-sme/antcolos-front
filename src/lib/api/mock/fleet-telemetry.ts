@@ -3,7 +3,7 @@ import type {
 } from "@/types";
 import { TRUCK_IDS } from "./truck-registry";
 import { TRAILER_IDS } from "./trailer-registry";
-import { contributeMeterReading } from "./meter-ledger";
+import type { ContributeMeterReadingInput } from "./meter-ledger";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND, AND NOT A DEVICE ███
@@ -243,43 +243,54 @@ export function appendReading(
   };
   db().readings = [row, ...db().readings];
 
-  /*
-   * The meters go to the canonical ledger. The row above is this store's record
-   * of what was submitted; the ledger is where maintenance, fuel and anything
-   * else reads the accepted odometer from. Keyed on this row's id, so a retried
-   * submission contributes once.
-   */
-  if (input.odometerMiles != null || input.engineHours != null) {
-    contributeMeterReading({
-      equipmentKind: input.assetKind === "trailer" ? "trailer" : "truck",
-      equipmentId: input.assetId,
-      odometerMiles: input.odometerMiles ?? undefined,
-      engineHours: input.engineHours ?? undefined,
-      readAt: observedAt,
-      source: "manual_entry",
-      contributor: "fleet",
-      scope: {
-        organizationId: by.organizationId,
-        carrierOrganizationId: by.organizationId,
-      },
-      verification: "confirmed",
-      recordedBy: {
-        userId: by.membershipId,
-        membershipId: by.membershipId,
-        displayNameSnapshot: by.actorName,
-        source: "web",
-      },
-      note: input.note?.trim() || undefined,
-      idempotencyKey: `fleet:reading:${row.id}`,
-      provenance: {
-        module: "telematics",
-        adapter: "mock:fleet-telemetry",
-        mock: true,
-        observedAt,
-        receivedAt: nowIso,
-      },
-    });
-  }
-
   return { ...row };
+}
+
+/**
+ * The ledger contribution for a reading this store just recorded.
+ *
+ * Returned as a description rather than performed here, because contributing
+ * PUBLISHES a `equipment_meter.reading_recorded` event and this function is
+ * synchronous. The service awaits it — see `fleet.recordTelemetry` — which keeps
+ * the store a store and the propagation in one place.
+ *
+ * `undefined` when the reading carried no meters at all, which is the normal case
+ * for a location-only report and is not an error.
+ */
+export function meterContributionFor(
+  row: FleetTelemetryReading,
+): ContributeMeterReadingInput | undefined {
+  if (row.odometerMiles == null && row.engineHours == null) return undefined;
+  return {
+    equipmentKind: row.assetKind === "trailer" ? "trailer" : "truck",
+    equipmentId: row.assetId,
+    odometerMiles: row.odometerMiles ?? undefined,
+    engineHours: row.engineHours ?? undefined,
+    readAt: row.observedAt,
+    source: "manual_entry",
+    contributor: "fleet",
+    scope: {
+      organizationId: row.organizationId,
+      carrierOrganizationId: row.organizationId,
+    },
+    verification: "confirmed",
+    recordedBy: row.recordedByMembershipId
+      ? {
+        userId: row.recordedByMembershipId,
+        membershipId: row.recordedByMembershipId,
+        displayNameSnapshot: row.recordedByName ?? "Unknown",
+        source: "web",
+      }
+      : undefined,
+    note: row.note,
+    // Keyed on this row's id, so a retried submission contributes once.
+    idempotencyKey: `fleet:reading:${row.id}`,
+    provenance: {
+      module: "telematics",
+      adapter: "mock:fleet-telemetry",
+      mock: true,
+      observedAt: row.observedAt,
+      receivedAt: row.recordedAt,
+    },
+  };
 }

@@ -22,7 +22,13 @@ import {
   getTrailerProfile, trailerFleetSync,
   type TrailerContext, type TrailerProfileView,
 } from "./trailer-registry";
-import { appendReading, latestReading, readingHistory } from "./fleet-telemetry";
+import {
+  appendReading, latestReading, meterContributionFor, readingHistory,
+} from "./fleet-telemetry";
+import { contributeAndPublish } from "./meter-ledger";
+// Side-effect import: wires every projection to the bus before anything is
+// published. A publisher with no subscribers registered would drop events.
+import "./projections";
 import { mockStore } from "./store";
 import { fleetNeedsYouItems } from "./fleet-needs-you";
 import { mockListCarrierDrivers } from "@/features/driver/mock-carrier-drivers";
@@ -733,11 +739,23 @@ export const mockFleetService: FleetService = {
       (r) => r.assetKind === input.assetKind && r.assetId === input.assetId,
     );
     if (!row) throw new Error("Equipment not found");
-    return appendReading(input, {
+    const reading = appendReading(input, {
       organizationId: ctx.organizationId,
       membershipId: ctx.membershipId,
       actorName: ctx.actor.displayNameSnapshot,
     });
+
+    /*
+     * The meters go to the canonical Equipment Meter Ledger, which is where
+     * maintenance, fuel and every other reader gets the accepted odometer from.
+     * The row above stays as this store's record of what was submitted; it is
+     * not a second canonical value.
+     */
+    const contribution = meterContributionFor(reading);
+    if (contribution) {
+      await contributeAndPublish({ ...contribution, actor: ctx.actor });
+    }
+    return reading;
   },
 
   async integrations(ctx) {

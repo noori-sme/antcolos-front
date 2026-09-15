@@ -43,7 +43,12 @@ import {
 } from "./trailer-registry";
 import { TRUCK_IDS } from "./truck-registry";
 import { TRAILER_IDS } from "./trailer-registry";
-import { contributeMeterReading, meterReadings, meterStateOf } from "./meter-ledger";
+import {
+  contributeAndPublish, contributeMeterReading, meterReadings, meterStateOf,
+} from "./meter-ledger";
+// Side-effect import: wires every projection to the bus before anything is
+// published. A publisher with no subscribers registered would drop events.
+import "./projections";
 import { EQUIPMENT_LABEL } from "@/lib/fleet/equipment";
 import { TRAILER_TYPE_LABEL } from "@/lib/fleet/trailer-equipment";
 
@@ -509,7 +514,8 @@ export async function recordMeterReading(
    * how far this truck has been — which is the whole point: nobody types it
    * twice.
    */
-  contributeMeterReading({
+  await contributeAndPublish({
+    actor: ctx.actor,
     equipmentKind: ref.kind,
     equipmentId: ref.equipmentId,
     equipmentLabel: equipmentSummary(ref, ctx)?.unit,

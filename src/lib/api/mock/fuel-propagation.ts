@@ -6,7 +6,7 @@ import {
   buildDomainEvent, FUEL_TRANSACTION_CONFIRMED_VERSION, propagationBus,
   type FuelExtractedValues, type FuelTransactionConfirmedPayload,
 } from "@/lib/propagation";
-import { contributeMeterReading } from "./meter-ledger";
+import { contributeAndPublish } from "./meter-ledger";
 // Side-effect import: wires every projection to the bus before anything is
 // published. A publisher with no subscribers registered would drop events.
 import "./projections";
@@ -74,13 +74,14 @@ export function fuelVerificationOf(t: FuelTransaction): FactVerification {
  * derivation decides which value stands — because the pump odometer of a
  * superseded revision was still a thing somebody read off a dash.
  */
-export function contributeFuelOdometer(
+export async function contributeFuelOdometer(
   t: FuelTransaction,
   actor: ActorRef,
   opts: { correctsTransactionId?: string; correctionReason?: string } = {},
-): void {
+): Promise<void> {
   if (t.odometerMiles === undefined) return;
-  contributeMeterReading({
+  await contributeAndPublish({
+    actor,
     equipmentKind: "truck",
     equipmentId: t.truckId,
     equipmentLabel: t.truckUnitSnapshot,
@@ -102,12 +103,13 @@ export function contributeFuelOdometer(
 }
 
 /** The odometer at the end of a jurisdiction leg is a reading too. */
-export function contributeMileageOdometer(
+export async function contributeMileageOdometer(
   record: JurisdictionMileageRecord,
   actor: ActorRef,
-): void {
+): Promise<void> {
   if (record.odometerEndMiles === undefined) return;
-  contributeMeterReading({
+  await contributeAndPublish({
+    actor,
     equipmentKind: "truck",
     equipmentId: record.truckId,
     equipmentLabel: record.truckUnitSnapshot,
@@ -143,7 +145,7 @@ export async function publishFuelTransaction(
     supersedesTransactionId?: string;
   } = {},
 ) {
-  contributeFuelOdometer(t, actor, {
+  await contributeFuelOdometer(t, actor, {
     correctsTransactionId: opts.supersedesTransactionId,
     correctionReason: opts.correctionReason,
   });
