@@ -1,4 +1,6 @@
 import type { Address, IsoDateTime } from "./common";
+import type { Provenance } from "./integration";
+import type { FactVerification } from "./propagation";
 import type { ActorRef } from "./user";
 import type {
   Facility, Party, PartyContact, PartyRole, PartySnapshot,
@@ -645,4 +647,116 @@ export interface RateConProgress {
   nextFieldKey?: RateConFieldKey;
   canConfirm: boolean;
   blockedReasons: string[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* The canonical record                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One field of a committed rate confirmation, with BOTH values kept.
+ *
+ * `extractedValue` is exactly what the document said and is never edited.
+ * `confirmedValue` is what a person accepted. When those differ, the correction
+ * is visible for ever, which is the only way an invoice dispute a year later can
+ * be argued from the record rather than from memory.
+ */
+export interface RateConfirmationFact {
+  key: RateConFieldKey;
+  label: string;
+  /** The raw text, as read off the page. Immutable. */
+  extractedValue: string;
+  /** The value that stands, after review. */
+  confirmedValue: string;
+  /** Present only when a person changed it. */
+  correctedValue?: string;
+  correctionNote?: string;
+  /** 0–1 from the extractor. Low confidence is a reason to look, not to reject. */
+  confidence: number;
+  verification: FactVerification;
+  /** What Antcolos believed from the booking, where it had a view. */
+  expected?: string;
+  /** True when the document and the booking disagreed at review time. */
+  disagreed: boolean;
+  /** The block on the page it came from, so a screen can point at it. */
+  blockId: string;
+  reviewedByName?: string;
+  reviewedAt?: IsoDateTime;
+}
+
+/**
+ * ★ THE CANONICAL RATE CONFIRMATION ★
+ *
+ * Committed exactly once, at the single moment all four gates are true:
+ * reviewed and approved by Dispatch, signed with the authorized carrier
+ * signature, and confirmed as returned to the broker.
+ *
+ * It is IMMUTABLE. Nothing edits one. A later amendment commits a NEW record
+ * with `version + 1` pointing back at this one through
+ * `supersedesRateConfirmationId`, and both survive. That is what lets the
+ * finalized load be finalized "once" while still allowing a broker to amend: the
+ * amendment is a second fact, not an overwrite of the first.
+ *
+ * `RateConWorkflow` remains the canonical source DURING review — it is where a
+ * person corrects fields and where the signature is applied. This record is what
+ * the rest of Antcolos reads afterwards, so no downstream module ever reads
+ * mutable workflow state or keeps a copy of its own.
+ */
+export interface RateConfirmationRecord {
+  /** Permanent UUID. Never a load reference or a broker's load number. */
+  rateConfirmationId: string;
+  /** 1 on first commit. An amendment commits the next version. */
+  version: number;
+  supersedesRateConfirmationId?: string;
+
+  organizationId: string;
+  carrierOrganizationId: string;
+  carrierName: string;
+
+  loadId: string;
+  loadReference: string;
+  /** The broker's own load number, as confirmed. */
+  customerReference?: string;
+  brokerName: string;
+
+  /** The workflow this was committed from. Kept so the review is traceable. */
+  workflowId: string;
+  /** The broker's document, unaltered. */
+  originalDocumentId: string;
+  /** The separate signed document. The original is never modified. */
+  signedDocumentId: string;
+
+  signature: AppliedSignature;
+  returnedToBroker: {
+    at: IsoDateTime;
+    channel: "email" | "portal" | "fax";
+    /** The prepared message that carried it. Nothing was transmitted. */
+    messageId?: string;
+  };
+
+  /** Every field, extracted value beside confirmed value. */
+  facts: RateConfirmationFact[];
+
+  committedAt: IsoDateTime;
+  committedByName: string;
+  committedByMembershipId: string;
+  /** Joins this commit to everything else the same intent produced. */
+  correlationId: string;
+  idempotencyKey: string;
+  provenance: Provenance;
+}
+
+/** The value of one confirmed field, or undefined when it has none. */
+export function rateConfirmationValue(
+  record: RateConfirmationRecord,
+  key: RateConFieldKey,
+): string | undefined {
+  return record.facts.find((f) => f.key === key)?.confirmedValue;
+}
+
+/** Every field a person changed. What a dispute is argued from. */
+export function rateConfirmationCorrections(
+  record: RateConfirmationRecord,
+): RateConfirmationFact[] {
+  return record.facts.filter((f) => f.correctedValue !== undefined);
 }
