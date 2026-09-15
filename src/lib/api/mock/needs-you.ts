@@ -24,6 +24,8 @@ import { syncDerivedNeedsYouFor } from "./needs-you-derive";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import { fleetRowsFor } from "./fleet-operations";
 import { fleetNeedsYouItems } from "./fleet-needs-you";
+import { eldNeedsYouFor } from "./eld";
+import { isEldNeedsYouId } from "./eld-needs-you";
 import {
   isMaintenanceNeedsYouId, maintenanceContextFrom, maintenanceNeedsYouItems,
   putMaintenanceNeedsYouItem, withOverlayContext,
@@ -116,6 +118,14 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // here would second-guess a stricter check with a weaker one.
   if (isMaintenanceNeedsYouId(item.id)) return true;
 
+  // ELD items come through the ELD service, which has already applied the
+  // caller's permissions, the fleet layer's relationship and operating-authority
+  // scope, explicit sharing for dispatch workspaces and driver privacy. That is
+  // stricter than the entity-kind narrowing below, and re-running the weaker
+  // rule over the stronger one would only ever take rows away from the person
+  // who is supposed to act on them.
+  if (isEldNeedsYouId(item.id)) return true;
+
 
   // Record scope: a driver sees only items about their own loads and record.
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
@@ -195,6 +205,28 @@ function appendHistory(
  * reason to withhold the rest of somebody's queue, and the operational picture
  * is still available in full on the fleet dashboard.
  */
+/**
+ * Folds the ELD layer's derived exceptions into this organization's queue.
+ *
+ * Registered rather than concatenated, exactly like the fleet items above, so a
+ * stale device or a broken binding behaves like every other row — assignable,
+ * snoozable, resolvable, with a history that survives a reload. Registration is
+ * idempotent on a stable id, so recomputing the same exception does not
+ * resurrect one somebody already dealt with.
+ *
+ * Silent on failure for the same reason: a telemetry rule that cannot run is
+ * not a reason to withhold the rest of somebody's queue.
+ */
+async function registerEldItems(ctx: ServiceContext): Promise<void> {
+  if (!ctx.permissions.has("eld:view")) return;
+  try {
+    const items = await eldNeedsYouFor(ctx);
+    if (items.length) mockStore.registerNeedsYou(ctx.organizationId, items);
+  } catch {
+    // Deliberately silent: see above.
+  }
+}
+
 async function registerFleetItems(ctx: ServiceContext): Promise<void> {
   if (!ctx.permissions.has("fleet:view")) return;
   try {
@@ -284,6 +316,9 @@ export const mockNeedsYouService: NeedsYouService = {
     // than returning them, so it runs alongside the sync above. Its ids are
     // ny_fleet_*, which the ny_d_ prune leaves alone.
     await registerFleetItems(ctx);
+    // The ELD layer contributes its own too. Its ids are ny_eld_*, which the
+    // ny_d_ prune leaves alone.
+    await registerEldItems(ctx);
     // The invoice module contributes its own items — missing documents,
     // disputes and overdue receivables — into THIS queue rather than keeping
     // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above
@@ -314,6 +349,9 @@ export const mockNeedsYouService: NeedsYouService = {
     // than returning them, so it runs alongside the sync above. Its ids are
     // ny_fleet_*, which the ny_d_ prune leaves alone.
     await registerFleetItems(ctx);
+    // The ELD layer contributes its own too. Its ids are ny_eld_*, which the
+    // ny_d_ prune leaves alone.
+    await registerEldItems(ctx);
     // The invoice module contributes its own items — missing documents,
     // disputes and overdue receivables — into THIS queue rather than keeping
     // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above

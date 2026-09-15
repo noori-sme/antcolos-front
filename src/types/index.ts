@@ -37,6 +37,7 @@ export type * from "./negotiation";
 export type * from "./communication";
 export type * from "./rate-confirmation";
 export type * from "./driver-review";
+export type * from "./eld";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
@@ -84,3 +85,10 @@ export {
   missingInvoiceDocuments, rejectedInvoiceDocuments,
 } from "./invoice";
 export { workspaceKindOf, organizationTypeOf, WORKSPACE_KIND_LABEL } from "./organization";
+export {
+  SIGNAL_CLASS_OF, HEALTHY_CONNECTION_STATES, MACHINE_QUALITIES, ANOMALY_LABEL,
+  CONNECTION_STATE_LABEL, CONNECTION_STATE_DESCRIPTION, SIGNAL_KIND_LABEL,
+  SIGNAL_CLASS_LABEL, DATA_QUALITY_LABEL, DATA_QUALITY_DESCRIPTION,
+  SIGNAL_TARGET_LABEL, DEVICE_KIND_LABEL, TRANSPORT_LABEL,
+  BINDING_END_REASON_LABEL, ELD_PERMISSIONS,
+} from "./eld";

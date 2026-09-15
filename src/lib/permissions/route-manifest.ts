@@ -23,6 +23,9 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/customers": ["customers:view"],
   "/fleet/trucks/new": ["trucks:create"],
   "/fleet/equipment": ["fleet:view"],
+  // /eld itself comes from the nav entry. This is the child route, which has
+  // no nav item of its own and must not fall through to a weaker parent.
+  "/eld/devices": ["eld:view", "trucks:view"],
   "/rate-cons": ["loads:view"],
   "/reports": ["reports:view"],
   "/settings": ["members:view"],

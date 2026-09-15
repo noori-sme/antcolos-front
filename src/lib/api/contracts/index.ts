@@ -19,6 +19,7 @@ import type { ComplianceService } from "./compliance";
 import type { DirectoryService } from "./directory";
 import type { FuelService, IftaService } from "./fuel";
 import type { FleetService } from "./fleet";
+import type { EldService } from "./eld";
 import type { DriverWorkflowService } from "./driver-workflow";
 import type { InvoicesService } from "./invoices";
 import type { DocumentsService } from "./documents";
@@ -40,6 +41,12 @@ export interface AntcolosServices {
   compliance: ComplianceService;
   /** The shared operational layer over trucks, trailers, drivers and leases. */
   fleet: FleetService;
+  /**
+   * ELD & Telematics: devices, connections, bindings and the normalized event
+   * stream underneath the fleet. It publishes typed signals to the modules
+   * above it and writes to none of their records.
+   */
+  eld: EldService;
   settlements: SettlementsService;
   /** Driver proposals, finalized load posts and the trip workflow. */
   driverWorkflow: DriverWorkflowService;

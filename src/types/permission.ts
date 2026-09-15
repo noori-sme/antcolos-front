@@ -23,6 +23,14 @@ export type PermissionKey =
   // the modules that own those records, and duplicating them here would create
   // two permissions that can disagree about one action.
   | "fleet:view" | "fleet:telemetry:record"
+  // ELD & Telematics — the machine layer under the fleet. Separate from
+  // `fleet:*` on purpose: seeing the reconciled fleet picture is not the same
+  // power as reading a driver's clock, a truck's fault codes or the raw
+  // payloads a provider posted, and collapsing them would hand all four to
+  // anybody with one.
+  | "eld:view" | "eld:devices:manage" | "eld:bindings:manage" | "eld:ingest"
+  | "eld:location:precise:view" | "eld:diagnostics:view" | "eld:hos:view"
+  | "eld:raw:view"
   // Customers
   | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
   | "customers:private:manage" | "customers:resolve"
@@ -70,7 +78,7 @@ export type PermissionKey =
  * work first, then the money, then who is allowed in.
  */
 export type PermissionGroup =
-  | "loads" | "dispatch" | "drivers" | "trucks" | "trailers" | "fleet"
+  | "loads" | "dispatch" | "drivers" | "trucks" | "trailers" | "fleet" | "eld"
   | "loads" | "dispatch" | "driver_workflow" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
   | "accounting" | "fuel" | "compliance"
