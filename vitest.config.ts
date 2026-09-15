@@ -19,6 +19,7 @@ export default defineConfig({
       "tests/compliance/**/*.test.ts",
       "tests/contracts/**/*.test.ts",
       "tests/audit/**/*.test.ts",
+      "tests/eld/**/*.test.ts",
     ],
     restoreMocks: true,
   },
