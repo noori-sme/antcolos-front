@@ -1763,6 +1763,18 @@ Every screen in the module says so on the screen, not only here.
 
 `src/lib/api/contracts/` is the seam. Every method takes a `ServiceContext` carrying the organization, membership, permission set, record scope and an actor snapshot — there is no method that accepts a `User`. The mock adapter enforces permissions and organization ownership itself, so a UI bug that renders a forbidden button still fails at the seam.
 
+Two audit records say what the backend still owns and what it must not be asked
+to redesign later:
+
+- `docs/zero-entry-data-audit.md` — where data enters, which facts are
+  canonical, and the persistence, ordering, delivery and authorization
+  guarantees the frontend describes but cannot provide.
+- `docs/contract-opportunity-future-compatibility.md` — whether the current
+  architecture blocks a later Contract Opportunity Intelligence module. It does
+  not, so nothing was built: the record is the canonical data ownership map, the
+  source-adapter and capability-resolution principles, and the list of changes
+  that were considered and refused.
+
 ## Tests
 
 ```bash
