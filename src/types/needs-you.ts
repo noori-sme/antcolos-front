@@ -109,6 +109,20 @@ export type NeedsYouCategory =
   /** The driver will take it, at a different number. */
   | "driver_countered"
 
+  /* ---- Contracts and relationships. Derived from contract state. ---- */
+  /** A version is out for signature and somebody has not signed it. */
+  | "contract_signature_missing"
+  /** An agreement is inside its OWN renewal reminder window. */
+  | "contract_expiring"
+  /** It ran out and nothing renewed or replaced it. */
+  | "contract_expired"
+  /** Something the agreement asks for is missing or has run out. */
+  | "contract_requirement_unmet"
+  /** Notice was given and the closeout is not finished. */
+  | "contract_termination_unresolved"
+  /** A draft was sent for review and nobody has read it. */
+  | "contract_review_waiting"
+
   /* ---- Audit & Risk. Derived from open risk cases, never seeded. ---- */
   /** A high-severity risk case somebody has been made responsible for. */
   | "risk_case_assigned"
@@ -157,6 +171,10 @@ export type NeedsYouEntityKind =
   | "rate_confirmation"
   /** An opportunity sent to a driver for review. */
   | "driver_review"
+  /** One agreement. Never the relationship it papers. */
+  | "contract"
+  /** One immutable version of one agreement. */
+  | "contract_version"
   /** One investigation, opened off one or more risk signals. */
   | "risk_case";
 
@@ -206,6 +224,22 @@ export type NeedsYouActionKind =
   | "check_ratecon"
   /** Chase, or answer, a driver who has the opportunity. */
   | "chase_driver"
+
+  /* ---- Contracts ---- */
+  /** Sign a version, for a party the person is authorised to sign for. */
+  | "sign_contract"
+  /** Ask the other party for a signature nobody else may give. */
+  | "chase_signature"
+  /** Read a draft somebody sent for review, and decide. */
+  | "review_contract"
+  /** Renew an agreement, or give notice that it will not renew. */
+  | "renew_contract"
+  /** Produce whatever an agreement is asking for. */
+  | "satisfy_requirement"
+  /** Work through the closeout steps of a termination. */
+  | "complete_termination"
+
+  /* ---- Audit & Risk ---- */
   /** Open the case and work it. The queue is never where a case is closed. */
   | "investigate_risk";
 
@@ -338,6 +372,12 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   ratecon_missing: "No rate confirmation yet",
   driver_review_waiting: "Waiting on the driver", driver_blocked: "Driver said no",
   driver_countered: "Driver countered",
+  contract_signature_missing: "Signature missing",
+  contract_expiring: "Contract expiring",
+  contract_expired: "Contract expired",
+  contract_requirement_unmet: "Contract requirement outstanding",
+  contract_termination_unresolved: "Termination unfinished",
+  contract_review_waiting: "Contract waiting for review",
   risk_case_assigned: "Risk case assigned to you",
   risk_case_critical: "Critical risk case",
   risk_case_overdue: "Risk case overdue",

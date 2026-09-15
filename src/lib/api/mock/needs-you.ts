@@ -33,6 +33,8 @@ import {
   applyDocumentItemAction, documentNeedsYouItems, findDocumentNeedsYouItem,
   isDocumentNeedsYouId,
 } from "./document-needs-you";
+import { agreementNeedsYouItems, isAgreementNeedsYouId } from "./agreement-needs-you";
+import { agreementContextFrom } from "./agreement-registry";
 import {
   isRiskNeedsYouId, riskNeedsYouItems, RISK_ITEM_IS_DERIVED_MESSAGE,
 } from "./risk-needs-you";
@@ -97,6 +99,11 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // Settlement items are derived too. Their own module has already applied
     // carrier isolation and payee privacy, so they arrive ready to show.
     ...settlementNeedsYouItems(ctx),
+    // Contract items are derived the same way: a version out for signature, an
+    // agreement inside its own renewal window, a requirement with nothing
+    // against it, a termination nobody finished. Sign the version or produce the
+    // document and the item stops existing.
+    ...agreementNeedsYouItems(agreementContextFrom(ctx)),
     // Risk cases are derived from the cases themselves, so an item appears
     // when a high or critical case is made somebody's responsibility and stops
     // appearing when that case is closed. Nothing is seeded, and the queue is
@@ -129,6 +136,13 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // equipment and their responsibility scope. Re-narrowing them by entity kind
   // here would second-guess a stricter check with a weaker one.
   if (isMaintenanceNeedsYouId(item.id)) return true;
+
+  // Contract items come from the agreement registry, which has already applied
+  // this membership's permissions, its organization and — for signature items —
+  // its signer authority. The record-scope narrowing below has no entity kind
+  // for a contract, so without this a driver would silently lose the item asking
+  // them to sign their own agreement.
+  if (isAgreementNeedsYouId(item.id)) return true;
 
 
   // Record scope: a driver sees only items about their own loads and record.
@@ -236,6 +250,14 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
   if (isDerivedSettlementItem(itemId)) {
     throw new Error(
       "This item is worked out from the settlement itself. Open the settlement and fix what it is asking for — it clears on its own.",
+    );
+  }
+  // The same for a contract item: it is worked out from the contract itself, so
+  // there is nothing here to snooze or resolve. Hiding the row would leave the
+  // signature unsigned and the requirement unmet.
+  if (isAgreementNeedsYouId(itemId)) {
+    throw new Error(
+      "This item is worked out from the contract itself. Open the contract and do what it is asking for — it clears on its own.",
     );
   }
   ensureInvoiceNeedsYou(ctx.organizationId);

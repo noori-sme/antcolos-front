@@ -33,6 +33,10 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // A dispatcher is usually the first to hear about a wreck, so they can
       // open a claim. They are not given the policy, and never the money.
       "claims:view", "claims:create",
+      // A dispatcher works inside the terms somebody else agreed — which
+      // carriers, which equipment, what the agreement allows. They read them and
+      // never the money, and cannot issue, sign, amend or end one.
+      "contracts:view",
     ],
   },
   {
@@ -53,6 +57,14 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "settlements:view", "settlements:dispute",
       // Their own assigned truck, and the ability to report a fault on it.
       "trucks:view", "maintenance:view", "maintenance:defects:report",
+      // A driver reads the agreement that governs their own work and signs
+      // their own side of it. Signer authority is what decides which party
+      // that is, so this key can never reach the carrier's signature line —
+      // and it grants nothing about anybody else's agreement.
+      "contracts:view", "contracts:sign",
+      // Their own pay terms. Without this a driver is asked to sign an
+      // agreement whose compensation they are not allowed to read.
+      "contracts:financials:view",
     ],
   },
   {
@@ -67,6 +79,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "fuel:view", "fuel:costs:view", "fuel:export", "mileage:view", "ifta:view",
       "reports:view", "reports:export",
       "insurance:view", "insurance:sensitive:view", "claims:view", "claims:financials:view",
+      // Settlements price work under the agreement in force when it was
+      // performed, so whoever builds them has to be able to read the terms.
+      "contracts:view", "contracts:financials:view",
     ],
   },
   {
@@ -95,6 +110,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "documents:view", "documents:approve", "drivers:view", "trucks:view", "trailers:view",
       "trailers:documents:manage",
       "insurance:view", "insurance:manage", "claims:view",
+      // An agreement asks for documents. Whoever chases documents needs to see
+      // which agreement is asking and why.
+      "contracts:view",
       // Reading the record of what happened is the compliance job. Exporting
       // it, and closing an investigation, are not — those stay separate keys.
       "audit:view", "risk:view",
@@ -144,6 +162,29 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "mileage:view", "mileage:record", "mileage:review",
       "ifta:view", "ifta:manage",
       "trucks:view", "drivers:view", "documents:view", "documents:upload",
+    ],
+  },
+  {
+    name: "Contracts and relationships",
+    description:
+      "Writes, issues, amends and ends the agreements behind the business relationships. Carries no power to change anybody's access — that stays with the modules that own it.",
+    seeded: true,
+    permissions: [
+      "contracts:view", "contracts:create", "contracts:edit", "contracts:review",
+      "contracts:amend", "contracts:terminate", "contracts:cancel",
+      "contracts:requirements:waive", "contracts:links:manage",
+      "contracts:financials:view", "contracts:export",
+      // Reading the records an agreement points at. All read-only: none of
+      // these lets somebody start, approve or end a relationship.
+      "members:view", "invitations:view", "drivers:view", "trucks:view",
+      "trailers:view", "documents:view",
+      // Deliberately absent, and the point of the template:
+      //   contracts:sign            a signature is a party's act, authorised per
+      //                             contract by an owner, never by a template
+      //   contracts:signers:manage  who may sign is an owner's decision
+      //   members:edit / suspend    access is changed where access lives
+      //   invitations:create        proposing access is not papering it
+      //   *:relationships:manage    business scope is the registries' to change
     ],
   },
 ] as const;

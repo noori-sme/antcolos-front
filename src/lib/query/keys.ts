@@ -56,6 +56,21 @@ export const queryKeys = {
     ref: unknown,
   ) =>
     [...orgKey(organizationId), "reports", membershipId, reportId, filters, "drilldown", ref] as const,
+  contractsDashboard: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "contracts", "dashboard", membershipId] as const,
+  contracts: (organizationId: string, membershipId: string, filters?: unknown) =>
+    [...orgKey(organizationId), "contracts", "list", membershipId, filters ?? null] as const,
+  contract: (organizationId: string, membershipId: string, contractId: string) =>
+    [...orgKey(organizationId), "contracts", "one", membershipId, contractId] as const,
+  contractVersion: (
+    organizationId: string,
+    membershipId: string,
+    contractId: string,
+    contractVersionId: string,
+  ) =>
+    [...orgKey(organizationId), "contracts", "version", membershipId, contractId, contractVersionId] as const,
+  contractTransitionRequests: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "contracts", "transitions", membershipId] as const,
   fleetDashboard: (organizationId: string, membershipId: string) =>
     [...orgKey(organizationId), "fleet", "dashboard", membershipId] as const,
   fleetEquipment: (

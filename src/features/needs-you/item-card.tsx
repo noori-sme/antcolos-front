@@ -4,8 +4,8 @@ import {
   ArrowUpCircle, BellOff, Building2, CalendarClock, CheckCircle2, ChevronRight,
   ClipboardCheck, ClipboardList, Container, FileSignature, FileText, Fuel, Handshake,
   Mail, MailQuestion, Map, Package, Radar, Receipt, RefreshCw, ScrollText,
-  ShieldCheck, TriangleAlert, Truck, User, UserCheck, UserCircle, Wrench,
-  type LucideIcon,
+  ShieldAlert, ShieldCheck, TriangleAlert, Truck, User, UserCheck, UserCircle,
+  Wrench, type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORY_LABEL, type NeedsYouEntityKind, type NeedsYouItem } from "@/types";
@@ -22,7 +22,8 @@ const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   policy: ShieldCheck, claim: TriangleAlert, carrier: Building2, mt_loop: RefreshCw,
   listing: Radar, draft: Mail, negotiation: Handshake, booking: ClipboardCheck,
   message: MailQuestion, rate_confirmation: FileSignature, driver_review: UserCheck,
-  risk_case: ScrollText,
+  contract: ScrollText, contract_version: FileSignature,
+  risk_case: ShieldAlert,
 };
 
 export function NeedsYouCard({
