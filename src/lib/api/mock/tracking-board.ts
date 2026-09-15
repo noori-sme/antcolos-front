@@ -1,8 +1,8 @@
 import type {
   AvailabilityBasis, AvailabilityDecision, AvailabilityPublication, DispatchTrackingBoard,
-  DispatchTrackingFilters, DispatchTrackingRow, Load, LoadStatus, LocationSignal,
-  TrackedAuthority, TrackedMilestone, TrackingAlert, TrackingAlertKind, TrackingSession,
-  TrackingSignalHealth, TrackingUpdateKind,
+  DispatchTrackingFilters, DispatchTrackingRow, Load, LoadStatus, LocationPrecision,
+  LocationSignal, TrackedAuthority, TrackedMilestone, TrackingAlert, TrackingAlertKind,
+  EtaSource, PermissionKey, TrackingSession, TrackingSignalHealth, TrackingUpdateKind,
 } from "@/types";
 import { authorityAllowsDispatch, destinationStop, originStop } from "@/types";
 import {
@@ -15,12 +15,16 @@ import { publishAvailabilityDecision } from "./mt-loop";
 import {
   availabilityForTruck, receiverFenceFor, recordEmptyConfirmation,
 } from "./tracking-availability";
-import { cityPoint, locationSignalsFor, reportedEta, trackingSignalSources } from "./tracking-signals";
+import {
+  cityPoint, locationScopeFor, locationSignalsFor, reportedEta, trackingSignalSources,
+  type LocationScope,
+} from "./tracking-signals";
 import {
   audit, mayTrack, resolvePublicTracking, sessionForLoadSync, trackingAudit,
   type TrackingContext,
 } from "./tracking-registry";
 import { mockStore } from "./store";
+import type { ServiceContext } from "../contracts/context";
 import { nowIso } from "./time";
 
 /**
@@ -222,20 +226,31 @@ function buildRow(ctx: TrackingContext, load: Load, now: Date): TrackingRowBuild
       : load.assignment?.carrierOrganizationId);
   const authority = authorityFor(ctx, carrierOrganizationId);
 
-  const signals = truck
-    ? locationSignalsFor(ctx, { truckId: truck.truckId, loadId: load.id })
+  /**
+   * The ELD module answers "may this workspace know where this truck is", for
+   * every source. A dispatch workspace with no share gets nothing here — not
+   * from a device, not from a check-call, not from the load timeline.
+   */
+  const locationScope: LocationScope | undefined = truck
+    ? locationScopeFor(ctx, truck.truckId)
+    : undefined;
+  const signals = truck && locationScope?.scoped
+    ? locationSignalsFor(ctx, { truckId: truck.truckId, loadId: load.id, scope: locationScope })
     : [];
   const latest = signals[signals.length - 1];
+  const precision: LocationPrecision = locationScope?.precision ?? "city_only";
 
   const rolling = ROLLING.includes(load.status);
   const freshness = assessFreshness({
     signals,
-    trackingExpected: rolling && Boolean(truck),
+    trackingExpected: rolling && Boolean(truck) && Boolean(locationScope?.scoped),
     unavailableReason: equipmentWithheld
       ? "The truck on this load is not one this workspace can see, so its position cannot be read here."
       : !assignedTruckId
         ? "No truck is on this load yet, so there is nothing to track."
-        : undefined,
+        : locationScope && !locationScope.scoped
+          ? locationScope.refusal
+          : undefined,
     now,
   });
 
@@ -247,6 +262,23 @@ function buildRow(ctx: TrackingContext, load: Load, now: Date): TrackingRowBuild
   let milesToDelivery: number | undefined;
   let routeProgressPercent: number | undefined;
   let deviated = false;
+
+  /**
+   * Everything below needs coordinates.
+   *
+   * A membership without `eld:location:precise:view` has a city and a state,
+   * and a city centroid is not where the truck is. Computing a distance from
+   * one would put a number on the screen that reads like a measurement and is
+   * not, so this declines — and `precisionNote` says why, because three empty
+   * columns read as "nothing is happening" rather than "you are not allowed".
+   */
+  const precisionNote = precision === "exact"
+    ? undefined
+    : locationScope?.scoped
+      ? "This membership does not hold eld:location:precise:view, so this row shows the city the "
+        + "truck was last reported near. Nothing is derived from a coordinate, and no city-level "
+        + "estimate is substituted for one."
+      : undefined;
 
   if (here && destPoint) milesToDelivery = straightLineMiles(here, destPoint);
   if (here && originPoint && destPoint) {
@@ -267,10 +299,17 @@ function buildRow(ctx: TrackingContext, load: Load, now: Date): TrackingRowBuild
   }
 
   /* ---- Timing ---- */
-  const etaAt = reportedEta(ctx.organizationId, load.id);
+  const reported = reportedEta(ctx.organizationId, load.id);
   const appointmentAt = delivery.appointmentAt;
-  const etaVarianceMinutes = etaAt && appointmentAt
-    ? Math.round((Date.parse(etaAt) - Date.parse(appointmentAt)) / 60_000)
+  // Attributed, never computed. See `reportedEta` for who owns an ETA and why
+  // this module is not it.
+  const etaAt = reported ?? appointmentAt;
+  const etaSource: EtaSource = reported ? "load_event" : appointmentAt ? "appointment" : "none";
+  // Variance is only meaningful against a REPORTED ETA. An appointment compared
+  // with itself is always zero minutes late, which would read as "on time" for
+  // every load nobody has reported on.
+  const etaVarianceMinutes = reported && appointmentAt
+    ? Math.round((Date.parse(reported) - Date.parse(appointmentAt)) / 60_000)
     : undefined;
 
   /* ---- Availability ---- */
@@ -308,7 +347,7 @@ function buildRow(ctx: TrackingContext, load: Load, now: Date): TrackingRowBuild
   }
 
   const fence = receiverFenceFor(load);
-  if (fence && signals.length > 0) {
+  if (fence && signals.length > 0 && precision === "exact") {
     const verdict = evaluateGeofence(
       fence,
       signals.map((s) => ({ point: s.point, speedMph: s.speedMph, observedAt: s.observedAt })),
@@ -364,8 +403,11 @@ function buildRow(ctx: TrackingContext, load: Load, now: Date): TrackingRowBuild
     currentDescription: latest?.description,
     routeProgressPercent,
     milesToDelivery: milesToDelivery == null ? undefined : Math.round(milesToDelivery),
+    precision,
+    precisionNote,
     deliveryAppointmentAt: appointmentAt,
     etaAt,
+    etaSource,
     etaVarianceMinutes,
     lastUpdateAt: freshness.lastUpdateAt,
     lastUpdateAgeMinutes: freshness.ageMinutes,
@@ -766,6 +808,38 @@ export async function confirmTruckEmpty(
 /* -------------------------------------------------------------------------- */
 
 /**
+ * The authority a public tracking link resolves under.
+ *
+ * A link holder is not a user and has no membership, so there is no caller to
+ * scope the read by. What there IS, is the carrier's own decision to share this
+ * load — so the position is read under the OWNING organization's authority, not
+ * the viewer's, which is what makes a broker link work at all.
+ *
+ * The narrowness is the point. This context holds `eld:view` and nothing else:
+ * it cannot hold `eld:location:precise:view`, so a public link is structurally
+ * incapable of producing a coordinate however the visibility switches are set.
+ * A broker gets the city the truck was last reported near, which is the most
+ * `PublicTrackingView.truckLocation` can carry anyway, and the two limits agree
+ * rather than one depending on the other being remembered.
+ */
+function carrierAuthorityContext(organizationId: string): ServiceContext {
+  return {
+    organizationId,
+    organizationName: organizationId,
+    workspaceKind: "carrier_organization",
+    membershipId: "system:tracking_link",
+    permissions: new Set<PermissionKey>(["eld:view", "trucks:view", "loads:view"]),
+    scope: { loads: "all", financials: "own" },
+    actor: {
+      userId: "system",
+      membershipId: "system:tracking_link",
+      displayNameSnapshot: "Tracking link",
+      source: "system",
+    },
+  };
+}
+
+/**
  * Resolve a tracking token into the small, redacted public view.
  *
  * No caller, no context, no organization — a link holder has none of those,
@@ -777,8 +851,7 @@ export async function confirmTruckEmpty(
 export function publicTracking(token: string, now: Date = new Date()) {
   return resolvePublicTracking(token, (session) => {
     if (!session.truckId) return {};
-    const scope = { organizationId: session.organizationId };
-    const signals = locationSignalsFor(scope, {
+    const signals = locationSignalsFor(carrierAuthorityContext(session.organizationId), {
       truckId: session.truckId,
       loadId: session.loadId,
     });

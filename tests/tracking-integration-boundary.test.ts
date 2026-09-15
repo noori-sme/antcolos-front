@@ -58,19 +58,31 @@ describe("nothing claims to be connected", () => {
     );
   });
 
-  it("stamps everything the mock adapter produces as a mock", async () => {
+  it("refuses to hand out a position to a caller with no identity", async () => {
     resetWorld();
+    // The adapter contract takes an organization id and no membership. Who may
+    // see a truck depends on the workspace asking, so there is no honest answer
+    // to give a caller that cannot be scoped — and returning the carrier's
+    // positions "because the org id matched" is exactly the bypass this
+    // milestone closed.
     const signals = await mockLocationAdapter.positionsFor({
       organizationId: "org_northline",
       truckId: TRUCK_IDS.nl104,
     });
+    assert.equal(signals.length, 0);
+    assert.equal(mockLocationAdapter.describe().status, "not_connected");
+    assert.equal(trackingSignalSources().length, TRACKING_SIGNAL_SOURCES.length);
+  });
+
+  it("stamps everything a scoped read produces as a mock", () => {
+    resetWorld();
+    const ctx = trackingContextFor(NORTHLINE_OWNER);
+    const signals = locationSignalsFor(ctx, { truckId: TRUCK_IDS.nl104 });
     assert.ok(signals.length > 0);
     for (const signal of signals) {
       assert.equal(signal.provenance.mock, true);
       assert.match(signal.provenance.adapter, /^mock:/);
     }
-    assert.equal(mockLocationAdapter.describe().status, "not_connected");
-    assert.equal(trackingSignalSources().length, TRACKING_SIGNAL_SOURCES.length);
   });
 });
 

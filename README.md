@@ -1011,6 +1011,79 @@ its own for it, edits nothing, and is gated on the same `tracking:view` that the
 tracking screens are, so projecting cannot show anybody a line they could not
 already see.
 
+### The ELD & Telematics module decides who may see a position
+
+Not Tracking. This is the rule the whole integration rests on, and it is
+enforced once, in `locationScopeFor`, before any source is consulted.
+
+The ELD module owns the question: it holds each carrier's **explicit per-truck
+share records**, it knows which signal classes were granted, and it knows
+whether a membership may hold coordinates or only a city name. Tracking reads
+through `eldTelemetryForTruckSync`, which goes through that module's own
+`truckScopes`, `permittedClasses`, `snapshotFor` and `visibleEvents` — the same
+helpers its async service uses. There is no second implementation of a sharing
+rule, because two implementations of a sharing rule is one implementation and
+one bug waiting to be found by a carrier whose position leaked.
+
+What that changes, concretely: **Meridian sees unit A-12 because Baxter
+explicitly shared it, and sees nothing for the Crosswind and Ridgeway trucks on
+its other two loads.** That is not a gap — it is the correction. A row whose
+truck was never shared reads *unavailable* with the reason, which is a
+different statement from *offline*: offline says a feed broke and somebody
+should chase it, unavailable says this workspace was never entitled to the
+position and there is nothing to chase.
+
+**No fallback may bypass it.** A dispatcher's check-call and the Load module's
+own `load.location_reported` events are legitimate positions and they stay — as
+labelled fallbacks behind the ELD observations, and behind the same gate. A
+dispatch workspace with no share gets nothing from any source, because a
+carrier that declined to share a truck did not thereby agree to it being
+reconstructed from the notes somebody took on the phone. The fixtures include a
+check-call the solo dispatcher typed into their own workspace for a Cascade
+truck Cascade never shared with them; it stays blocked, and there is a test that
+says so.
+
+**Precise location is a separate permission, and its absence is stated rather
+than blank.** A membership without `eld:location:precise:view` — which includes
+the whole seeded Dispatcher template — gets a city and a state and no
+coordinates. Route progress, miles to delivery and geofence proximity are all
+derived from coordinates, so they are not computed, and the row says exactly
+that instead of rendering three empty columns that read as "nothing is
+happening". No city-centroid estimate is substituted: a distance from a
+centroid would read as a measurement and is not one. The availability engine
+records the same thing as evidence it *declined to evaluate*, with the reason.
+
+**A public tracking link resolves under the carrier's own authority**, since a
+link holder has no membership to scope by. That context holds `eld:view` and
+nothing else — it cannot hold `eld:location:precise:view` — so a broker link is
+structurally incapable of producing a coordinate however the visibility
+switches are set.
+
+### Who owns the ETA
+
+Nobody computes one, and Tracking will not be the first to guess:
+
+| Module | Owns |
+|---|---|
+| **ELD & Telematics** | Raw observations. Its `mt_loop.eta_updated` signal carries a position and `etaBasis: "not_computed"` on purpose. |
+| **Trip / Route Intelligence** (not built) | The computed ETA. |
+| **Tracking** | Consuming whatever ETA exists, attributing it, and publishing availability decisions from it. |
+
+Until that module lands, an ETA is the Load module's own `load.eta_updated`
+event, or the delivery appointment standing in for one — and every row says
+which, because a planned-against ETA that turns out to be an appointment is how
+a dispatcher gets caught out. Lateness is only claimed against a **reported**
+ETA; an appointment compared with itself is not "on time".
+
+### The receiver geofence stays in Tracking
+
+The ELD module infers arrival from a *motion transition* — "the truck stopped
+moving near X" — and has no idea whether X is the receiver. It has no facility
+context and should not have one. Tracking knows which stop this load is going
+to, so the geofence with its dwell and pass-by guard lives here. ELD supplies
+the observation; Tracking supplies the judgement about *this load's* receiver.
+They are complementary, and neither should be deleted in favour of the other.
+
 ### Integration boundary
 
 Normalized location signals are consumed through the existing ELD & Telematics
@@ -1059,11 +1132,19 @@ Sign in as any membership (the org switcher is top-left), then:
   duplicate is collapsed and the decision says so.
 - *Silence the feed* → the row goes **offline**; bring it back and it is live again.
 
-**Interrupted and offline, without touching anything**
-- Switch to **Meridian Dispatch → Tracking**. Three carriers on one board.
-  MD-9042 is *interrupted* (a feed that was reporting every 15 minutes and
-  stopped); MD-9038 is *offline* (one position, nine hours old). Both refuse to
-  publish an MT Loop entry, because Antcolos cannot tell.
+**Sharing and precise location — switch to Meridian Dispatch → Tracking**
+- Three carriers on one board, and only **MD-9042** shows a position: Baxter
+  explicitly shared unit A-12. MD-9031 and MD-9038 read *unavailable* — "this
+  truck's position is not shared with this workspace".
+- MD-9042's row says route progress, miles to delivery and geofence proximity
+  need precise-location access, and names the permission. The seeded Dispatcher
+  template does not hold it; the Northline owner does, which is why the same
+  columns are populated over there.
+- Open MD-9042 → *Show the evidence*: the engine records the distance and
+  geofence checks it **declined to evaluate**, with the reason, rather than
+  leaving them blank.
+- Its ETA reads "No ETA reported — showing the delivery appointment", and
+  claims no lateness.
 
 **Broker tracking**
 1. On **NL-24817 → Customer tracking**, press *Open tracking on this load*.
@@ -1398,6 +1479,31 @@ milestone specifically:
   keeping the tracking module's own entry ids and action keys, a refused link
   access projects as a denial, and a caller without `tracking:view` gets none
   of it.
+
+### The ELD boundary (`tests/tracking-eld-boundary.test.ts`)
+
+- **Sharing isolation** — a shared truck reports, an unshared one reads
+  *unavailable* with the reason and no city, no timestamp and no source; a
+  carrier needs no share record for its own trucks; and a membership without
+  `eld:view` gets nothing at all.
+- **Fallback security** — a check-call, a load-timeline event and a simulated
+  position are each written for an unshared truck and each fail to surface,
+  while the same sources keep working where the truck IS in scope.
+- **Permission gating** — a dispatcher without `eld:location:precise:view` gets
+  `precision: "city_only"` with no coordinate on any signal, no route progress,
+  no miles, no geofence alert, a note naming the permission, and no city-level
+  estimate substituted; an owner with it gets the full derived picture.
+- **Source precedence and provenance** — ELD wins, every position carries its
+  transport and a mock-labelled adapter, an ELD-sourced signal carries the
+  event id it came from, and a provider's confidence is never raised.
+- **Deduplication** — reading twice does not double the run, and three
+  simulated copies of one observation collapse to one.
+- **ETA attribution** — a reported ETA is named as such, a standing-in
+  appointment is named as such, and no lateness is claimed from an appointment
+  compared with itself.
+- **Public links** — a broker link resolves under the carrier's authority and
+  the serialized view contains no coordinate.
+
 Contracts add 201 of their own, split between the pure domain and the seam:
 
 - **Domain** (`src/lib/contracts/*.test.ts`) — the status machine, version

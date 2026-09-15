@@ -1,13 +1,13 @@
 "use client";
 
-import { ArrowLeft, History, Radio, Route, TriangleAlert } from "lucide-react";
+import { ArrowLeft, History, Lock, Radio, Route, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Badge } from "@/components/ui/badge";
 import {
-  TRACKING_ALERT_LABEL, TRACKING_AUDIT_LABEL,
+  ETA_SOURCE_LABEL, TRACKING_ALERT_LABEL, TRACKING_AUDIT_LABEL,
   type AvailabilityBasis, type TrackingAudience, type TrackingUpdateKind,
   type TrackingUpdatePolicy, type TrackingVisibility,
 } from "@/types";
@@ -200,6 +200,19 @@ export function TrackingDetailScreen({ loadId }: { loadId: string }) {
         </div>
         <p className="mt-2 text-[0.8125rem] leading-relaxed text-fg">{row.healthReason}</p>
 
+        {row.precisionNote ? (
+          <p className="mt-2 flex items-start gap-2 rounded-md border border-border bg-surface-sunken px-3.5 py-2.5 text-[0.75rem] leading-relaxed text-fg-muted">
+            <Lock className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" aria-hidden />
+            <span>
+              <span className="font-medium text-fg">
+                Route progress, miles to delivery and geofence proximity need precise-location
+                access.
+              </span>{" "}
+              {row.precisionNote}
+            </span>
+          </p>
+        ) : null}
+
         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 text-[0.75rem] sm:grid-cols-4">
           <Fact label="Last seen" value={
             row.currentCity
@@ -211,15 +224,23 @@ export function TrackingDetailScreen({ loadId }: { loadId: string }) {
           } />
           <Fact label="Signal source" value={row.lastSignalLabel ?? "—"} />
           <Fact label="Route progress" value={
-            row.routeProgressPercent != null ? `${row.routeProgressPercent}%` : "—"
+            row.precision !== "exact"
+              ? "Needs precise-location access"
+              : row.routeProgressPercent != null ? `${row.routeProgressPercent}%` : "—"
           } />
           <Fact label="Straight-line to delivery" value={
-            row.milesToDelivery != null ? `${row.milesToDelivery} mi` : "—"
+            row.precision !== "exact"
+              ? "Needs precise-location access"
+              : row.milesToDelivery != null ? `${row.milesToDelivery} mi` : "—"
           } />
           <Fact label="Delivery appointment" value={
             row.deliveryAppointmentAt ? new Date(row.deliveryAppointmentAt).toLocaleString() : "—"
           } />
-          <Fact label="ETA" value={row.etaAt ? new Date(row.etaAt).toLocaleString() : "Not reported"} />
+          <Fact
+            label="ETA"
+            value={row.etaAt ? new Date(row.etaAt).toLocaleString() : "Not reported"}
+            note={ETA_SOURCE_LABEL[row.etaSource]}
+          />
           <Fact label="Against the appointment" value={
             row.etaVarianceMinutes == null
               ? "—"
@@ -482,11 +503,12 @@ export function TrackingDetailScreen({ loadId }: { loadId: string }) {
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
     <div className="min-w-0">
       <dt className="text-[0.6875rem] font-medium tracking-wide text-fg-subtle uppercase">{label}</dt>
       <dd className="mt-0.5 text-[0.8125rem] break-words text-fg">{value}</dd>
+      {note ? <p className="mt-0.5 text-[0.6875rem] leading-snug text-fg-subtle">{note}</p> : null}
     </div>
   );
 }

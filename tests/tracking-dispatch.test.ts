@@ -110,18 +110,21 @@ describe("live, stale, offline, interrupted and unavailable", () => {
     assert.ok(row.lastSignalLabel?.includes("mock adapter"), "the screen must be told it is a mock");
   });
 
-  it("reads an established feed that stopped as interrupted, not merely stale", () => {
+  it("reads a shared truck with a reporting device as live", () => {
     const board = dispatchTrackingBoardSync(trackingContextFor(MERIDIAN_DISPATCHER));
     const row = board.rows.find((r) => r.loadReference === "MD-9042")!;
-    assert.equal(row.health, "interrupted");
-    assert.match(row.healthReason, /was working and it stopped/i);
-    assert.ok(row.alerts.some((a) => a.kind === "signal_lost"));
+    assert.equal(row.health, "live");
+    assert.equal(row.lastSignalTransport, "eld_telemetry");
   });
 
-  it("reads a single hours-old position as offline", () => {
+  it("reads an unshared truck as unavailable, not as a truck that went quiet", () => {
+    // The distinction matters: "offline" says the feed broke and somebody
+    // should chase it. "Unavailable" says this workspace was never entitled
+    // to the position, which is nobody's fault and nothing to chase.
     const board = dispatchTrackingBoardSync(trackingContextFor(MERIDIAN_DISPATCHER));
     const row = board.rows.find((r) => r.loadReference === "MD-9038")!;
-    assert.equal(row.health, "offline");
+    assert.equal(row.health, "unavailable");
+    assert.match(row.healthReason, /not shared with this workspace/i);
   });
 
   it("reads a silenced feed as offline and says nothing has ever reported", () => {
