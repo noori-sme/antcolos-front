@@ -184,6 +184,27 @@ export function resetCarrierDriversMock() {
   DRIVERS = seed();
 }
 
+/**
+ * Synchronous read for other modules.
+ *
+ * Safety & Compliance derives a driver's compliance subjects from these
+ * relationships rather than keeping its own list of people: end the
+ * relationship here and the compliance records freeze, because there is only
+ * one driver record and this is it.
+ */
+export function carrierDriversSync(): CarrierDriver[] {
+  return DRIVERS.map((d) => ({ ...d }));
+}
+
+/**
+ * The carrier these seeded relationships belong to.
+ *
+ * The roster screen is always the active carrier's, so the fixtures never had
+ * to say. Compliance is organization-scoped and does, and Northline is the
+ * carrier they were written for — their handbook document names it.
+ */
+export const CARRIER_DRIVERS_ORGANIZATION_ID = "org_northline";
+
 export async function mockListCarrierDrivers(): Promise<CarrierDriver[]> {
   await sleep(300);
   return DRIVERS.map((d) => ({ ...d }));

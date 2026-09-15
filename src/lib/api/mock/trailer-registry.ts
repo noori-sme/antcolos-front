@@ -210,7 +210,7 @@ function trailerLabel(trailerId: string): string {
   return `${unit ? `${unit} · ` : ""}${found.year} ${found.make} ${found.model}`;
 }
 
-function trailerDocumentsFor(trailerId: string): TrailerDocument[] {
+export function trailerDocumentsFor(trailerId: string): TrailerDocument[] {
   return assetDocumentRows(TRAILER_DOCUMENTS, trailerId).map((row) => ({ ...row, trailerId }));
 }
 
@@ -529,6 +529,26 @@ function buildFixtures(): RegistryState {
     doc(T.bx810, "registration", "approved", "org_baxter", "reg-bx810.pdf", daysFromNow(190));
     doc(T.ch950, "registration", "approved", "org_baxter", "reg-bx950.pdf", daysFromNow(120));
     doc(T.cl901, "registration", "approved", "org_northline", "reg-f901.pdf", daysFromNow(70));
+    doc(T.rf114, "insurance", "approved", "org_northline", "coi-r114.pdf", daysFromNow(160));
+    doc(T.rf114, "annual_inspection", "approved", "org_northline", "inspection-r114.pdf", daysFromNow(180));
+    doc(T.fb410, "insurance", "approved", "org_northline", "coi-f410.pdf", daysFromNow(150));
+    doc(T.gn330, "insurance", "approved", "org_northline", "coi-g330.pdf", daysFromNow(140));
+    doc(T.gn330, "annual_inspection", "approved", "org_northline", "inspection-g330.pdf", daysFromNow(120));
+    doc(T.mt501, "insurance", "approved", "org_northline", "coi-s501.pdf", daysFromNow(155));
+    doc(T.mt501, "annual_inspection", "approved", "org_northline", "inspection-s501.pdf", daysFromNow(95));
+    doc(T.mc701, "insurance", "approved", "org_northline", "coi-v701.pdf", daysFromNow(170));
+    doc(T.mc701, "annual_inspection", "approved", "org_northline", "inspection-v701.pdf", daysFromNow(230));
+    doc(T.lk702, "insurance", "approved", "org_northline", "coi-r702.pdf", daysFromNow(175));
+    doc(T.lk702, "annual_inspection", "approved", "org_northline", "inspection-r702.pdf", daysFromNow(215));
+    doc(T.cl901, "insurance", "approved", "org_northline", "coi-f901.pdf", daysFromNow(145));
+    doc(T.cl901, "annual_inspection", "approved", "org_northline", "inspection-f901.pdf", daysFromNow(100));
+    // Baxter is onboarded on 701 and 702 too, and holds its own evidence.
+    doc(T.mc701, "insurance", "approved", "org_baxter", "baxter-coi-701.pdf", daysFromNow(150));
+    doc(T.lk702, "insurance", "approved", "org_baxter", "baxter-coi-702.pdf", daysFromNow(150));
+    doc(T.bx810, "insurance", "approved", "org_baxter", "coi-bx810.pdf", daysFromNow(185));
+    doc(T.bx810, "annual_inspection", "approved", "org_baxter", "inspection-bx810.pdf", daysFromNow(205));
+    doc(T.ch950, "insurance", "approved", "org_baxter", "coi-bx950.pdf", daysFromNow(185));
+    doc(T.ch950, "annual_inspection", "approved", "org_baxter", "inspection-bx950.pdf", daysFromNow(115));
   };
 
   const claims: TrailerOwnershipClaim[] = [
@@ -913,6 +933,31 @@ export function trailerCount(ctx: TrailerContext): number {
 /* -------------------------------------------------------------------------- */
 /* Profile                                                                     */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Read-only registry views for other modules, matching the truck registry's.
+ * Safety & Compliance reads trailer relationships and documents through these
+ * rather than holding a second copy of them.
+ */
+export function trailerRecord(trailerId: string): Trailer | undefined {
+  return db().trailers.find((t) => t.trailerId === trailerId);
+}
+
+export function trailerRelationshipsFor(organizationId: string): TrailerCarrierRelationship[] {
+  return db().relationships.filter((r) => r.organizationId === organizationId);
+}
+
+export function trailerDispatchAccessFor(
+  dispatchOrganizationId: string,
+): TrailerDispatchAccess[] {
+  return db().dispatchAccess.filter(
+    (d) => d.dispatchOrganizationId === dispatchOrganizationId,
+  );
+}
+
+export function trailerOwnerName(trailerId: string): string | undefined {
+  return activeOwnership(trailerId)?.ownerName;
+}
 
 export interface TrailerProfileView {
   trailer: Trailer;

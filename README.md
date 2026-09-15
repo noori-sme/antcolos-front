@@ -39,6 +39,7 @@ files rather than a copy. `npm test` runs both.
 | 1. Foundation and shell | Design tokens, theme and density, identity and membership switching, permissions, responsive navigation, shared states |
 | 2. Home + Needs You | `/home` (adapts to the membership), `/needs-you`, `/driver/home` |
 | Canonical Load slice | `/loads`, `/loads/[loadId]` — read-only |
+| Safety & Compliance foundation | `/compliance`, `/compliance/[requirementId]` |
 | Permanent Truck and Trailer | `/fleet/trucks`, `/fleet/trailers` and their profiles |
 | Fleet Management Foundation | `/fleet`, `/fleet/equipment/[assetKind]/[assetId]` |
 | Settlement foundation | `/finance/settlements`, `/finance/settlements/[id]`, and the payee statement |
@@ -56,6 +57,47 @@ files rather than a copy. `npm test` runs both.
 
 Everything else is a placeholder screen that says so.
 
+### Safety & Compliance
+
+The one idea the module is built around: **a requirement and a document are not
+the same record.** The obligation to hold a current annual inspection on unit 104
+exists whether or not anybody has ever uploaded a file. A document can *satisfy*
+it — and the requirement then points at that document, in the system that owns it
+— but the requirement keeps its own id, status, due date, responsible person and
+append-only history, and survives the document being replaced, rejected or removed.
+
+What it reuses rather than recreates:
+
+| It needs | It reads |
+|---|---|
+| Organizations and operating authority | the session's organization record |
+| Drivers | the driver relationships in `features/driver/` |
+| Trucks and trailers | the permanent registries in `lib/api/mock/` |
+| Documents | the Document Center (organization paperwork is linked with `entityKind: "organization"`) |
+| Alerts | the existing Needs You queue — compliance produces real items in it, not a second system |
+| People and permissions | Membership, the permission catalog and record scope |
+
+Which requirements exist depends on entity type, organization type, relationship,
+operating authority and equipment type — an intrastate carrier is never asked for
+the interstate filings, a company driver is never asked for owner-operator
+paperwork, a dry van is never asked for a refrigeration service record, and a
+25,999 lb box truck sits one pound below the fuel-tax threshold. Requirements that
+do not reach a subject become `not_applicable` records that say why, hidden by
+default rather than silently absent.
+
+Ending a driver, truck, trailer, carrier or dispatch relationship **stops access
+and deletes nothing**: the records freeze, an immutable snapshot is taken, and the
+frozen records never re-enter a live queue.
+
+Inspections, violations, accidents, claims, hours-of-service, CSA/SMS monitoring
+and full audit preparation are **not built**. They are declared as typed extension
+points (`lib/compliance/extensions.ts`) and rendered as "not built yet" — a screen
+reading "0 violations" would mean Antcolos had looked and found none, and it has
+not looked.
+
+Nothing is connected to FMCSA, the Drug & Alcohol Clearinghouse, any state agency,
+any insurance provider, any ELD or any monitoring service. Every date was recorded
+in Antcolos or carried on a document somebody uploaded, and the screens say so.
 ## The Fleet Management Foundation
 
 `/fleet` is the shared operational layer over the permanent records. It is not a
@@ -363,6 +405,7 @@ src/
     layout/             AppShell, Sidebar, Topbar, OrgSwitcher, AccountMenu
     auth/               Can, PermissionBadge, ActorLabel
     data/               loading / empty / error states
+  features/             home, needs-you, loads, compliance
   features/             home, needs-you, loads, fleet, fleet-ops, trailers
   features/             home, needs-you, loads, settlements
   features/             home, needs-you, loads, fleet, trailers, insurance
@@ -373,6 +416,7 @@ src/
       contracts/        ★ typed service interfaces — the backend seam
       mock/             in-memory adapter, PARTITIONED BY ORGANIZATION
       http/             real adapter, deliberately unimplemented
+    compliance/         ★ requirement catalog, applicability rules, status machine
     insurance/          ★ coverage rules, requirements, claim states, seams
     directory/          ★ normalization and entity-resolution matching (pure)
     driver-workflow/    ★ channel-independent engine: catalog, commands,
@@ -389,8 +433,10 @@ src/
   types/                ★ canonical entities
   config/               nav, statuses, documents, brand
   styles/globals.css    ★ every design token
+tests/                  service-layer and domain tests (vitest, node)
 ```
 
+The starred locations are the architectural spine: one design system, one permission catalog, one compliance catalog, one session model, one backend seam, one set of canonical types. Nothing outside them hardcodes a color, checks a role, reads identity directly, or calls `fetch`.
 The starred locations are the architectural spine: one design system, one permission catalog, one session model, one backend seam, one set of canonical types, one place the operational picture is derived. Nothing outside them hardcodes a color, checks a role, reads identity directly, or calls `fetch`.
 The starred locations are the architectural spine: one design system, one permission catalog, one document model, one session model, one backend seam, one set of canonical types. Nothing outside them hardcodes a color, checks a role, reads identity directly, or calls `fetch`.
 
@@ -446,6 +492,7 @@ refuses to create one today.
 
 All data is mocked behind the service contracts. Mutations persist for the browser session only. Set `NEXT_PUBLIC_API_MODE=http` to point at the real adapter — it throws by design, so nothing pretends to be connected.
 
+Telegram, ELD, load boards, accounting, FMCSA, the Drug & Alcohol Clearinghouse, state agencies, insurance providers and safety-monitoring services are **not connected**, and no screen implies otherwise.
 Telegram, ELD, GPS, telematics, fuel cards, tolls, state registration lookups,
 load boards and accounting are **not connected**, and no screen implies
 otherwise.

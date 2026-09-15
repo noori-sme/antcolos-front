@@ -4,7 +4,7 @@ import {
   ArrowUpCircle, BellOff, Building2, CheckCircle2, ChevronRight, ClipboardCheck,
   ClipboardList, Container, FileSignature, FileText, Handshake, Mail, MailQuestion,
   Package, Radar, Receipt, RefreshCw, ShieldCheck, TriangleAlert, Truck, User,
-  UserCheck, Wrench, type LucideIcon,
+  UserCheck, UserCircle, Wrench, type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORY_LABEL, type NeedsYouEntityKind, type NeedsYouItem } from "@/types";
@@ -15,6 +15,7 @@ import { SeverityBar } from "./severity";
 const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   load: Package, truck: Truck, trailer: Container, driver: User, document: FileText,
   customer: Building2, settlement: Receipt, invoice: Receipt,
+  organization: Building2, person: UserCircle, compliance_requirement: ShieldCheck,
   maintenance_requirement: Wrench, defect: TriangleAlert, repair_order: ClipboardList,
   policy: ShieldCheck, claim: TriangleAlert, carrier: Building2, mt_loop: RefreshCw,
   listing: Radar, draft: Mail, negotiation: Handshake, booking: ClipboardCheck,

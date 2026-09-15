@@ -42,7 +42,14 @@ export type VerificationState =
 
 /** What a document is attached to. A document may link to several entities. */
 export interface LoadDocumentLink {
-  entityKind: "load" | "stop" | "driver" | "truck" | "trailer" | "customer" | "settlement" | "invoice";
+  /**
+   * "organization" covers paperwork the company holds about itself — insurance
+   * certificates, authority letters, tax forms — rather than about one load or
+   * one vehicle. Safety & Compliance points at these; it never copies them.
+   */
+  entityKind:
+    | "load" | "stop" | "driver" | "truck" | "trailer" | "customer"
+    | "settlement" | "invoice" | "organization";
   entityId: string;
 }
 

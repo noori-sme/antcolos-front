@@ -17,6 +17,7 @@ export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
 export type * from "./trailer";
+export type * from "./compliance";
 export type * from "./settlement";
 export type * from "./maintenance";
 export type * from "./insurance";
@@ -68,6 +69,9 @@ export {
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";
+export {
+  OPEN_COMPLIANCE_STATUSES, COMPLIANCE_SEVERITY_ORDER, COMPLIANCE_STATUS_ORDER,
+} from "./compliance";
 export { FINANCIAL_COUNTEROFFER_KINDS } from "./driver-policy";
 export { CLOSED_PROPOSAL_STATUSES } from "./driver-proposal";
 export {

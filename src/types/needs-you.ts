@@ -28,6 +28,14 @@ export type NeedsYouCategory =
   | "invoice_overdue"
   | "customer_response"
   | "truck_going_empty"
+  // Safety & Compliance. These come from compliance requirements, which are
+  // separate records from the documents that may satisfy them.
+  | "compliance_missing"
+  | "compliance_rejected"
+  | "compliance_expiring"
+  | "compliance_expired"
+  | "compliance_critical"
+
   // Fleet operations. Derived from the permanent records, never hand-written.
   | "stale_location"
   | "invalid_assignment"
@@ -100,6 +108,9 @@ export type NeedsYouSource = "system" | "telegram" | "eld" | "ocr" | "manual";
 
 export type NeedsYouEntityKind =
   | "load" | "truck" | "trailer" | "driver" | "document" | "customer"
+  | "settlement" | "invoice" | "organization" | "person"
+  | "compliance_requirement"
+
   | "settlement" | "invoice"
 
   | "load" | "truck" | "driver" | "document" | "customer" | "settlement" | "invoice"
@@ -140,6 +151,8 @@ export interface NeedsYouEntityRef {
 export type NeedsYouActionKind =
   | "verify" | "assign_load" | "contact_driver" | "request_document"
   | "review" | "confirm_status" | "start_search" | "contact_customer"
+  | "open_compliance" | "assign_responsibility"
+
   | "record_location" | "fix_assignment" | "review_equipment"
 
   | "approve_settlement" | "resolve_dispute" | "record_payment"
@@ -268,7 +281,11 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invoice_overdue: "Invoice overdue",
   customer_response: "Customer waiting",
   truck_going_empty: "Truck going empty",
-  stale_location: "Stale location", invalid_assignment: "Invalid assignment",
+  compliance_missing: "Compliance evidence missing",
+  compliance_rejected: "Compliance evidence rejected",
+  compliance_expiring: "Compliance expiring", compliance_expired: "Compliance expired",
+  compliance_critical: "Critical compliance issue", stale_location: "Stale location",
+  invalid_assignment: "Invalid assignment",
   equipment_unavailable: "Equipment unavailable",
   operational_blocker: "Operational blocker", overdue_service: "Overdue service",
   critical_defect: "Critical defect", unresolved_repair: "Unresolved repair",

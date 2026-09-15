@@ -64,10 +64,18 @@ function truckDocumentById(documentId: string): TruckDocument | undefined {
   const record = storedDocument(documentId);
   const subject = record?.links.find((l) => l.subject.kind === "truck")?.subject;
   if (!subject) return undefined;
-  return truckDocuments(subject.id).find((d) => d.id === documentId);
+  return truckDocumentRowsUnscoped(subject.id).find((d) => d.id === documentId);
 }
 
-function truckDocuments(truckId: string): TruckDocument[] {
+/**
+ * Every document on a truck, with NO access check.
+ *
+ * Callers that are already scoping by something else use this — compliance
+ * builds its subjects from relationships it has filtered itself. Anything
+ * serving a caller directly wants truckDocumentsFor, which takes a context
+ * and gates on it.
+ */
+export function truckDocumentRowsUnscoped(truckId: string): TruckDocument[] {
   return assetDocumentRows(TRUCK_DOCUMENTS, truckId).map((row) => ({
     ...row,
     truckId,
@@ -835,7 +843,7 @@ function getTruckOrThrow(truckId: string, ctx: TruckContext): Truck {
 const DOC_WARNING_STATUSES = new Set(["expired", "expiring_soon", "rejected", "missing"]);
 
 function documentWarnings(truckId: string): number {
-  return truckDocuments(truckId).filter((d) => DOC_WARNING_STATUSES.has(d.status)).length;
+  return truckDocumentRowsUnscoped(truckId).filter((d) => DOC_WARNING_STATUSES.has(d.status)).length;
 }
 
 /** What one organization sees of one permanent truck, right now. */
@@ -992,7 +1000,7 @@ export async function getTruckProfile(truckId: string, ctx: TruckContext): Promi
       .sort(byDate),
     // A carrier's own onboarding paperwork stays its own, exactly as its
     // relationship and unit number do.
-    documents: truckDocuments(truckId).filter(
+    documents: truckDocumentRowsUnscoped(truckId).filter(
       (d) => !d.carrierOrganizationId || canSeeCarrier(visible, d.carrierOrganizationId),
     ),
     events: db().events.filter((e) => e.truckId === truckId)
@@ -1598,7 +1606,7 @@ export async function addTruckDocument(
     detail: replaced ? "Replaces an earlier document, which is kept in history." : undefined,
     organizationId: ctx.organizationId, actorName: ctx.actorName,
   });
-  const row = truckDocuments(truckId).find((d) => d.id === created.documentId);
+  const row = truckDocumentRowsUnscoped(truckId).find((d) => d.id === created.documentId);
   if (!row) throw new TruckNotFoundError();
   return row;
 }
@@ -1648,6 +1656,28 @@ export function truckUnitNumber(truckId: string, organizationId: string): string
 /** This organization's own live lease on a truck, if it has one. */
 export function truckLeaseFor(truckId: string, organizationId: string) {
   return leaseFor(truckId, organizationId);
+}
+
+/**
+ * Read-only registry views for other modules.
+ *
+ * Safety & Compliance reads the truck's relationships and documents through
+ * these rather than keeping a second copy of them: a compliance requirement
+ * points at the document the registry already owns, and stops pointing at it
+ * when the registry says the relationship ended.
+ */
+export function truckRelationshipsFor(organizationId: string): TruckCarrierRelationship[] {
+  return db().relationships.filter((r) => r.organizationId === organizationId);
+}
+
+export function truckDispatchAccessFor(dispatchOrganizationId: string): TruckDispatchAccess[] {
+  return db().dispatchAccess.filter(
+    (d) => d.dispatchOrganizationId === dispatchOrganizationId,
+  );
+}
+
+export function truckOwnerName(truckId: string): string | undefined {
+  return activeOwnership(truckId)?.ownerName;
 }
 
 /** Read-only helpers the screens use for counts, kept honest against the roster. */
@@ -2047,7 +2077,7 @@ export function truckApprovedCarriers(
 export function truckDocumentsFor(truckId: string, ctx: TruckContext): TruckDocument[] {
   if (!ctx.permissions.has("trucks:view")) return [];
   if (accessReason(truckId, ctx) === null) return [];
-  return truckDocuments(truckId);
+  return truckDocumentRowsUnscoped(truckId);
 }
 
 /**
@@ -2064,7 +2094,7 @@ export function truckDocumentProblems(truckId: string): Array<{
   expiresAt?: string;
   rejectionReason?: string;
 }> {
-  return truckDocuments(truckId)
+  return truckDocumentRowsUnscoped(truckId)
     .filter((d) => DOC_WARNING_STATUSES.has(d.status))
     .map((d) => ({
       id: d.id, kind: d.kind, status: d.status,

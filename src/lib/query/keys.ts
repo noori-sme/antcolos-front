@@ -1,6 +1,6 @@
 import type {
-  FleetAssetKind, FleetEquipmentFilters, NeedsYouFilters, SettlementFilters,
-  SettlementSort,
+  ComplianceFilters, FleetAssetKind, FleetEquipmentFilters, NeedsYouFilters,
+  SettlementFilters, SettlementSort,
 } from "@/types";
 
 /**
@@ -72,4 +72,26 @@ export const settlementKeys = {
     [...orgKey(organizationId), "settlements", membershipId, "payees"] as const,
   periods: (organizationId: string) =>
     [...orgKey(organizationId), "settlements", "periods"] as const,
+} as const;
+
+/**
+ * Compliance keys are namespaced by organization AND membership: two people in
+ * the same organization legitimately see different requirements, because a
+ * driver sees their own record and a safety manager sees the fleet.
+ */
+export const complianceKeys = {
+  summary: (organizationId: string, membershipId: string) =>
+    [...orgKey(organizationId), "compliance", membershipId, "summary"] as const,
+  list: (organizationId: string, membershipId: string, filters: ComplianceFilters) =>
+    [...orgKey(organizationId), "compliance", membershipId, "list", filters] as const,
+  groups: (organizationId: string, membershipId: string, filters: ComplianceFilters) =>
+    [...orgKey(organizationId), "compliance", membershipId, "groups", filters] as const,
+  requirement: (organizationId: string, membershipId: string, requirementId: string) =>
+    [...orgKey(organizationId), "compliance", membershipId, "requirement", requirementId] as const,
+  shares: (organizationId: string) =>
+    [...orgKey(organizationId), "compliance", "shares"] as const,
+  snapshots: (organizationId: string, subjectId?: string) =>
+    [...orgKey(organizationId), "compliance", "snapshots", subjectId ?? null] as const,
+  extensions: (organizationId: string) =>
+    [...orgKey(organizationId), "compliance", "extensions"] as const,
 } as const;

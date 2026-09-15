@@ -3,12 +3,15 @@ export type * from "./needs-you";
 export type * from "./home";
 export type * from "./directory";
 export type * from "./loads";
+export type * from "./compliance";
 export type * from "./fleet";
 export type * from "./settlements";
 export type * from "./driver-workflow";
 export type * from "./invoices";
 export type * from "./documents";
 
+
+import type { ComplianceService } from "./compliance";
 import type { DirectoryService } from "./directory";
 import type { FleetService } from "./fleet";
 import type { DriverWorkflowService } from "./driver-workflow";
@@ -25,6 +28,7 @@ export interface AntcolosServices {
   home: HomeService;
   directory: DirectoryService;
   loads: LoadsService;
+  compliance: ComplianceService;
   /** The shared operational layer over trucks, trailers, drivers and leases. */
   fleet: FleetService;
   settlements: SettlementsService;

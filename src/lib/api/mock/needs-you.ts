@@ -9,6 +9,9 @@ import {
 import type {
   EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
+import {
+  complianceNeedsYouItems, isComplianceItemId, replaceComplianceNeedsYou,
+} from "./compliance-needs-you";
 import { isDerivedSettlementItem, settlementNeedsYouItems } from "./settlement-needs-you";
 import { ensureInvoiceNeedsYou } from "./invoice-registry";
 import { mockStore } from "./store";
@@ -70,6 +73,13 @@ export function urgencyScore(item: NeedsYouItem): number {
  */
 function allItems(ctx: ServiceContext): NeedsYouItem[] {
   const org = mockStore.org(ctx.organizationId);
+  // Compliance FIRST, before the document items below are derived.
+  //
+  // Building compliance's subjects seeds evidence rows into the document store,
+  // and the document items are derived from that same store. Deriving documents
+  // first makes the first read of a fresh store disagree with every read after
+  // it — three items, then nine, from identical state and permissions.
+  const compliance = complianceNeedsYouItems(ctx);
   return [
     ...org.needsYou,
     ...documentNeedsYouItems(ctx),
@@ -83,10 +93,19 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // Settlement items are derived too. Their own module has already applied
     // carrier isolation and payee privacy, so they arrive ready to show.
     ...settlementNeedsYouItems(ctx),
+    // Derived above, so the document rows it seeds are already in place.
+    ...compliance,
   ];
 }
 
 function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
+  // Compliance items come through the compliance bridge, which has already
+  // applied the caller's permissions, shares between organizations,
+  // responsibility scope and frozen records. That is stricter than anything
+  // re-derived here, so they are exempt from the whole check rather than only
+  // from the record-scope half.
+  if (isComplianceItemId(item.id)) return true;
+
   // Item-level permission gate.
   if (!item.requires.every((k) => ctx.permissions.has(k))) return false;
 
@@ -95,6 +114,7 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // equipment and their responsibility scope. Re-narrowing them by entity kind
   // here would second-guess a stricter check with a weaker one.
   if (isMaintenanceNeedsYouId(item.id)) return true;
+
 
   // Record scope: a driver sees only items about their own loads and record.
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
@@ -115,6 +135,15 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
     return false;
   }
   return true;
+}
+
+/** Writes go back to whichever producer owns the item. */
+function replaceItem(ctx: ServiceContext, item: NeedsYouItem) {
+  if (isComplianceItemId(item.id)) {
+    replaceComplianceNeedsYou(item);
+    return;
+  }
+  mockStore.replaceNeedsYou(ctx.organizationId, item);
 }
 
 function autoUnsnooze(item: NeedsYouItem): NeedsYouItem {
@@ -191,6 +220,7 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
   }
   ensureInvoiceNeedsYou(ctx.organizationId);
   const item = isInsuranceNeedsYouId(itemId) || isMaintenanceNeedsYouId(itemId)
+    || isComplianceItemId(itemId)
     ? allItems(ctx).find((n) => n.id === itemId)
     : isDocumentNeedsYouId(itemId)
       ? findDocumentNeedsYouItem(ctx, itemId)
@@ -215,6 +245,10 @@ function persist(
 ): NeedsYouItem {
   if (isInsuranceNeedsYouId(item.id)) {
     replaceInsuranceNeedsYou(next);
+    return next;
+  }
+  if (isComplianceItemId(item.id)) {
+    replaceComplianceNeedsYou(next);
     return next;
   }
   if (isMaintenanceNeedsYouId(item.id)) {

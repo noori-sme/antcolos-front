@@ -277,6 +277,32 @@ function currentDriverDocument(requirementKey: string): DocumentRecord | undefin
 /* Profile                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Synchronous reads for other modules.
+ *
+ * The driver's own permanent profile and their carrier relationships live here
+ * and only here. Safety & Compliance reads them to build the compliance a
+ * driver sees about themselves; it never copies the person.
+ */
+export function driverProfileSync(): DriverProfile | null {
+  return PROFILE ? { ...PROFILE } : null;
+}
+
+export function driverRelationshipsSync(): CarrierRelationship[] {
+  return RELATIONSHIPS.map((r) => ({ ...r }));
+}
+
+/**
+ * The driver's documents, read synchronously.
+ *
+ * Compliance builds its subject seeds outside async code, so it needs the rows
+ * without awaiting. There is no local DOCUMENTS array any more — the Document
+ * Center holds them — so this reads the same rows mockListDocuments returns.
+ */
+export function driverDocumentsSync(): DriverDocument[] {
+  return driverDocumentRows();
+}
+
 export async function mockGetDriverProfile(): Promise<DriverProfile | null> {
   await sleep(250);
   return PROFILE ? { ...PROFILE } : null;
