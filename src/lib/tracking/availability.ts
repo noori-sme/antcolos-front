@@ -1,7 +1,7 @@
 import type {
   AvailabilityAttribution, AvailabilityBasis, AvailabilityDecision,
   AvailabilityEvidence, AvailabilityEvidenceKind, AvailabilityState, GeoPoint,
-  IsoDateTime, LoadStatus, LocationSignal, Provenance,
+  IsoDateTime, LoadStatus, LocationPrecision, LocationSignal, Provenance,
 } from "@/types";
 import { operationalCycleKey } from "./cycle";
 import { evaluateGeofence, hasExited, proximityFor, straightLineMiles, type Geofence } from "./geo";
@@ -112,6 +112,15 @@ export interface AvailabilityInput {
     note?: string;
   };
 
+  /**
+   * How precisely this caller may know the position.
+   *
+   * `city_only` is a permission outcome, not missing data, and the engine says
+   * so: anything derived from coordinates is recorded as evidence it DECLINED
+   * to evaluate, naming the permission, rather than silently absent. A blank
+   * where a geofence verdict should be reads as "the truck is not there".
+   */
+  locationPrecision?: LocationPrecision;
   unloadAllowanceMinutes?: number;
   /** Stamped onto the decision. The adapter that supplied the signals. */
   provenance: Provenance;
@@ -178,9 +187,13 @@ export function decideAvailability(input: AvailabilityInput): AvailabilityDecisi
   const positionTrusted = positionIsTrustworthy(latest, now);
   let milesToDelivery: number | undefined;
 
+  const precision: LocationPrecision = input.locationPrecision
+    ?? (latest?.precision ?? "exact");
+  const coordinatesAllowed = precision === "exact";
+
   if (latest) {
     const age = minutesBetween(now.getTime(), Date.parse(latest.observedAt));
-    if (latest.point && input.load?.deliveryPoint) {
+    if (coordinatesAllowed && latest.point && input.load?.deliveryPoint) {
       milesToDelivery = straightLineMiles(latest.point, input.load.deliveryPoint);
     }
     const where = placeOf(latest);
@@ -231,6 +244,20 @@ export function decideAvailability(input: AvailabilityInput): AvailabilityDecisi
     );
   }
 
+  if (!coordinatesAllowed && latest) {
+    found.push(
+      evidence("gps_location", "inferred", "adapter", latest.observedAt, 0,
+        "Distance to the receiver and geofence proximity were not evaluated.",
+        {
+          disregardedReason:
+            "This membership does not hold eld:location:precise:view, so the position is a city "
+            + "and a state. A distance computed from a city centroid would read as a measurement "
+            + "and is not one.",
+          provenance: latest.provenance,
+        }),
+    );
+  }
+
   if (duplicatesDropped > 0) {
     found.push(
       evidence("gps_location", "inferred", "adapter", nowIso, 0,
@@ -257,7 +284,7 @@ export function decideAvailability(input: AvailabilityInput): AvailabilityDecisi
   let believableEntry = false;
   let believableExit = false;
 
-  if (input.receiverFence) {
+  if (input.receiverFence && coordinatesAllowed) {
     const verdict = evaluateGeofence(
       input.receiverFence,
       signals.map((s) => ({ point: s.point, speedMph: s.speedMph, observedAt: s.observedAt })),
@@ -347,7 +374,8 @@ export function decideAvailability(input: AvailabilityInput): AvailabilityDecisi
    */
   const usable = found.filter((e) => !e.disregardedReason);
   const verdict = classify(input, {
-    now, signals, latest, positionTrusted, milesToDelivery, believableEntry, believableExit, usable,
+    now, signals, latest, positionTrusted, milesToDelivery, believableEntry, believableExit,
+    usable, coordinatesAllowed,
   });
 
   const expectedEmptyAt = expectedEmpty(input, verdict.state, now);
@@ -392,6 +420,8 @@ interface Working {
   believableEntry: boolean;
   believableExit: boolean;
   usable: AvailabilityEvidence[];
+  /** False when the caller holds city-level position only. */
+  coordinatesAllowed: boolean;
 }
 
 interface Verdict {

@@ -8,7 +8,9 @@ import {
 } from "@/lib/tracking";
 import { mockStore } from "./store";
 import { driverWorkflowStore } from "./driver-workflow-store";
-import { cityPoint, locationSignalsFor, reportedEta } from "./tracking-signals";
+import {
+  cityPoint, locationScopeFor, locationSignalsFor, reportedEta,
+} from "./tracking-signals";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 import type { MtLoopContext } from "./mt-loop";
 
@@ -276,7 +278,11 @@ export function availabilityForTruck(
 
   const load = liveLoadForTruck(ctx.organizationId, truckId);
   const stop = load ? destinationStop(load) : undefined;
-  const signals = locationSignalsFor(ctx, { truckId, loadId: load?.id });
+  // The ELD module decides whether this workspace may read a position at all,
+  // and how precisely. Both travel into the engine so it can decline out loud
+  // rather than behave as though nothing was reported.
+  const locationScope = locationScopeFor(ctx, truckId);
+  const signals = locationSignalsFor(ctx, { truckId, loadId: load?.id, scope: locationScope });
 
   const input: AvailabilityInput = {
     truckId,
@@ -303,6 +309,7 @@ export function availabilityForTruck(
     receiverFence: receiverFenceFor(load),
     workflow: load ? workflowObservationsFor(ctx.organizationId, load.id) : undefined,
     pod: load ? podStatusFor(ctx.organizationId, load.id) : undefined,
+    locationPrecision: locationScope.precision,
     provenance: provenance(),
   };
 

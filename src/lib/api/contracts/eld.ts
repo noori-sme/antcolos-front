@@ -90,6 +90,15 @@ export interface GrantShareInput {
   viewerOrganizationId: string;
   truckId: string;
   signalClasses: readonly EldSignalClass[];
+  /**
+   * Whether this viewer may hold exact coordinates for this truck.
+   *
+   * Defaults to true when `position` is shared — a dispatcher covering a truck
+   * needs to know how far out it is. Pass `false` to withhold it: the viewer
+   * keeps the city and the state, and loses distance, route progress and
+   * geofence proximity. It is the carrier's call, per truck.
+   */
+  precisePosition?: boolean;
   note?: string;
 }
 

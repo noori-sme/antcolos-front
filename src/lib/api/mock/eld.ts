@@ -23,7 +23,8 @@ import {
   disconnectConnection, endDriverBinding, endVehicleBinding, findRawPayload, grantShare,
   ingestDelivery, listBindingHistory, listConnections, listDevices, listDriverBindings,
   listEvents, listRawPayloads, listShares, listSignals, listVehicleBindings,
-  registerConnection, registerDevice, retireDevice, revokeShare, sharedClassesFor,
+  precisePositionSharedFor, registerConnection, registerDevice, retireDevice, revokeShare,
+  sharedClassesFor,
 } from "./eld-registry";
 
 /**
@@ -89,6 +90,13 @@ interface TruckScope {
   unit: string;
   ownerOrganizationId: string;
   classes: readonly EldSignalClass[];
+  /**
+   * Whether the CARRIER granted exact coordinates for this truck.
+   *
+   * Per truck, never per relationship. A carrier sharing two trucks may
+   * withhold precision on one of them, and this is where that lands.
+   */
+  precisePositionShared: boolean;
 }
 
 const ALL_CLASSES: readonly EldSignalClass[] = ["position", "meters", "diagnostics", "hos"];
@@ -124,6 +132,9 @@ function truckScopes(ctx: ServiceContext): TruckScope[] {
         unit: t.unit,
         ownerOrganizationId: ctx.organizationId,
         classes: ALL_CLASSES,
+        // Its own equipment. There is no share to consult, so the membership's
+        // own permission is the only gate — as it was before sharing existed.
+        precisePositionShared: true,
       }));
   }
 
@@ -139,6 +150,7 @@ function truckScopes(ctx: ServiceContext): TruckScope[] {
       unit,
       ownerOrganizationId: share.ownerOrganizationId,
       classes,
+      precisePositionShared: precisePositionSharedFor(ctx.organizationId, share.truckId),
     });
   }
   return scopes;
@@ -176,8 +188,24 @@ function mayReadHosOf(ctx: ServiceContext, driverProfileId?: string): boolean {
   return Boolean(driverProfileId) && driverProfileId === ctx.driverProfileId;
 }
 
-const mayReadPrecise = (ctx: ServiceContext) =>
-  ctx.permissions.has("eld:location:precise:view");
+/**
+ * Whether this caller may hold exact coordinates for ONE truck.
+ *
+ * Two gates, and both must pass. The membership's permission says what this
+ * person may hold at all; the carrier's share says which trucks it reaches.
+ * Holding `eld:location:precise:view` does not conjure a grant, and being
+ * granted precision does not substitute for the permission — the same shape
+ * `permittedClasses` uses for diagnostics and hours of service, for the same
+ * reason.
+ *
+ * Taking the SCOPE rather than a truck id is deliberate: a scope only exists
+ * for a truck this caller may already see, so there is no way to ask this
+ * question about somebody else's equipment.
+ */
+function mayReadPreciseFor(ctx: ServiceContext, scope: TruckScope): boolean {
+  if (!ctx.permissions.has("eld:location:precise:view")) return false;
+  return scope.precisePositionShared;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Event filtering                                                             */
@@ -210,7 +238,7 @@ function visibleEvents(
       return mayReadHosOf(ctx, event.attribution.driverProfileId);
     }
     return true;
-  }).map((event) => redactEvent(ctx, event));
+  }).map((event) => redactEvent(ctx, event, byTruck.get(event.attribution.truckId ?? "")));
 }
 
 /**
@@ -220,8 +248,16 @@ function visibleEvents(
  * append-only, and a redaction that mutated a row would make one viewer's
  * permissions permanently change what everybody else sees.
  */
-function redactEvent(ctx: ServiceContext, event: TelemetryEvent): TelemetryEvent {
-  if (event.value.kind !== "location" || mayReadPrecise(ctx)) return { ...event };
+function redactEvent(
+  ctx: ServiceContext,
+  event: TelemetryEvent,
+  scope: TruckScope | undefined,
+): TelemetryEvent {
+  // No scope means the event is not attributed to a truck this caller holds a
+  // scope for — a carrier's own unattributed event. Its own equipment, so the
+  // membership permission alone decides.
+  const precise = scope ? mayReadPreciseFor(ctx, scope) : ctx.permissions.has("eld:location:precise:view");
+  if (event.value.kind !== "location" || precise) return { ...event };
   return {
     ...event,
     value: {
@@ -376,7 +412,7 @@ function snapshotFor(
     providerNameOf: providerName,
     includeHos: mayHos,
     includeDiagnostics: allowed.has("diagnostics"),
-    includePreciseLocation: mayReadPrecise(ctx),
+    includePreciseLocation: mayReadPreciseFor(ctx, scope),
     nowMs: Date.now(),
   });
   if (!namesAllowed && device) snapshot.deviceWithheld = true;
@@ -773,6 +809,7 @@ export const mockEldService: EldService = {
       viewerOrganizationId: input.viewerOrganizationId,
       truckId: input.truckId,
       signalClasses: input.signalClasses,
+      precisePosition: input.precisePosition,
       grantedByMembershipId: ctx.membershipId,
       note: input.note,
     }) satisfies EldShare;
@@ -881,3 +918,101 @@ export function eldScopesFor(ctx: ServiceContext) {
 }
 
 export type { EldConnectionState, EldDeviceView, EldVehicleBinding, TelemetrySignalKind };
+
+/* -------------------------------------------------------------------------- */
+/* The synchronous door other modules read telemetry through                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ HOW ANOTHER MODULE READS TELEMETRY ★
+ *
+ * One function, and it goes through exactly the same helpers the async service
+ * does — `truckScopes`, `permittedClasses`, `snapshotFor`, `visibleEvents`.
+ * That is the whole point of it existing: Tracking needs a synchronous read,
+ * and the alternative was for Tracking to reach into the registry and re-derive
+ * who may see what. Two implementations of a sharing rule is one implementation
+ * and one bug waiting to be found by a carrier whose position leaked.
+ *
+ * Everything the caller needs in order to be honest travels with the answer:
+ *
+ *   `scoped`   whether this workspace may read this truck's telemetry AT ALL.
+ *              False for a dispatch workspace with no share, and that is not
+ *              an error — it is the answer.
+ *   `precise`  whether coordinates came back. A viewer without
+ *              `eld:location:precise:view` gets city and state and no numbers,
+ *              and anything computed from coordinates must decline rather than
+ *              quietly produce nothing.
+ *   `classes`  the signal classes actually permitted, after both the carrier's
+ *              share and this membership's permissions.
+ *
+ * `undefined` means "not entitled to ask", and is deliberately the same answer
+ * for a truck that does not exist, one that is not shared, and a membership
+ * without `eld:view`. A caller that could tell those apart could enumerate
+ * another carrier's fleet.
+ */
+export interface EldTelemetryRead {
+  truckId: string;
+  truckUnit: string;
+  ownerOrganizationId: string;
+  scoped: true;
+  precise: boolean;
+  classes: readonly EldSignalClass[];
+  snapshot: EquipmentTelemetrySnapshot;
+  /** Location and motion events this caller may read, newest first. */
+  observations: TelemetryEvent[];
+}
+
+export function eldTelemetryForTruckSync(
+  ctx: ServiceContext,
+  truckId: string,
+): EldTelemetryRead | undefined {
+  if (!ctx.permissions.has("eld:view")) return undefined;
+
+  const scope = truckScopes(ctx).find((s) => s.truckId === truckId);
+  if (!scope) return undefined;
+
+  const allowed = permittedClasses(ctx, scope);
+  if (!allowed.has("position")) return undefined;
+
+  const raw = listEvents(scope.ownerOrganizationId, {
+    truckId,
+    kinds: ["location", "motion"],
+    ingestion: ["accepted"],
+    limit: 500,
+  });
+
+  return {
+    truckId,
+    truckUnit: scope.unit,
+    ownerOrganizationId: scope.ownerOrganizationId,
+    scoped: true,
+    precise: mayReadPreciseFor(ctx, scope),
+    classes: [...allowed],
+    snapshot: snapshotFor(ctx, scope),
+    // Redacted by the same function the event list uses, so a caller cannot
+    // reach a coordinate here that the events endpoint would have withheld.
+    observations: visibleEvents(ctx, raw, [scope]),
+  };
+}
+
+/**
+ * Whether this workspace may read this truck's telemetry, without building the
+ * snapshot. For a caller deciding whether to say "not shared with you".
+ */
+export function eldTruckIsScopedSync(ctx: ServiceContext, truckId: string): boolean {
+  if (!ctx.permissions.has("eld:view")) return false;
+  const scope = truckScopes(ctx).find((s) => s.truckId === truckId);
+  return Boolean(scope && permittedClasses(ctx, scope).has("position"));
+}
+
+/**
+ * Whether this caller may hold coordinates for one truck.
+ *
+ * Deliberately takes a truck: since precision is granted per truck there is no
+ * honest context-level answer, and a helper that gave one would be wrong for
+ * every carrier that withheld it on a single unit.
+ */
+export function eldPreciseLocationAllowedFor(ctx: ServiceContext, truckId: string): boolean {
+  const scope = truckScopes(ctx).find((s) => s.truckId === truckId);
+  return Boolean(scope && mayReadPreciseFor(ctx, scope));
+}
