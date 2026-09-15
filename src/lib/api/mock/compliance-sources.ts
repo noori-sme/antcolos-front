@@ -14,7 +14,7 @@ import type {
 import { ORG_DOCUMENT_IDS } from "./seed";
 import { mockStore } from "./store";
 import {
-  truckDocumentsFor, truckOwnerName, truckRecord, truckRelationshipsFor,
+  truckDocumentRowsUnscoped, truckOwnerName, truckRecord, truckRelationshipsFor,
 } from "./truck-registry";
 import {
   trailerDocumentsFor, trailerOwnerName, trailerRecord, trailerRelationshipsFor,
@@ -80,14 +80,20 @@ function fromLifecycleStatus(status: DocumentLifecycleStatus): ComplianceEvidenc
 /** Driver document status, read through from the driver's own checklist. */
 function fromDriverDocumentStatus(status: DocumentStatus): ComplianceEvidenceState {
   switch (status) {
-    case "not_started": return "missing";
-    case "uploading":
-    case "uploaded":
-    case "under_review": return "pending_review";
+    // The Document Center's lifecycle replaced this branch's own status list:
+    // not_started became missing, and uploading/uploaded/under_review
+    // collapsed into selected_local (chosen, not yet submitted) and
+    // pending_review (submitted, waiting on a person).
+    case "missing": return "missing";
+    case "selected_local":
+    case "pending_review": return "pending_review";
     case "approved": return "approved";
     case "rejected": return "rejected";
     case "expired": return "expired";
     case "expiring_soon": return "expiring_soon";
+    // A superseded document has been replaced by a newer version, so it is no
+    // longer the evidence for anything.
+    case "superseded": return "missing";
   }
 }
 
@@ -544,7 +550,7 @@ function truckSubjects(org: Organization): ComplianceSubjectSeed[] {
       const truck = truckRecord(relationship.truckId);
       if (!truck) return null;
 
-      const evidence: EvidenceLink[] = truckDocumentsFor(truck.truckId)
+      const evidence: EvidenceLink[] = truckDocumentRowsUnscoped(truck.truckId)
         .map((doc): EvidenceLink | null => {
           const key = TRUCK_DOCUMENT_KEYS[doc.kind];
           if (!key) return null;

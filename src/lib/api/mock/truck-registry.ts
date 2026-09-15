@@ -25,6 +25,62 @@ import type {
 } from "@/types";
 import { DOCUMENT_LABEL } from "@/lib/fleet/equipment";
 import { normalizeVin, validateVin } from "@/lib/fleet/vin";
+import { truckDocumentTypeKey, truckRequirementKey } from "@/lib/documents/requirements";
+import {
+  addAssetDocument, assetDocumentRows, seedAssetDocument, submitAssetDocument,
+  type AssetDocumentAdapter,
+} from "./asset-documents";
+import {
+  clearDocumentsForSubjectKind, documentById as storedDocument, endRelationshipDocuments,
+} from "./document-store";
+
+/**
+ * Truck documents are rows in THE document store, not in this registry.
+ *
+ * `TruckDocument` is still the shape the fleet screens read, but it is a
+ * projection now: the same record the Document Center lists, the same
+ * versioning, the same review state. Two stores that agreed most of the time
+ * would be worse than one, so there is one.
+ */
+const TRUCK_DOCUMENTS: AssetDocumentAdapter<TruckDocumentKind> = {
+  subjectKind: "truck",
+  requirementKey: truckRequirementKey,
+  typeKey: truckDocumentTypeKey,
+  kindFromRequirementKey: (key) =>
+    key.startsWith("truck:") ? (key.slice("truck:".length) as TruckDocumentKind) : undefined,
+};
+
+/** The label a document carries for its truck. Snapshotted when it is linked. */
+function truckLabel(truckId: string): string {
+  const found = registry?.trucks.find((t) => t.truckId === truckId);
+  const unit = registry?.relationships.find(
+    (r) => r.truckId === truckId && r.status !== "ended" && r.unitNumber,
+  )?.unitNumber;
+  if (!found) return unit ? `Unit ${unit}` : "Truck";
+  return `${unit ? `Unit ${unit} · ` : ""}${found.year} ${found.make} ${found.model}`;
+}
+
+function truckDocumentById(documentId: string): TruckDocument | undefined {
+  const record = storedDocument(documentId);
+  const subject = record?.links.find((l) => l.subject.kind === "truck")?.subject;
+  if (!subject) return undefined;
+  return truckDocumentRowsUnscoped(subject.id).find((d) => d.id === documentId);
+}
+
+/**
+ * Every document on a truck, with NO access check.
+ *
+ * Callers that are already scoping by something else use this — compliance
+ * builds its subjects from relationships it has filtered itself. Anything
+ * serving a caller directly wants truckDocumentsFor, which takes a context
+ * and gates on it.
+ */
+export function truckDocumentRowsUnscoped(truckId: string): TruckDocument[] {
+  return assetDocumentRows(TRUCK_DOCUMENTS, truckId).map((row) => ({
+    ...row,
+    truckId,
+  }));
+}
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -93,6 +149,8 @@ export const TRUCK_IDS = {
   mdC31: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2003",
   mdA18: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2004",
   cs47: "c3d2e4f6-3333-4c30-7e03-2d2f7a9b3001",
+  cs52: "c3d2e4f6-3333-4c30-7e03-2d2f7a9b3002",
+  cs58: "c3d2e4f6-3333-4c30-7e03-2d2f7a9b3003",
   crosswind: "d4c3f5a7-4444-4d40-6f04-3e3a8b1c4001",
   claimed: "e5b4a6c8-5555-4e50-5a05-4f4b9c2d5001",
 } as const;
@@ -124,7 +182,6 @@ interface RegistryState {
   dispatchAccess: TruckDispatchAccess[];
   assignments: TruckDriverAssignment[];
   leases: TruckOperatingLease[];
-  documents: TruckDocument[];
   events: TruckEvent[];
 }
 
@@ -137,15 +194,33 @@ interface RegistryState {
  */
 let registry: RegistryState | null = null;
 
+/**
+ * Fixture documents are seeded AFTER the registry is assigned.
+ *
+ * They snapshot a truck's label at link time, and resolving that label reads
+ * the registry — so seeding during construction would read a half-built one.
+ */
+let pendingDocumentSeed: (() => void) | null = null;
+
 function db(): RegistryState {
-  if (!registry) registry = buildFixtures();
+  if (!registry) {
+    registry = buildFixtures();
+    const seed = pendingDocumentSeed;
+    pendingDocumentSeed = null;
+    seed?.();
+  }
   return registry;
 }
 
 /** Test hook. Never called by the UI. */
 export function resetTruckRegistry() {
   seq = 0;
-  registry = buildFixtures();
+  // Truck documents live in the shared store, so rebuilding the registry has to
+  // clear them there — and only them, since trailers and drivers rebuild apart.
+  clearDocumentsForSubjectKind("truck");
+  registry = null;
+  pendingDocumentSeed = null;
+  db();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -228,17 +303,32 @@ function assign(
   };
 }
 
+const ORG_DISPLAY_NAMES: Record<string, string> = {
+  org_northline: "Northline Freight",
+  org_baxter: "Baxter Transit LLC",
+  org_cascade: "Cascade Haul",
+  org_meridian: "Meridian Dispatch",
+  org_summit: "Summit Dispatch",
+  org_ridgeway: "Ridgeway Carriers",
+  org_crosswind: "Crosswind Freight",
+  org_halberd: "Halberd Leasing LLC",
+};
+
+/** Seeds one fixture document straight into the shared store. */
 function doc(
   truckId: string, kind: TruckDocumentKind, status: TruckDocument["status"],
   organizationId: string, fileName?: string, expiresAt?: string, rejectionReason?: string,
-): TruckDocument {
-  return {
-    id: rowId("doc"), truckId, kind, status, fileName,
-    fileType: fileName?.endsWith(".pdf") ? "application/pdf" : "image/jpeg",
-    sizeBytes: fileName ? 820_000 : undefined,
-    expiresAt, rejectionReason,
-    addedByOrganizationId: organizationId, createdAt: daysAgo(90), updatedAt: daysAgo(20),
-  };
+): void {
+  seedAssetDocument(TRUCK_DOCUMENTS, {
+    assetId: truckId,
+    assetLabel: truckLabel(truckId),
+    assetHref: `/fleet/trucks/${truckId}`,
+    kind, status,
+    organizationId,
+    organizationName: ORG_DISPLAY_NAMES[organizationId] ?? organizationId,
+    fileName, expiresAt, rejectionReason,
+    createdAt: daysAgo(90), updatedAt: daysAgo(20),
+  });
 }
 
 function evt(
@@ -330,6 +420,16 @@ function buildFixtures(): RegistryState {
     truck(T.cs47, "1FTYE2CM1LKA99887", "sprinter_van", 2020, "Mercedes-Benz", "Sprinter 3500", "available",
       plate("OR-1120S", "OR", 260, "Cascade Haul Co."), SPRINTER_SPECS,
       { city: "Portland", state: "OR" }, "org_cascade", "White"),
+    // Empty, and nobody has recorded WHERE. A real gap rather than a tidy
+    // fixture: the MT Loop cannot be worked without it, and Needs You says so.
+    truck(T.cs52, "1FDWE3FL7MDC10022", "box_truck", 2021, "Ford", "E-450", "available",
+      plate("OR-8845B", "OR", 190, "Cascade Haul Co."), BOX_SPECS,
+      { homeTerminal: "Portland, OR" }, "org_cascade", "White"),
+    // A tractor about to go empty with no trailer under it.
+    truck(T.cs58, "1XKYD49X8NJ458812", "tractor", 2022, "Kenworth", "T680", "expected_available",
+      plate("OR-2207T", "OR", 280, "Cascade Haul Co."), TRACTOR_SPECS,
+      { city: "Salem", state: "OR", expectedAvailableAt: hoursFromNow(6), homeTerminal: "Portland, OR" },
+      "org_cascade", "Blue"),
   ];
 
   const ownership: TruckOwnershipRecord[] = [
@@ -348,6 +448,8 @@ function buildFixtures(): RegistryState {
     own(T.claimed, "organization", "Northline Freight LLC", daysAgo(260), "active", undefined, "org_northline"),
     own(T.mdA18, "organization", "Baxter Transit LLC", daysAgo(280), "active", undefined, "org_baxter"),
     own(T.cs47, "organization", "Cascade Haul Co.", daysAgo(340), "active", undefined, "org_cascade"),
+    own(T.cs52, "organization", "Cascade Haul Co.", daysAgo(250), "active", undefined, "org_cascade"),
+    own(T.cs58, "organization", "Cascade Haul Co.", daysAgo(190), "active", undefined, "org_cascade"),
   ];
 
   const relationships: TruckCarrierRelationship[] = [
@@ -366,6 +468,8 @@ function buildFixtures(): RegistryState {
     rel(T.claimed, "org_northline", "Northline Freight", "carrier_owned", "127", "approved", daysAgo(260), 120, 45),
     rel(T.mdA18, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-18", "approved", daysAgo(280), 100, 30),
     rel(T.cs47, "org_cascade", "Cascade Haul", "carrier_owned", "47", "approved", daysAgo(340), 105, 30),
+    rel(T.cs52, "org_cascade", "Cascade Haul", "carrier_owned", "52", "approved", daysAgo(250), 110, 35),
+    rel(T.cs58, "org_cascade", "Cascade Haul", "carrier_owned", "58", "approved", daysAgo(190), 145, 60),
   ];
 
   // Meridian dispatches for carriers it neither owns nor operates for.
@@ -374,6 +478,21 @@ function buildFixtures(): RegistryState {
     dispatch(T.mdB04, "org_meridian", "Meridian Dispatch", "org_ridgeway", "Ridgeway Carriers", "B-04", daysAgo(90)),
     dispatch(T.mdA18, "org_meridian", "Meridian Dispatch", "org_baxter", "Baxter Transit LLC", "A-18", daysAgo(70)),
     dispatch(T.crosswind, "org_meridian", "Meridian Dispatch", "org_crosswind", "Crosswind Freight", "C-31", daysAgo(60)),
+    // Summit dispatches two of Northline's units. A second dispatch agency on
+    // the same carrier, so "scoped equipment" is visibly per-workspace.
+    dispatch(T.nl111, "org_summit", "Summit Dispatch", "org_northline", "Northline Freight LLC", "111", daysAgo(45)),
+    dispatch(T.nl131, "org_summit", "Summit Dispatch", "org_northline", "Northline Freight LLC", "131", daysAgo(30)),
+    // Baxter handed Summit a truck that is currently running under NORTHLINE's
+    // operating lease. Both records are genuine and they disagree, which is
+    // exactly what an Operating Authority conflict is.
+    dispatch(T.nl107, "org_summit", "Summit Dispatch", "org_baxter", "Baxter Transit LLC", "BX-07", daysAgo(10)),
+    // Cascade dispatches through one person working alone.
+    dispatch(T.cs47, "org_solo", "Sam Murtaza — Dispatch", "org_cascade", "Cascade Haul Co.", "47", daysAgo(50)),
+    dispatch(T.cs52, "org_solo", "Sam Murtaza — Dispatch", "org_cascade", "Cascade Haul Co.", "52", daysAgo(50)),
+    dispatch(T.cs58, "org_solo", "Sam Murtaza — Dispatch", "org_cascade", "Cascade Haul Co.", "58", daysAgo(20)),
+    // Crosswind granted a SECOND agency access to a truck Meridian already has.
+    // Two workspaces, one truck, one MT Loop: a conflict both of them must see.
+    dispatch(T.crosswind, "org_solo", "Sam Murtaza — Dispatch", "org_crosswind", "Crosswind Freight", "C-31", daysAgo(5)),
   ];
 
   const assignments: TruckDriverAssignment[] = [
@@ -384,61 +503,43 @@ function buildFixtures(): RegistryState {
     // History on 121: a driver who has moved on. The profile is untouched.
     assign(T.nl121, "org_northline", "dp_kelsey", "Kelsey Nguyen", daysAgo(180), daysAgo(60), "Left the carrier."),
     assign(T.claimed, "org_northline", "dp_ray", "Ray Bell", daysAgo(150), daysAgo(20), "Reassigned to another truck."),
-    // The driver profile id the Cascade membership carries. The session, the
-    // loads, Home and the seed all know this person by that id; this row was
-    // the one place using the driver-side profile id instead, which meant the
-    // driver could not see the truck they are assigned to.
+    // The id the Cascade driver MEMBERSHIP carries (see session fixtures), not
+    // the driver registry's dp_* profile id. Load scoping and the maintenance
+    // overlay both compare ctx.driverProfileId against this field, so a dp_*
+    // value here silently detaches the driver from their own truck.
     assign(T.cs47, "org_cascade", "drv_cascade_0192", "Sam Murtaza", daysAgo(108)),
+    assign(T.cs58, "org_cascade", "dp_owen", "Owen Fitz", daysAgo(60)),
   ];
 
-  const documents: TruckDocument[] = [
-    doc(T.nl104, "registration", "approved", "org_northline", "reg-104.pdf", daysFromNow(240)),
-    doc(T.nl104, "title", "approved", "org_northline", "title-104.pdf"),
-    doc(T.nl104, "insurance", "approved", "org_northline", "coi-104.pdf", daysFromNow(180)),
-    doc(T.nl104, "annual_inspection", "approved", "org_northline", "inspection-104.pdf", daysFromNow(200)),
-    doc(T.nl107, "registration", "approved", "org_northline", "reg-107.pdf", daysFromNow(120)),
-    doc(T.nl107, "title", "approved", "org_northline", "title-107.pdf"),
+  const seedDocuments = () => {
+    doc(T.nl104, "registration", "approved", "org_northline", "reg-104.pdf", daysFromNow(240));
+    doc(T.nl104, "title", "approved", "org_northline", "title-104.pdf");
+    doc(T.nl104, "insurance", "approved", "org_northline", "coi-104.pdf", daysFromNow(180));
+    doc(T.nl104, "annual_inspection", "approved", "org_northline", "inspection-104.pdf", daysFromNow(200));
+    doc(T.nl107, "registration", "approved", "org_northline", "reg-107.pdf", daysFromNow(120));
+    doc(T.nl107, "title", "approved", "org_northline", "title-107.pdf");
     // Expiring soon — the state a fleet manager actually needs to see coming.
-    doc(T.nl107, "insurance", "expiring_soon", "org_northline", "coi-107.pdf", daysFromNow(21)),
-    doc(T.nl111, "registration", "expired", "org_northline", "reg-111.pdf", daysFromNow(-9)),
-    doc(T.nl111, "title", "approved", "org_northline", "title-111.pdf"),
-    doc(T.nl115, "registration", "approved", "org_northline", "reg-115.pdf", daysFromNow(400)),
+    doc(T.nl107, "insurance", "expiring_soon", "org_northline", "coi-107.pdf", daysFromNow(21));
+    doc(T.nl111, "registration", "expired", "org_northline", "reg-111.pdf", daysFromNow(-9));
+    doc(T.nl111, "title", "approved", "org_northline", "title-111.pdf");
+    doc(T.nl115, "registration", "approved", "org_northline", "reg-115.pdf", daysFromNow(400));
     doc(T.nl115, "annual_inspection", "rejected", "org_northline", "inspection-115.jpg", undefined,
-      "The photo cuts off the inspector's signature and the date. Please upload the full page."),
-    doc(T.nl118, "registration", "approved", "org_northline", "reg-118.pdf", daysFromNow(300)),
-    doc(T.nl118, "lease_agreement", "pending_review", "org_northline", "lease-hale.pdf"),
-    doc(T.claimed, "registration", "approved", "org_northline", "reg-127.pdf", daysFromNow(60)),
-    doc(T.nl131, "registration", "approved", "org_northline", "reg-131.pdf", daysFromNow(330)),
-    doc(T.nl131, "title", "approved", "org_northline", "title-131.pdf"),
-    doc(T.nl131, "insurance", "approved", "org_northline", "coi-131.pdf", daysFromNow(190)),
-    doc(T.nl131, "annual_inspection", "approved", "org_northline", "inspection-131.pdf", daysFromNow(240)),
-    // The rest of Northline's fleet paperwork. A fleet where only two units
-    // have an inspection on file is not a fleet, it is a fixture — and it makes
-    // every downstream count read as a crisis rather than as normal operation.
-    doc(T.nl107, "annual_inspection", "approved", "org_northline", "inspection-107.pdf", daysFromNow(170)),
-    doc(T.nl111, "insurance", "approved", "org_northline", "coi-111.pdf", daysFromNow(150)),
-    doc(T.nl111, "annual_inspection", "approved", "org_northline", "inspection-111.pdf", daysFromNow(220)),
-    doc(T.nl115, "insurance", "approved", "org_northline", "coi-115.pdf", daysFromNow(140)),
-    doc(T.nl118, "insurance", "approved", "org_northline", "coi-118.pdf", daysFromNow(200)),
-    doc(T.nl118, "annual_inspection", "approved", "org_northline", "inspection-118.pdf", daysFromNow(160)),
-    doc(T.claimed, "insurance", "approved", "org_northline", "coi-127.pdf", daysFromNow(130)),
-    doc(T.claimed, "annual_inspection", "approved", "org_northline", "inspection-127.pdf", daysFromNow(90)),
-    // Baxter runs 104 and 107 under its own authority, so it holds its OWN
-    // insurance evidence on them. Two carriers, one truck, two certificates.
-    doc(T.nl104, "insurance", "approved", "org_baxter", "baxter-coi-104.pdf", daysFromNow(165)),
-    doc(T.nl107, "insurance", "approved", "org_baxter", "baxter-coi-107.pdf", daysFromNow(155)),
-    // Baxter's own fleet.
-    doc(T.mdA12, "registration", "approved", "org_baxter", "reg-a12.pdf", daysFromNow(180)),
-    doc(T.mdA12, "insurance", "approved", "org_baxter", "coi-a12.pdf", daysFromNow(175)),
-    doc(T.mdA12, "annual_inspection", "approved", "org_baxter", "inspection-a12.pdf", daysFromNow(210)),
-    doc(T.mdA18, "registration", "approved", "org_baxter", "reg-a18.pdf", daysFromNow(200)),
-    doc(T.mdA18, "insurance", "approved", "org_baxter", "coi-a18.pdf", daysFromNow(175)),
-    // Submitted and not yet accepted — the state that is not the same as done.
-    doc(T.mdA18, "annual_inspection", "pending_review", "org_baxter", "inspection-a18.pdf"),
-    doc(T.cs47, "registration", "approved", "org_cascade", "reg-47.pdf", daysFromNow(260)),
-    doc(T.cs47, "insurance", "approved", "org_cascade", "coi-47.pdf", daysFromNow(120)),
-    doc(T.cs47, "annual_inspection", "approved", "org_cascade", "inspection-47.pdf", daysFromNow(190)),
-  ];
+      "The photo cuts off the inspector's signature and the date. Please upload the full page.");
+    doc(T.nl118, "registration", "approved", "org_northline", "reg-118.pdf", daysFromNow(300));
+    doc(T.nl118, "lease_agreement", "pending_review", "org_northline", "lease-hale.pdf");
+    doc(T.claimed, "registration", "approved", "org_northline", "reg-127.pdf", daysFromNow(60));
+    doc(T.nl131, "registration", "approved", "org_northline", "reg-131.pdf", daysFromNow(330));
+    doc(T.nl131, "title", "approved", "org_northline", "title-131.pdf");
+    doc(T.nl131, "insurance", "approved", "org_northline", "coi-131.pdf", daysFromNow(190));
+    doc(T.nl131, "annual_inspection", "approved", "org_northline", "inspection-131.pdf", daysFromNow(240));
+    doc(T.cs47, "registration", "approved", "org_cascade", "reg-47.pdf", daysFromNow(260));
+    doc(T.cs47, "insurance", "approved", "org_cascade", "coi-47.pdf", daysFromNow(150));
+    doc(T.cs52, "registration", "approved", "org_cascade", "reg-52.pdf", daysFromNow(190));
+    // Lapses inside the month. Not yet a stoppage; worth knowing before it is.
+    doc(T.cs52, "insurance", "expiring_soon", "org_cascade", "coi-52.pdf", daysFromNow(16));
+    doc(T.cs58, "registration", "approved", "org_cascade", "reg-58.pdf", daysFromNow(280));
+    doc(T.cs58, "annual_inspection", "approved", "org_cascade", "inspection-58.pdf", daysFromNow(120));
+  };
 
   const claims: TruckOwnershipClaim[] = [
     {
@@ -502,7 +603,11 @@ function buildFixtures(): RegistryState {
     events.push(evt(t.truckId, "created", "Truck registered in Antcolos", t.createdAt, t.createdByOrganizationId));
   }
 
-  return { trucks, ownership, claims, relationships, dispatchAccess, assignments, documents, events, leases };
+  // Documents are seeded into the shared store, not into this registry, and
+  // only after `registry` is assigned so labels can be resolved from it.
+  pendingDocumentSeed = seedDocuments;
+
+  return { trucks, ownership, claims, relationships, dispatchAccess, assignments, events, leases };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -738,9 +843,7 @@ function getTruckOrThrow(truckId: string, ctx: TruckContext): Truck {
 const DOC_WARNING_STATUSES = new Set(["expired", "expiring_soon", "rejected", "missing"]);
 
 function documentWarnings(truckId: string): number {
-  return db().documents.filter(
-    (d) => d.truckId === truckId && DOC_WARNING_STATUSES.has(d.status),
-  ).length;
+  return truckDocumentRowsUnscoped(truckId).filter((d) => DOC_WARNING_STATUSES.has(d.status)).length;
 }
 
 /** What one organization sees of one permanent truck, right now. */
@@ -752,9 +855,15 @@ function project(truck: Truck, ctx: TruckContext): FleetTruck {
   const visible = visibleCarrierOrgIds(truck.truckId, ctx);
   // The operating carrier's driver belongs to that carrier. Another approved
   // carrier waiting for the truck is not entitled to know who is on it.
-  const assignedFor = canSeeCarrier(visible, operator?.organizationId)
-    ? operator?.organizationId ?? ctx.organizationId
-    : ctx.organizationId;
+  //
+  // With nobody holding the lease there is no operating carrier to ask, so a
+  // dispatch workspace falls back to the carrier that granted it access: that
+  // carrier's driver assignment is precisely what it was given the truck to
+  // dispatch. A carrier has no grant and falls back to itself, exactly as
+  // before.
+  const assignedFor = operator
+    ? (canSeeCarrier(visible, operator.organizationId) ? operator.organizationId : ctx.organizationId)
+    : (dispatchGrant?.grantedByCarrierOrganizationId ?? ctx.organizationId);
   const assignment = activeAssignment(truck.truckId, assignedFor);
   const state = activationStateFor(truck.truckId, ctx.organizationId);
   const mine = leaseFor(truck.truckId, ctx.organizationId);
@@ -768,6 +877,7 @@ function project(truck: Truck, ctx: TruckContext): FleetTruck {
     // A dispatcher's "runs under" is the carrier that granted it access — the
     // one whose freight it moves — which is true whether or not a lease is live.
     carrierName: dispatchGrant?.grantedByCarrierName,
+    carrierOrganizationId: dispatchGrant?.grantedByCarrierOrganizationId,
     equipment: truck.equipmentType,
     status: truck.status,
     currentDriverId: assignment?.driverProfileId,
@@ -888,7 +998,11 @@ export async function getTruckProfile(truckId: string, ctx: TruckContext): Promi
     assignments: db().assignments
       .filter((a) => a.truckId === truckId && canSeeCarrier(visible, a.organizationId))
       .sort(byDate),
-    documents: db().documents.filter((d) => d.truckId === truckId),
+    // A carrier's own onboarding paperwork stays its own, exactly as its
+    // relationship and unit number do.
+    documents: truckDocumentRowsUnscoped(truckId).filter(
+      (d) => !d.carrierOrganizationId || canSeeCarrier(visible, d.carrierOrganizationId),
+    ),
     events: db().events.filter((e) => e.truckId === truckId)
       .map((e) => redactEvent(e, visible))
       .sort((a, b) => b.at.localeCompare(a.at)),
@@ -1124,7 +1238,8 @@ const ORG_NAMES: Record<string, string> = {
   org_crosswind: "Crosswind Freight",
   org_halberd: "Halberd Leasing LLC",
 };
-function organizationNameFor(id: string): string {
+/** The one place mock organization names live. Shared, never re-typed. */
+export function organizationNameFor(id: string): string {
   return ORG_NAMES[id] ?? id;
 }
 
@@ -1329,6 +1444,18 @@ export async function endCarrierRelationship(
       ? { ...a, endedAt: iso(now()), endReason: "Carrier relationship ended." }
       : a,
   );
+  // Documents are NOT deleted when a relationship ends. This carrier's links
+  // are closed and its shares revoked, a snapshot is taken of each, and every
+  // record, version and event survives — what was true while the relationship
+  // lasted stays true afterwards.
+  endRelationshipDocuments({
+    subjectKind: "truck",
+    subjectId: relationship.truckId,
+    organizationId: ctx.organizationId,
+    reason: reason.trim() || "Carrier relationship ended.",
+    actorName: ctx.actorName,
+  });
+
   record({
     truckId: relationship.truckId, at: iso(now()), kind: "relationship_ended",
     summary: `${relationship.organizationName} stopped operating this truck`,
@@ -1460,59 +1587,51 @@ export async function addTruckDocument(
   getTruckOrThrow(truckId, ctx);
 
   // A replaced document is superseded, never deleted: the carrier keeps what it
-  // was given, and the history stays readable.
-  const previous = db().documents.find(
-    (d) => d.truckId === truckId && d.kind === kind && d.status !== "superseded",
-  );
-  const document: TruckDocument = {
-    id: rowId("doc"), truckId, kind, status: "selected_local",
-    fileName: file.name, fileType: file.type || "application/octet-stream", sizeBytes: file.size,
-    expiresAt, addedByOrganizationId: ctx.organizationId,
-    createdAt: iso(now()), updatedAt: iso(now()),
-  };
-  if (previous) {
-    db().documents = db().documents.map((d) =>
-      d.id === previous.id ? { ...d, status: "superseded" as const, supersededByDocumentId: document.id } : d,
-    );
-  }
-  db().documents = [...db().documents, document];
+  // was given, and the history stays readable. The versioning itself lives in
+  // the shared store, so a truck document versions exactly as a driver's does.
+  const { record: created, replaced } = addAssetDocument(TRUCK_DOCUMENTS, {
+    assetId: truckId,
+    assetLabel: truckLabel(truckId),
+    assetHref: `/fleet/trucks/${truckId}`,
+    kind, file,
+    organizationId: ctx.organizationId,
+    organizationName: ORG_DISPLAY_NAMES[ctx.organizationId] ?? ctx.organizationId,
+    actorName: ctx.actorName,
+    membershipId: ctx.membershipId,
+    expiresAt,
+  });
   record({
     truckId, at: iso(now()), kind: "document_added",
     summary: `${DOCUMENT_LABEL[kind] ?? kind} attached`,
-    detail: previous ? "Replaces an earlier document, which is kept in history." : undefined,
+    detail: replaced ? "Replaces an earlier document, which is kept in history." : undefined,
     organizationId: ctx.organizationId, actorName: ctx.actorName,
   });
-  return { ...document };
+  const row = truckDocumentRowsUnscoped(truckId).find((d) => d.id === created.documentId);
+  if (!row) throw new TruckNotFoundError();
+  return row;
 }
 
 export async function submitTruckDocument(documentId: string, ctx: TruckContext): Promise<TruckDocument> {
   await sleep(350);
   requirePermissions(ctx, "trucks:documents:manage");
-  const existing = db().documents.find((d) => d.id === documentId);
+  const existing = truckDocumentById(documentId);
   if (!existing) throw new TruckNotFoundError();
   getTruckOrThrow(existing.truckId, ctx);
-  const updated: TruckDocument = { ...existing, status: "pending_review", updatedAt: iso(now()) };
-  db().documents = db().documents.map((d) => (d.id === documentId ? updated : d));
+  submitAssetDocument(documentId, ctx.actorName, ctx.organizationId);
   record({
     truckId: existing.truckId, at: iso(now()), kind: "document_reviewed",
     summary: `${DOCUMENT_LABEL[existing.kind] ?? existing.kind} sent for review`,
     organizationId: ctx.organizationId, actorName: ctx.actorName,
   });
-  return { ...updated };
+  const row = truckDocumentById(documentId);
+  if (!row) throw new TruckNotFoundError();
+  return row;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Read-only windows for the trailer registry                                  */
 /* -------------------------------------------------------------------------- */
 
-/**
- * The raw truck record, with no authorization of its own.
- *
- * Only the trailer registry calls this, and only after doing its own access
- * check on the trailer. It exists so a compatibility check can read a power
- * unit's specifications without going through an awaited, permission-gated
- * profile call in the middle of a critical section.
- */
 export function truckRecord(truckId: string): Truck | undefined {
   return db().trucks.find((t) => t.truckId === truckId);
 }
@@ -1549,10 +1668,6 @@ export function truckLeaseFor(truckId: string, organizationId: string) {
  */
 export function truckRelationshipsFor(organizationId: string): TruckCarrierRelationship[] {
   return db().relationships.filter((r) => r.organizationId === organizationId);
-}
-
-export function truckDocumentsFor(truckId: string): TruckDocument[] {
-  return db().documents.filter((d) => d.truckId === truckId);
 }
 
 export function truckDispatchAccessFor(dispatchOrganizationId: string): TruckDispatchAccess[] {
@@ -1872,4 +1987,117 @@ export async function approveCarrierRelationship(
     organizationId: ctx.organizationId, actorName: ctx.actorName,
   });
   return { ...approved };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Read-only helpers for the MT Loop and Needs You services                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The carrier whose authority this organization sees a truck under.
+ *
+ * Two different answers for two different kinds of workspace, and the
+ * difference matters. A carrier sees itself: it runs the truck under its own
+ * authority. A dispatch workspace sees the carrier that GRANTED it access —
+ * whose freight it moves, and who carries the operating authority. Neither one
+ * is ever inferred from the other.
+ */
+export function truckCarrierFor(
+  truckId: string,
+  organizationId: string,
+): { organizationId: string; name: string } | undefined {
+  const grant = activeDispatchAccess(truckId, organizationId);
+  if (grant) {
+    return {
+      organizationId: grant.grantedByCarrierOrganizationId,
+      name: grant.grantedByCarrierName,
+    };
+  }
+  const relationship = approvedRelationship(truckId, organizationId);
+  if (relationship) {
+    return { organizationId: relationship.organizationId, name: relationship.organizationName };
+  }
+  return undefined;
+}
+
+/**
+ * Every dispatch workspace a carrier has handed this truck to, oldest grant
+ * first.
+ *
+ * More than one is not a bug in the data — carriers really do grant two
+ * agencies access to the same unit, usually by accident — so it is reported
+ * rather than silently collapsed. The MT Loop makes the OLDEST grant
+ * responsible and the conflict is surfaced to everybody involved.
+ */
+export function truckDispatchGrants(truckId: string): TruckDispatchAccess[] {
+  return db().dispatchAccess
+    .filter((d) => d.truckId === truckId && d.status === "active")
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+
+/** The carrier that currently operates the truck under its own authority. */
+export function truckOperatingCarrier(
+  truckId: string,
+): { organizationId: string; name: string } | undefined {
+  const carrier = operatingCarrier(truckId);
+  if (!carrier) return undefined;
+  return { organizationId: carrier.organizationId, name: carrier.organizationName };
+}
+
+/**
+ * Every carrier onboarded on the truck, oldest relationship first.
+ *
+ * The order matters: with nobody holding a lease, the carrier whose
+ * relationship started first is the truck's home carrier, and that is a stable
+ * answer rather than whatever the array happened to be built in.
+ */
+export function truckApprovedCarriers(
+  truckId: string,
+): Array<{ organizationId: string; name: string; startedAt: string }> {
+  return db().relationships
+    .filter((r) => r.truckId === truckId && r.status === "approved")
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+    .map((r) => ({
+      organizationId: r.organizationId, name: r.organizationName, startedAt: r.startedAt,
+    }));
+}
+
+/**
+ * Every document on a truck, for a viewer entitled to see the truck.
+ *
+ * Deliberately NOT filtered by carrier, matching the truck profile service: a
+ * registration, a title and an annual inspection are facts about the VEHICLE,
+ * and any carrier running it needs them. The things that are one carrier's own
+ * — its unit number, its lease dates, its insurance evidence — live on the
+ * relationship, and those the profile service does filter.
+ *
+ * Returns nothing at all for a viewer with no access reason, so this cannot be
+ * used to read documents off somebody else's truck.
+ */
+export function truckDocumentsFor(truckId: string, ctx: TruckContext): TruckDocument[] {
+  if (!ctx.permissions.has("trucks:view")) return [];
+  if (accessReason(truckId, ctx) === null) return [];
+  return truckDocumentRowsUnscoped(truckId);
+}
+
+/**
+ * The paperwork problems on a truck, in the operator's language.
+ *
+ * Returned as records rather than a count so a Needs You item can say WHICH
+ * document is wrong and when it lapsed, which is the difference between an
+ * actionable card and a number.
+ */
+export function truckDocumentProblems(truckId: string): Array<{
+  id: string;
+  kind: TruckDocumentKind;
+  status: TruckDocument["status"];
+  expiresAt?: string;
+  rejectionReason?: string;
+}> {
+  return truckDocumentRowsUnscoped(truckId)
+    .filter((d) => DOC_WARNING_STATUSES.has(d.status))
+    .map((d) => ({
+      id: d.id, kind: d.kind, status: d.status,
+      expiresAt: d.expiresAt, rejectionReason: d.rejectionReason,
+    }));
 }

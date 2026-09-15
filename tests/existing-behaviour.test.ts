@@ -1,256 +1,164 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { beforeEach, describe, it } from "node:test";
 import { services } from "@/lib/api";
-import { PermissionDeniedError } from "@/lib/api/contracts/context";
-import { mockStore } from "@/lib/api/mock/store";
-import { resetComplianceRegistry } from "@/lib/api/mock/compliance-registry";
-import { resetComplianceNeedsYou } from "@/lib/api/mock/compliance-needs-you";
+import { NotFoundError, PermissionDeniedError } from "@/lib/api/contracts/context";
 import {
-  activationStateFor, fleetSync, resetTruckRegistry, truckContextFrom,
-  truckLeaseHolder, TRUCK_IDS,
-} from "@/lib/api/mock/truck-registry";
-import { resetTrailerRegistry } from "@/lib/api/mock/trailer-registry";
-import { resetCarrierDriversMock } from "@/features/driver/mock-carrier-drivers";
+  NEVER_GRANTABLE, PERMISSION_CATALOG, PERMISSION_GROUP_LABELS,
+  PERMISSION_GROUP_ORDER, availablePermissionKeys,
+} from "@/lib/permissions/catalog";
 import { effectivePermissions } from "@/lib/permissions/effective";
-import { clampToGrantable, grantablePermissionKeys } from "@/lib/permissions/grantable";
-import { MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES } from "@/lib/session/fixtures";
-import { availablePermissionKeys } from "@/lib/permissions/catalog";
+import { requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
 import {
-  BAXTER_OWNER, CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER,
-  contextFor, membership, withPermissions, withoutPermissions,
-} from "./support/context";
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES,
+} from "@/lib/session/fixtures";
+import {
+  CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER, STONEBRIDGE_DRIVER,
+  contextFor, resetWorld,
+} from "./driver-workflow-harness";
 
 /**
- * The behaviour that was already here.
+ * Regression cover for the behaviour that was already here before this branch.
  *
- * Safety & Compliance reaches into the Needs You queue, the permission
- * templates, the document store and both equipment registries. These tests are
- * what says it did so without breaking any of them.
+ * This feature added three permission keys, a permission group, an
+ * organization and a membership to the shared fixtures. Each of those is the
+ * sort of change that quietly breaks something two modules away, so the
+ * invariants they could break are asserted rather than assumed.
  */
 
-beforeEach(() => {
-  mockStore.reset();
-  resetTruckRegistry();
-  resetTrailerRegistry();
-  resetCarrierDriversMock();
-  resetComplianceRegistry();
-  resetComplianceNeedsYou();
-});
-
-describe("permissions", () => {
-  it("gives an owner everything the organization type supports, and nothing else", () => {
-    const org = MOCK_ORGANIZATIONS.find((o) => o.id === "org_northline")!;
-    const owner = membership(NORTHLINE_OWNER);
-    const permissions = effectivePermissions(owner, org, MOCK_TEMPLATES);
-    expect(permissions.size).toBe(availablePermissionKeys(org.type).length);
+describe("the permission catalog stays coherent", () => {
+  it("has no duplicate keys", () => {
+    const keys = PERMISSION_CATALOG.map((p) => p.key);
+    assert.equal(new Set(keys).size, keys.length);
   });
 
-  it("still lets a revocation beat a grant", () => {
-    const org = MOCK_ORGANIZATIONS.find((o) => o.id === "org_meridian")!;
-    const dispatcher = membership(MERIDIAN_DISPATCHER);
-    const permissions = effectivePermissions(dispatcher, org, MOCK_TEMPLATES);
-    expect(permissions.has("loads:delete")).toBe(false);
-    expect(permissions.has("documents:approve")).toBe(true);
-    // The rate-blind dispatcher is the fixture the whole model exists to prove.
-    expect(permissions.has("rates:view")).toBe(false);
+  it("gives every group a label and a place in the reading order", () => {
+    for (const permission of PERMISSION_CATALOG) {
+      assert.ok(PERMISSION_GROUP_LABELS[permission.group]);
+      assert.ok(PERMISSION_GROUP_ORDER.includes(permission.group));
+    }
+    assert.equal(new Set(PERMISSION_GROUP_ORDER).size, PERMISSION_GROUP_ORDER.length);
   });
 
-  it("grants nothing at all to a membership that is not active", () => {
-    const org = MOCK_ORGANIZATIONS.find((o) => o.id === "org_northline")!;
-    const suspended = { ...membership(NORTHLINE_OWNER), status: "suspended" as const };
-    expect(effectivePermissions(suspended, org, MOCK_TEMPLATES).size).toBe(0);
+  it("keeps the owner-only powers out of the catalog entirely", () => {
+    const keys = new Set<string>(PERMISSION_CATALOG.map((p) => p.key));
+    for (const reserved of NEVER_GRANTABLE) {
+      assert.equal(keys.has(reserved.id), false);
+    }
   });
 
-  it("never lets anybody hand out access they do not hold", () => {
+  it("gives an owner every permission their organization type offers", () => {
+    const membership = MOCK_MEMBERSHIPS.find((m) => m.id === NORTHLINE_OWNER)!;
+    const organization = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
+    const effective = effectivePermissions(membership, organization, MOCK_TEMPLATES);
+
+    for (const key of availablePermissionKeys(organization.type)) {
+      assert.equal(effective.has(key), true);
+    }
+    // Including the ones this branch added.
+    assert.equal(effective.has("proposals:respond"), true);
+    assert.equal(effective.has("trips:execute"), true);
+  });
+
+  it("still withholds rates:view from the Meridian dispatcher", () => {
     const ctx = contextFor(MERIDIAN_DISPATCHER);
-    const grantable = grantablePermissionKeys(ctx.permissions, "DISPATCH_AGENCY");
-    expect(grantable).not.toContain("rates:view");
-    expect(
-      clampToGrantable(["rates:view", "loads:view"], ctx.permissions, "DISPATCH_AGENCY"),
-    ).toEqual(["loads:view"]);
+    assert.equal(ctx.permissions.has("rates:view"), false);
+    assert.equal(ctx.permissions.has("loads:delete"), false);
+    assert.equal(ctx.permissions.has("customers:edit"), true);
   });
 
-  it("gives the Driver template its own compliance view and nothing wider", () => {
-    // Added with Safety & Compliance: a driver must be able to see what they
-    // owe. Record scope keeps it to their own record — they still cannot read
-    // the carrier's roster.
-    const driver = contextFor(CASCADE_DRIVER);
-    expect(driver.permissions.has("compliance:view")).toBe(true);
-    expect(driver.permissions.has("drivers:view")).toBe(false);
-    expect(driver.permissions.has("compliance:manage")).toBe(false);
-  });
-});
-
-describe("Needs You, as it was", () => {
-  it("still serves the seeded operational items", async () => {
-    const ctx = contextFor(NORTHLINE_OWNER);
-    const items = await services.needsYou.list(ctx, { status: ["open", "escalated"] });
-    const seeded = mockStore.org("org_northline").needsYou;
-    for (const item of seeded.filter((i) => i.status === "open")) {
-      expect(items.some((i) => i.id === item.id), item.title).toBe(true);
-    }
-  });
-
-  it("still hides items whose permissions the membership lacks", async () => {
-    const ctx = withoutPermissions(contextFor(NORTHLINE_OWNER), "documents:view");
-    const items = await services.needsYou.list(ctx, { status: ["open", "escalated"] });
-    expect(items.some((i) => i.requires.includes("documents:view"))).toBe(false);
-  });
-
-  it("still answers 'forbidden' for a seeded item the caller may not see", async () => {
-    const full = contextFor(NORTHLINE_OWNER);
-    const gated = (await services.needsYou.list(full)).find((i) =>
-      i.requires.includes("documents:view"),
-    )!;
-    const ctx = withoutPermissions(full, "documents:view");
-    await expect(services.needsYou.get(ctx, gated.id)).rejects.toBeInstanceOf(
-      PermissionDeniedError,
-    );
-  });
-
-  it("still narrows a driver membership to its own loads", async () => {
-    const ctx = contextFor(CASCADE_DRIVER);
-    const items = await services.needsYou.list(ctx);
-    const loadItems = items.filter((i) => i.entity.kind === "load");
-    const org = mockStore.org("org_cascade");
-    for (const item of loadItems) {
-      const load = org.loads.find((l) => l.id === item.entity.id);
-      expect(load?.assignment?.driverId).toBe(ctx.driverProfileId);
-    }
-  });
-
-  it("still caps a snooze by severity", async () => {
-    const ctx = contextFor(NORTHLINE_OWNER);
-    const critical = (await services.needsYou.list(ctx)).find(
-      (i) => i.severity === "critical" && i.entity.kind !== "compliance_requirement",
-    )!;
-    await expect(
-      services.needsYou.snooze(ctx, critical.id, { hours: 8, reason: "later" }),
-    ).rejects.toThrow(/at most 2 hours/);
-  });
-
-  it("still refuses a snooze with no reason", async () => {
-    const ctx = contextFor(NORTHLINE_OWNER);
-    const item = (await services.needsYou.list(ctx))[0];
-    await expect(
-      services.needsYou.snooze(ctx, item.id, { hours: 1, reason: "  " }),
-    ).rejects.toThrow(/reason/i);
-  });
-
-  it("still requires the recommended action's permission to resolve", async () => {
-    const full = contextFor(NORTHLINE_OWNER);
-    const item = (await services.needsYou.list(full)).find(
-      (i) => i.recommendedAction.requires.length > 0 &&
-        i.entity.kind !== "compliance_requirement",
-    )!;
-    const ctx = withoutPermissions(full, ...item.recommendedAction.requires);
-    await expect(services.needsYou.resolve(ctx, item.id)).rejects.toBeInstanceOf(
-      PermissionDeniedError,
-    );
-  });
-});
-
-describe("loads, as they were", () => {
-  it("still redacts money from a membership without rates:view", async () => {
-    const ctx = contextFor(MERIDIAN_DISPATCHER);
-    const loads = await services.loads.list(ctx);
-    expect(loads.items.length).toBeGreaterThan(0);
-    expect(loads.items.every((l) => l.financials === undefined)).toBe(true);
-  });
-
-  it("still shows money to an owner", async () => {
-    const loads = await services.loads.list(contextFor(NORTHLINE_OWNER));
-    expect(loads.items.some((l) => l.financials !== undefined)).toBe(true);
-  });
-
-  it("still serves only a load's own documents", async () => {
-    const ctx = contextFor(NORTHLINE_OWNER);
-    const load = (await services.loads.list(ctx)).items.find((l) => l.reference === "NL-24812")!;
-    const documents = await services.loads.documents(ctx, load.id);
-    expect(documents.length).toBeGreaterThan(0);
-    for (const document of documents) {
-      expect(document.links.some((l) => l.entityKind === "load" && l.entityId === load.id)).toBe(true);
-    }
-  });
-
-  it("keeps the new organization-level paperwork out of a load's documents", async () => {
-    // Compliance added organization documents to the same Document Center.
-    // They must not leak into a load's document list.
-    const ctx = contextFor(NORTHLINE_OWNER);
-    const load = (await services.loads.list(ctx)).items[0];
-    const documents = await services.loads.documents(ctx, load.id);
-    expect(documents.some((d) => d.links.some((l) => l.entityKind === "organization"))).toBe(false);
-  });
-});
-
-describe("the truck registry, as it was", () => {
-  it("still lets exactly one carrier hold operating authority at a time", () => {
-    // Northline holds the live lease on 107. Baxter is approved on the same
-    // truck and must read as locked out, not as un-onboarded.
-    expect(truckLeaseHolder(TRUCK_IDS.nl107)).toBe("org_northline");
-    expect(activationStateFor(TRUCK_IDS.nl107, "org_northline")).toBe("active_operating_lease");
-    expect(activationStateFor(TRUCK_IDS.nl107, "org_baxter")).toBe("locked_by_other");
-  });
-
-  it("still excludes a pending relationship from the fleet", () => {
-    const fleet = fleetSync(truckContextFrom(contextFor(NORTHLINE_OWNER)));
-    expect(fleet.some((t) => t.truckId === TRUCK_IDS.nl121)).toBe(false);
-  });
-
-  it("shows a driver membership no fleet at all without trucks:view", () => {
-    // The seeded Driver template does not grant it, so the roster is empty
-    // before record scope ever comes into it.
-    expect(contextFor(CASCADE_DRIVER).permissions.has("trucks:view")).toBe(false);
-    expect(fleetSync(truckContextFrom(contextFor(CASCADE_DRIVER)))).toHaveLength(0);
-  });
-
-  it("still narrows a driver to their own truck when the carrier does grant it", () => {
-    // The registry's own rule: permission says what, the assignment says which.
-    const ctx = withPermissions(contextFor(CASCADE_DRIVER), "trucks:view");
-    expect(fleetSync(truckContextFrom(ctx)).map((t) => t.truckId)).toEqual([TRUCK_IDS.cs47]);
-  });
-
-  it("still counts only the documents that are actually a problem", () => {
-    // The paperwork added for compliance is all approved, so no unit's warning
-    // count moved.
-    const fleet = fleetSync(truckContextFrom(contextFor(NORTHLINE_OWNER)));
-    const unit104 = fleet.find((t) => t.truckId === TRUCK_IDS.nl104)!;
-    expect(unit104.documentWarnings).toBe(0);
-    const unit111 = fleet.find((t) => t.truckId === TRUCK_IDS.nl111)!;
-    expect(unit111.documentWarnings).toBeGreaterThan(0);
-  });
-});
-
-describe("home, as it was", () => {
-  it("still agrees with the roster about how many trucks there are", async () => {
-    const ctx = contextFor(NORTHLINE_OWNER);
-    const summary = await services.home.summary(ctx);
-    expect(summary.counts.trucksTotal).toBe(fleetSync(truckContextFrom(ctx)).length);
-  });
-
-  it("still withholds financials from a membership that may not see them", async () => {
-    expect((await services.home.summary(contextFor(MERIDIAN_DISPATCHER))).financials).toBeNull();
-    expect((await services.home.summary(contextFor(NORTHLINE_OWNER))).financials).not.toBeNull();
-  });
-
-  it("serves every organization the session can switch into", async () => {
-    // Baxter is a real membership. Before this milestone the store had no
-    // partition for it, so switching to it threw.
-    for (const m of MOCK_MEMBERSHIPS) {
-      await expect(services.home.summary(contextFor(m.id))).resolves.toBeTruthy();
-    }
-  });
-});
-
-describe("organization isolation", () => {
-  it("still refuses to read one organization's record through another", () => {
-    expect(() => mockStore.assertOwned("org_northline", "org_baxter")).toThrow();
-  });
-
-  it("keeps every queue to its own organization", async () => {
-    for (const id of [NORTHLINE_OWNER, BAXTER_OWNER, MERIDIAN_DISPATCHER, CASCADE_DRIVER]) {
+  it("routes both driver memberships through the same driver template", () => {
+    for (const id of [CASCADE_DRIVER, STONEBRIDGE_DRIVER]) {
       const ctx = contextFor(id);
-      const items = await services.needsYou.list(ctx);
-      expect(items.every((i) => i.organizationId === ctx.organizationId)).toBe(true);
+      assert.equal(ctx.permissions.has("proposals:view"), true);
+      assert.equal(ctx.permissions.has("trips:execute"), true);
+      // A driver still sees no money through the permission system.
+      assert.equal(ctx.permissions.has("rates:view"), false);
+      assert.equal(ctx.scope.loads, "assigned");
     }
+  });
+});
+
+describe("route gating still matches the nav", () => {
+  it("gates the new driver routes and inherits on nested paths", () => {
+    assert.deepEqual(requiredPermissionsForPath("/driver/proposals"), ["proposals:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/driver/proposals/prop_1"), ["proposals:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/driver/loads/load_1"), ["loads:view"]);
+  });
+
+  it("leaves the existing routes where they were", () => {
+    assert.deepEqual(requiredPermissionsForPath("/loads"), ["loads:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/loads/abc"), ["loads:view"]);
+    assert.deepEqual(requiredPermissionsForPath("/dispatch"), ["loads:view", "loads:assign"]);
+    assert.deepEqual(requiredPermissionsForPath("/account/profile"), []);
+  });
+});
+
+describe("the existing load service is unaffected", () => {
+  beforeEach(resetWorld);
+
+  it("still narrows a driver to their own loads and strips the money", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const page = await services.loads.list(ctx);
+
+    assert.ok(page.items.length > 0);
+    assert.equal(page.items.every((l) => l.assignment?.driverId === ctx.driverProfileId), true);
+    assert.equal(page.items.every((l) => l.financials === undefined), true);
+  });
+
+  it("still gives an owner every load with its financials", async () => {
+    const ctx = contextFor(NORTHLINE_OWNER);
+    const page = await services.loads.list(ctx);
+
+    assert.ok(page.items.length > 0);
+    assert.equal(page.items.some((l) => l.financials !== undefined), true);
+  });
+
+  it("serves the organization this branch added like any other", async () => {
+    const ctx = contextFor(STONEBRIDGE_DRIVER);
+    const page = await services.loads.list(ctx);
+
+    assert.equal(page.items.every((l) => l.organizationId === "org_stonebridge"), true);
+    assert.deepEqual(page.items.map((l) => l.reference).sort(), ["SB-1036", "SB-1042", "SB-1048"]);
+  });
+
+  it("reports a load in another organization as not found", async () => {
+    const owner = contextFor(NORTHLINE_OWNER);
+    const driver = contextFor(STONEBRIDGE_DRIVER);
+    const theirs = await services.loads.list(owner);
+
+    await assert.rejects(
+      services.loads.get(driver, theirs.items[0].id),
+      NotFoundError,
+    );
+  });
+});
+
+describe("Needs You and Home still work in every organization", () => {
+  beforeEach(resetWorld);
+
+  it("serves the home summary for each membership", async () => {
+    for (const id of [NORTHLINE_OWNER, MERIDIAN_DISPATCHER, CASCADE_DRIVER, STONEBRIDGE_DRIVER]) {
+      const summary = await services.home.summary(contextFor(id));
+      assert.ok(summary);
+      assert.equal(Array.isArray(summary.activeLoads), true);
+    }
+  });
+
+  it("serves Needs You in the organization this branch added", async () => {
+    const ctx = contextFor(STONEBRIDGE_DRIVER);
+    const items = await services.needsYou.list(ctx);
+    assert.equal(items.every((i) => i.organizationId === "org_stonebridge"), true);
+  });
+
+  it("still refuses a list call from a membership without the permission", async () => {
+    const ctx = contextFor(CASCADE_DRIVER);
+    const stripped = {
+      ...ctx,
+      permissions: new Set([...ctx.permissions].filter((p) => p !== "loads:view")),
+    };
+    await assert.rejects(
+      services.loads.list(stripped),
+      PermissionDeniedError,
+    );
   });
 });

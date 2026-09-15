@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   useActiveMembership, usePermissions, useSession,
 } from "@/lib/session/hooks";
+import { workspaceKindOf } from "@/types";
 import type { ServiceContext } from "./contracts/context";
 
 /**
@@ -20,6 +21,8 @@ export function useServiceContext(): ServiceContext | null {
     if (!membership || !organization) return null;
     return {
       organizationId: organization.id,
+      organizationName: organization.displayName,
+      workspaceKind: workspaceKindOf(organization),
       membershipId: membership.id,
       permissions,
       scope: membership.scope,

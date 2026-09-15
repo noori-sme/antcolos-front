@@ -8,7 +8,7 @@ import type { NeedsYouItem } from "@/types";
 import {
   BAXTER_OWNER, CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER,
   contextFor, withoutPermissions,
-} from "./support/context";
+} from "../support/context";
 
 /**
  * Compliance does not get a second alert system. These tests hold the line:

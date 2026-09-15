@@ -8,7 +8,7 @@ import type { ComplianceRequirement } from "@/types";
 import {
   BAXTER_OWNER, CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER,
   contextFor, withoutPermissions,
-} from "./support/context";
+} from "../support/context";
 
 const compliance = services.compliance;
 

@@ -3,7 +3,7 @@ import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
 } from "@/lib/session/fixtures";
 import type { ServiceContext } from "@/lib/api/contracts/context";
-import type { Membership, PermissionKey } from "@/types";
+import { workspaceKindOf, type Membership, type PermissionKey } from "@/types";
 
 /**
  * Builds the same ServiceContext the app builds, from the same fixtures and the
@@ -23,6 +23,10 @@ export function contextFor(
 
   return {
     organizationId: organization.id,
+    // Required on ServiceContext since the Document Center; the workspace kind
+    // decides which document requirements exist, so it is never inferred.
+    organizationName: organization.displayName,
+    workspaceKind: workspaceKindOf(organization),
     membershipId: membership.id,
     permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
     scope: membership.scope,
