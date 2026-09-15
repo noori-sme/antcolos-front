@@ -279,3 +279,98 @@ to be correct.
     `AntcolosServices` so they have a backend seam.
 
 Steps 6 and 7 are blocked on the two ownership decisions above.
+
+---
+
+# Phase 2 — What was refactored
+
+Written after the work, against the audit above. Every claim here is backed by a
+test named in section 4.
+
+## Decisions taken (escalated first, per the brief)
+
+| Conflict | Decision |
+|---|---|
+| **D1** Truck odometer, three stores | A shared canonical **Equipment Meter Ledger** keyed by the permanent equipment UUID, *not* by organization. ELD, telematics, fuel, maintenance and authorized manual entry are evidence-producing contributors. Append-only readings carry source, organization, carrier, operating authority, timestamps, confidence and verification state; one current accepted odometer and engine-hours value is derived. Existing module stores became projections. Corrections append a linked correction. History never resets or splits on a change of ownership, carrier or operating authority. |
+| **D2** "The rate confirmation for this load" | `RateConWorkflow` stays canonical **during review**. On final approval + authorized carrier signature + confirmed return to the broker, one **immutable canonical Rate Confirmation record** is committed and the canonical Load is finalized exactly once, emitting one versioned `load.finalized`. Downstream modules consume projections of that event. Party data goes to the existing Directory matching/upsert service, which requires a person to confirm and never creates a duplicate. |
+| **D3** Read-only `LoadsService` | `LoadsService` becomes the single typed command boundary for canonical Load mutations. Booking and Rate Confirmation never mutate the Load directly. |
+
+## The flow, as built
+
+```
+Input                    Extraction candidate      Verification
+─────                    ────────────────────      ────────────
+broker email             ExtractedField.rawText    verifyField / correctField
+fuel receipt             RecordFuelPurchaseInput   fuel:review / fuel:correct
+                           .extracted
+driver / dispatcher      —                         the action IS the verification
+GPS / geofence / ELD     OperationalSignal         a person confirms or corrects
+manual entry             —                         —
+
+        ↓                         ↓                        ↓
+   Canonical record  ──────→  Domain event  ──────→  Authorized projections
+   (one owner, one id)        (versioned,            (isolated, four honest
+                              idempotent)             states, retry-ready)
+```
+
+| Piece | Where |
+|---|---|
+| Fact envelope (entity UUID, scope, source, original + corrected value, confidence, verification, occurred/received, correlation/causation/idempotency, audit ref) | `src/types/propagation.ts` |
+| Versioned event payloads | `src/lib/propagation/events.ts` |
+| The bus: idempotent publish, per-subscriber isolation, Pending/Processed/Failed/Needs Review, retry | `src/lib/propagation/bus.ts` |
+| Who listens to what | `src/lib/api/mock/projections/index.ts` |
+| Equipment Meter Ledger | `src/lib/api/mock/meter-ledger.ts`, seeded by `meter-seed.ts` |
+| Immutable rate confirmations | `src/lib/api/mock/rate-confirmation-record.ts` |
+| Load commands | `src/lib/api/contracts/loads.ts` → `src/lib/api/mock/load-commands.ts` |
+| Every mock store, one reset | `src/lib/api/mock/registry.ts` |
+
+## Findings, resolved
+
+| # | Finding | What changed |
+|---|---|---|
+| D1 | Three odometers, conflicting | One ledger. `maintenance-registry` has no meter store and `meterFor()` projects; `fleet-telemetry` keeps location only; fuel contributes the pump and end-of-leg odometer. The two disagreeing fixture sets were reconciled into `meter-seed.ts`. |
+| D2 | Four rate-confirmation representations | One committed record. `integrations.loadSource.getRateConfirmation` and `invoice-sources.rateConfirmationInput` both read it. The fixture table survives as a labelled fallback for seeded loads only. |
+| D3 | Direct canonical Load writes | Three typed commands, each authorized, idempotent, appending a `LoadEvent`. `booking.ts` and `rate-confirmation.ts` mutate nothing. |
+| D4 | `distribute()` was a narrative | Replaced by real projections read back off the event. `DistributionOutcome` is now a projection view with state, attempts, retryability and a mock flag. |
+| D5 | Handoff vocabulary missing two states | `HandoffState` gains `processed`, `failed`, `needs_review`; `PendingIntegrationEvent` gains attempts, first/last attempt, retryable, failure reason and correlation id. |
+| D6 | 28 uncoordinated mock stores | `registry.ts` lists all 40 resets with one `resetAllMocks()`, and `tests/mock-registry.test.ts` fails if a store is added without registering it. |
+| D7 | `NeedsYouEntityKind` merge scars | Left as-is: TypeScript dedupes the union, and rewriting it touches every branch that contributed to it for no behaviour change. Recorded here so it is a known cosmetic debt rather than a surprise. |
+| E1 | 11 modules bypass `AntcolosServices` | **Not done.** Out of scope for this milestone and listed under remaining work below. |
+
+## Remaining backend responsibilities
+
+Everything in this milestone is a typed contract over an in-memory mock. The
+backend must own:
+
+- **Authorization.** Every permission check here is a frontend check over a mock
+  store. `loads:edit + rates:view` on `applyRateConfirmation`, `loads:assign` on
+  `recordConsent`, the meter ledger's read scoping — all of it must be enforced
+  server-side, and the frontend's version must not be trusted.
+- **Persistence.** Nothing survives a reload. No migrations, no durable ids.
+- **Idempotency.** `eventId`, `idempotencyKey` and the command result maps
+  describe the contract. A backend needs unique indexes and a real dedupe window.
+- **Event delivery.** The bus is a `Map` and a `for` loop in one tab. There is no
+  transport, no ordering guarantee across clients, no at-least-once delivery, no
+  dead-letter queue, and no retry on a timer. `retry()` is a person pressing a
+  button.
+- **Transactional integrity.** A command writes the Load and then publishes. If
+  the publish threw, the write would stand. The backend needs the two to commit
+  together, or an outbox.
+- **Security and isolation.** The meter ledger is keyed globally on purpose;
+  `visibleMeterReadings` narrows the *history* and the derived value is
+  deliberately unnarrowed. That asymmetry is a product decision the backend must
+  implement and audit, not a leak to be closed by narrowing both.
+- **Clock and ordering.** `occurredAt` comes from the client.
+
+## Remaining mock boundaries
+
+| Boundary | State |
+|---|---|
+| Accounting / expected revenue | No store. Projection reports `pending` with the exact payload it will hand over. |
+| Document Center, load-subject documents | The service refuses to create one; the signed rate confirmation is drawn by `ratecon-document.ts` and is not a Document record. Projection says so. |
+| Broker tracking session | Deliberately **not** opened by a projection: minting a link discloses a truck's position outside the organization, so a person does it. |
+| OCR / extraction | `ExtractedField` is a lookup over text we wrote. Uploads record name, type and size and discard the file. |
+| GPS, ELD, telematics, fuel cards, geofences | Not connected. ELD publishes signals and writes to no other module's records. |
+| Email / broker delivery | Messages are prepared and recorded. Nothing is transmitted. |
+| Seeded fuel history → meter ledger | Fuel contributes at **runtime** only. The seeded fuel transactions' odometers are not in the ledger, so a fresh session's ledger holds the maintenance and fleet series plus anything recorded in that session. |
+| `AntcolosServices` coverage | MT Loop, rate confirmation, tracking, maintenance, insurance, booking and opportunities are still reached by direct module import (finding E1). They have no HTTP seam yet. |
