@@ -41,6 +41,11 @@ export type PermissionKey =
   // Accounting and financial information
   | "rates:view" | "rates:edit"
   | "revenue:view" | "expenses:view" | "profitability:view"
+  // Fuel and IFTA — a fuel purchase and a mileage record are separate powers
+  | "fuel:view" | "fuel:record" | "fuel:import"
+  | "fuel:review" | "fuel:correct" | "fuel:export" | "fuel:costs:view"
+  | "mileage:view" | "mileage:record" | "mileage:review"
+  | "ifta:view" | "ifta:manage"
   // Compliance & safety
   | "compliance:view" | "compliance:manage"
   // Maintenance — equipment upkeep. Separate from compliance, which is paperwork.
@@ -68,6 +73,7 @@ export type PermissionGroup =
   | "loads" | "dispatch" | "drivers" | "trucks" | "trailers" | "fleet"
   | "loads" | "dispatch" | "driver_workflow" | "drivers" | "trucks" | "trailers"
   | "customers" | "documents" | "settlements" | "invoices" | "reports"
+  | "accounting" | "fuel" | "compliance"
   | "accounting" | "compliance" | "maintenance" | "insurance" | "claims"
   | "members" | "invitations" | "organization";
 

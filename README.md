@@ -39,6 +39,7 @@ files rather than a copy. `npm test` runs both.
 | 1. Foundation and shell | Design tokens, theme and density, identity and membership switching, permissions, responsive navigation, shared states |
 | 2. Home + Needs You | `/home` (adapts to the membership), `/needs-you`, `/driver/home` |
 | Canonical Load slice | `/loads`, `/loads/[loadId]` — read-only |
+| Fuel & IFTA foundation | `/fuel`, `/fuel/transactions`, `/fuel/transactions/[id]`, `/fuel/mileage`, `/fuel/ifta`, `/fuel/ifta/[id]` |
 | Truck and trailer registries | `/fleet/trucks`, `/fleet/trailers` and their profiles |
 | Reports | `/reports`, `/reports/[reportId]` — read-only analysis of other modules' records |
 | Safety & Compliance foundation | `/compliance`, `/compliance/[requirementId]` |
@@ -59,6 +60,45 @@ files rather than a copy. `npm test` runs both.
 
 Everything else is a placeholder screen that says so.
 
+## Fuel & IFTA
+
+The foundation a real fuel and tax product can be built on, and deliberately
+not the product itself.
+
+Three rules shape it, and they are enforced in the service layer rather than
+the screens:
+
+- **A fuel purchase is not a mileage record.** `FuelTransaction` says a truck
+  bought fuel somewhere; `JurisdictionMileageRecord` says it drove so many
+  miles inside a jurisdiction. They are separate entities with separate
+  lifecycles, and they meet for the first time on the IFTA quarter.
+- **Attribution is historical.** Mileage and fuel belong to the carrier whose
+  operating authority was live at the moment of travel or purchase, snapshotted
+  then and never recomputed. A later ownership, lease, driver or carrier change
+  cannot rewrite a filed quarter. Where the authority history cannot settle it —
+  two carriers approved on one truck, neither holding it — the record is kept
+  and flagged rather than attributed to whoever happens to hold it today.
+- **Records are immutable.** A correction writes a new revision and supersedes
+  the original; the original stays readable forever, and only current revisions
+  count toward any figure.
+
+What Antcolos does **not** do: file an IFTA return, calculate tax owed, or move
+money. The calculation stops at net taxable gallons, because turning that into
+money needs each jurisdiction's quarterly rate and no rate source is connected.
+No fuel card, ELD, GPS, telematics, receipt-reading, toll, accounting or IFTA
+provider is connected either — `src/lib/fuel/integrations.ts` declares each as
+a typed extension point whose status has exactly one possible value,
+`not_connected`.
+
+Dispatch organizations see only what a carrier has explicitly shared, per
+truck, and never tax filing unless that carrier authorizes it separately —
+holding `ifta:view` is necessary and not sufficient.
+
+Everything is built on the existing systems rather than beside them: permanent
+Truck UUIDs and their operating-authority leases, Driver profiles, Loads,
+`Document` records for receipts, Memberships, Permissions and the Needs You
+queue, whose fuel items are derived from the ledger and resolve when the
+problem does.
 ## Reports
 
 Reporting **analyses** records; it never creates them. There is no write method
@@ -466,6 +506,7 @@ src/
     layout/             AppShell, Sidebar, Topbar, OrgSwitcher, AccountMenu
     auth/               Can, PermissionBadge, ActorLabel
     data/               loading / empty / error states
+  features/             home, needs-you, loads, fleet, trailers, fuel
   features/             home, needs-you, loads, reports
   features/             home, needs-you, loads, compliance
   features/             home, needs-you, loads, fleet, fleet-ops, trailers
@@ -478,6 +519,8 @@ src/
       contracts/        ★ typed service interfaces — the backend seam
       mock/             in-memory adapter, PARTITIONED BY ORGANIZATION
       http/             real adapter, deliberately unimplemented
+    fuel/               ★ fuel and IFTA domain logic — units, jurisdictions,
+                          periods, economy, attribution, validation, integrations
     reports/            catalog, metric definitions, source adapters, calculations
     compliance/         ★ requirement catalog, applicability rules, status machine
     insurance/          ★ coverage rules, requirements, claim states, seams

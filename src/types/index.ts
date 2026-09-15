@@ -17,6 +17,7 @@ export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
 export type * from "./trailer";
+export type * from "./fuel";
 export type * from "./report";
 export type * from "./compliance";
 export type * from "./settlement";
@@ -70,6 +71,7 @@ export {
 export {
   originStop, destinationStop, laneLabel, missingRequiredDocuments, isTerminal,
 } from "./load";
+export { EXCLUDED_FUEL_STATES, EXCLUDED_MILEAGE_STATES } from "./fuel";
 export {
   OPEN_COMPLIANCE_STATUSES, COMPLIANCE_SEVERITY_ORDER, COMPLIANCE_STATUS_ORDER,
 } from "./compliance";

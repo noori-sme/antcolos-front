@@ -1659,6 +1659,67 @@ export function truckLeaseFor(truckId: string, organizationId: string) {
 }
 
 /**
+ * Which permanent trucks an organization has a live relationship with.
+ *
+ * Relationship scope WITHOUT the truck module's own permission. Deliberately
+ * so: `trucks:view` decides whether somebody may open the fleet roster, and
+ * that is a different question from which trucks another module's records are
+ * allowed to be about. A fuel clerk who may never see the roster still needs
+ * their organization's fuel narrowed to its own trucks, and coupling the two
+ * would force every module to hand out `trucks:view` to do its own job.
+ *
+ * The caller does its own permission check first, exactly as with
+ * `truckRecord` above. Pending relationships are excluded for the same reason
+ * the roster excludes them: a truck you have asked to operate is not yours
+ * yet. A driver is narrowed to the truck they are actually on.
+ */
+export function truckIdsRelatedTo(
+  organizationId: string,
+  driverProfileId?: string,
+): string[] {
+  return db()
+    .trucks
+    .filter((t) => {
+      const reason = accessReason(t.truckId, {
+        organizationId,
+        membershipId: "internal",
+        actorName: "internal",
+        // The reason lookup is relationship logic; this stands in for the
+        // permission check the caller has already done.
+        permissions: new Set<PermissionKey>(),
+        driverProfileId,
+      });
+      if (reason === null || reason === "pending_relationship") return false;
+      if (driverProfileId) {
+        return db().assignments.some(
+          (a) => a.truckId === t.truckId && a.driverProfileId === driverProfileId && !a.endedAt,
+        );
+      }
+      return true;
+    })
+    .map((t) => t.truckId);
+}
+
+/**
+ * The operating-authority history of a truck: every lease it has ever had, and
+ * every carrier relationship, ended ones included.
+ *
+ * No authorization of its own, exactly like `truckRecord` above — the caller
+ * has already established it may see the truck. It exists so the fuel module
+ * can answer "who was running this on the 14th of June" from the same records
+ * the fleet module uses, rather than keeping a second copy of the answer.
+ */
+export function truckAuthorityHistory(truckId: string): {
+  leases: TruckOperatingLease[];
+  relationships: TruckCarrierRelationship[];
+} {
+  return {
+    leases: db().leases.filter((l) => l.truckId === truckId),
+    relationships: db().relationships.filter((r) => r.truckId === truckId),
+  };
+}
+
+/**
  * Read-only registry views for other modules.
  *
  * Safety & Compliance reads the truck's relationships and documents through

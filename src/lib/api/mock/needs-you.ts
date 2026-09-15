@@ -15,6 +15,7 @@ import {
 import { isDerivedSettlementItem, settlementNeedsYouItems } from "./settlement-needs-you";
 import { ensureInvoiceNeedsYou } from "./invoice-registry";
 import { mockStore } from "./store";
+import { syncFuelNeedsYou } from "./fuel-needs-you";
 import {
   insuranceContextFrom, insuranceNeedsYou, isInsuranceNeedsYouId,
   replaceInsuranceNeedsYou,
@@ -276,6 +277,9 @@ export const mockNeedsYouService: NeedsYouService = {
     // Regenerate first: the queue is a view of live state, so what it holds is
     // decided here rather than by whatever happened to be written down earlier.
     syncDerivedNeedsYouFor(ctx);
+    // Fuel items are derived from the ledger, not seeded, so the queue is
+    // brought into line with it before anything is read.
+    syncFuelNeedsYou(ctx);
     // Fleet writes its rows straight into the organization's bucket rather
     // than returning them, so it runs alongside the sync above. Its ids are
     // ny_fleet_*, which the ny_d_ prune leaves alone.
@@ -295,11 +299,17 @@ export const mockNeedsYouService: NeedsYouService = {
   async get(ctx, itemId) {
     await wait();
     syncDerivedNeedsYouFor(ctx);
+    // Fuel items are derived from the ledger, not seeded, so the queue is
+    // brought into line with it before anything is read.
+    syncFuelNeedsYou(ctx);
     return autoUnsnooze(find(ctx, itemId));
   },
 
   async openCount(ctx) {
     syncDerivedNeedsYouFor(ctx);
+    // Fuel items are derived from the ledger, not seeded, so the queue is
+    // brought into line with it before anything is read.
+    syncFuelNeedsYou(ctx);
     // Fleet writes its rows straight into the organization's bucket rather
     // than returning them, so it runs alongside the sync above. Its ids are
     // ny_fleet_*, which the ny_d_ prune leaves alone.

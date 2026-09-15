@@ -1,9 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BadgeCheck, Bell, Building2, ClipboardList, Container, FileBadge, FileText, Gauge,
-  Handshake, Home, IdCard, Inbox, Layers, Link2, MailPlus, Package, Palette, Receipt,
-  Route, ScrollText, Settings2, Shield, ShieldCheck, TriangleAlert, Truck, UserCircle,
-  Users, UsersRound, Wrench,
+  BadgeCheck, Bell, Building2, CalendarClock, ClipboardList, Container, FileBadge,
+  FileText, Fuel, Gauge, Handshake, Home, IdCard, Inbox, Layers, Link2, MailPlus, Map,
+  Package, Palette, Receipt, ReceiptText, Route, ScrollText, Settings2, Shield,
+  ShieldCheck, TriangleAlert, Truck, UserCircle, Users, UsersRound, Wrench,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
 
@@ -60,6 +60,16 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Policies", href: "/insurance/policies", icon: Shield, requires: ["insurance:view"] },
       { label: "Certificates", href: "/insurance/certificates", icon: FileBadge, requires: ["insurance:view"] },
       { label: "Claims", href: "/insurance/claims", icon: TriangleAlert, requires: ["claims:view"] },
+    ],
+  },
+  {
+    id: "fuel",
+    label: "Fuel & IFTA",
+    items: [
+      { label: "Fuel", href: "/fuel", icon: Fuel, requires: ["fuel:view"] },
+      { label: "Fuel purchases", href: "/fuel/transactions", icon: ReceiptText, requires: ["fuel:view"] },
+      { label: "Jurisdiction mileage", href: "/fuel/mileage", icon: Map, requires: ["mileage:view"] },
+      { label: "IFTA quarters", href: "/fuel/ifta", icon: CalendarClock, requires: ["ifta:view"] },
     ],
   },
   {

@@ -30,6 +30,9 @@ export type DocumentKind =
   | "driver_license"
   | "medical_card"
   | "equipment_registration"
+  /** A fuel receipt. The same Document record every other kind uses — fuel
+   *  does not get a document entity of its own. */
+  | "fuel_receipt"
   | "other";
 
 /** State of machine extraction. "not_applicable" for documents never parsed. */
@@ -49,7 +52,7 @@ export interface LoadDocumentLink {
    */
   entityKind:
     | "load" | "stop" | "driver" | "truck" | "trailer" | "customer"
-    | "settlement" | "invoice" | "organization";
+    | "settlement" | "invoice" | "organization" | "fuel_transaction";
   entityId: string;
 }
 

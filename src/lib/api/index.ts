@@ -4,6 +4,7 @@ import { httpServices } from "./http";
 import { mockComplianceService } from "./mock/compliance";
 import { mockDocumentsService } from "./mock/documents";
 import { mockDirectoryService, mockHomeService } from "./mock/home";
+import { mockFuelService, mockIftaService } from "./mock/fuel";
 import { mockFleetService } from "./mock/fleet-operations";
 import { mockDriverWorkflowService } from "./mock/driver-workflow";
 import { mockInvoicesService } from "./mock/invoices";
@@ -22,6 +23,8 @@ const mockServices: AntcolosServices = {
   home: mockHomeService,
   directory: mockDirectoryService,
   loads: mockLoadsService,
+  fuel: mockFuelService,
+  ifta: mockIftaService,
   reports: mockReportsService,
   compliance: mockComplianceService,
   fleet: mockFleetService,

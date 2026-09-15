@@ -110,6 +110,22 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "expenses:view", label: "See expenses", description: "See what the business is spending.", group: "accounting", sensitive: true, financial: true },
   { key: "profitability:view", label: "See profit and margin", description: "See what the business actually makes after costs.", group: "accounting", sensitive: true, financial: true },
 
+  // ---- Fuel and IFTA -----------------------------------------------------
+  // Seeing that a truck bought fuel, seeing what it cost, and being allowed
+  // near the tax return are three different powers and three different keys.
+  { key: "fuel:view", label: "View fuel purchases", description: "See fuel purchases, gallons, where they happened and how the fleet is running.", group: "fuel" },
+  { key: "fuel:record", label: "Record fuel purchases", description: "Enter a fuel purchase by hand.", group: "fuel" },
+  { key: "fuel:import", label: "Import fuel purchases", description: "Bring fuel purchases in from a fuel card or another outside system.", group: "fuel" },
+  { key: "fuel:review", label: "Review fuel purchases", description: "Accept a purchase, reject it, or mark it a duplicate of another.", group: "fuel" },
+  { key: "fuel:correct", label: "Correct fuel purchases", description: "Issue a correction. The original is never changed — a new revision replaces it and both stay on the record.", group: "fuel", sensitive: true },
+  { key: "fuel:export", label: "Download fuel records", description: "Export fuel purchases and mileage out of Antcolos as a file.", group: "fuel", sensitive: true },
+  { key: "fuel:costs:view", label: "See fuel cost", description: "See what fuel costs — spend, price per gallon and cost per mile. Without this, fuel shows gallons and miles but no money.", group: "fuel", sensitive: true, financial: true },
+  { key: "mileage:view", label: "View jurisdiction mileage", description: "See how many miles each truck ran in each state or province.", group: "fuel" },
+  { key: "mileage:record", label: "Record jurisdiction mileage", description: "Enter miles run in a state or province by hand.", group: "fuel" },
+  { key: "mileage:review", label: "Review jurisdiction mileage", description: "Accept or reject a mileage record, and correct one that is wrong.", group: "fuel" },
+  { key: "ifta:view", label: "View IFTA quarters", description: "Open the quarterly IFTA periods and the per-jurisdiction figures. Tax information — give it deliberately.", group: "fuel", sensitive: true },
+  { key: "ifta:manage", label: "Manage IFTA quarters", description: "Move a quarter through review, mark it ready, record that it was filed, and amend it afterwards. Antcolos never files anything itself.", group: "fuel", sensitive: true, financial: true },
+
   // ---- Compliance & safety -----------------------------------------------
   { key: "compliance:view", label: "View compliance", description: "See licences, inspections and what is about to expire.", group: "compliance" },
   { key: "compliance:manage", label: "Manage compliance", description: "Record and clear compliance items.", group: "compliance" },
@@ -169,6 +185,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   invoices: "Invoices",
   reports: "Reports",
   accounting: "Accounting and financial information",
+  fuel: "Fuel & IFTA",
   compliance: "Compliance & safety",
   maintenance: "Maintenance",
   insurance: "Insurance",
@@ -182,7 +199,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers",
   "fleet", "customers", "documents", "settlements", "invoices", "reports",
-  "accounting", "compliance", "maintenance", "insurance", "claims",
+  "accounting", "fuel", "compliance", "maintenance", "insurance", "claims",
   "members", "invitations", "organization",
 ] as const;
 
