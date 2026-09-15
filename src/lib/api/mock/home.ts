@@ -92,9 +92,17 @@ export const mockHomeService: HomeService = {
     // path that returns it and lets the UI decide whether to render it.
     let financials: FinancialSummary | null = null;
     if (ctx.permissions.has("revenue:view") && ctx.permissions.has("rates:view")) {
-      const billable = loads.filter((l) =>
-        ["delivered", "ready_to_invoice", "invoiced", "paid"].includes(l.status),
-      );
+      // Revenue is a WEEK figure, so it counts freight delivered in the last
+      // seven days. Without the window it silently became an all-time total as
+      // soon as the fixtures grew a billing history.
+      const weekStart = Date.now() - 7 * 86_400_000;
+      const billable = loads
+        .filter((l) => ["delivered", "ready_to_invoice", "invoiced", "paid"].includes(l.status))
+        .filter((l) => {
+          const last = l.stops[l.stops.length - 1];
+          const at = last.departedAt ?? last.arrivedAt ?? last.appointmentAt;
+          return new Date(at).getTime() >= weekStart;
+        });
       const weekRevenueCents = billable.reduce((sum, l) => sum + (l.financials?.totalRateCents ?? 0), 0);
       const miles = billable.reduce((sum, l) => sum + (l.financials?.loadedMiles ?? 0), 0);
       const unbilled = loads
@@ -161,7 +169,7 @@ export const mockDirectoryService = {
 };
 
 /** Org-scoped member directory for assignment menus. */
-const MOCK_ORG_MEMBERS: Record<
+export const MOCK_ORG_MEMBERS: Record<
   string,
   { membershipId: string; displayName: string; title?: string }[]
 > = {

@@ -1,3 +1,4 @@
+import { EXPIRING_SOON_DAYS as SOON_DAYS } from "@/lib/documents/status";
 import type { DocumentStatus, EngagementType, RelationshipStatus } from "@/types";
 
 /* -------------------------------------------------------------------------- */
@@ -22,15 +23,22 @@ export const RELATIONSHIP_LABEL: Record<RelationshipStatus, string> = {
   ended: "Ended",
 };
 
+/**
+ * The driver's words for the shared statuses.
+ *
+ * The states are the carrier's states — one vocabulary across the whole
+ * product — but a driver reads "Ready to submit", not "Selected, not
+ * uploaded", so the labels differ where the driver's job differs.
+ */
 export const DOCUMENT_STATUS_LABEL: Record<DocumentStatus, string> = {
-  not_started: "Not started",
-  uploading: "Uploading",
-  uploaded: "Ready to submit",
-  under_review: "Under review",
+  missing: "Not started",
+  selected_local: "Ready to submit",
+  pending_review: "Under review",
   approved: "Approved",
   rejected: "Rejected",
   expired: "Expired",
   expiring_soon: "Expiring soon",
+  superseded: "Replaced",
 };
 
 /* -------------------------------------------------------------------------- */
@@ -101,7 +109,8 @@ export function maskCdl(cdlNumber: string): string {
 /* Expiry helpers                                                              */
 /* -------------------------------------------------------------------------- */
 
-export const EXPIRING_SOON_DAYS = 45;
+/** One window for the whole product. Defined once, in the document domain. */
+export { EXPIRING_SOON_DAYS } from "@/lib/documents/status";
 
 export function daysUntil(isoDate: string): number {
   const then = new Date(isoDate).getTime();
@@ -116,7 +125,7 @@ export function expiryState(isoDate: string | undefined): ExpiryState | null {
   if (!isoDate) return null;
   const days = daysUntil(isoDate);
   if (days < 0) return "expired";
-  if (days <= EXPIRING_SOON_DAYS) return "expiring_soon";
+  if (days <= SOON_DAYS) return "expiring_soon";
   return "ok";
 }
 

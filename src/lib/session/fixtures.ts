@@ -9,9 +9,11 @@ import type {
  * swapping in the real API is a service-layer change, not a UI change.
  *
  * One permanent user with several memberships, chosen to prove the model: the
- * same person is an Owner in two different carriers, a rate-blind Dispatcher in
- * a dispatch agency, an Owner in another, and a scoped Driver in a fifth.
- * Nothing about the profile changes when they switch.
+ * same person is an Owner in two carriers, an Owner of a dispatch organization
+ * with a team, a rate-blind Dispatcher employed by another, a lone dispatcher
+ * in a workspace of one, a company Driver in a carrier and an owner-operator in
+ * another. Nothing about the profile changes when they switch, and every one of
+ * those produces a different dashboard from the same code.
  */
 
 export const MOCK_USER: User = {
@@ -58,6 +60,21 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     createdAt: "2026-08-11T15:10:00.000Z",
   },
   {
+    // The individual-dispatcher workspace: one person booking freight for
+    // carriers, with no company behind them. It is a dispatch workspace, not a
+    // dispatch organization, and both things that follow from that are derived
+    // from the one stored flag — the dashboard it gets, and the paperwork it is
+    // asked for, which is personal identity and a service agreement rather than
+    // company registration and company-level insurance.
+    id: "org_solo",
+    type: "DISPATCH_AGENCY",
+    legalName: "Sam Murtaza",
+    displayName: "Sam Murtaza — Dispatch",
+    soloDispatcher: true,
+    timeZone: "America/Los_Angeles",
+    createdAt: "2026-09-02T17:40:00.000Z",
+  },
+  {
     // A SECOND carrier, so the truck side of the product can be reviewed from
     // both ends: Baxter is approved to run two of Northline's trucks, which is
     // what makes "one truck, several approved carriers, one operating lease"
@@ -79,6 +96,20 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     dotNumber: "2910446",
     timeZone: "America/Los_Angeles",
     createdAt: "2026-05-30T19:45:00.000Z",
+  },
+  {
+    // The second driver seat, and the reason it exists: Sam is a COMPANY
+    // DRIVER at Cascade and an OWNER-OPERATOR here. Same person, same product,
+    // two engagements — which is the only way to see that the proposal view and
+    // the actions on it are decided by carrier policy and not by the screen.
+    id: "org_stonebridge",
+    type: "CARRIER",
+    legalName: "Stonebridge Carriers LLC",
+    displayName: "Stonebridge Carriers",
+    dotNumber: "3620118",
+    mcNumber: "MC-1203774",
+    timeZone: "America/New_York",
+    createdAt: "2026-06-22T12:15:00.000Z",
   },
 ];
 
@@ -109,9 +140,12 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     status: "active",
     title: "Senior dispatcher",
     templateIds: [tpl("org_meridian", "dispatcher")],
-    // Template plus one extra grant, minus one explicit revocation — the exact
-    // case that fixed roles cannot express.
-    grants: ["customers:edit", "documents:approve"],
+    // Template plus extra grants, minus one explicit revocation — the exact
+    // case that fixed roles cannot express. `insurance:view` is here so the
+    // dispatch side of insurance disclosure can actually be looked at: it
+    // shows only what a carrier has deliberately shared, with the premium,
+    // the deductibles and every claim figure absent.
+    grants: ["customers:edit", "documents:approve", "insurance:view"],
     revocations: ["loads:delete"],
     scope: DEFAULT_SCOPE,
     isOwner: false,
@@ -149,6 +183,23 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     joinedAt: "2026-03-09T13:30:00.000Z",
   },
   {
+    // Working alone. Owner of a workspace that has no team in it, which is a
+    // different thing from being an owner who happens to be the only member —
+    // and, for the Document Center, a workspace with its own paperwork
+    // obligations, different from either kind of organization.
+    id: "mem_solo_dispatcher",
+    userId: MOCK_USER.id,
+    organizationId: "org_solo",
+    status: "active",
+    title: "Individual dispatcher",
+    templateIds: [],
+    grants: [],
+    revocations: [],
+    scope: DEFAULT_SCOPE,
+    isOwner: true,
+    joinedAt: "2026-09-02T17:40:00.000Z",
+  },
+  {
     id: "mem_cascade_driver",
     userId: MOCK_USER.id,
     organizationId: "org_cascade",
@@ -161,6 +212,20 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     driverProfileId: "drv_cascade_0192",
     isOwner: false,
     joinedAt: "2026-05-30T19:45:00.000Z",
+  },
+  {
+    id: "mem_stonebridge_driver",
+    userId: MOCK_USER.id,
+    organizationId: "org_stonebridge",
+    status: "active",
+    title: "Owner-operator",
+    templateIds: [tpl("org_stonebridge", "driver")],
+    grants: [],
+    revocations: [],
+    scope: OWN_RECORDS_SCOPE,
+    driverProfileId: "drv_sb_0044",
+    isOwner: false,
+    joinedAt: "2026-06-22T12:15:00.000Z",
   },
 ];
 

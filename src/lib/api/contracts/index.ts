@@ -4,12 +4,29 @@ export type * from "./home";
 export type * from "./directory";
 export type * from "./loads";
 export type * from "./fuel";
+export type * from "./reports";
+export type * from "./compliance";
+export type * from "./fleet";
+export type * from "./settlements";
+export type * from "./driver-workflow";
+export type * from "./invoices";
+export type * from "./documents";
 
+
+
+
+import type { ComplianceService } from "./compliance";
 import type { DirectoryService } from "./directory";
 import type { FuelService, IftaService } from "./fuel";
+import type { FleetService } from "./fleet";
+import type { DriverWorkflowService } from "./driver-workflow";
+import type { InvoicesService } from "./invoices";
+import type { DocumentsService } from "./documents";
 import type { HomeService } from "./home";
 import type { LoadsService } from "./loads";
+import type { SettlementsService } from "./settlements";
 import type { NeedsYouService } from "./needs-you";
+import type { ReportsService } from "./reports";
 
 /** The seam Taqi implements against. The UI only ever sees this shape. */
 export interface AntcolosServices {
@@ -19,4 +36,13 @@ export interface AntcolosServices {
   loads: LoadsService;
   fuel: FuelService;
   ifta: IftaService;
+  reports: ReportsService;
+  compliance: ComplianceService;
+  /** The shared operational layer over trucks, trailers, drivers and leases. */
+  fleet: FleetService;
+  settlements: SettlementsService;
+  /** Driver proposals, finalized load posts and the trip workflow. */
+  driverWorkflow: DriverWorkflowService;
+  invoices: InvoicesService;
+  documents: DocumentsService;
 }

@@ -20,6 +20,13 @@ interface ResolvedInvitation {
 /**
  * Paste-an-invitation panel.
  *
+ * KEPT DELIBERATELY, though onboarding no longer renders it. Onboarding used to
+ * offer "join a dispatch organization" and now offers "work as an individual
+ * dispatcher" instead, but nothing about invitations was removed: the flow at
+ * /invite/[code] and /invitation/[token] still works end to end, and this panel
+ * is the piece that accepts a pasted link or bare code. It is here ready to be
+ * dropped back into any screen that needs it. Do not delete it as dead code.
+ *
  * An invitation is the ONLY way into an existing dispatch organization. There is
  * deliberately no directory to browse and no join-by-name box: the link carries
  * the authorization, and without one there is nothing this screen can do.

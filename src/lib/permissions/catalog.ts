@@ -30,6 +30,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "dispatch:view", label: "Open the dispatch board", description: "See the planning board of trucks and available freight.", group: "dispatch" },
   { key: "loads:assign", label: "Assign loads", description: "Put a driver, truck and trailer on a load.", group: "dispatch" },
 
+  // ---- Driver decision and trip workflow ---------------------------------
+  { key: "proposals:view", label: "See load proposals", description: "See load opportunities dispatch sends you before they are booked.", group: "driver_workflow" },
+  { key: "proposals:respond", label: "Answer load proposals", description: "Approve, reject, pause, comment on or counter a load proposal.", group: "driver_workflow" },
+  { key: "trips:execute", label: "Run the trip workflow", description: "Record trip milestones, fuel, rest and other operational updates, and attach the paperwork they produce.", group: "driver_workflow" },
+
   // ---- Drivers -----------------------------------------------------------
   { key: "drivers:view", label: "View drivers", description: "See driver records, contact details and availability.", group: "drivers" },
   { key: "drivers:create", label: "Add drivers", description: "Create a new driver record.", group: "drivers" },
@@ -57,11 +62,17 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "trailers:status:manage", label: "Change trailer status and availability", description: "Mark a trailer available, loaded, in maintenance or out of service, and set where it will be free.", group: "trailers" },
   { key: "trailers:ownership:review", label: "Review trailer ownership claims", description: "Decide who legally owns a trailer when somebody claims it. The strongest trailer permission there is.", group: "trailers", sensitive: true },
 
+  // ---- Fleet operations --------------------------------------------------
+  { key: "fleet:view", label: "Open the fleet dashboard", description: "See the operational picture across trucks, trailers and drivers — what is available, what is out, and what is stopping it.", group: "fleet" },
+  { key: "fleet:telemetry:record", label: "Record location and mileage", description: "Write down where a truck or trailer is, its odometer and its engine hours. Nothing is read from a device — somebody types it in.", group: "fleet" },
+
   // ---- Customers ---------------------------------------------------------
   { key: "customers:view", label: "View customers", description: "See the brokers and shippers you haul for.", group: "customers" },
   { key: "customers:create", label: "Add customers", description: "Add a new broker or shipper.", group: "customers" },
   { key: "customers:edit", label: "Edit customers", description: "Change customer details and contacts.", group: "customers" },
   { key: "customers:delete", label: "Delete customers", description: "Permanently remove a customer record.", group: "customers", sensitive: true },
+  { key: "customers:private:manage", label: "Manage private notes and ratings", description: "Write your own notes, ratings, payment experience and blocked or preferred status. Only your organization ever sees them.", group: "customers" },
+  { key: "customers:resolve", label: "Confirm customer matches", description: "Decide whether a broker, shipper or receiver on a rate confirmation is one you already have, or a new profile.", group: "customers", sensitive: true },
 
   // ---- Documents ---------------------------------------------------------
   { key: "documents:view", label: "View documents", description: "Open uploaded paperwork such as BOLs and PODs.", group: "documents" },
@@ -75,6 +86,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "settlements:create", label: "Create settlements", description: "Build pay periods and add pay lines.", group: "settlements" },
   { key: "settlements:approve", label: "Approve settlements", description: "Sign off a settlement so it can be paid.", group: "settlements", sensitive: true, financial: true },
   { key: "settlements:export", label: "Download settlements", description: "Export pay statements out of Antcolos.", group: "settlements", sensitive: true, financial: true },
+  { key: "settlements:dispute", label: "Raise a settlement dispute", description: "Tell the carrier a pay statement looks wrong, and say why.", group: "settlements" },
+  { key: "settlements:dispute:resolve", label: "Resolve settlement disputes", description: "Answer a disputed pay statement and decide whether it stands or gets corrected.", group: "settlements", sensitive: true, financial: true },
+  { key: "settlements:adjust", label: "Correct settlements", description: "Raise a correction against a settlement that is already approved or paid. The original is never edited.", group: "settlements", sensitive: true, financial: true },
+  { key: "settlements:pay", label: "Record settlement payments", description: "Queue a settlement for payment and record what was paid. Antcolos does not move the money.", group: "settlements", sensitive: true, financial: true },
+  { key: "settlements:void", label: "Void settlements", description: "Cancel a settlement. It stays on the record with its reason.", group: "settlements", sensitive: true, financial: true },
 
   // ---- Invoices ----------------------------------------------------------
   { key: "invoices:view", label: "View invoices", description: "See customer invoices and what is unpaid.", group: "invoices" },
@@ -114,6 +130,28 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "compliance:view", label: "View compliance", description: "See licences, inspections and what is about to expire.", group: "compliance" },
   { key: "compliance:manage", label: "Manage compliance", description: "Record and clear compliance items.", group: "compliance" },
 
+  // ---- Maintenance -------------------------------------------------------
+  { key: "maintenance:view", label: "View maintenance", description: "See what equipment is due for service, what has been reported broken, and what has been done to it.", group: "maintenance" },
+  { key: "maintenance:manage", label: "Manage service schedules", description: "Add and change what a truck or trailer is due for, and defer something with a recorded reason.", group: "maintenance" },
+  { key: "maintenance:defects:report", label: "Report defects", description: "Report something wrong with a truck or trailer, including how badly it affects using it.", group: "maintenance" },
+  { key: "maintenance:defects:manage", label: "Handle reported defects", description: "Acknowledge, triage and close out defects other people reported.", group: "maintenance" },
+  { key: "maintenance:repairs:manage", label: "Manage repair orders", description: "Open repair orders, put a vendor and a person on them, and move them along.", group: "maintenance" },
+  { key: "maintenance:service:record", label: "Record completed service", description: "Write the permanent record of work that was done. Service history can never be edited or deleted afterwards.", group: "maintenance", sensitive: true },
+  { key: "maintenance:costs:view", label: "See maintenance costs", description: "See what repairs cost and how long equipment was down. Without this, repair orders show the work but no money.", group: "maintenance", sensitive: true, financial: true },
+  { key: "maintenance:outofservice:manage", label: "Place equipment out of service", description: "Park a truck or trailer so nobody can load it, and put it back on the road afterwards.", group: "maintenance", sensitive: true },
+  { key: "maintenance:share:manage", label: "Share maintenance with dispatch", description: "Decide which dispatch organizations may see that a piece of equipment is unavailable. They never see cost, vendor or notes.", group: "maintenance", sensitive: true, orgTypes: ["CARRIER"] },
+  // ---- Insurance ---------------------------------------------------------
+  { key: "insurance:view", label: "View insurance", description: "See policies, what they cover, when they expire and which certificates have gone out.", group: "insurance" },
+  { key: "insurance:manage", label: "Manage insurance", description: "Record policies and coverage, renew or replace them, and issue certificates of insurance.", group: "insurance" },
+  { key: "insurance:sensitive:view", label: "See private policy details", description: "See premiums and the private notes on a policy. Without this, coverage and dates are visible but the money is not.", group: "insurance", sensitive: true, financial: true },
+  { key: "insurance:share:manage", label: "Share insurance with others", description: "Decide which dispatch organizations and partners may see a policy, and take that access away again.", group: "insurance", sensitive: true },
+
+  // ---- Claims ------------------------------------------------------------
+  { key: "claims:view", label: "View claims", description: "See accidents, cargo damage and other claims, and where each one has got to.", group: "claims" },
+  { key: "claims:create", label: "Report claims", description: "Report an accident or a loss and open a claim against a policy.", group: "claims" },
+  { key: "claims:manage", label: "Manage claims", description: "Move a claim along, record evidence, third parties and who was responsible.", group: "claims" },
+  { key: "claims:financials:view", label: "See claim money", description: "See reserves, repair costs, what the insurer paid and what the deductible cost you.", group: "claims", sensitive: true, financial: true },
+
   // ---- Organization members ----------------------------------------------
   { key: "members:view", label: "View members", description: "See everyone who belongs to this organization.", group: "members" },
   { key: "members:edit", label: "Edit members", description: "Change someone's job title and which role they hold.", group: "members", sensitive: true },
@@ -136,9 +174,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   loads: "Loads",
   dispatch: "Dispatch",
+  driver_workflow: "Driver proposals and trips",
   drivers: "Drivers",
   trucks: "Trucks",
   trailers: "Trailers",
+  fleet: "Fleet operations",
   customers: "Customers",
   documents: "Documents",
   settlements: "Settlements",
@@ -147,6 +187,9 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   accounting: "Accounting and financial information",
   fuel: "Fuel & IFTA",
   compliance: "Compliance & safety",
+  maintenance: "Maintenance",
+  insurance: "Insurance",
+  claims: "Claims",
   members: "Organization members",
   invitations: "Invitations",
   organization: "Organization settings",
@@ -154,9 +197,10 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
 
 /** The reading order of the modules in every permission list. */
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
-  "loads", "dispatch", "drivers", "trucks", "trailers", "customers",
-  "documents", "settlements", "invoices", "reports", "accounting",
-  "fuel", "compliance", "members", "invitations", "organization",
+  "loads", "dispatch", "driver_workflow", "drivers", "trucks", "trailers",
+  "fleet", "customers", "documents", "settlements", "invoices", "reports",
+  "accounting", "fuel", "compliance", "maintenance", "insurance", "claims",
+  "members", "invitations", "organization",
 ] as const;
 
 /**
