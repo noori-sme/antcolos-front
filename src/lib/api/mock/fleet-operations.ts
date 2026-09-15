@@ -25,7 +25,7 @@ import {
 import {
   appendReading, latestReading, meterContributionFor, readingHistory,
 } from "./fleet-telemetry";
-import { contributeAndPublish } from "./meter-ledger";
+import { contributeAndPublish, meterStateOf } from "./meter-ledger";
 // Side-effect import: wires every projection to the bus before anything is
 // published. A publisher with no subscribers registered would drop events.
 import "./projections";
@@ -275,8 +275,10 @@ async function truckRow(ctx: ServiceContext, input: TruckRowInput): Promise<Flee
     recordStatus: truck.status,
     derivation,
     authority,
+    // Location from this layer's own store; the meters from the one ledger.
     telemetry: telemetrySnapshot(
       latestReading(truck.truckId, ctx.organizationId), "truck", nowMs,
+      meterStateOf(truck.truckId),
     ),
     readiness,
     driver: assignment
@@ -354,6 +356,7 @@ function trailerRow(ctx: ServiceContext, input: TrailerRowInput): FleetEquipment
     authority,
     telemetry: telemetrySnapshot(
       latestReading(trailer.trailerId, ctx.organizationId), "trailer", nowMs,
+      meterStateOf(trailer.trailerId),
     ),
     readiness,
     pairedTruck: attachment

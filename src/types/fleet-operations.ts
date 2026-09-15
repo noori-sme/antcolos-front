@@ -1,3 +1,4 @@
+import type { EquipmentMeterState } from "./meter";
 import type { AssetActivationState } from "./asset";
 import type { TrailerAttachmentState, TrailerOperatingStatus, TrailerType } from "./trailer";
 import type { TruckEquipmentType, TruckOperatingStatus } from "./truck";
@@ -174,6 +175,19 @@ export interface FleetTelemetrySnapshot {
   stale: boolean;
   /** How fresh a reading has to be before this layer stops trusting it. */
   freshnessExpectationHours: number;
+  /**
+   * The odometer and engine hours, from the canonical Equipment Meter Ledger.
+   *
+   * NOT from the reading above. This layer owns where equipment IS; the meters
+   * belong to one ledger keyed by the permanent equipment UUID, which every
+   * contributor — this screen's own "record a reading", maintenance, a fuel
+   * receipt, later an ELD — appends to. Fleet operations used to keep its own
+   * odometer and maintenance kept another, about the same trucks, disagreeing.
+   *
+   * Absent when nothing has ever been reported, which reads as "nobody has told
+   * us" rather than as zero miles at the depot.
+   */
+  meter?: EquipmentMeterState;
 }
 
 export type FleetAssetKind = "truck" | "trailer";
