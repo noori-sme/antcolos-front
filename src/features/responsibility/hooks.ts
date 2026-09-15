@@ -7,7 +7,9 @@ import { services } from "@/lib/api";
 import type { PolicyPatch, WorkKey } from "@/lib/api/contracts/responsibility";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { queryKeys } from "@/lib/query/keys";
-import type { ResponsibilityAssignment, ResponsibilityRole } from "@/types";
+import type {
+  AssignmentState, ResponsibilityAssignment, ResponsibilityRole,
+} from "@/types";
 
 /**
  * Every call goes through `services.responsibility`, never an adapter.
@@ -224,20 +226,31 @@ export function useUpdatePolicy() {
  * serves still owns its own records: this is a label, not a second routing
  * engine growing inside a feature component.
  */
-export function useRoutedHolders(): Map<
-  string,
-  { displayName: string; isFallback: boolean }
-> {
+export interface RoutedHolder {
+  displayName: string;
+  isFallback: boolean;
+  /**
+   * How the work came to be theirs, as the responsibility layer recorded it.
+   *
+   * Carried so the Needs You filter panel can offer "Owner fallback" and
+   * "Needs assignment" as the separate things they are, instead of the single
+   * "Unassigned" chip that was wrong about both.
+   */
+  assignmentState: AssignmentState;
+}
+
+export function useRoutedHolders(): Map<string, RoutedHolder> {
   const board = useResponsibilityBoard();
   const queues = board.data?.queues ?? [];
 
-  const out = new Map<string, { displayName: string; isFallback: boolean }>();
+  const out = new Map<string, RoutedHolder>();
   for (const queue of queues) {
     for (const item of queue.items) {
       if (out.has(item.work.id)) continue;
       out.set(item.work.id, {
         displayName: item.responsible.displayName,
         isFallback: item.responsible.source === "fallback",
+        assignmentState: item.assignmentState,
       });
     }
   }

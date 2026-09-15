@@ -11,7 +11,9 @@
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:node": "node --experimental-transform-types --import ./tests/alias-hook.mjs --test \"tests/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:browser": "playwright test",
+    "test:browser:desktop": "playwright test --project=desktop"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
@@ -43,6 +45,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.2",
     "@types/react": "^19",

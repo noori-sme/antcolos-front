@@ -1,15 +1,19 @@
 "use client";
 
 import { Inbox } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { useActiveMembership } from "@/lib/session/hooks";
-import type { NeedsYouFilters, NeedsYouItem } from "@/types";
+import type { NeedsYouItem } from "@/types";
 import { NeedsYouDrawer } from "./detail-drawer";
-import { NeedsYouFilterBar } from "./filter-bar";
+import { NeedsYouToolbar } from "./filter-bar";
+import { NeedsYouFilterPanel } from "./filter-panel";
 import { useAttentionViews, useRoutedHolders } from "@/features/responsibility/hooks";
+import {
+  activeFilterCount, defaultQuery, sortItems, type NeedsYouQuery,
+} from "./query";
 import {
   NEEDS_YOU_VIEW_ORDER, NeedsYouViewNote, NeedsYouViewSwitcher, type NeedsYouView,
 } from "./view-switcher";
@@ -18,13 +22,17 @@ import {
 } from "./hooks";
 import { NeedsYouCard } from "./item-card";
 
-const DEFAULT_FILTERS: NeedsYouFilters = {
-  status: ["open", "escalated"],
-  owner: "all",
-};
-
 export function NeedsYouWorkspace() {
-  const [filters, setFilters] = useState<NeedsYouFilters>(DEFAULT_FILTERS);
+  /**
+   * ★ THE DEFAULT PAGE STATE: My Needs You + Open. ★
+   *
+   * Nothing else is on. A person arriving here is answering "what needs me?",
+   * and the page answers it before offering to narrow it — the Filters button
+   * reads "Filters" with no number until they choose something.
+   */
+  const [query, setQuery] = useState<NeedsYouQuery>(defaultQuery);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersButton = useRef<HTMLButtonElement>(null);
   // The drawer holds the item itself, not just its id: acting on an item can
   // move it out of the current filter, and the panel must stay open showing the
   // result rather than vanishing under the user.
@@ -38,9 +46,7 @@ export function NeedsYouWorkspace() {
   // itself what belongs in a personal queue.
   const attention = useAttentionViews();
 
-  // Unfiltered (status-wide) set, used for chip counts so the numbers do not
-  // change as you filter.
-  const list = useNeedsYouList(filters);
+  const list = useNeedsYouList(query.filters);
   const members = useAssignableMembers();
   const action = useNeedsYouAction();
 
@@ -92,17 +98,34 @@ export function NeedsYouWorkspace() {
     [allItems, viewIds],
   );
 
-  const items = useMemo(
-    () => (list.data ?? []).filter((i) => viewIds[activeView].has(i.id)),
-    [list.data, viewIds, activeView],
-  );
-
   // Who a row is routed to, when nobody has explicitly taken it. Read from the
   // responsibility board the viewer already has cached rather than one query
-  // per row — and used only as a label. Without it the queue says "Unassigned"
-  // about items the routing engine has given somebody, which is the one thing
-  // this milestone must never let a screen claim.
+  // per row — and used only as a label and as the Responsibility filter's
+  // source. Without it the queue says "Unassigned" about items the routing
+  // engine has given somebody, which is the one thing this milestone must
+  // never let a screen claim.
   const routed = useRoutedHolders();
+
+  /**
+   * The list on screen: the view, then the service filters, then responsibility,
+   * then the sort.
+   *
+   * Responsibility is applied here rather than in the service because it is the
+   * responsibility layer's answer, not the Needs You queue's — the queue records
+   * an explicit assignee and nothing else. Reading it from the board the page
+   * already holds keeps one routing engine rather than growing a second.
+   */
+  const items = useMemo(() => {
+    const inQueue = (list.data ?? []).filter((i) => viewIds[activeView].has(i.id));
+    const byAssignment =
+      query.assignment.length === 0
+        ? inQueue
+        : inQueue.filter((i) => {
+            const state = routed.get(i.id)?.assignmentState;
+            return state != null && query.assignment.includes(state);
+          });
+    return sortItems(byAssignment, query.sort);
+  }, [list.data, viewIds, activeView, query.assignment, query.sort, routed]);
 
   const memberName = useCallback(
     (item: NeedsYouItem) => {
@@ -122,13 +145,18 @@ export function NeedsYouWorkspace() {
   // Counted over the ACTIVE view, never the whole organization. The header
   // badge used to say "142 open" to a Carrier Owner whose personal list held
   // ten things, which is the headline version of the mistake this change fixes.
-  const inView = allItems.filter((i) => viewIds[activeView].has(i.id));
+  const inView = useMemo(
+    () => allItems.filter((i) => viewIds[activeView].has(i.id)),
+    [allItems, viewIds, activeView],
+  );
   const openCount = inView.filter(
     (i) => i.status === "open" || i.status === "escalated",
   ).length;
   const criticalCount = inView.filter(
     (i) => i.severity === "critical" && (i.status === "open" || i.status === "escalated"),
   ).length;
+
+  const narrowed = activeFilterCount(query) > 0;
 
   return (
     <div className="space-y-section">
@@ -149,20 +177,36 @@ export function NeedsYouWorkspace() {
         }
       />
 
-      <NeedsYouViewSwitcher
-        view={activeView}
-        onChange={setView}
-        counts={viewCounts}
-        available={availableViews}
+      {/*
+        The whole top of the page: three views, a search box, a sort and one
+        Filters button. Everything else is behind that button.
+      */}
+      <NeedsYouToolbar
+        query={query}
+        onChange={setQuery}
+        onOpenFilters={() => setFiltersOpen(true)}
+        filtersButtonRef={filtersButton}
+        views={
+          <NeedsYouViewSwitcher
+            view={activeView}
+            onChange={setView}
+            counts={viewCounts}
+            available={availableViews}
+          />
+        }
       />
       <NeedsYouViewNote view={activeView} />
 
-      <NeedsYouFilterBar
-        filters={filters}
-        onChange={setFilters}
-        // Counted over the view on screen. Chips reading "Critical 37" above a
-        // list of ten is the same disagreement the header badge used to have.
-        allItems={inView}
+      <NeedsYouFilterPanel
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        query={query}
+        onChange={setQuery}
+        // Counted over the view on screen, unfiltered, so the numbers beside
+        // each option hold still while you tick them.
+        items={inView}
+        resultCount={items.length}
+        returnFocusTo={filtersButton}
       />
 
       {list.isPending ? (
@@ -177,18 +221,18 @@ export function NeedsYouWorkspace() {
         <EmptyState
           icon={Inbox}
           title={
-            inView.length === 0
+            inView.length === 0 && !narrowed
               ? emptyTitle(activeView)
               : "Nothing matches these filters"
           }
           description={
-            inView.length === 0
+            inView.length === 0 && !narrowed
               ? emptyDescription(activeView)
               : "Clear a filter to widen the queue."
           }
         />
       ) : (
-        <ul className="space-y-2.5">
+        <ul aria-label="Needs You queue" className="space-y-2.5">
           {items.map((item) => (
             <li key={item.id}>
               <NeedsYouCard
