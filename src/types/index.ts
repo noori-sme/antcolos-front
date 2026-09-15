@@ -28,6 +28,7 @@ export type * from "./rate-confirmation";
 export type * from "./workspace";
 export type * from "./integration";
 export type * from "./propagation";
+export type * from "./meter";
 export type * from "./driver-policy";
 export type * from "./driver-proposal";
 export type * from "./driver-workflow";
@@ -52,6 +53,7 @@ export {
   DOMAIN_EVENT_LABEL, PROJECTION_STATE_LABEL,
 } from "./propagation";
 export { HANDOFF_STATE_LABEL, HANDOFF_SETTLED } from "./integration";
+export { METER_SOURCE_LABEL, METER_FLAG_LABEL } from "./meter";
 export {
   SOURCE_LABEL, CONNECTION_LABEL, CONNECTION_IS_PLANNED, LISTING_STATUS_LABEL,
   MATCH_STATUS_LABEL, CHECK_LABEL, FACTOR_LABEL, FACTOR_DESCRIPTION,

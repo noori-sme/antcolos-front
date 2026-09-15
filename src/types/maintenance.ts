@@ -1,4 +1,5 @@
 import type { Cents, IsoDateTime, Money } from "./common";
+import type { MeterSourceKind } from "./meter";
 import type { ActorRef } from "./user";
 
 /**
@@ -86,11 +87,14 @@ export interface MaintenanceEquipmentSummary {
  * connected. A reading never silently changes source.
  */
 export type MeterSource =
+  /**
+   * Maintenance's own word for a reading typed into a maintenance screen. The
+   * Equipment Meter Ledger calls the same thing `manual_entry`; both are kept
+   * because this one is what the screens and the tests have always said.
+   */
   | "manual"
-  | "driver_report"
-  | "service_record"
-  | "eld"
-  | "telematics";
+  /** Everything else comes straight from the canonical ledger's vocabulary. */
+  | MeterSourceKind;
 
 /**
  * Odometer and engine hours as of one moment.

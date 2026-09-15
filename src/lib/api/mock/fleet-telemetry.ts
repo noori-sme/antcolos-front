@@ -3,19 +3,28 @@ import type {
 } from "@/types";
 import { TRUCK_IDS } from "./truck-registry";
 import { TRAILER_IDS } from "./trailer-registry";
+import { contributeMeterReading } from "./meter-ledger";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND, AND NOT A DEVICE ███
  *
- * The one store this layer owns: dated readings about where equipment is, what
- * its odometer says and how many hours its engine has run.
+ * The one store this layer owns: dated readings about WHERE equipment is.
  *
- * This is genuinely new data. It is not derivable from the Truck, the Trailer,
- * the lease or the assignment, because none of those records knows where the
- * equipment physically is. So it gets a store — and the store is append-only,
- * keyed by the permanent asset id, and partitioned by the organization that
- * recorded it, because one carrier's operational reporting is not another's to
- * read.
+ * Location is genuinely new data. It is not derivable from the Truck, the
+ * Trailer, the lease or the assignment, because none of those records knows
+ * where the equipment physically is. So it gets a store — append-only, keyed by
+ * the permanent asset id, and partitioned by the organization that recorded it,
+ * because one carrier's operational reporting is not another's to read.
+ *
+ * ODOMETER AND ENGINE HOURS ARE NOT OWNED HERE. They belong to the canonical
+ * Equipment Meter Ledger (`meter-ledger.ts`), which is keyed by the permanent
+ * equipment UUID so one physical truck has one odometer. This store used to keep
+ * its own, and the maintenance registry kept another set about the same trucks,
+ * and the two disagreed — NL-104 read 118,442 here and 118,450 there. The seeded
+ * values now live once, in `meter-seed.ts`. A reading submitted through
+ * `appendReading` still records the numbers on its own row (that row is the
+ * record of what was submitted) and CONTRIBUTES them to the ledger, which is
+ * where every reader gets the accepted value.
  *
  * Every seeded row carries `source: "mock_adapter"` and says so on screen.
  * Nothing here came from an ELD, a GPS tracker or a telematics feed; no such
@@ -91,35 +100,32 @@ function buildFixtures(): FleetTelemetryReading[] {
   return [
     /* Northline power units --------------------------------------------- */
     reading("truck", T.nl104, NL, 1.5, { city: "Lafayette", state: "IN", description: "Customer yard" },
-      { odometerMiles: 118_442, engineHours: 4_210, recordedByName: "Dmitri Kovalenko", source: "driver_report" }),
+      { recordedByName: "Dmitri Kovalenko", source: "driver_report" }),
     reading("truck", T.nl107, NL, 3, { city: "Indianapolis", state: "IN", description: "I-70 westbound" },
-      { odometerMiles: 96_015, engineHours: 3_488, recordedByName: "Priya Raman", source: "driver_report" }),
+      { recordedByName: "Priya Raman", source: "driver_report" }),
     reading("truck", T.nl111, NL, 6, { city: "Chicago", state: "IL", description: "Home terminal" },
-      { odometerMiles: 204_770, engineHours: 9_120, source: "dispatcher_entry", recordedByName: "Sam Murtaza" }),
+      { source: "dispatcher_entry", recordedByName: "Sam Murtaza" }),
     // In the shop, and nobody has reported on it for the better part of a week.
     reading("truck", T.nl115, NL, 140, { city: "Memphis", state: "TN", description: "Peterbilt dealer" },
-      { odometerMiles: 612_339, engineHours: 21_004, note: "Dropped for aftertreatment work." }),
+      { note: "Dropped for aftertreatment work." }),
     // Deliberately stale: this is what the stale-location item is built from.
     reading("truck", T.nl118, NL, 52, { city: "Joliet", state: "IL" },
-      { odometerMiles: 71_806, engineHours: 2_140, source: "manual_entry", recordedByName: "Marcus Hale" }),
-    reading("truck", T.nl131, NL, 2, { city: "Chicago", state: "IL", description: "Home terminal" },
-      { odometerMiles: 41_298, engineHours: 1_366 }),
+      { source: "manual_entry", recordedByName: "Marcus Hale" }),
+    reading("truck", T.nl131, NL, 2, { city: "Chicago", state: "IL", description: "Home terminal" }),
     // T.nl121 and T.claimed have NO reading at all, on purpose. An asset nobody
     // has ever reported on is exactly the one worth surfacing.
 
     /* Baxter power units ------------------------------------------------- */
     reading("truck", T.mdA12, BX, 2, { city: "Allentown", state: "PA", description: "I-78 eastbound" },
-      { odometerMiles: 388_102, engineHours: 14_870, source: "driver_report" }),
-    reading("truck", T.mdA18, BX, 30, { city: "Baltimore", state: "MD" },
-      { odometerMiles: 28_441, engineHours: 902 }),
+      { source: "driver_report" }),
+    reading("truck", T.mdA18, BX, 30, { city: "Baltimore", state: "MD" }),
 
     /* Cascade ------------------------------------------------------------ */
     reading("truck", T.cs47, CS, 5, { city: "Portland", state: "OR", description: "Swan Island yard" },
-      { odometerMiles: 132_559, engineHours: 5_012, source: "driver_report" }),
+      { source: "driver_report" }),
 
     /* Northline trailers ------------------------------------------------- */
-    reading("trailer", R.dv220, NL, 4, { city: "Chicago", state: "IL", description: "Dock 6" },
-      { odometerMiles: undefined }),
+    reading("trailer", R.dv220, NL, 4, { city: "Chicago", state: "IL", description: "Dock 6" }),
     reading("trailer", R.rf114, NL, 20, { city: "Indianapolis", state: "IN" },
       { note: "Reefer running at set point." }),
     // Well past the 48-hour trailer expectation.
@@ -236,5 +242,44 @@ export function appendReading(
     note: input.note?.trim() || undefined,
   };
   db().readings = [row, ...db().readings];
+
+  /*
+   * The meters go to the canonical ledger. The row above is this store's record
+   * of what was submitted; the ledger is where maintenance, fuel and anything
+   * else reads the accepted odometer from. Keyed on this row's id, so a retried
+   * submission contributes once.
+   */
+  if (input.odometerMiles != null || input.engineHours != null) {
+    contributeMeterReading({
+      equipmentKind: input.assetKind === "trailer" ? "trailer" : "truck",
+      equipmentId: input.assetId,
+      odometerMiles: input.odometerMiles ?? undefined,
+      engineHours: input.engineHours ?? undefined,
+      readAt: observedAt,
+      source: "manual_entry",
+      contributor: "fleet",
+      scope: {
+        organizationId: by.organizationId,
+        carrierOrganizationId: by.organizationId,
+      },
+      verification: "confirmed",
+      recordedBy: {
+        userId: by.membershipId,
+        membershipId: by.membershipId,
+        displayNameSnapshot: by.actorName,
+        source: "web",
+      },
+      note: input.note?.trim() || undefined,
+      idempotencyKey: `fleet:reading:${row.id}`,
+      provenance: {
+        module: "telematics",
+        adapter: "mock:fleet-telemetry",
+        mock: true,
+        observedAt,
+        receivedAt: nowIso,
+      },
+    });
+  }
+
   return { ...row };
 }

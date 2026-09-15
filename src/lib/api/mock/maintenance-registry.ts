@@ -43,6 +43,7 @@ import {
 } from "./trailer-registry";
 import { TRUCK_IDS } from "./truck-registry";
 import { TRAILER_IDS } from "./trailer-registry";
+import { contributeMeterReading, meterReadings, meterStateOf } from "./meter-ledger";
 import { EQUIPMENT_LABEL } from "@/lib/fleet/equipment";
 import { TRAILER_TYPE_LABEL } from "@/lib/fleet/trailer-equipment";
 
@@ -205,7 +206,6 @@ interface RegistryState {
   serviceRecords: ServiceRecord[];
   holds: EquipmentServiceHold[];
   vendors: MaintenanceVendor[];
-  meters: EquipmentMeter[];
   shares: MaintenanceShare[];
   /** Per-item workflow state for the Needs You items maintenance derives. */
   needsYouOverlay: Record<string, NeedsYouOverlay>;
@@ -396,9 +396,67 @@ export function maintainableEquipment(ctx: MaintenanceContext): MaintenanceEquip
 
 const DEFAULT_METER_STALE_DAYS = 21;
 
+/**
+ * Maintenance's view of the equipment's meter — a PROJECTION, not a store.
+ *
+ * Maintenance used to keep its own `EquipmentMeter` per truck, which is how one
+ * physical odometer came to have two values: this registry's and the fleet
+ * telemetry store's. It keeps none now. The accepted odometer and engine hours
+ * come from the canonical Equipment Meter Ledger, which every contributor —
+ * maintenance, fleet operations, fuel receipts, and later an ELD — appends to.
+ *
+ * Which is why an oil change now comes due from a fuel receipt with nobody
+ * typing mileage in twice: the receipt's odometer is a reading, the ledger
+ * accepts it, and `requirementState` reads the ledger's answer.
+ *
+ * Returns `undefined` when nothing has ever been reported. That is a
+ * first-class answer, and the trigger logic turns it into "no odometer
+ * reading" rather than guessing.
+ */
 export function meterFor(ref: MaintenanceEquipmentRef): EquipmentMeter | undefined {
-  return db().meters.find((m) => sameEquipment(m.equipment, ref));
+  const state = meterStateOf(ref.equipmentId);
+  if (!state.odometer && !state.engineHours) return undefined;
+
+  // The reading that supplied whichever meter was read most recently carries
+  // the attribution a screen shows.
+  const newest = [state.odometer, state.engineHours]
+    .filter((v) => v !== undefined)
+    .sort((a, b) => Date.parse(b!.readAt) - Date.parse(a!.readAt))[0]!;
+  // Attribution comes off the reading itself. Unscoped on purpose: whether this
+  // caller may see the equipment at all was decided before we got here, and the
+  // odometer of a physical truck is one number whoever reported it.
+  const reading = meterReadings(ref.equipmentId)
+    .find((r) => r.readingId === newest.readingId);
+
+  return {
+    equipment: ref,
+    latest: {
+      odometerMiles: state.odometer?.value,
+      engineHours: state.engineHours?.value,
+      readAt: newest.readAt,
+      source: newest.source === "manual_entry" ? "manual" : newest.source,
+      recordedBy: reading?.recordedBy,
+      note: reading?.note,
+    },
+    staleAfterDays: DEFAULT_METER_STALE_DAYS,
+  };
 }
+
+/** How maintenance describes a reading it is contributing to the ledger. */
+function maintenanceScope(ctx: MaintenanceContext) {
+  return {
+    organizationId: ctx.organizationId,
+    carrierOrganizationId: ctx.organizationId,
+  };
+}
+
+const MAINTENANCE_PROVENANCE = (at: string) => ({
+  module: "telematics" as const,
+  adapter: "mock:maintenance-registry",
+  mock: true,
+  observedAt: at,
+  receivedAt: at,
+});
 
 /**
  * Record an odometer or hour-meter reading.
@@ -442,26 +500,33 @@ export async function recordMeterReading(
     );
   }
 
-  const next: MeterReading = {
-    odometerMiles: reading.odometerMiles ?? previous?.odometerMiles,
-    engineHours: reading.engineHours ?? previous?.engineHours,
-    readAt: reading.readAt ?? iso(now()),
-    source: ctx.driverProfileId ? "driver_report" : "manual",
+  const readAt = reading.readAt ?? iso(now());
+
+  /*
+   * The reading goes to the canonical Equipment Meter Ledger, not to a store of
+   * maintenance's own. Maintenance reads it straight back through `meterFor`,
+   * and so does fleet operations, and so does anything else that needs to know
+   * how far this truck has been — which is the whole point: nobody types it
+   * twice.
+   */
+  contributeMeterReading({
+    equipmentKind: ref.kind,
+    equipmentId: ref.equipmentId,
+    equipmentLabel: equipmentSummary(ref, ctx)?.unit,
+    odometerMiles: reading.odometerMiles,
+    engineHours: reading.engineHours,
+    readAt,
+    source: ctx.driverProfileId ? "driver_report" : "manual_entry",
+    contributor: "maintenance",
+    scope: maintenanceScope(ctx),
+    verification: "confirmed",
     recordedBy: ctx.actor,
     note: reading.note?.trim() || undefined,
-  };
+    idempotencyKey: `maintenance:reading:${ref.equipmentId}:${readAt}:${reading.odometerMiles ?? "-"}:${reading.engineHours ?? "-"}`,
+    provenance: MAINTENANCE_PROVENANCE(readAt),
+  });
 
-  if (existing) {
-    existing.latest = next;
-    return existing;
-  }
-  const created: EquipmentMeter = {
-    equipment: ref,
-    latest: next,
-    staleAfterDays: DEFAULT_METER_STALE_DAYS,
-  };
-  db().meters.push(created);
-  return created;
+  return meterFor(ref)!;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -896,16 +961,26 @@ export async function reportDefect(
   };
   db().defects.push(defect);
 
+  // A reading taken with a defect report is a reading. It goes to the canonical
+  // ledger, attributed to whoever took it, and is kept on the defect too because
+  // "what the meter said when this fault was found" is part of the defect.
   if (meterAtReport) {
-    const meter = meterFor(input.equipment);
-    if (meter) meter.latest = meterAtReport;
-    else {
-      db().meters.push({
-        equipment: input.equipment,
-        latest: meterAtReport,
-        staleAfterDays: DEFAULT_METER_STALE_DAYS,
-      });
-    }
+    contributeMeterReading({
+      equipmentKind: input.equipment.kind,
+      equipmentId: input.equipment.equipmentId,
+      equipmentLabel: equipmentSummary(input.equipment, ctx)?.unit,
+      odometerMiles: meterAtReport.odometerMiles,
+      engineHours: meterAtReport.engineHours,
+      readAt: meterAtReport.readAt,
+      source: ctx.driverProfileId ? "driver_report" : "manual_entry",
+      contributor: "maintenance",
+      scope: maintenanceScope(ctx),
+      verification: "confirmed",
+      recordedBy: ctx.actor,
+      note: `Reported with defect ${defect.id}.`,
+      idempotencyKey: `maintenance:defect:${defect.id}`,
+      provenance: MAINTENANCE_PROVENANCE(at),
+    });
   }
 
   // "Should not be driven" parks the equipment now, not after a triage meeting.
@@ -1548,14 +1623,26 @@ export async function recordCompletedService(
     note: "Service recorded. The record is permanent and cannot be changed.",
   });
 
-  if (meter) {
-    const existing = meterFor(order.equipment);
-    if (existing) existing.latest = meter;
-    else {
-      db().meters.push({
-        equipment: order.equipment, latest: meter, staleAfterDays: DEFAULT_METER_STALE_DAYS,
-      });
-    }
+  // The meter at the moment the work was done. The next interval is measured
+  // from here, so this reading matters more than most — and it is one reading in
+  // one ledger, not a number the shop has to repeat on a second screen.
+  if (meter && (meter.odometerMiles !== undefined || meter.engineHours !== undefined)) {
+    contributeMeterReading({
+      equipmentKind: order.equipment.kind,
+      equipmentId: order.equipment.equipmentId,
+      equipmentLabel: equipmentSummary(order.equipment, ctx)?.unit,
+      odometerMiles: meter.odometerMiles,
+      engineHours: meter.engineHours,
+      readAt: meter.readAt,
+      source: meter.source === "manual" ? "manual_entry" : meter.source,
+      contributor: "maintenance",
+      scope: maintenanceScope(ctx),
+      verification: "confirmed",
+      recordedBy: ctx.actor,
+      note: `Read when repair order ${order.number} was completed.`,
+      idempotencyKey: `maintenance:service:${order.id}`,
+      provenance: MAINTENANCE_PROVENANCE(at),
+    });
   }
 
   // Close what the work answered.
@@ -2309,23 +2396,21 @@ function buildFixtures(): RegistryState {
     { id: "ven_cs_portland", organizationId: "org_cascade", name: "Portland Fleet Service", kind: "independent_shop", city: "Portland", state: "OR", createdAt: daysAgo(200) },
   ];
 
-  /* -- Meters. Every one of these was typed in by a person. ---------------- */
-  const meters: EquipmentMeter[] = [
-    meter(truckRef(T.nl104), { odometerMiles: 118_450, readAt: daysAgo(3), source: "manual", recordedBy: nlShop }),
-    meter(truckRef(T.nl107), { odometerMiles: 96_320, readAt: daysAgo(1), source: "driver_report", recordedBy: nlOwner }),
-    meter(truckRef(T.nl111), { odometerMiles: 214_880, readAt: daysAgo(12), source: "manual", recordedBy: nlShop }),
-    meter(truckRef(T.nl115), { odometerMiles: 612_040, engineHours: 18_240, readAt: daysAgo(2), source: "manual", recordedBy: nlShop }),
-    // Deliberately old: this is what a stale meter looks like on the dashboard.
-    meter(truckRef(T.nl118), { odometerMiles: 71_200, readAt: daysAgo(46), source: "driver_report", recordedBy: nlOwner }),
-    meter(truckRef(T.nl131), { odometerMiles: 42_610, readAt: daysAgo(5), source: "manual", recordedBy: nlShop }),
-    meter(trailerRef(TR.rf114), { engineHours: 9_140, readAt: daysAgo(4), source: "manual", recordedBy: nlShop }),
-    meter(truckRef(T.mdA12), { odometerMiles: 388_900, engineHours: 11_450, readAt: daysAgo(6), source: "manual", recordedBy: bxOwner }),
-    meter(truckRef(T.mdA18), { odometerMiles: 24_150, readAt: daysAgo(9), source: "manual", recordedBy: bxOwner }),
-    meter(truckRef(T.cs47), { odometerMiles: 143_770, readAt: daysAgo(2), source: "driver_report", recordedBy: csDriver }),
-    // NOTE: T.claimed has no meter on purpose. Its mileage requirement below is
-    // therefore unanswerable, and the UI says "no odometer reading" instead of
-    // inventing one.
-  ];
+  /*
+   * -- Meters -------------------------------------------------------------- *
+   * There is no meter fixture here any more, and no meter store.
+   *
+   * Maintenance used to keep an `EquipmentMeter` per truck. The fleet telemetry
+   * store kept odometer readings about the same trucks, and the two disagreed:
+   * unit NL-104 read 118,450 here and 118,442 there, unit CS-47 was 11,000 miles
+   * apart. One physical truck, two canonical values, and mileage typed in on two
+   * screens.
+   *
+   * The seeded history now lives once, in `meter-seed.ts`, behind the canonical
+   * Equipment Meter Ledger. `meterFor()` projects from it, and every reading this
+   * registry takes — a typed reading, a defect report, a completed service — is
+   * contributed to it. Nothing here holds a competing value.
+   */
 
   /* -- Defects ------------------------------------------------------------- */
   const defects: ReportedDefect[] = [];
@@ -2799,16 +2884,12 @@ function buildFixtures(): RegistryState {
   ];
 
   return {
-    requirements, defects, repairOrders, serviceRecords, holds, vendors, meters, shares,
+    requirements, defects, repairOrders, serviceRecords, holds, vendors, shares,
     needsYouOverlay: {},
   };
 }
 
 /* -- Fixture helpers ------------------------------------------------------- */
-
-function meter(equipment: MaintenanceEquipmentRef, latest: MeterReading): EquipmentMeter {
-  return { equipment, latest, staleAfterDays: DEFAULT_METER_STALE_DAYS };
-}
 
 function req(
   id: string,

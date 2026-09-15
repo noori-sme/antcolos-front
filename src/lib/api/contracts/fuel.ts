@@ -45,6 +45,28 @@ export interface RecordFuelPurchaseInput {
    * may fill a gap, never overrule the record.
    */
   declaredCarrierOrganizationId?: string;
+  /**
+   * What an extractor read off the receipt, when the values above came from
+   * one and a person changed some of them before saving.
+   *
+   * Kept beside the values that stand rather than thrown away, so the
+   * transaction can always answer "the receipt said X and somebody entered Y".
+   * Absent when nothing was extracted — a purchase typed in from scratch has no
+   * original to differ from. Nothing in this build extracts anything: the
+   * receipt uploader records a file's name, type and size and discards the file.
+   */
+  extracted?: ExtractedReceiptValues;
+}
+
+/** What a receipt extractor read, before a person touched it. */
+export interface ExtractedReceiptValues {
+  gallonsThousandths?: number;
+  totalCostCents?: number;
+  pricePerGallonMills?: number;
+  odometerMiles?: number;
+  jurisdiction?: string;
+  merchantName?: string;
+  purchasedAt?: string;
 }
 
 /**
