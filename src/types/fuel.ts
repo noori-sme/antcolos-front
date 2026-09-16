@@ -349,6 +349,15 @@ export interface JurisdictionMileageRecord {
 
   /** Frozen at write time, exactly as on a purchase. */
   attribution: CarrierAttribution;
+  /**
+   * The same finding a purchase can carry, for the same reason.
+   *
+   * A leg whose operating authority nobody can establish is flagged exactly as
+   * a purchase is, raises exactly the same Needs You item, and had exactly the
+   * same problem: nothing could close it. Resolved against `travelStartedAt`,
+   * which is the instant the attribution snapshot was resolved for.
+   */
+  attributionReview?: AttributionReview;
 
   jurisdiction: Jurisdiction;
   /** The continuous stretch inside that jurisdiction. */
@@ -655,6 +664,18 @@ export interface AttributionReview {
    * evidence changes.
    */
   refusalCode: string;
+  /**
+   * The canonical record ids that refusal named — the conflicting relationships,
+   * the leases that overlap, the ownership row that cannot be placed in time.
+   *
+   * The code alone is a CATEGORY, and a category does not change when the facts
+   * behind it do. "Two carriers cover this moment" reads the same whether it is
+   * the two carriers the reviewer looked at or two different ones, and a finding
+   * that survived that swap would be a person's conclusion about evidence they
+   * never saw. The ids are the evidence's own identity, held by the registry
+   * that owns it; nothing here is a second copy of a relationship or a lease.
+   */
+  refusalRecords: string[];
 }
 
 export type FuelAuditKind =
@@ -672,6 +693,7 @@ export type FuelAuditKind =
   | "mileage.verified"
   | "mileage.rejected"
   | "mileage.corrected"
+  | "mileage.attribution_reviewed"
   | "period.opened"
   | "period.state_changed"
   | "period.filed"

@@ -13,7 +13,9 @@ import { READINESS_ISSUE_LABEL, readinessIssues } from "@/lib/fuel/ifta";
 import { formatGallons } from "@/lib/fuel/units";
 import type { ServiceContext } from "../contracts/context";
 import { fuelDb } from "./fuel-store";
-import { attributionReviewStanding } from "./fuel-propagation";
+import {
+  attributionReviewStanding, mileageAttributionReviewStanding,
+} from "./fuel-propagation";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 
@@ -187,10 +189,14 @@ function suspiciousItem(organizationId: string, t: FuelTransaction, flags: strin
   );
 }
 
-function mileageItem(organizationId: string, r: JurisdictionMileageRecord): NeedsYouItem {
+function mileageItem(
+  organizationId: string,
+  r: JurisdictionMileageRecord,
+  flags: JurisdictionMileageRecord["flags"],
+): NeedsYouItem {
   const period = dueForRecord(r.travelStartedAt);
   const impossible =
-    r.flags.includes("taxable_exceeds_total") || r.flags.includes("negative_miles");
+    flags.includes("taxable_exceeds_total") || flags.includes("negative_miles");
   return item(
     organizationId,
     `${FUEL_PREFIX}mileage_${r.id}`,
@@ -198,7 +204,7 @@ function mileageItem(organizationId: string, r: JurisdictionMileageRecord): Need
       category: "invalid_mileage",
       severity: impossible ? "high" : "medium",
       title: `Mileage to fix — ${r.jurisdiction}, ${truckLabel(r)}`,
-      reason: r.flags.map((f) => MILEAGE_FLAG_LABEL[f]).join(" · "),
+      reason: flags.map((f) => MILEAGE_FLAG_LABEL[f]).join(" · "),
       detail: impossible
         ? "A record that cannot be true will not be accepted for a return. Correct it — the original stays on the record with the reason."
         : "Worth a look before the quarter closes.",
@@ -325,8 +331,14 @@ export function syncFuelNeedsYou(ctx: ServiceContext) {
   }
 
   for (const r of countableMileage(myMileage)) {
-    if (r.flags.length === 0) continue;
-    const built = mileageItem(ctx.organizationId, r);
+    // A standing finding closes the attribution question for a leg exactly as
+    // it does for a purchase. Every other flag on the record still raises it.
+    const reviewed = mileageAttributionReviewStanding(r);
+    const flags = r.flags.filter(
+      (f) => !(reviewed && f === "no_active_operating_authority"),
+    );
+    if (flags.length === 0) continue;
+    const built = mileageItem(ctx.organizationId, r, flags);
     desired.set(built.id, built);
   }
 

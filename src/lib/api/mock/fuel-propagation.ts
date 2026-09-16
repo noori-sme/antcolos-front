@@ -2,6 +2,7 @@ import type {
   ActorRef, FactVerification, FuelTransaction, JurisdictionMileageRecord,
   Provenance,
 } from "@/types";
+import type { AttributionReview } from "@/types";
 import type { EventScopeRefusedError } from "@/lib/propagation";
 import {
   buildDomainEvent, FUEL_TRANSACTION_CONFIRMED_VERSION, propagationBus,
@@ -99,42 +100,85 @@ export function assertMileageOdometerAllowed(args: {
 }
 
 /**
- * The refusal a meter contribution would give for this purchase, right now.
+ * What the canonical records answer about who was operating the truck at one
+ * instant, in the form the meter door would refuse with.
  *
- * Shared by the review command and the Needs You derivation so both are asking
- * the canonical records the same question, rather than one of them remembering
- * an answer.
+ * Deliberately NOT conditional on there being an odometer. The question a
+ * reviewer is asked — can anybody establish whose this was — is about
+ * attribution, and a purchase with no dash reading on it can be just as
+ * unattributable as one that has. Tying this to the odometer made the one
+ * ending available to an unattributable receipt unreachable for every receipt
+ * that happened not to carry a number.
  */
-export function fuelAttributionRefusal(t: FuelTransaction): EventScopeRefusedError | null {
-  if (t.odometerMiles === undefined) return null;
+export function attributionRefusalAt(
+  organizationId: string,
+  truckId: string,
+  instant: string,
+): EventScopeRefusedError | null {
   return meterContributionRefusal({
     equipmentKind: "truck",
-    equipmentId: t.truckId,
-    readAt: t.purchasedAt,
-    organizationId: t.organizationId,
+    equipmentId: truckId,
+    readAt: instant,
+    organizationId,
   });
 }
 
+/** The answer for a purchase, asked at the moment fuel went into the tank. */
+export function fuelAttributionRefusal(t: FuelTransaction): EventScopeRefusedError | null {
+  return attributionRefusalAt(t.organizationId, t.truckId, t.purchasedAt);
+}
+
 /**
- * Does the reviewer's finding still describe the records?
+ * The answer for a jurisdiction leg, asked at the moment the travel BEGAN.
  *
- * A review says "with the evidence available, nobody can establish this". That
- * is true of a moment in time and of a set of records, and both can change. So
- * the finding is checked against the canonical answer on every read: while the
- * registry gives the same refusal it gave the reviewer, the finding stands and
- * the queue leaves the purchase alone. The moment the answer moves — a lease
- * corrected, a relationship established, a dispute decided — the finding no
- * longer describes anything and the purchase comes back to be looked at with
- * the new evidence in front of somebody.
- *
- * Deliberately not a flag on the record. A stored "reviewed" boolean would keep
- * saying yes long after it stopped being true, which is how a queue quietly
- * loses a real problem.
+ * The same instant the attribution snapshot was resolved for. A leg's odometer
+ * is contributed against `travelEndedAt` instead, and the two can fall either
+ * side of a lease boundary — which is why this asks the question the flag on
+ * the record is actually about.
  */
+export function mileageAttributionRefusal(
+  r: JurisdictionMileageRecord,
+): EventScopeRefusedError | null {
+  return attributionRefusalAt(r.organizationId, r.truckId, r.travelStartedAt);
+}
+
+/**
+ * Does a reviewer's finding still describe the records?
+ *
+ * A finding says "with the evidence available, nobody can establish this". That
+ * is a statement about a moment AND about a set of records, and both are
+ * checked, because the code on its own is only a category:
+ * `conflicting_relationships` reads the same whether it names the two carriers
+ * the reviewer looked at or two entirely different ones. A finding that
+ * survived that swap would be somebody's conclusion about evidence they never
+ * saw.
+ *
+ * So the finding stands while the registry gives the same refusal about the
+ * same records. Anything else — resolved, a different category, the same
+ * category about different rows — brings the record back to be looked at with
+ * what is in front of somebody now.
+ *
+ * Order is not evidence: the same ids in another order are the same records.
+ * Deliberately not a stored "reviewed" flag, which would keep saying yes long
+ * after it stopped being true.
+ */
+function stands(
+  review: AttributionReview | undefined,
+  live: EventScopeRefusedError | null,
+): boolean {
+  if (!review || !live) return false;
+  if (live.code !== review.refusalCode) return false;
+  if (live.records.length !== review.refusalRecords.length) return false;
+  const seen = new Set(review.refusalRecords);
+  return live.records.every((id) => seen.has(id));
+}
+
 export function attributionReviewStanding(t: FuelTransaction): boolean {
-  const review = t.attributionReview;
-  if (!review) return false;
-  return fuelAttributionRefusal(t)?.code === review.refusalCode;
+  return stands(t.attributionReview, fuelAttributionRefusal(t));
+}
+
+export function mileageAttributionReviewStanding(r: JurisdictionMileageRecord): boolean {
+  return stands(r.attributionReview, mileageAttributionRefusal(r));
 }
 
 /**

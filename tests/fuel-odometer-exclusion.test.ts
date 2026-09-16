@@ -313,6 +313,65 @@ test("a finding expires when the canonical answer moves, and the purchase comes 
   // with the historical-authority correction milestone.
 });
 
+test("a finding does not survive a change in the records behind it", async () => {
+  // Two carriers cover the moment, so nobody can say whose the purchase was.
+  const baxter = truckContextFrom(serviceContext("mem_baxter_owner"));
+  const connected = await registerOrConnectTruck(baxter, {
+    vin: FIXTURE_VINS.nl118,
+    equipmentType: "tractor", unitNumber: "BX-118", year: 2021, make: "Ram", model: "5500",
+    registration: {
+      plateNumber: "PA-0001", plateState: "PA",
+      expiresAt: new Date(Date.now() + 90 * DAY).toISOString(),
+      registeredOwnerName: "Marcus Hale",
+    },
+    specs: {}, status: "available", availability: {},
+    relationshipType: "leased_owner_operator",
+    ownerType: "person", ownerName: "Marcus Hale", evidence: [],
+  });
+  assert.ok(connected.status === "relationship_pending");
+  await approveCarrierRelationship(connected.relationship.id, baxter);
+
+  const at = new Date().toISOString();
+  const created = await mockFuelService.recordTransaction(reviewer(), {
+    ...purchase, truckId: TRUCK_IDS.nl118, odometerMiles: 99_450, purchasedAt: at,
+  });
+  const reviewed = await mockFuelService.acceptAttributionNotEstablishable(
+    reviewer(), created.id, "Two carriers on the truck that week and no paperwork to separate them.",
+  );
+
+  const review = reviewed.attributionReview!;
+  assert.equal(review.refusalCode, "conflicting_relationships");
+  assert.equal(review.refusalRecords.length, 2, "the finding names the records it was about");
+  assert.ok(attributionReviewStanding(reviewed), "and it stands while they are the records");
+
+  // ★ THE CATEGORY IS NOT THE EVIDENCE ★
+  // The same refusal CODE with a different set of records is a different fact:
+  // two carriers cover the moment, but not the two this reviewer looked at.
+  // A finding about evidence somebody never saw is not a finding.
+  const differentRecords: FuelTransaction = {
+    ...reviewed,
+    attributionReview: { ...review, refusalRecords: [review.refusalRecords[0], "rel_somebody_else"] },
+  };
+  assert.equal(
+    attributionReviewStanding(differentRecords), false,
+    "a finding taken against other records does not stand against these",
+  );
+
+  // Fewer records is the same story: one of the two conflicts resolved.
+  const oneRecord: FuelTransaction = {
+    ...reviewed,
+    attributionReview: { ...review, refusalRecords: [review.refusalRecords[0]] },
+  };
+  assert.equal(attributionReviewStanding(oneRecord), false);
+
+  // Order is not evidence, so it is not part of the comparison.
+  const reordered: FuelTransaction = {
+    ...reviewed,
+    attributionReview: { ...review, refusalRecords: [...review.refusalRecords].reverse() },
+  };
+  assert.ok(attributionReviewStanding(reordered), "the same records in another order still stand");
+});
+
 /* -------------------------------------------------------------------------- */
 /* 4. Nothing claims the reading was recorded when it was not                  */
 /* -------------------------------------------------------------------------- */

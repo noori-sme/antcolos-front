@@ -217,6 +217,19 @@ export interface FuelService {
     transactionId: string,
     reason: string,
   ): Promise<FuelTransaction>;
+  /**
+   * The same finding for a jurisdiction leg, on the same terms.
+   *
+   * Requires `mileage:review` — the permission that reviews mileage — and
+   * otherwise behaves exactly as the purchase version: no carrier named, the
+   * attribution snapshot untouched, no meter reading contributed, refused where
+   * the records answer or where the obstacle is authority.
+   */
+  acceptMileageAttributionNotEstablishable(
+    ctx: ServiceContext,
+    recordId: string,
+    reason: string,
+  ): Promise<JurisdictionMileageRecord>;
   markDuplicate(ctx: ServiceContext, transactionId: string, duplicateOfId: string): Promise<FuelTransaction>;
 
   /** Requires `fuel:correct`. Returns the NEW revision, never the original. */

@@ -32,7 +32,8 @@ import { operatingContextAt, truckIdsRelatedTo, truckUnitNumber } from "./truck-
 import { mockStore } from "./store";
 import {
   assertFuelOdometerAllowed, assertMileageOdometerAllowed, attributionReviewStanding,
-  contributeMileageOdometer, fuelAttributionRefusal, publishFuelTransaction,
+  contributeMileageOdometer, fuelAttributionRefusal, mileageAttributionRefusal,
+  mileageAttributionReviewStanding, publishFuelTransaction,
 } from "./fuel-propagation";
 
 /**
@@ -802,6 +803,7 @@ export const mockFuelService: FuelService = {
       outcome: "not_establishable",
       reason: reason.trim(),
       refusalCode: refusal.code,
+      refusalRecords: [...refusal.records],
     };
 
     auditEntry(
@@ -1135,6 +1137,59 @@ export const mockFuelService: FuelService = {
     // The odometer at the end of the leg is a meter reading like any other.
     await contributeMileageOdometer(record, ctx.actor);
     return record;
+  },
+
+  async acceptMileageAttributionNotEstablishable(ctx, recordId, reason) {
+    await wait();
+    requirePermissions(ctx, "mileage:review");
+    const db = fuelDb();
+    const r = findMileage(db, ctx, recordId);
+    requireOwnLedger(ctx, r);
+    if (!reason.trim()) {
+      throw new Error("Say what was looked at and what was not there. A finding needs a reason.");
+    }
+    if (!r.revision.isCurrent) {
+      throw new Error("This revision has been superseded. Review the current one instead.");
+    }
+    if (r.attribution.basis !== "unresolved") {
+      throw new Error(
+        `The operating authority for this leg is already on record as ${r.attribution.carrierNameSnapshot}. There is nothing to find.`,
+      );
+    }
+
+    // The same two refusals as a purchase, for the same reasons: the records
+    // answering is not a gap, and another carrier's authority is an answer.
+    const refusal = mileageAttributionRefusal(r);
+    if (!refusal) {
+      throw new Error(
+        "The canonical records establish who was operating this truck for that travel, so this is not a leg anybody has to give up on.",
+      );
+    }
+    if (refusal.kind !== "attribution") {
+      throw new Error(
+        "This leg is not unattributable — it belongs to another carrier's authority. That is an answer, not a gap, and it is not this workspace's to close.",
+      );
+    }
+
+    if (mileageAttributionReviewStanding(r)) return r;
+
+    r.attributionReview = {
+      at: nowIso(),
+      by: ctx.actor,
+      outcome: "not_establishable",
+      reason: reason.trim(),
+      refusalCode: refusal.code,
+      refusalRecords: [...refusal.records],
+    };
+
+    auditEntry(
+      db, ctx.organizationId, "mileage.attribution_reviewed", ctx.actor,
+      { kind: "mileage", id: r.id, label: `${r.jurisdiction} · ${r.totalMiles} mi` },
+      `Operating authority could not be established and will not be guessed at: ${r.attributionReview.reason} The leg stands, its attribution still reads unresolved, and its odometer stays out of the Equipment Meter Ledger.`,
+      { attributionReview: null },
+      { attributionReview: "not_establishable", refusalCode: refusal.code },
+    );
+    return r;
   },
 
   async verifyMileage(ctx, recordId) {

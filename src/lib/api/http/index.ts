@@ -41,6 +41,8 @@ export const httpServices: AntcolosServices = {
     verifyTransaction: notImplemented("fuel.verifyTransaction"),
     rejectTransaction: notImplemented("fuel.rejectTransaction"),
     acceptAttributionNotEstablishable: notImplemented("fuel.acceptAttributionNotEstablishable"),
+    acceptMileageAttributionNotEstablishable:
+      notImplemented("fuel.acceptMileageAttributionNotEstablishable"),
     markDuplicate: notImplemented("fuel.markDuplicate"),
     correctTransaction: notImplemented("fuel.correctTransaction"),
     attachReceipt: notImplemented("fuel.attachReceipt"),
