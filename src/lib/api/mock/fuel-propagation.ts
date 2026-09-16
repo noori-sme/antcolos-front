@@ -2,11 +2,14 @@ import type {
   ActorRef, FactVerification, FuelTransaction, JurisdictionMileageRecord,
   Provenance,
 } from "@/types";
+import type { EventScopeRefusedError } from "@/lib/propagation";
 import {
   buildDomainEvent, FUEL_TRANSACTION_CONFIRMED_VERSION, propagationBus,
   type FuelExtractedValues, type FuelTransactionConfirmedPayload,
 } from "@/lib/propagation";
-import { contributeAndPublish, meterContributionRefusal } from "./meter-ledger";
+import {
+  contributeAndPublish, meterContributionRefusal, readingIdForContribution,
+} from "./meter-ledger";
 // Side-effect import: wires every projection to the bus before anything is
 // published. A publisher with no subscribers registered would drop events.
 import "./projections";
@@ -96,6 +99,45 @@ export function assertMileageOdometerAllowed(args: {
 }
 
 /**
+ * The refusal a meter contribution would give for this purchase, right now.
+ *
+ * Shared by the review command and the Needs You derivation so both are asking
+ * the canonical records the same question, rather than one of them remembering
+ * an answer.
+ */
+export function fuelAttributionRefusal(t: FuelTransaction): EventScopeRefusedError | null {
+  if (t.odometerMiles === undefined) return null;
+  return meterContributionRefusal({
+    equipmentKind: "truck",
+    equipmentId: t.truckId,
+    readAt: t.purchasedAt,
+    organizationId: t.organizationId,
+  });
+}
+
+/**
+ * Does the reviewer's finding still describe the records?
+ *
+ * A review says "with the evidence available, nobody can establish this". That
+ * is true of a moment in time and of a set of records, and both can change. So
+ * the finding is checked against the canonical answer on every read: while the
+ * registry gives the same refusal it gave the reviewer, the finding stands and
+ * the queue leaves the purchase alone. The moment the answer moves — a lease
+ * corrected, a relationship established, a dispute decided — the finding no
+ * longer describes anything and the purchase comes back to be looked at with
+ * the new evidence in front of somebody.
+ *
+ * Deliberately not a flag on the record. A stored "reviewed" boolean would keep
+ * saying yes long after it stopped being true, which is how a queue quietly
+ * loses a real problem.
+ */
+export function attributionReviewStanding(t: FuelTransaction): boolean {
+  const review = t.attributionReview;
+  if (!review) return false;
+  return fuelAttributionRefusal(t)?.code === review.refusalCode;
+}
+
+/**
  * ★ WHY FUEL REFUSES ON ONE KIND OF REASON AND NOT THE OTHER ★
  *
  * Two rules meet here and both are right.
@@ -167,6 +209,29 @@ export async function contributeFuelOdometer(
     verification: fuelVerificationOf(t),
     recordedBy: actor,
     note: `Read at the pump: ${t.location.merchantName ?? t.location.jurisdiction}.`,
+    /*
+     * ★ A CORRECTED RECEIPT CORRECTS ITS READING, IT DOES NOT ADD ONE ★
+     *
+     * `correctTransaction` mints a NEW transaction id, so the revision
+     * contributes under its own key — which is right, because a revision is a
+     * distinct thing somebody wrote down. What was missing is the link. Without
+     * it the ledger held the superseded pump reading and the corrected one side
+     * by side, both eligible, and the derivation had no way to know one
+     * replaced the other:
+     *
+     *   - correct the odometer down and the SUPERSEDED value could still win;
+     *   - correct the purchase instant and one physical dash reading became two
+     *     readings at two different moments, with nothing linking them.
+     *
+     * The revision lineage already carries what is needed — `supersedesId` is
+     * threaded here as `correctsTransactionId` — so the reading points at the
+     * one it replaces. The ledger then flags that one `corrected` and stops
+     * counting it, keeping it as evidence, which is exactly what it does for
+     * every other contributor's corrections.
+     */
+    correctsReadingId: opts.correctsTransactionId
+      ? readingIdForContribution(`fuel:odometer:${opts.correctsTransactionId}`)
+      : undefined,
     correctionReason: opts.correctionReason,
     idempotencyKey: `fuel:odometer:${t.id}`,
     provenance: fuelProvenance(t.purchasedAt),

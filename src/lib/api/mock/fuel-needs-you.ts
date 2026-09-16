@@ -13,6 +13,7 @@ import { READINESS_ISSUE_LABEL, readinessIssues } from "@/lib/fuel/ifta";
 import { formatGallons } from "@/lib/fuel/units";
 import type { ServiceContext } from "../contracts/context";
 import { fuelDb } from "./fuel-store";
+import { attributionReviewStanding } from "./fuel-propagation";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 
@@ -301,8 +302,21 @@ export function syncFuelNeedsYou(ctx: ServiceContext) {
       const built = duplicateItem(ctx.organizationId, t);
       desired.set(built.id, built);
     }
+    /*
+     * A finding that the carrier cannot be established closes THAT question and
+     * only that one. The purchase can still be in the queue for a receipt, a
+     * duplicate or an odometer that ran backwards; what it stops being is a
+     * question nobody could answer, asked again on every read.
+     *
+     * The finding is checked against the canonical records rather than trusted
+     * as a stored flag — see `attributionReviewStanding` — so the moment the
+     * registry says something new, this comes back.
+     */
+    const reviewed = attributionReviewStanding(t);
     const suspicious = t.flags.filter(
-      (f) => f !== "missing_receipt" && f !== "possible_duplicate",
+      (f) => f !== "missing_receipt"
+        && f !== "possible_duplicate"
+        && !(reviewed && f === "no_active_operating_authority"),
     );
     if (suspicious.length > 0) {
       const built = suspiciousItem(ctx.organizationId, t, suspicious);

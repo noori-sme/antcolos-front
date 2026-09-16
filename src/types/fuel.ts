@@ -214,6 +214,20 @@ export interface FuelTransaction {
 
   /** Frozen at write time. See CarrierAttribution. */
   attribution: CarrierAttribution;
+  /**
+   * A person's finding that the attribution above cannot be established.
+   *
+   * Separate from `attribution` and never a substitute for it: the snapshot
+   * keeps saying `unresolved`, because that is what the records said when the
+   * purchase was recorded and this build does not rewrite that. What this adds
+   * is the one thing the snapshot cannot express — that somebody with the
+   * authority to look HAS looked, found no evidence either way, and said so.
+   *
+   * Without it the queue asks a question nobody can answer and reopens itself
+   * forever. With it the question has an ending that names no carrier, moves no
+   * responsibility and contributes no meter reading.
+   */
+  attributionReview?: AttributionReview;
 
   /** When fuel actually went into the tank. */
   purchasedAt: IsoDateTime;
@@ -614,6 +628,35 @@ export interface FuelSharingGrant {
 /* Audit                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A reviewer's finding about attribution that could not be resolved.
+ *
+ * One outcome, deliberately. "Not establishable with the available evidence" is
+ * a statement about the EVIDENCE, and it is the only thing a person can honestly
+ * conclude without the historical-authority correction and carrier-dispute
+ * records that do not exist in this build. There is no "it was carrier X" here,
+ * because a person choosing a name to clear a warning is precisely the failure
+ * this whole layer is built to prevent.
+ */
+export interface AttributionReview {
+  at: IsoDateTime;
+  by: ActorRef;
+  outcome: "not_establishable";
+  /** Why, in the reviewer's own words. Required — a finding needs a reason. */
+  reason: string;
+  /**
+   * What the canonical records answered at the moment of the review.
+   *
+   * The finding stands only while that answer stands. If the truck registry
+   * later says something different — a lease corrected, a relationship
+   * established, a dispute decided — this review no longer describes reality,
+   * the queue raises the purchase again, and somebody looks with the new
+   * evidence in front of them. A finding about evidence expires when the
+   * evidence changes.
+   */
+  refusalCode: string;
+}
+
 export type FuelAuditKind =
   | "transaction.recorded"
   | "transaction.imported"
@@ -622,6 +665,7 @@ export type FuelAuditKind =
   | "transaction.rejected"
   | "transaction.marked_duplicate"
   | "transaction.corrected"
+  | "transaction.attribution_reviewed"
   | "transaction.receipt_attached"
   | "mileage.recorded"
   | "mileage.imported"

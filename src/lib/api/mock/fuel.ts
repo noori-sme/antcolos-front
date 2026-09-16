@@ -31,8 +31,8 @@ import {
 import { operatingContextAt, truckIdsRelatedTo, truckUnitNumber } from "./truck-registry";
 import { mockStore } from "./store";
 import {
-  assertFuelOdometerAllowed, assertMileageOdometerAllowed,
-  contributeMileageOdometer, publishFuelTransaction,
+  assertFuelOdometerAllowed, assertMileageOdometerAllowed, attributionReviewStanding,
+  contributeMileageOdometer, fuelAttributionRefusal, publishFuelTransaction,
 } from "./fuel-propagation";
 
 /**
@@ -750,6 +750,68 @@ export const mockFuelService: FuelService = {
       extracted: input.extracted,
     });
     return redact(db, ctx, transaction);
+  },
+
+  async acceptAttributionNotEstablishable(ctx, transactionId, reason) {
+    await wait();
+    requirePermissions(ctx, "fuel:review");
+    const db = fuelDb();
+    const t = findTransaction(db, ctx, transactionId);
+    requireOwnLedger(ctx, t);
+    if (!reason.trim()) {
+      throw new Error("Say what was looked at and what was not there. A finding needs a reason.");
+    }
+    if (!t.revision.isCurrent) {
+      throw new Error("This revision has been superseded. Review the current one instead.");
+    }
+    if (t.attribution.basis !== "unresolved") {
+      throw new Error(
+        `The operating authority for this purchase is already on record as ${t.attribution.carrierNameSnapshot}. There is nothing to find.`,
+      );
+    }
+
+    /*
+     * A refusal code is not proof that an answer can never be found, so the
+     * reviewer's finding is only accepted where a finding is the honest thing
+     * to make.
+     *
+     * NOT when the records answer. NOT when the obstacle is authority — that
+     * says somebody else operates the truck, which is an answer, and recording
+     * "nobody can tell" over the top of it would be false. Only where the
+     * canonical records genuinely do not cover the moment.
+     */
+    const refusal = fuelAttributionRefusal(t);
+    if (!refusal) {
+      throw new Error(
+        "The canonical records establish who was operating this truck when the pump was read, so this is not a purchase anybody has to give up on.",
+      );
+    }
+    if (refusal.kind !== "attribution") {
+      throw new Error(
+        "This purchase is not unattributable — it belongs to another carrier's authority. That is an answer, not a gap, and it is not this workspace's to close.",
+      );
+    }
+
+    // Already found, and the records have not moved since. Nothing happens
+    // twice: no second finding, no second audit line.
+    if (attributionReviewStanding(t)) return redact(db, ctx, t);
+
+    t.attributionReview = {
+      at: nowIso(),
+      by: ctx.actor,
+      outcome: "not_establishable",
+      reason: reason.trim(),
+      refusalCode: refusal.code,
+    };
+
+    auditEntry(
+      db, ctx.organizationId, "transaction.attribution_reviewed", ctx.actor,
+      { kind: "transaction", id: t.id, label: t.location.merchantName ?? t.location.jurisdiction },
+      `Operating authority could not be established and will not be guessed at: ${t.attributionReview.reason} The purchase stands, its attribution still reads unresolved, and its odometer stays out of the Equipment Meter Ledger.`,
+      { attributionReview: null },
+      { attributionReview: "not_establishable", refusalCode: refusal.code },
+    );
+    return redact(db, ctx, t);
   },
 
   async verifyTransaction(ctx, transactionId) {

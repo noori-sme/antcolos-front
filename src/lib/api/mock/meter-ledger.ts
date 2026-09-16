@@ -170,7 +170,14 @@ function append(
   if (
     rows.some(
       (r) =>
-        r.readAt === readAt
+        // The row this one explicitly REPLACES is not a row it duplicates.
+        // A correction that restates the same number — the receipt's gallons
+        // were wrong, the dash reading was right — would otherwise be flagged a
+        // duplicate while also marking its predecessor corrected, and the
+        // reading would vanish from the derivation entirely: one flagged out by
+        // each rule, none left standing.
+        r.readingId !== input.correctsReadingId
+        && r.readAt === readAt
         && r.odometerMiles === input.odometerMiles
         && r.engineHours === input.engineHours
         && r.contributor === input.contributor,
@@ -476,6 +483,22 @@ export function meterDisputeReason(
     return `Lower than the ${odo.value.toLocaleString()} mi already on file for an earlier moment. A meter does not go backwards, so this reading is kept as evidence rather than used.`;
   }
   return undefined;
+}
+
+/**
+ * The reading one earlier contribution produced, by the key it was written with.
+ *
+ * Exists so a contributor can point a correction at what it corrects. Fuel is
+ * the caller that needs it: a corrected receipt is a NEW transaction with a new
+ * id, and without this the ledger would hold the superseded pump reading and the
+ * corrected one side by side, both eligible, with nothing saying one replaced
+ * the other.
+ *
+ * Takes the key rather than exposing the map, because the map is the ledger's
+ * own idempotency index and nothing outside it has any business iterating it.
+ */
+export function readingIdForContribution(idempotencyKey: string): string | undefined {
+  return db().byIdempotencyKey.get(idempotencyKey);
 }
 
 /** Every reading for one piece of equipment, newest first. Unscoped. */

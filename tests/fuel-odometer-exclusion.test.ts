@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mockFuelService } from "@/lib/api/mock/fuel";
+import { attributionReviewStanding } from "@/lib/api/mock/fuel-propagation";
 import { resetFuelStore } from "@/lib/api/mock/fuel-store";
 import { meterReadings, meterStateOf, resetMeterLedger } from "@/lib/api/mock/meter-ledger";
 import { mockNeedsYouService } from "@/lib/api/mock/needs-you";
@@ -11,7 +12,8 @@ import {
 } from "@/lib/api/mock/truck-registry";
 import { resetTrailerRegistry } from "@/lib/api/mock/trailer-registry";
 import { mockStore } from "@/lib/api/mock/store";
-import { serviceContext } from "./helpers.ts";
+import { ALL_PERMISSIONS, serviceContext } from "./helpers.ts";
+import type { FuelTransaction } from "@/types";
 
 /**
  * ★ WHAT HAPPENS TO AN ODOMETER THE LEDGER WOULD NOT TAKE ★
@@ -169,6 +171,146 @@ test("★ GAP: an excluded reading has no canonical way back into the ledger", a
   const detail = await mockFuelService.getTransaction(ctx(), created.id);
   assert.equal(detail.transaction.odometerMiles, 99_450);
   assert.equal(detail.transaction.purchasedAt, at);
+});
+
+/* -------------------------------------------------------------------------- */
+/* 3b. The one ending the queue can reach                                      */
+/* -------------------------------------------------------------------------- */
+
+/** A reviewer who may look at fuel, and one who may only read it. */
+const reviewer = () => serviceContext("mem_northline_owner");
+const readOnly = () => serviceContext("mem_northline_owner", {
+  permissions: new Set([...ALL_PERMISSIONS].filter((k) => k !== "fuel:review")),
+});
+
+const unattributable = () => mockFuelService.recordTransaction(reviewer(), {
+  ...purchase, odometerMiles: 41_200, purchasedAt: beforeAnyAuthority(),
+});
+
+/**
+ * The queue's answer about one purchase.
+ *
+ * A derived fuel item is resolved by the sync rather than deleted, and the SAME
+ * sync reopens a resolved item whose problem is still in the ledger — which is
+ * exactly the loop this finding has to break. So the assertion that matters is
+ * the status, read again after another sync.
+ */
+async function suspiciousItemFor(id: string) {
+  const queue = await mockNeedsYouService.list(reviewer());
+  return queue.find((i) => i.category === "suspicious_fuel_transaction" && i.id.includes(id));
+}
+
+test("a finding needs the permission to review fuel, and a reason", async () => {
+  const created = await unattributable();
+
+  await assert.rejects(
+    () => mockFuelService.acceptAttributionNotEstablishable(readOnly(), created.id, "Nothing on file."),
+    (error: Error) => error.name === "PermissionDeniedError",
+  );
+  await assert.rejects(
+    () => mockFuelService.acceptAttributionNotEstablishable(reviewer(), created.id, "   "),
+    /reason/i,
+  );
+
+  // Nothing happened either time: no finding, and the queue still asks.
+  const detail = await mockFuelService.getTransaction(reviewer(), created.id);
+  assert.equal(detail.transaction.attributionReview, undefined);
+  assert.equal((await suspiciousItemFor(created.id))?.status, "open");
+});
+
+test("a purchase whose carrier IS on record cannot be given up on", async () => {
+  const resolvable = await mockFuelService.recordTransaction(reviewer(), {
+    ...purchase, odometerMiles: 44_300, purchasedAt: new Date(Date.now() - 3_600_000).toISOString(),
+  });
+  assert.equal(resolvable.attribution.carrierOrganizationId, NORTHLINE);
+
+  await assert.rejects(
+    () => mockFuelService.acceptAttributionNotEstablishable(reviewer(), resolvable.id, "Cannot tell."),
+    /already on record/i,
+  );
+
+  // Two further guards sit behind that one and are deliberately unreachable
+  // through the service, because the state they refuse cannot be produced:
+  // a snapshot reads `unresolved` exactly when the resolver refused at record
+  // time, and a purchase carrying an odometer that another carrier operates is
+  // refused outright before it is ever written. They are defence in depth for
+  // the day a record changes underneath a snapshot, and they are why a refusal
+  // code alone is never taken as proof.
+});
+
+test("an accepted finding closes the item and keeps it closed", async () => {
+  const created = await unattributable();
+  assert.equal((await suspiciousItemFor(created.id))?.status, "open", "the queue asks first");
+
+  const reviewed = await mockFuelService.acceptAttributionNotEstablishable(
+    reviewer(), created.id,
+    "The truck was not onboarded to anybody at the time and the owner has no paperwork for that week.",
+  );
+
+  // The finding names no carrier and moves nothing.
+  assert.equal(reviewed.attributionReview?.outcome, "not_establishable");
+  assert.equal(reviewed.attribution.basis, "unresolved", "the snapshot is untouched");
+  assert.equal(reviewed.attribution.carrierOrganizationId, "");
+  assert.equal(reviewed.odometerMiles, 41_200, "and the receipt keeps its reading");
+  assert.equal(
+    meterReadings(TRUCK_IDS.nl131).some((r) => r.odometerMiles === 41_200), false,
+    "accepting is not contributing",
+  );
+
+  // And the queue stops asking. Three more syncs, because the failure this
+  // fixes is an item that reopens itself on the next read, forever.
+  assert.equal((await suspiciousItemFor(created.id))?.status, "resolved");
+  assert.equal((await suspiciousItemFor(created.id))?.status, "resolved");
+  assert.equal((await suspiciousItemFor(created.id))?.status, "resolved");
+});
+
+test("reviewing twice writes one finding and one audit line", async () => {
+  const created = await unattributable();
+  const first = await mockFuelService.acceptAttributionNotEstablishable(
+    reviewer(), created.id, "Nothing on file for that week.",
+  );
+  const again = await mockFuelService.acceptAttributionNotEstablishable(
+    reviewer(), created.id, "Looked again, still nothing.",
+  );
+
+  assert.equal(again.attributionReview?.at, first.attributionReview?.at, "the first finding stands");
+  assert.equal(again.attributionReview?.reason, first.attributionReview?.reason);
+
+  const detail = await mockFuelService.getTransaction(reviewer(), created.id);
+  const lines = detail.audit.filter((a) => a.kind === "transaction.attribution_reviewed");
+  assert.equal(lines.length, 1, "and the ledger records it once");
+  assert.match(lines[0].summary, /odometer stays out of the Equipment Meter Ledger/i);
+});
+
+test("a finding expires when the canonical answer moves, and the purchase comes back", async () => {
+  const created = await unattributable();
+  assert.equal((await suspiciousItemFor(created.id))?.status, "open");
+  await mockFuelService.acceptAttributionNotEstablishable(
+    reviewer(), created.id, "Nothing on file for that week.",
+  );
+  assert.equal((await suspiciousItemFor(created.id))?.status, "resolved");
+
+  // The finding is checked against the records, never trusted as a flag. A
+  // transaction whose stored answer no longer matches what the registry says
+  // is a transaction somebody has to look at again with the new evidence.
+  const detail = await mockFuelService.getTransaction(reviewer(), created.id);
+  assert.ok(attributionReviewStanding(detail.transaction));
+
+  const answerMoved: FuelTransaction = {
+    ...detail.transaction,
+    attributionReview: { ...detail.transaction.attributionReview!, refusalCode: "conflicting_relationships" },
+  };
+  assert.equal(
+    attributionReviewStanding(answerMoved), false,
+    "a finding about one answer does not survive a different one",
+  );
+
+  // ███ WHAT THIS BUILD CANNOT DRIVE END TO END ███
+  // Nothing in the service layer can change a past instant's answer: every
+  // canonical write starts its interval at `now`, and ending a relationship
+  // records that it ended now rather than un-covering what it covered. The
+  // expiry is proved here at the seam it is enforced at; the trigger arrives
+  // with the historical-authority correction milestone.
 });
 
 /* -------------------------------------------------------------------------- */

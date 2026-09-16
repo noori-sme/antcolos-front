@@ -195,6 +195,28 @@ export interface FuelService {
   /** Requires `fuel:review`. */
   verifyTransaction(ctx: ServiceContext, transactionId: string): Promise<FuelTransaction>;
   rejectTransaction(ctx: ServiceContext, transactionId: string, reason: string): Promise<FuelTransaction>;
+  /**
+   * Record that the carrier behind a purchase cannot be established.
+   *
+   * The one ending available to a purchase whose operating authority the
+   * canonical records do not cover. Requires `fuel:review` and the caller's own
+   * ledger. It names no carrier, leaves `attribution` exactly as it was, and
+   * contributes nothing to the Equipment Meter Ledger — it records that
+   * somebody entitled to look has looked and found no evidence either way.
+   *
+   * Refused when the records DO establish the carrier, and refused when the
+   * obstacle is authority rather than evidence: neither of those is a thing a
+   * reviewer can conclude, and a refusal code on its own is not proof that an
+   * answer can never be found.
+   *
+   * Calling it twice while the finding still stands changes nothing and writes
+   * no second audit line.
+   */
+  acceptAttributionNotEstablishable(
+    ctx: ServiceContext,
+    transactionId: string,
+    reason: string,
+  ): Promise<FuelTransaction>;
   markDuplicate(ctx: ServiceContext, transactionId: string, duplicateOfId: string): Promise<FuelTransaction>;
 
   /** Requires `fuel:correct`. Returns the NEW revision, never the original. */
