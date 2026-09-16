@@ -156,6 +156,22 @@ function DataUse({ summary }: { summary: LearningSummary }) {
       </section>
 
       <section className="rounded-lg border border-border bg-surface p-4 shadow-e1">
+        <h2 className="text-[0.875rem] font-semibold text-fg">
+          What this list is not
+        </h2>
+        <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+          It governs {policy.governs.charAt(0).toLowerCase() + policy.governs.slice(1)}
+        </p>
+        <ul className="mt-3 space-y-2">
+          {policy.doesNotGovern.map((claim) => (
+            <li key={claim} className="text-[0.75rem] leading-relaxed text-fg-muted">
+              — {claim}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="rounded-lg border border-border bg-surface p-4 shadow-e1">
         <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
           <ScrollText className="size-4 text-fg-subtle" aria-hidden />
           What is still owed before this runs for real

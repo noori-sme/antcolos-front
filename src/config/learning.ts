@@ -14,6 +14,39 @@ import type { IsoDateTime } from "@/types";
  * screen can render it. `SHARED_FIELDS` and `WITHHELD_FIELDS` in the ranking
  * module are derived from it — there is one policy, in one place.
  *
+ * ── THREE PATHS, AND THIS POLICY GOVERNS EXACTLY ONE ─────────────────────
+ * Antcolos uses data in three ways. They are not degrees of the same thing and
+ * collapsing any two of them is how a product ends up either crippled or
+ * indefensible.
+ *
+ *   1. PRIVATE ORGANIZATION INTELLIGENCE — an organization's own canonical
+ *      records making that same organization smarter. Insurance about to
+ *      expire, a maintenance interval coming due from that carrier's own meter
+ *      history, empty miles worth attacking. It never leaves the organization,
+ *      so it is bounded by `ServiceContext` — permissions, record scope and
+ *      `OrganizationScopeError` — and by each domain module's own rules. THIS
+ *      POLICY DOES NOT GOVERN IT, and must never be read as forbidding it: an
+ *      allowlist written for what crosses a boundary would be a strange reason
+ *      to withhold a carrier's own insurance expiry from that carrier.
+ *
+ *   2. SHARED NETWORK INTELLIGENCE — derived, banded, non-attributable decision
+ *      signals leaving one organization for a pool every organization draws on.
+ *      This is the only path this file governs, and the lists below are
+ *      exhaustive for it.
+ *
+ *   3. AUTHORIZED EXTERNAL ACTIONS — sending something to an insurer, a broker,
+ *      an accounting or safety or maintenance provider. That is not learning at
+ *      all, whatever prompted it. It is an act with a recipient, a purpose, a
+ *      scope and a person behind it, and it belongs to the integration ports,
+ *      the typed sharing grants, `Provenance` and the audit ledger. Nothing in
+ *      this file authorises a single byte of it.
+ *
+ * The rule that keeps them apart: ONE FACT, ONE OWNER. A canonical record stays
+ * with the domain module that owns it. Private intelligence READS it. Shared
+ * learning receives a derived projection of a decision about it. An external
+ * action receives an authorised outbound payload. Audit records that each
+ * happened and owns none of them. No intelligence database, anywhere.
+ *
  * ── AN ALLOWLIST, NOT A DENYLIST ──────────────────────────────────────────
  * `allowed` is exhaustive. A field that is not on it does not reach the shared
  * pool, and that is enforced at the boundary by projecting every contribution
@@ -31,7 +64,10 @@ import type { IsoDateTime } from "@/types";
  * choice, and there is no code path that edits it at runtime. Not a second
  * policy: the ranking module reads this one. Not model training: no model is
  * trained, scored or served anywhere in Antcolos, and `derivation` below
- * describes arithmetic a person could do on paper.
+ * describes arithmetic a person could do on paper. Not an authorization: this
+ * file grants nothing to anybody, inside Antcolos or outside it, and there is
+ * no field on it that could. And not a restriction on canonical data: nothing
+ * here deletes, hides or narrows a record its owning module holds.
  *
  * ███ FRONTEND ONLY ███
  * A constant in a browser tab. It describes the contract a backend must honour
@@ -69,6 +105,20 @@ export interface LearningDataUsePolicy {
   readonly effectiveFrom: IsoDateTime;
   /** One sentence a person can read without reading the rest. */
   readonly summary: string;
+  /**
+   * The ONE path this policy governs, stated so the other two cannot be
+   * assumed into it by somebody reading only the lists.
+   */
+  readonly governs: string;
+  /**
+   * What it explicitly does NOT govern.
+   *
+   * Written down because the expensive misreading is the generous one: taking
+   * an allowlist built for a shared pool as a restriction on an organization's
+   * own records, or as permission to send something outside. Both are wrong in
+   * opposite directions, and a list of non-claims is cheaper than either.
+   */
+  readonly doesNotGovern: readonly string[];
   /** THE ALLOWLIST. Exhaustive. */
   readonly allowed: readonly LearningAllowedField[];
   /** Named for the reader. The allowlist is what enforces. */
@@ -87,6 +137,16 @@ export const LEARNING_DATA_USE_POLICY: LearningDataUsePolicy = {
   effectiveFrom: "2026-01-01T00:00:00.000Z",
   summary:
     "Antcolos learns from the SHAPE of the loads workspaces pursue and decline — an equipment type, four rounded bands and a yes or no — and from nothing else. No name, no identifier, no document and no location ever enters it.",
+
+  governs:
+    "Shared Network Intelligence only: what may leave one organization and enter the pool every organization draws on.",
+
+  doesNotGovern: [
+    "An organization's own canonical records. Nothing here deletes, hides, narrows or restricts what a module already holds, and the owning organization reads its own data exactly as before.",
+    "Private Organization Intelligence — Antcolos using an organization's own authorized data to make that same organization smarter. That is bounded by permissions, record scope and each domain's own rules, not by this list.",
+    "Any disclosure outside Antcolos. Sending anything to an insurer, a broker or any other provider is an Authorized External Action with a recipient, a purpose and a person behind it, and it needs its own permission, sharing grant, provenance and audit trail. This policy grants none of them.",
+    "Who may see what inside Antcolos. Nothing here widens or narrows one organization's access to another's records.",
+  ],
 
   allowed: [
     {

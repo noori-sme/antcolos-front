@@ -5,9 +5,11 @@ import type { Listing, OpportunityMatch, PermissionKey } from "@/types";
 import {
   LEARNING_ALLOWED_KEYS, LEARNING_DATA_USE_POLICY,
 } from "@/config/learning";
+import { integrations } from "@/lib/integrations";
 import { requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
 import type { ServiceContext } from "../contracts/context";
 import { mockAuditService } from "./audit";
+import { mockLoadsService } from "./loads";
 import { resetAllMocks } from "./registry";
 import {
   allowlisted, anonymize, learningFor, localPoolForTests, networkPoolForTests,
@@ -543,6 +545,87 @@ describe("fixture reset", () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* The three-path boundary                                                     */
+/* -------------------------------------------------------------------------- */
+
+describe("the intelligence data boundary", () => {
+  /**
+   * ★ ONE FACT, ONE OWNER, THREE PATHS ★
+   *
+   * The allowlist governs Shared Network Intelligence and nothing else. The
+   * two misreadings that would cost most are opposite: taking it as a
+   * restriction on an organization's own records, or as permission to send
+   * something outside. These prove it is neither.
+   */
+
+  it("leaves a prohibited field readable in its canonical module by the owning organization", async () => {
+    // Customer identity and exact rates are both prohibited from the pool. The
+    // Loads module still serves both to the workspace that owns the record —
+    // which is the whole of Private Organization Intelligence's room to exist.
+    const owner = ctxFor(ORG_A, ["loads:view", "rates:view"]);
+    const page = await mockLoadsService.list(owner);
+    const load = page.items[0];
+
+    expect(load).toBeDefined();
+    expect(load.customer.name).toBeTruthy();
+    expect(load.financials?.totalRateCents).toBeGreaterThan(0);
+
+    // And it is the DOMAIN's rule that decides, not this policy: the same read
+    // without `rates:view` omits the money entirely.
+    const withoutRates = await mockLoadsService.list(ctxFor(ORG_A, ["loads:view"]));
+    expect(withoutRates.items[0].customer.name).toBeTruthy();
+    expect(withoutRates.items[0].financials).toBeUndefined();
+  });
+
+  it("keeps those same fields out of the shared pool", () => {
+    const owner = ctxFor(ORG_A, ["loads:view", "rates:view"]);
+    observeDecision(owner, matchFixture(), listingFixture(), true);
+
+    const serialized = JSON.stringify(networkPoolForTests());
+    // The exact rate and the customer's name are in the canonical record above
+    // and in no row here.
+    expect(serialized).not.toContain("262");
+    expect(serialized).not.toContain("Total Quality Logistics");
+    expect(Object.keys(networkPoolForTests()[0]).sort())
+      .toEqual([...LEARNING_ALLOWED_KEYS].sort());
+  });
+
+  it("creates no outbound payload, integration or sharing grant merely by learning", async () => {
+    recordDecisions(ORG_A);
+    expect(learningFor(ORG_A).suggested).toBeDefined();
+
+    // Learning produced a suggestion. It produced nothing pointed outwards:
+    // an external action needs a person, a recipient and a purpose, and a
+    // suggestion is none of those.
+    await expect(integrations.downstream.pending(ORG_A)).resolves.toEqual([]);
+  });
+
+  it("grants no access to another organization's records", async () => {
+    recordDecisions(ORG_A);
+
+    // B consumed A's contributions as network evidence, and that changed
+    // nothing about what B may read.
+    expect(learningFor(ORG_B).suggestedFrom).toBe("network");
+    const page = await mockLoadsService.list(ctxFor(ORG_B, ["loads:view", "rates:view"]));
+    for (const load of page.items) {
+      expect(load.organizationId).toBe(ORG_B);
+    }
+  });
+
+  it("states in its own data that it governs only the shared pool", () => {
+    expect(LEARNING_DATA_USE_POLICY.governs.toLowerCase()).toContain("shared network");
+
+    const nonClaims = LEARNING_DATA_USE_POLICY.doesNotGovern.join(" ").toLowerCase();
+    expect(nonClaims).toContain("canonical");
+    expect(nonClaims).toContain("private organization intelligence");
+    expect(nonClaims).toContain("outside antcolos");
+    // And it carries no field that could grant anything to anybody.
+    expect(Object.keys(LEARNING_DATA_USE_POLICY)).not.toContain("grants");
+    expect(Object.keys(LEARNING_DATA_USE_POLICY)).not.toContain("recipients");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* Scope                                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -593,6 +676,14 @@ describe("milestone scope", () => {
   it("trains, scores and serves no model", () => {
     expect(offendersIn([
       "trainModel", "LearningModel", "inference", "embedding", "classifier",
+    ])).toEqual([]);
+  });
+
+  it("delivers no Insurance quote, Safety score or provider adapter", () => {
+    // The three paths are documented by this PR. Only the second is built.
+    expect(offendersIn([
+      "InsuranceQuote", "quoteRequest", "SafetyScore", "ProviderAdapter",
+      "DownstreamPort", "sharingGrant",
     ])).toEqual([]);
   });
 

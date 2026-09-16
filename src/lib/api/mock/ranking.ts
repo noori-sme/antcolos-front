@@ -34,6 +34,28 @@ import { appendAuditEvent } from "./audit";
  * a load and a yes or no. No workspace, no carrier, no broker, no person, no
  * address, no credential — and nothing that could be joined back to any of them.
  *
+ * ★ WHICH OF THE THREE DATA PATHS THIS FILE IS ★
+ * This module is SHARED NETWORK INTELLIGENCE and nothing else. `LEARNING_
+ * ALLOWED_KEYS` governs what may leave an organization for the pool, and it
+ * governs nothing else:
+ *
+ *   • It does not touch the organization's own canonical records. Every module
+ *     still holds what it held, and the owning organization still reads all of
+ *     it. An allowlist for what crosses a boundary is not a reason to withhold
+ *     a carrier's own insurance expiry from that carrier.
+ *   • It does not stand in the way of Private Organization Intelligence — using
+ *     an organization's own authorized data to make that organization smarter.
+ *     That path is bounded by `ServiceContext`, permissions and record scope,
+ *     and is not built here.
+ *   • It authorises no disclosure outside Antcolos. Sending anything to an
+ *     insurer, a broker or a provider is an Authorized External Action, and it
+ *     goes through `lib/integrations/ports.ts`, a typed sharing grant, a
+ *     domain permission, `Provenance` and the audit ledger. Nothing in this
+ *     file can start one, and a suggestion this module produces is not consent
+ *     for one.
+ *
+ * See `src/config/learning.ts` for the three paths in full.
+ *
  * ★ AND IT CROSSES THROUGH ONE ALLOWLIST, OR NOT AT ALL ★
  * Learning is a platform function, not a per-workspace feature, so there is no
  * toggle and no consent dialog to hide behind. That puts the entire weight on
