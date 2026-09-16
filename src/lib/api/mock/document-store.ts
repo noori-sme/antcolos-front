@@ -1,6 +1,7 @@
 import type {
   DocumentEvent, DocumentFileRef, DocumentLink, DocumentOwnerRef,
-  DocumentRecord, DocumentShare, DocumentShareBasis, DocumentSnapshot, DocumentStatus,
+  DocumentRecord, DocumentShare, DocumentShareBasis, DocumentSharePackage,
+  DocumentSnapshot, DocumentStatus,
   DocumentSubjectKind, DocumentSubjectRef, DocumentTypeKey,
 } from "@/types";
 import { documentTypeLabel } from "@/lib/documents/catalog";
@@ -108,10 +109,17 @@ interface StoreState {
   shares: DocumentShare[];
   events: DocumentEvent[];
   snapshots: DocumentSnapshot[];
+  /**
+   * Share packages a driver created. They live HERE, in the one document
+   * store, because a second store is how a document ends up with two
+   * identities. They hold no files and no document rows — only references to
+   * the records above, pinned to a version.
+   */
+  packages: DocumentSharePackage[];
 }
 
 function emptyState(): StoreState {
-  return { records: [], shares: [], events: [], snapshots: [] };
+  return { records: [], shares: [], events: [], snapshots: [], packages: [] };
 }
 
 let state: StoreState = emptyState();
@@ -578,6 +586,46 @@ export function endRelationshipDocuments(options: {
     }
   }
   return { linksEnded, sharesRevoked };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Share packages                                                              */
+/* -------------------------------------------------------------------------- */
+
+export function allSharePackages(): readonly DocumentSharePackage[] {
+  return state.packages;
+}
+
+export function sharePackageById(id: string): DocumentSharePackage | undefined {
+  return state.packages.find((p) => p.id === id);
+}
+
+export function sharePackageByToken(token: string): DocumentSharePackage | undefined {
+  return state.packages.find((p) => p.token === token);
+}
+
+export function sharePackagesForDriver(driverProfileId: string): DocumentSharePackage[] {
+  return state.packages
+    .filter((p) => p.driverProfileId === driverProfileId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Packages addressed to one organization. Never another organization's. */
+export function sharePackagesForOrganization(organizationId: string): DocumentSharePackage[] {
+  return state.packages
+    .filter(
+      (p) => p.recipient.kind === "organization" && p.recipient.organizationId === organizationId,
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function putSharePackage(pkg: DocumentSharePackage): DocumentSharePackage {
+  const existing = state.packages.findIndex((p) => p.id === pkg.id);
+  state.packages =
+    existing >= 0
+      ? state.packages.map((p) => (p.id === pkg.id ? pkg : p))
+      : [...state.packages, pkg];
+  return pkg;
 }
 
 /* -------------------------------------------------------------------------- */

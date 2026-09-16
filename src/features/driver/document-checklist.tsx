@@ -1,7 +1,9 @@
 "use client";
 
-import { CircleCheck, FileText, ShieldCheck } from "lucide-react";
+import { CircleCheck, FileText, Share2, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import type { CarrierRelationship, DocumentRequirement, DriverDocument } from "@/types";
@@ -59,6 +61,7 @@ export function DocumentChecklistScreen() {
       <PageHeader
         title="My documents"
         description={`What ${active.carrierName} needs from you as a ${ENGAGEMENT_LABEL[active.engagementType].toLowerCase()}.`}
+        actions={<ShareAction />}
       />
 
       {workable.length > 1 ? (
@@ -88,6 +91,18 @@ export function DocumentChecklistScreen() {
   );
 }
 
+/** The way into sharing: from the documents, never from a second upload. */
+function ShareAction() {
+  return (
+    <Button asChild variant="secondary">
+      <Link href="/driver/shares/new">
+        <Share2 aria-hidden />
+        Share with a carrier
+      </Link>
+    </Button>
+  );
+}
+
 /**
  * The driver's own paperwork, before any carrier is in the picture.
  *
@@ -107,6 +122,7 @@ function OwnDocuments({ data }: { data: ReturnType<typeof useDriverData> }) {
       <PageHeader
         title="My documents"
         description="Your licence, medical card and tax details — yours, and kept between carriers."
+        actions={<ShareAction />}
       />
 
       <div className="flex items-start gap-2.5 rounded-lg border border-border bg-surface-sunken px-3.5 py-3">

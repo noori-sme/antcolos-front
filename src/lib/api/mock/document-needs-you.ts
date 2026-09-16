@@ -5,6 +5,8 @@ import type {
 } from "@/types";
 import type { ServiceContext } from "../contracts/context";
 import { documentAttentionRows } from "./documents";
+import { isShareUsable, packagesForOrganization } from "./document-shares";
+import { SHARE_PURPOSE_LABEL } from "@/types";
 
 /**
  * Needs You items that are REAL.
@@ -130,6 +132,74 @@ export function documentNeedsYouItems(ctx: ServiceContext): NeedsYouItem[] {
       ],
     };
     items.push(item);
+  }
+
+  items.push(...shareItems(ctx));
+  return items;
+}
+
+/**
+ * Work a share creates — and only work.
+ *
+ * A share existing is not work. A share being opened is not work. Two things
+ * genuinely need a person: a driver has sent this carrier documents that nobody
+ * has looked at, and an accepted share is about to run out while somebody is
+ * still deciding. Anything else would make this queue noisier for no gain, and
+ * a queue people scroll past is worse than no queue.
+ *
+ * Derived, like every other item here: resolve the underlying share and the
+ * item stops existing on the next read.
+ */
+function shareItems(ctx: ServiceContext): NeedsYouItem[] {
+  const items: NeedsYouItem[] = [];
+
+  for (const pkg of packagesForOrganization(ctx.organizationId)) {
+    if (!isShareUsable(pkg)) continue;
+
+    const reviewed = pkg.events.filter((e) => e.kind === "review_recorded").length;
+    if (reviewed >= pkg.items.length) continue;
+
+    const days = daysUntil(pkg.expiresAt);
+    const id = `${DOCUMENT_ITEM_PREFIX}share_${ctx.organizationId}_${pkg.id}`;
+    const overlay = overlays[id];
+    const expiringSoon = days <= 3;
+    const reason = expiringSoon
+      ? `Access ends in ${Math.max(days, 0)} day${days === 1 ? "" : "s"} and ${pkg.items.length - reviewed} document${pkg.items.length - reviewed === 1 ? " has" : "s have"} not been reviewed.`
+      : `${pkg.driverName} shared ${pkg.items.length} document${pkg.items.length === 1 ? "" : "s"} for ${SHARE_PURPOSE_LABEL[pkg.purpose].toLowerCase()}.`;
+
+    items.push({
+      id,
+      organizationId: ctx.organizationId,
+      category: "missing_document",
+      severity: expiringSoon ? "high" : "low",
+      status: overlay?.status ?? "open",
+      title: `Review documents shared by ${pkg.driverName}`,
+      reason,
+      detail: pkg.note,
+      entity: {
+        kind: "document",
+        id: pkg.id,
+        label: `Shared by ${pkg.driverName}`,
+        href: "/documents/shared",
+      },
+      recommendedAction: {
+        kind: "review",
+        label: "Review what they shared",
+        requires: ["documents:view"],
+      },
+      dueAt: pkg.expiresAt,
+      assigneeMembershipId: overlay?.assigneeMembershipId,
+      source: "system",
+      requires: ["documents:view"],
+      createdAt: pkg.createdAt,
+      snoozedUntil: overlay?.snoozedUntil,
+      snoozeReason: overlay?.snoozeReason,
+      resolvedAt: overlay?.resolvedAt,
+      resolutionNote: overlay?.resolutionNote,
+      history: overlay?.history ?? [
+        { id: `${id}_created`, at: pkg.createdAt, actor: SYSTEM, action: "created", note: reason },
+      ],
+    });
   }
 
   return items;

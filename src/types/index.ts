@@ -9,6 +9,7 @@ export type * from "./invoice";
 export type * from "./event";
 export type * from "./document";
 export type * from "./document-center";
+export type * from "./document-share";
 export type * from "./fleet";
 export type * from "./fleet-operations";
 export type * from "./needs-you";
@@ -49,6 +50,9 @@ export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
 export { DRIVER_AVAILABILITY_LABEL } from "./driver-profile";
+export {
+  SHARE_PURPOSE_LABEL, SHARE_STATE_LABEL, SHARE_REFUSAL_MESSAGE,
+} from "./document-share";
 export {
   FACT_SOURCE_LABEL, FACT_VERIFICATION_LABEL, FACT_VERIFICATION_NEEDS_PERSON,
   DOMAIN_EVENT_LABEL, PROJECTION_STATE_LABEL,

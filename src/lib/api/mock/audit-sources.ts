@@ -1,5 +1,5 @@
 import type {
-  ActorRef, AuditEntityRef, AuditEventSource, EventSource, PermissionKey,
+  ActorRef, AuditAction, AuditEntityRef, AuditEventSource, EventSource, PermissionKey,
 } from "@/types";
 import type { ModuleAuditFeed, ModuleAuditRecord } from "@/lib/audit/ingest";
 import type { RiskObservation } from "@/lib/risk/evaluate";
@@ -9,6 +9,7 @@ import { mockFuelService } from "./fuel";
 import { mockInvoicesService } from "./invoices";
 import { mockSettlementsService } from "./settlements";
 import { mockStore } from "./store";
+import { packagesForOrganization, recipientLabel } from "./document-shares";
 import { sessionLoadRef, trackingAuditForLedger } from "./tracking-registry";
 import { hoursFromNow } from "./time";
 
@@ -314,6 +315,71 @@ const trackingFeed: ModuleAuditFeed<ServiceContext> = {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Documents — driver share packages                                           */
+/* -------------------------------------------------------------------------- */
+
+/** The share event's own kind, mapped onto the ledger's canonical actions. */
+const SHARE_ACTION: Record<string, AuditAction> = {
+  created: "documents.share_issued",
+  delivery_queued: "documents.share_delivery_attempted",
+  delivery_recorded: "documents.share_delivery_attempted",
+  delivery_failed: "documents.share_delivery_failed",
+  opened: "documents.share_opened",
+  document_viewed: "documents.share_opened",
+  access_refused: "documents.share_access_refused",
+  revoked: "documents.share_revoked",
+  expired: "documents.share_expired",
+  review_recorded: "documents.share_review_recorded",
+  refreshed: "documents.share_refreshed",
+};
+
+/**
+ * What a driver shared with THIS organization, and what has happened to it.
+ *
+ * A projection, like every other feed: the share package keeps its own
+ * append-only history and this maps it into the one ledger, idempotently, so
+ * sharing gains no second log. Only packages addressed to the reading
+ * organization are visible — another carrier's share is not this carrier's
+ * history, and an external recipient has no organization to read as.
+ */
+const documentSharesFeed: ModuleAuditFeed<ServiceContext> = {
+  module: "documents",
+  requires: ["documents:view"],
+  mock: false,
+  read(ctx) {
+    if (!has(ctx, "documents:view")) return [];
+    return packagesForOrganization(ctx.organizationId).flatMap((pkg) =>
+      pkg.events.map((e): ModuleAuditRecord => ({
+        entryId: e.id,
+        recordId: pkg.id,
+        action: SHARE_ACTION[e.kind] ?? "documents.shared",
+        sourceAction: e.kind,
+        occurredAt: e.at,
+        actor: {
+          userId: "external",
+          membershipId: ctx.membershipId,
+          displayNameSnapshot: e.actorName ?? pkg.driverName,
+          source: "web",
+        },
+        entity: ref(
+          "document",
+          pkg.id,
+          `Documents shared by ${pkg.driverName}`,
+          `/documents/shared/${pkg.id}`,
+        ),
+        summary: `${e.summary} — shared with ${recipientLabel(pkg)}`,
+        source: "human",
+        outcome: e.kind === "access_refused"
+          ? "denied"
+          : e.kind === "delivery_failed"
+            ? "failed"
+            : undefined,
+      })),
+    );
+  },
+};
+
+/* -------------------------------------------------------------------------- */
 /* The registry                                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -324,6 +390,7 @@ export const AUDIT_FEEDS: readonly ModuleAuditFeed<ServiceContext>[] = [
   invoicesFeed,
   settlementsFeed,
   trackingFeed,
+  documentSharesFeed,
 ];
 
 /** Reads every feed the caller is entitled to. A feed that throws is skipped

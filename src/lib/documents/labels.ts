@@ -65,6 +65,7 @@ export const SHARE_BASIS_LABEL: Record<DocumentShareBasisKind, string> = {
   carrier_relationship: "Carrier relationship",
   driver_relationship: "Driver relationship",
   load: "Load",
+  driver_share: "Shared by the driver",
   workspace_upgrade: "Workspace upgrade",
 };
 
