@@ -1,7 +1,7 @@
-import { LearningSettingsScreen } from "@/features/opportunities/learning-settings-screen";
+import { LearningDataUseScreen } from "@/features/opportunities/learning-data-use-screen";
 
-export const metadata = { title: "Shared learning" };
+export const metadata = { title: "Learning and your data" };
 
-export default function LearningSettingsPage() {
-  return <LearningSettingsScreen />;
+export default function LearningDataUsePage() {
+  return <LearningDataUseScreen />;
 }

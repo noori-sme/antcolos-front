@@ -149,11 +149,11 @@ export const SETTINGS_NAV: NavSection[] = [
       { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:view"] },
       { label: "Roles and permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
       { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["integrations:view"] },
-      // Cross-organization learning. It sits in Organization settings rather
-      // than beside the ranking sliders because it is a decision about the
-      // workspace's data, made once by somebody who may speak for the
-      // organization — not a dispatcher's preference about how a list is sorted.
-      { label: "Shared learning", href: "/settings/learning", icon: Share2, requires: ["organization:manage"] },
+      // What the ranking learns from, and what it never touches. Not a setting —
+      // there is nothing on the page to change — but it belongs here rather than
+      // beside the ranking sliders, because it is an account of what happens to
+      // the workspace's data rather than a dispatcher's preference about sorting.
+      { label: "Learning and your data", href: "/settings/learning", icon: Share2, requires: ["organization:manage"] },
       { label: "Audit", href: "/settings/audit", icon: ScrollText, requires: ["audit:view"] },
     ],
   },

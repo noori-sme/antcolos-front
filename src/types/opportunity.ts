@@ -378,54 +378,11 @@ export interface RankingPreferences {
   updatedByName?: string;
 }
 
-/**
- * ★ WHAT A WORKSPACE HAS AGREED TO ABOUT CROSS-ORGANIZATION LEARNING ★
- *
- * TWO CHOICES, NOT ONE. Giving your decisions to the shared pool and taking a
- * suggestion out of it are different decisions carrying different risks, and a
- * single "learning on/off" switch forces a workspace that is happy to benefit
- * into also contributing — which is the one direction that cannot be undone.
- *
- * ███ FRONTEND ONLY ███
- * This is an in-memory record that lives as long as the tab. It is not a
- * durable consent record, it is not enforced against anything except this
- * app's own code path, and a real backend must enforce it server-side against
- * a caller who never runs this code at all.
- */
-export interface LearningConsent {
-  organizationId: string;
-  /**
-   * Whether this workspace's decisions may enter the shared pool.
-   *
-   * OFF until somebody with `organization:manage` turns it on, and that
-   * default is the whole point: data that has left cannot be recalled, so the
-   * safe default is the one that keeps it.
-   */
-  contribute: boolean;
-  /**
-   * Whether this workspace may be offered a suggestion derived from the pool.
-   *
-   * ON by default, and that is defensible only because of what the pool holds.
-   * `sharedFields` is an equipment type, four rounded bands and a boolean; the
-   * pool carries no organization id at all; and no suggestion is offered below
-   * a minimum number of observations. Nothing a consumer can see names a
-   * workspace, a user, a carrier, a truck, a driver, a load, a contract or a
-   * credential. If that ever stops being true, this default is wrong.
-   */
-  consume: boolean;
-  updatedAt: IsoDateTime;
-  /** Absent while the workspace is still on the shipped defaults. */
-  updatedByMembershipId?: string;
-  updatedByName?: string;
-}
-
 /** Whether network learning is being used, and if not, why not. */
 export type NetworkLearningAvailability =
-  /** Consumption is on and the pool holds enough to speak. */
+  /** The pool holds enough from other workspaces to speak. */
   | "available"
-  /** The workspace has turned consumption off. No network suggestion is made. */
-  | "consumption_disabled"
-  /** Consumption is on, and the pool does not yet hold enough to say anything. */
+  /** It does not yet hold enough to say anything. */
   | "insufficient_evidence";
 
 /** Which body of evidence produced a suggestion. Never both at once. */
@@ -438,32 +395,32 @@ export type LearningEvidenceSource =
 /**
  * What the ranking has learned, and exactly what leaves this workspace.
  *
- * Antcolos can get better at ranking by watching which loads dispatchers
- * actually pursue — but only if what crosses the boundary carries nothing that
- * identifies a workspace, a carrier, a broker contact or a person, and no
- * credential of any kind. Both lists are spelled out in the data rather than
- * described in a policy document, so a test can assert them and a dispatcher
- * can read them.
+ * Antcolos gets better at ranking by watching which loads dispatchers actually
+ * pursue. That is a platform function rather than a per-workspace setting, so
+ * the weight falls entirely on the BOUNDARY: what crosses it is an exhaustive
+ * allowlist of derived signals, spelled out in `src/config/learning.ts` as data
+ * rather than described in a policy document, so a test can assert it and a
+ * dispatcher can read it. Nothing on it identifies a workspace, a carrier, a
+ * broker contact, a person or a credential.
  *
  * Local and network evidence are reported SEPARATELY on purpose. "Antcolos
  * suggests this" and "the workspaces around you suggest this" are different
- * claims, and a summary that could not tell them apart would make the consent
- * switches below meaningless.
+ * claims, and a summary that could not tell them apart could not be checked.
  */
 export interface LearningSummary {
-  /** What this workspace has agreed to. Always present, defaults included. */
-  consent: LearningConsent;
   /**
-   * Decisions this workspace has recorded. These never leave it, whatever
-   * consent says, which is what keeps the ranking useful with contribution off.
+   * The data-use policy version these numbers were produced under.
+   *
+   * Carried so a screen never describes the boundary from memory, and so a row
+   * gathered under older terms is never silently re-licensed by a newer list.
+   */
+  policyVersion: number;
+  /**
+   * Decisions this workspace has recorded. One per load, however many times
+   * somebody pressed the button.
    */
   localObservations: number;
-  /**
-   * How many of those were also contributed to the shared pool.
-   *
-   * Zero for every decision made while contribution was off, and it stays zero
-   * for them afterwards: enabling contribution never reaches back.
-   */
+  /** How many of those are in the shared pool under the current policy. */
   contributedObservations: number;
   /**
    * Observations from OTHER workspaces that this one may learn from.
@@ -480,18 +437,12 @@ export interface LearningSummary {
   /** Which evidence produced `suggested`. Absent when there is no suggestion. */
   suggestedFrom?: LearningEvidenceSource;
   lastLearnedAt?: IsoDateTime;
-  /** Field names that leave the workspace, anonymised. */
+  /** Field labels that may leave the workspace. Derived from the policy. */
   sharedFields: string[];
-  /** Field names that never leave it, whatever happens. */
+  /** Categories that never leave it, whatever happens. Derived from the policy. */
   withheldFields: string[];
-  /**
-   * What turning contribution off cannot undo, in the words a screen shows.
-   *
-   * Carried in the data rather than written into one component, because the
-   * limitation is a property of the design and every surface that offers the
-   * switch owes the reader the same sentence.
-   */
-  contributionHistoryNote: string;
+  /** The honest note about what this build does and does not settle. */
+  dataUseNote: string;
 }
 
 /* -------------------------------------------------------------------------- */
