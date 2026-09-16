@@ -99,46 +99,134 @@ function projectionKey(eventId: string, subscriberId: string): string {
  * (1) and (2) by making the publisher's own object throw on its next write,
  * which is a side effect nobody asked for.
  *
- * `structuredClone` is the platform's own deep copy: it handles nested objects,
- * arrays, `Date`, `Map`, `Set` and cycles, and it REFUSES functions, symbols
- * and class instances it cannot reproduce. That refusal is a feature here. A
- * payload carrying something uncopyable cannot be stored faithfully, and the
- * honest answer is to say so at the boundary rather than store a shallow copy
- * that will drift. It throws before anything is recorded, so there is no
- * half-published event to clean up.
+ * ── AND THE COPY IS VALIDATED, NOT JUST DEEP ──────────────────────────────
+ * A deep copy alone is not enough, because `Object.freeze` is a shallower
+ * promise than it looks: a frozen `Map` still accepts `.set()`, a frozen `Set`
+ * still accepts `.add()`, and a frozen `Date` still accepts `.setTime()`.
+ * Freezing those and calling the event immutable would be a claim this code
+ * cannot keep. A cyclic payload is the same problem from the other side: it
+ * survives an in-memory copy and cannot survive a durable JSON, event-log or
+ * outbox boundary, which is where these events are eventually going.
  *
- * Deliberately local to this module rather than a shared utility: nothing else
- * needs it. `audit-ledger.ts` hand-freezes the specific fields of an
- * `AuditEvent` and cannot serve a generic payload; lifting either into
- * `lib/utils` for one caller each would be a utility nobody reads.
+ * So the boundary accepts TRANSPORT-SAFE PLAIN DATA only, and everything else
+ * is refused by name and by path before anything is recorded. That is not a
+ * restriction on the existing payloads: `load.finalized`,
+ * `fuel_transaction.confirmed` and `equipment_meter.reading_recorded` are
+ * strings, finite numbers, booleans and string-union enums in plain objects
+ * and arrays, with every instant already an `IsoDateTime` string. Nothing is
+ * being taken away — what is being removed is the room for a later payload to
+ * smuggle in something that cannot be frozen, cannot be serialized, and would
+ * have been found by a backend rather than here.
  *
  * ███ FRONTEND ONLY ███
- * This makes the in-memory record immutable. It is not durability, not
- * integrity against a process that does not run this code, and not a signature.
+ * This makes the in-memory record immutable and portable. It is not
+ * durability, not integrity against a process that does not run this code, and
+ * not a signature.
  */
 function frozenCopyOf<P>(event: DomainEvent<P>): DomainEvent {
-  let copy: DomainEvent;
-  try {
-    copy = structuredClone(event) as DomainEvent;
-  } catch (error) {
-    throw new TypeError(
-      `A ${event.kind} payload could not be copied, so it cannot be published as an immutable record. `
-      + "Domain event payloads are plain data: objects, arrays, numbers, strings, booleans and dates. "
-      + `Functions, symbols and class instances cannot be carried across the bus. (${
-        error instanceof Error ? error.message : String(error)
-      })`,
-    );
-  }
-  return deepFreeze(copy);
+  return deepFreeze(plainDataCopy(event, "event", []) as DomainEvent);
 }
 
-/** Freeze every object reachable from `value`. Cycle-safe. */
-function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+/** What a value has to be to cross the bus, in the words the error uses. */
+const PLAIN_DATA_CONTRACT =
+  "A domain event carries transport-safe plain data only: null, strings, "
+  + "booleans, finite numbers, arrays, and plain objects of those. Instants "
+  + "travel as ISO strings.";
+
+function refuse(path: string, found: string): never {
+  throw new TypeError(
+    `${path} is ${found}, which cannot be published. ${PLAIN_DATA_CONTRACT}`,
+  );
+}
+
+/**
+ * Validate and copy one value, or refuse it by name and by path.
+ *
+ * One pass does both on purpose. A validate-then-clone pair would walk the
+ * same tree twice and could disagree about what it found on the second walk.
+ *
+ * `ancestors` is the path from the root to here, so a true cycle is caught
+ * while two properties pointing at the same object are not — sharing is
+ * lossless once copied, and refusing it would reject payloads that are fine.
+ */
+function plainDataCopy(value: unknown, path: string, ancestors: object[]): unknown {
+  if (value === null) return null;
+
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return value;
+    case "number":
+      // NaN and Infinity survive a copy and become `null` in JSON. A rate or a
+      // mileage that turns into null on the way to a database is worse than a
+      // refusal here, and the refusal names which field it was.
+      if (!Number.isFinite(value)) refuse(path, `the number ${String(value)}`);
+      return value;
+    case "undefined":
+      // Reached only inside an array — object properties are handled below.
+      // JSON turns a hole into `null`, which silently changes what the array
+      // says. An optional value belongs in an object property, not a slot.
+      refuse(path, "undefined inside an array");
+      break;
+    case "bigint":
+      refuse(path, "a bigint");
+      break;
+    case "symbol":
+      refuse(path, "a symbol");
+      break;
+    case "function":
+      refuse(path, "a function");
+      break;
+  }
+
+  const object = value as object;
+  if (ancestors.includes(object)) {
+    throw new TypeError(
+      `${path} is a cyclic reference, which cannot be published. A domain event `
+      + "must survive being written to a log or an outbox, and a cycle does not.",
+    );
+  }
+
+  if (Array.isArray(object)) {
+    const next = [...ancestors, object];
+    return object.map((item, i) => plainDataCopy(item, `${path}[${i}]`, next));
+  }
+
+  const prototype = Object.getPrototypeOf(object);
+  if (prototype !== Object.prototype && prototype !== null) {
+    // Named rather than lumped together, because the fix differs: a Date
+    // becomes an ISO string, a Map becomes an object or an array of pairs, a
+    // class instance becomes the plain shape it was standing in for.
+    const name = object.constructor?.name ?? "an object with a prototype";
+    refuse(
+      path,
+      name === "Date"
+        ? "a Date — freezing one does not stop setTime, so instants travel as ISO strings"
+        : name === "Map" || name === "Set"
+          ? `a ${name} — freezing one does not stop ${name === "Map" ? "set()" : "add()"}`
+          : `a ${name} instance`,
+    );
+  }
+
+  const next = [...ancestors, object];
+  const copy: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(object)) {
+    // An absent optional field. JSON has no way to say "present and
+    // undefined", so the copy says what a durable record would say: the key is
+    // not there. No reader can tell the difference — `payload.weightLbs` reads
+    // `undefined` either way — and the stored event now matches what a backend
+    // would keep.
+    if (item === undefined) continue;
+    copy[key] = plainDataCopy(item, `${path}.${key}`, next);
+  }
+  return copy;
+}
+
+/** Freeze every object reachable from `value`. */
+function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== "object") return value;
-  if (seen.has(value)) return value;
-  seen.add(value);
   for (const key of Reflect.ownKeys(value)) {
-    deepFreeze((value as Record<PropertyKey, unknown>)[key], seen);
+    deepFreeze((value as Record<PropertyKey, unknown>)[key]);
   }
   return Object.freeze(value);
 }

@@ -296,33 +296,163 @@ test("a subscriber cannot change the payload the next subscriber reads", async (
   assert.deepEqual(seen, ["original"]);
 });
 
-test("a payload that cannot be copied is refused at the boundary, not stored shallow", async () => {
-  const uncopyable = buildDomainEvent<{ fn: () => void }>({
+/* -------------------------------------------------------------------------- */
+/* The accepted payload contract                                               */
+/* -------------------------------------------------------------------------- */
+
+/** Publish a payload of any shape, and hand back whatever happened. */
+async function publishPayload(key: string, payload: unknown) {
+  const ev = buildDomainEvent({
     kind: "load.finalized",
     version: 1,
     scope: { organizationId: "org_test" },
-    subjectId: "ld_bad",
+    subjectId: "ld_contract",
     subjectKind: "load",
     occurredAt: "2026-09-15T00:00:00.000Z",
     actor: ACTOR,
-    idempotencyKey: "uncopyable-1",
+    idempotencyKey: key,
     provenance: PROVENANCE,
-    payload: { fn: () => undefined },
+    payload: payload as never,
+  });
+  try {
+    const result = await propagationBus.publish(ev);
+    return { accepted: true as const, result, eventId: ev.eventId, error: undefined };
+  } catch (error) {
+    return { accepted: false as const, result: undefined, eventId: ev.eventId, error: error as Error };
+  }
+}
+
+/** Nothing was stored, nothing ran, nothing claims it did. */
+function assertNothingHappened(eventId: string, runsBefore: number, sub: { runs: number }) {
+  assert.equal(propagationBus.event("org_test", eventId), undefined);
+  assert.equal(propagationBus.projectionsFor(eventId).length, 0);
+  assert.equal(
+    propagationBus.events("org_test").some((e) => e.eventId === eventId),
+    false,
+  );
+  assert.equal(sub.runs, runsBefore, "no subscriber ran");
+}
+
+test("accepts null, strings, booleans, finite numbers, arrays and plain objects", async () => {
+  const a = counting("contract_ok", () => ok());
+  propagationBus.subscribe(a as never);
+
+  const outcome = await publishPayload("contract-ok", {
+    nothing: null,
+    text: "a string",
+    flag: false,
+    whole: 42,
+    fractional: -1.5,
+    zero: 0,
+    list: [1, "two", true, null, { deep: "value" }],
+    nested: { inner: { deeper: ["x"] } },
+    // A plain object with a null prototype is still plain data.
+    bare: Object.assign(Object.create(null), { k: "v" }),
   });
 
-  await assert.rejects(
-    () => propagationBus.publish(uncopyable),
-    (error: Error) => {
-      assert.ok(error instanceof TypeError);
-      assert.match(error.message, /could not be copied/);
-      return true;
-    },
-  );
+  assert.equal(outcome.accepted, true, outcome.error?.message);
+  assert.equal(a.runs, 1);
+});
 
-  // It threw before anything was recorded: no half-published event, and no
-  // projection record claiming something happened.
-  assert.equal(propagationBus.event("org_test", uncopyable.eventId), undefined);
-  assert.equal(propagationBus.projectionsFor(uncopyable.eventId).length, 0);
+test("drops an absent optional field rather than storing 'present and undefined'", async () => {
+  // JSON has no way to say "present and undefined", so the stored copy says
+  // what a durable record would. No reader can tell: both read `undefined`.
+  const outcome = await publishPayload("contract-undef", { given: "yes", absent: undefined });
+  assert.equal(outcome.accepted, true, outcome.error?.message);
+
+  const stored = propagationBus.event("org_test", outcome.eventId) as
+    DomainEvent<Record<string, unknown>>;
+  assert.equal(Object.hasOwn(stored.payload, "absent"), false);
+  assert.equal(stored.payload.absent, undefined);
+  assert.equal(stored.payload.given, "yes");
+});
+
+/**
+ * Every value form, decided on purpose.
+ *
+ * The four in the middle are the reason this exists: `Object.freeze` does NOT
+ * stop `Map.set`, `Set.add` or `Date.setTime`, so freezing one and calling the
+ * event immutable would be a claim the code cannot keep.
+ */
+const REFUSED: [name: string, value: unknown, expected: RegExp][] = [
+  ["undefined in an array", { list: ["a", undefined, "b"] }, /undefined inside an array/],
+  ["NaN", { n: Number.NaN }, /the number NaN/],
+  ["Infinity", { n: Number.POSITIVE_INFINITY }, /the number Infinity/],
+  ["negative Infinity", { n: Number.NEGATIVE_INFINITY }, /the number -Infinity/],
+  ["a bigint", { n: 10n }, /a bigint/],
+  ["a symbol", { s: Symbol("x") }, /a symbol/],
+  ["a function", { fn: () => undefined }, /a function/],
+  ["a Date", { when: new Date("2026-01-01") }, /a Date .*ISO strings/],
+  ["a Map", { m: new Map([["a", 1]]) }, /a Map .*set\(\)/],
+  ["a Set", { s: new Set(["x"]) }, /a Set .*add\(\)/],
+  ["a RegExp", { r: /x/g }, /a RegExp instance/],
+  ["a typed array", { t: new Uint8Array([1, 2]) }, /a Uint8Array instance/],
+  ["a class instance", { c: new (class Thing { value = 1; })() }, /a Thing instance/],
+];
+
+for (const [name, payload, expected] of REFUSED) {
+  test(`refuses ${name}, and records nothing`, async () => {
+    const a = counting(`refuse_${name.replace(/\W+/g, "_")}`, () => ok());
+    propagationBus.subscribe(a as never);
+    const before = a.runs;
+
+    const outcome = await publishPayload(`refuse-${name}`, payload);
+
+    assert.equal(outcome.accepted, false, `${name} was accepted`);
+    assert.ok(outcome.error instanceof TypeError);
+    assert.match(outcome.error.message, expected);
+    // The path is in the message, so an author can find the field.
+    assert.match(outcome.error.message, /^event\.payload/);
+    assertNothingHappened(outcome.eventId, before, a);
+  });
+}
+
+test("freezing a Map, a Set or a Date would not have made them immutable", () => {
+  // The reason the boundary rejects rather than freezes. If any of these were
+  // accepted and frozen, the event would still be mutable through its own
+  // methods, and calling it immutable would be a claim the code cannot keep.
+  const map = Object.freeze(new Map<string, number>());
+  const set = Object.freeze(new Set<string>());
+  const date = Object.freeze(new Date("2026-01-01T00:00:00.000Z"));
+
+  map.set("smuggled", 1);
+  set.add("smuggled");
+  date.setTime(0);
+
+  assert.equal(Object.isFrozen(map), true);
+  assert.equal(map.get("smuggled"), 1, "a frozen Map still accepts set()");
+  assert.equal(set.has("smuggled"), true, "a frozen Set still accepts add()");
+  assert.equal(date.getTime(), 0, "a frozen Date still accepts setTime()");
+});
+
+test("refuses a cyclic payload, and records nothing", async () => {
+  const a = counting("refuse_cyclic", () => ok());
+  propagationBus.subscribe(a as never);
+  const before = a.runs;
+
+  type Cyc = { name: string; self?: Cyc };
+  const cyclic: Cyc = { name: "loop" };
+  cyclic.self = cyclic;
+
+  const outcome = await publishPayload("refuse-cyclic", cyclic);
+
+  assert.equal(outcome.accepted, false);
+  assert.match(outcome.error!.message, /cyclic reference/);
+  assert.match(outcome.error!.message, /log or an outbox/);
+  assertNothingHappened(outcome.eventId, before, a);
+});
+
+test("allows the same object in two places, which is sharing rather than a cycle", async () => {
+  const shared = { label: "same" };
+  const outcome = await publishPayload("contract-shared", { a: shared, b: shared });
+
+  assert.equal(outcome.accepted, true, outcome.error?.message);
+  const stored = propagationBus.event("org_test", outcome.eventId) as
+    DomainEvent<{ a: { label: string }; b: { label: string } }>;
+  assert.equal(stored.payload.a.label, "same");
+  assert.equal(stored.payload.b.label, "same");
+  // Copied, so they are equal in value and no longer the same object.
+  assert.notEqual(stored.payload.a, stored.payload.b);
 });
 
 test("publishing the same event twice runs no subscriber twice", async () => {
