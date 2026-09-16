@@ -1,17 +1,17 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DOMAIN_EVENT_LABEL } from "@/types";
 import type {
   Listing, OpportunityMatch, PermissionKey,
 } from "@/types";
+import { availablePermissionKeys } from "@/lib/permissions/catalog";
 import { requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
 import { mockAuditService } from "./audit";
 import { resetAllMocks } from "./registry";
 import {
-  anonymize, learningConsent, learningFor, localPoolForTests, networkPoolForTests,
-  observeDecision, setLearningConsent,
+  anonymize, LEARNING_CONSENT_PERMISSION, learningConsent, learningFor,
+  localPoolForTests, networkPoolForTests, observeDecision, setLearningConsent,
 } from "./ranking";
 
 /**
@@ -328,7 +328,9 @@ describe("consumption consent", () => {
     const summary = learningFor(ORG_A);
     expect(summary.localObservations).toBe(12);
     expect(summary.contributedObservations).toBe(12);
-    expect(summary.networkObservations).toBe(12);
+    // Its own twelve rows are in the pool and are not network evidence for it.
+    expect(networkPoolForTests()).toHaveLength(12);
+    expect(summary.networkObservations).toBe(0);
     // Its own decisions are better evidence about itself than the pool is.
     expect(summary.suggestedFrom).toBe("local");
     expect(summary.contributionHistoryNote).toMatch(/cannot recall/i);
@@ -338,6 +340,91 @@ describe("consumption consent", () => {
     const summary = learningFor(ORG_B);
     expect(summary.suggested).toBeUndefined();
     expect(summary.networkAvailability).toBe("insufficient_evidence");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* A workspace never learns from itself through the pool                       */
+/* -------------------------------------------------------------------------- */
+
+describe("self-contributed evidence", () => {
+  it("does not hand a workspace its own contribution back as network evidence", () => {
+    const admin = ctxFor(ORG_A, ADMIN);
+
+    // A has too little of its own to learn from.
+    setLearningConsent(admin, { contribute: true });
+    observeDecision(ORG_A, matchFixture(), listingFixture(), true);
+
+    const summary = learningFor(ORG_A);
+
+    expect(summary.localObservations).toBe(1);
+    expect(summary.contributedObservations).toBe(1);
+    // The row is in the pool, and it is not evidence FOR A.
+    expect(networkPoolForTests()).toHaveLength(1);
+    expect(summary.networkObservations).toBe(0);
+    expect(summary.networkAvailability).toBe("insufficient_evidence");
+    expect(summary.suggested).toBeUndefined();
+  });
+
+  it("subtracts its own rows even when the pool is large enough without them", () => {
+    // The case a count alone would miss: A's own contributions clear the
+    // minimum on their own, and its local evidence is one-sided so the local
+    // path declines. Without subtraction A would learn from itself here.
+    const admin = ctxFor(ORG_A, ADMIN);
+    setLearningConsent(admin, { contribute: true });
+    for (let i = 0; i < 12; i++) {
+      observeDecision(
+        ORG_A,
+        matchFixture({ matchId: `mch_self_${i}`, deadheadMiles: 20, allInRatePerMileCents: 310 }),
+        listingFixture(),
+        true, // every one pursued: one-sided, so the local path cannot speak
+      );
+    }
+
+    const summary = learningFor(ORG_A);
+
+    expect(networkPoolForTests()).toHaveLength(12);
+    expect(summary.contributedObservations).toBe(12);
+    expect(summary.networkObservations).toBe(0);
+    expect(summary.suggested).toBeUndefined();
+    expect(summary.suggestedFrom).toBeUndefined();
+  });
+
+  it("still lets another workspace consume that evidence, once it is eligible", () => {
+    setLearningConsent(ctxFor(ORG_A, ADMIN), { contribute: true });
+
+    // Below the minimum, B gets nothing — the floor applies to everybody.
+    recordDecisions(ORG_A, 4);
+    expect(learningFor(ORG_B).networkAvailability).toBe("insufficient_evidence");
+    expect(learningFor(ORG_B).suggested).toBeUndefined();
+
+    // Over it, and with both classes present, B may learn from A's rows.
+    recordDecisions(ORG_A, 8);
+    const b = learningFor(ORG_B);
+    expect(b.networkObservations).toBe(12);
+    expect(b.networkAvailability).toBe("available");
+    expect(b.suggested).toBeDefined();
+    expect(b.suggestedFrom).toBe("network");
+
+    // And A, looking at the same pool, still sees none of it as network evidence.
+    expect(learningFor(ORG_A).networkObservations).toBe(0);
+  });
+
+  it("gives every pooled row its own token, so the pool groups nobody", () => {
+    setLearningConsent(ctxFor(ORG_A, ADMIN), { contribute: true });
+    setLearningConsent(ctxFor(ORG_B, ADMIN), { contribute: true });
+    recordDecisions(ORG_A, 6);
+    recordDecisions(ORG_B, 6);
+
+    const tokens = networkPoolForTests().map((o) => o.contributionId);
+    expect(tokens).toHaveLength(12);
+    // Unique per ROW, not per organization: the pool cannot even be partitioned
+    // into contributors, let alone attributed to one.
+    expect(new Set(tokens).size).toBe(12);
+    for (const token of tokens) {
+      expect(token).not.toContain(ORG_A);
+      expect(token).not.toContain(ORG_B);
+    }
   });
 });
 
@@ -377,6 +464,29 @@ describe("anonymisation", () => {
     // Exact rates and miles are banded, never passed through.
     expect(serialized).not.toContain("262");
     expect(serialized).not.toContain("781");
+  });
+
+  it("exposes no source organization, person, asset, load or credential to a consumer", () => {
+    // The consumer's-eye view: everything B can reach through the boundary when
+    // A has contributed. Not just the stored row — the whole summary B is given.
+    setLearningConsent(ctxFor(ORG_A, ADMIN), { contribute: true });
+    recordDecisions(ORG_A);
+
+    const consumed = learningFor(ORG_B);
+    expect(consumed.suggestedFrom).toBe("network");
+
+    const serialized = JSON.stringify({
+      summary: consumed,
+      pool: networkPoolForTests(),
+    });
+    for (const identifier of IDENTIFIERS) {
+      expect(serialized).not.toContain(identifier);
+    }
+    // A suggestion is six weights and nothing else — no row, no id, no count
+    // that could be resolved to a contributor.
+    expect(Object.keys(consumed.suggested!).sort()).toEqual([
+      "broker_quality", "deadhead", "home_time", "lane_preference", "profit", "rate",
+    ]);
   });
 
   it("does not let the pool share an object with the workspace's own record", () => {
@@ -469,71 +579,77 @@ describe("fixture reset", () => {
 /* -------------------------------------------------------------------------- */
 
 describe("milestone scope", () => {
-  const SRC = join(process.cwd(), "src");
   /**
-   * This file names the forbidden identifiers in order to look for them, so it
-   * would always be its own first offender. Every other file is fair game.
+   * ★ WHAT THIS PROVES, AND WHAT IT DELIBERATELY DOES NOT ★
+   *
+   * The claim worth testing is "this milestone introduced none of that work",
+   * and the honest way to test it is over the files this milestone OWNS. A
+   * repository-wide prohibition would be a different claim — "nobody may ever
+   * build Goals" — and it would turn a later approved milestone into a failing
+   * build for no reason anybody could act on.
+   *
+   * So the guard is scoped to the three files Plan A1 created. If a future
+   * milestone adds `OrganizationGoal`, these keep passing, exactly as they
+   * should. If a future milestone puts `OrganizationGoal` inside the ranking
+   * module, that is a layering mistake and this is the right place to catch it.
    */
-  const SELF = join(SRC, "lib/api/mock/ranking.test.ts");
+  const OWNED = [
+    "src/lib/api/mock/ranking.ts",
+    "src/features/opportunities/learning-settings-screen.tsx",
+    "src/app/(app)/settings/learning/page.tsx",
+  ];
 
-  function walk(dir: string, out: string[] = []): string[] {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) walk(full, out);
-      else if (full.endsWith(".ts") || full.endsWith(".tsx")) out.push(full);
-    }
-    return out;
-  }
+  const sourcesOfOwnedFiles = () =>
+    OWNED.map((rel) => ({ rel, text: readFileSync(join(process.cwd(), rel), "utf8") }));
 
-  function offendersFor(forbidden: readonly string[]): string[] {
+  function offendersIn(forbidden: readonly string[]): string[] {
     const found: string[] = [];
-    for (const file of walk(SRC)) {
-      if (file === SELF) continue;
-      const source = readFileSync(file, "utf8");
+    for (const { rel, text } of sourcesOfOwnedFiles()) {
       for (const name of forbidden) {
-        if (source.includes(name)) found.push(`${file}: ${name}`);
+        if (text.includes(name)) found.push(`${rel}: ${name}`);
       }
     }
     return found;
   }
 
-  /**
-   * The Decision Intelligence and external-provider work was scoped OUT of this
-   * milestone. A test is the only way that stays true through a later merge.
-   *
-   * Every name below is absent from `origin/main`, which is what makes finding
-   * one meaningful rather than a collision with something that was already
-   * here — `ProviderAdapter`, for instance, is ELD's and fuel's and is not a
-   * scope breach, so it is deliberately not on this list.
-   */
-  it("introduces no Goals, Metric Observations, Recommendations or Outcomes", () => {
-    expect(offendersFor([
+  it("builds no Goals, Metric Observations, Recommendations or Outcomes", () => {
+    expect(offendersIn([
       "OrganizationGoal", "GoalProgress", "MetricObservation",
-      "OutcomeAttribution", "RecommendationStatus", "LearningModel",
+      "OutcomeAttribution", "RecommendationStatus",
     ])).toEqual([]);
   });
 
-  it("introduces no external service provider records", () => {
-    expect(offendersFor([
+  it("builds no external service provider records", () => {
+    expect(offendersIn([
       "ServiceProvider", "ExternalProvider", "service_delegation",
       "carrier_service_provider",
     ])).toEqual([]);
   });
 
-  it("leaves the domain event catalogue untouched", () => {
-    // Asserted against the runtime catalogue rather than the source text, so a
-    // reformat cannot make this pass and a fourth kind cannot slip past it.
-    expect(Object.keys(DOMAIN_EVENT_LABEL).sort()).toEqual([
-      "equipment_meter.reading_recorded",
-      "fuel_transaction.confirmed",
-      "load.finalized",
-    ]);
+  it("publishes no domain event, so it adds no event kind", () => {
+    // The real claim about the event catalogue: this milestone does not touch
+    // it. Asserted by what the module does rather than by counting the union,
+    // so a later milestone adding a fourth kind is none of this test's business.
+    expect(offendersIn([
+      "propagationBus", "buildDomainEvent", "DomainEventKind",
+    ])).toEqual([]);
   });
 
-  it("adds no new permission key beyond the organization:manage reuse", () => {
-    const source = readFileSync(join(SRC, "types/permission.ts"), "utf8");
-    expect(source).not.toContain("learning:");
-    expect(source).not.toContain("goals:");
-    expect(source).not.toContain("recommendations:");
+  it("reuses an existing permission rather than minting one", () => {
+    // Stated as what it DOES use — a key that already exists in the catalogue —
+    // rather than as a list of key prefixes nobody may ever add.
+    expect(LEARNING_CONSENT_PERMISSION).toBe("organization:manage");
+    expect(availablePermissionKeys("CARRIER")).toContain(LEARNING_CONSENT_PERMISSION);
+    expect(requiredPermissionsForPath("/settings/learning"))
+      .toEqual([LEARNING_CONSENT_PERMISSION]);
+  });
+
+  it("adds no store of its own, so the reset surface is unchanged", () => {
+    // Consent went into ranking's existing per-organization map rather than a
+    // second store, and the proof is that `registry.ts` still has exactly the
+    // same two resets to know about as it did before.
+    const [{ text }] = sourcesOfOwnedFiles();
+    const resets = [...text.matchAll(/export function (reset[A-Za-z]*)/g)].map((m) => m[1]);
+    expect(resets).toEqual(["resetRanking", "resetRankingWeights"]);
   });
 });

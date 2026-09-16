@@ -159,7 +159,9 @@ function LearningConsentCards({
           organization id, and it says nothing at all until there are enough
           decisions in it to be about the market rather than about one workspace.
           Nothing you can see through it names a workspace, a person, a carrier,
-          a truck, a driver, a load, a contract or a credential.
+          a truck, a driver, a load, a contract or a credential. Your own
+          contributions are taken out before any of this is counted, so a
+          suggestion is never your own decisions handed back to you.
         </p>
         <p className="mt-1.5">
           Turning it off does not stop the ranking learning from{" "}
@@ -186,7 +188,7 @@ function LearningConsentCards({
               : "Nothing has been contributed."}
           />
           <Stat
-            label="Across Antcolos"
+            label="From other workspaces"
             value={summary.networkObservations}
             hint={NETWORK_HINT[summary.networkAvailability]}
           />
@@ -218,15 +220,23 @@ function LearningConsentCards({
         <FieldList title="Never leaves it, whatever happens" items={summary.withheldFields} />
       </div>
 
-      <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-[0.75rem] leading-relaxed text-fg-muted">
-        <strong className="font-medium text-fg">What this build actually enforces.</strong>{" "}
-        These settings live in memory for as long as this tab is open, and the
-        permission check behind them runs in this app. They are not a durable
-        consent record, they are not enforced against anything that does not run
-        this code, and no data is transmitted anywhere by this build at all. Real
-        storage, real authorization, deletion and retention are the backend&apos;s
-        to provide.
-      </p>
+      <div className="space-y-2 rounded-md border border-dashed border-border px-3.5 py-3 text-[0.75rem] leading-relaxed text-fg-muted">
+        <p>
+          <strong className="font-medium text-fg">What this build actually enforces.</strong>{" "}
+          These settings live in memory for as long as this tab is open, and the
+          permission check behind them runs in this app. They are not a durable
+          consent record, they are not enforced against anything that does not run
+          this code, and no data is transmitted anywhere by this build at all.
+        </p>
+        <p>
+          <strong className="font-medium text-fg">Backend policy, not settled here.</strong>{" "}
+          Durable deletion, how long anonymous contributions are kept, and what
+          withdrawing consent actually removes are decisions with legal weight
+          that belong to the backend and to the privacy terms. Nothing on this
+          page decides any of them, and nothing on it should be read as a promise
+          about them.
+        </p>
+      </div>
     </div>
   );
 }

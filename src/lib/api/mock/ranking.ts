@@ -41,7 +41,33 @@ import { appendAuditEvent, recordPermissionDenied } from "./audit";
  *
  * A workspace's own decisions are kept regardless, in `observations`, and never
  * leave it. That is what lets the ranking go on learning for a carrier that
- * shares nothing at all.
+ * shares nothing at all. They are also subtracted from the pool before it is
+ * read, so a workspace never receives its own contributions back as though they
+ * were the market's opinion.
+ *
+ * ── ACCEPTED PRODUCT DECISIONS THIS FILE IMPLEMENTS ───────────────────────
+ * Settled, not open, and recorded here so the next reader does not relitigate
+ * them from the code:
+ *
+ *   • Contribution and consumption are SEPARATE choices. Giving and benefiting
+ *     carry different risks and only one of them is irreversible.
+ *   • Contribution is OFF by default. Consumption may stay on by default only
+ *     while nothing a consumer sees can identify a source organization, user,
+ *     carrier, truck, driver, load, contract or credential — which is what the
+ *     banding, the absent organization id, the minimum-evidence floor and the
+ *     self-subtraction above are all for. If any of that stops holding, the
+ *     consumption default is wrong and must change with it.
+ *   • Consent integrity comes BEFORE any learning built on top of it.
+ *
+ * ── WHAT THE BACKEND MUST OWN AS POLICY ───────────────────────────────────
+ * Three things this file cannot provide and must not be read as providing:
+ * DURABLE DELETION, RETENTION, and CONSENT WITHDRAWAL as an enforceable
+ * lifecycle. Turning contribution off here stops the next write; it does not
+ * expire, erase or age out anything already pooled, and the pool is anonymous
+ * precisely so that there is nothing in it to erase by workspace. Whether
+ * anonymous contributions are retained forever, expire on a schedule, or are
+ * purged wholesale on withdrawal is a policy decision with legal weight, and it
+ * belongs to the backend and to whoever writes the privacy terms — not here.
  */
 
 const nowIso = () => new Date().toISOString();
@@ -328,6 +354,7 @@ export const SHARED_FIELDS = [
   "broker credit band (rounded to 10)",
   "broker MC age band (under 6 months / 6-24 / over 24)",
   "whether the dispatcher pursued it",
+  "a one-time token, unique to that single row, that only the contributing workspace can match",
 ] as const;
 
 /**
@@ -360,7 +387,7 @@ export const WITHHELD_FIELDS = [
  * could say.
  */
 export const CONTRIBUTION_HISTORY_NOTE =
-  "Turning contribution off stops every future contribution immediately. It cannot recall what has already been shared: the pool deliberately holds no organization id, so there is nothing in it to find and delete by workspace. That is the trade for it being anonymous in the first place.";
+  "Turning contribution off stops every future contribution immediately. It cannot recall what has already been shared: the pool deliberately holds no organization id, so there is nothing in it to find and delete by workspace. That is the trade for it being anonymous in the first place. Durable deletion, how long anonymous contributions are kept, and what withdrawing consent removes are backend policy, and this build decides none of them.";
 
 /**
  * One anonymised decision.
@@ -395,12 +422,58 @@ interface LocalObservation {
   observation: AnonymizedObservation;
   /** Whether this one was also contributed. False for every refused decision. */
   contributed: boolean;
+  /**
+   * The token of the pool row this decision produced, when it produced one.
+   *
+   * Held HERE and nowhere else. It is what lets this workspace subtract its own
+   * contributions from the pool without the pool knowing whose they are.
+   */
+  contributionId?: string;
+}
+
+/**
+ * One row as it sits in the shared pool.
+ *
+ * ★ WHY THERE IS A TOKEN, AND WHY IT IS NOT AN ORGANIZATION ID ★
+ * A workspace must not be handed its own contributions back as though they were
+ * the market's opinion — that is a workspace learning from itself with an extra
+ * step, and it is worst exactly when the workspace has too little evidence to
+ * learn from directly, which is the moment it falls through to the pool.
+ *
+ * Telling its rows apart needs SOMETHING on the row. `contributionId` is the
+ * smallest thing that works: a fresh random token, unique to one row, which
+ * groups nothing and links nothing. Two rows from the same workspace share no
+ * part of it, so holding the whole pool tells you nothing about who contributed
+ * what — you cannot even count the contributors. The mapping from token to
+ * workspace exists only inside the workspace that made it, in `observations`
+ * below, and is what `learningFor` subtracts.
+ *
+ * A per-ORGANIZATION token would be a pseudonymous organization id and would be
+ * exactly the thing this module refuses to store. A per-ROW token is not, and
+ * the difference is the whole reason this is safe.
+ */
+interface PooledObservation extends AnonymizedObservation {
+  contributionId: string;
 }
 
 /** Every workspace's own decisions, kept per workspace and never joined to the pool. */
 const observations: LocalObservation[] = [];
 /** The anonymised pool. Deliberately holds no organization id at all. */
-const network: AnonymizedObservation[] = [];
+const network: PooledObservation[] = [];
+
+let contributionSeq = 0;
+
+/**
+ * A fresh token for one contributed row.
+ *
+ * Deliberately not derived from the organization, the time, the decision or the
+ * row's position: anything derived would be something the pool could be mined
+ * for. Nothing parses it and only equality is ever used.
+ */
+function newContributionId(): string {
+  contributionSeq += 1;
+  return `obs_${contributionSeq.toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Consent                                                                     */
@@ -591,12 +664,19 @@ export function observeDecision(
   const observation = anonymize(match, listing, pursued);
   const contributed = learningConsent(organizationId).contribute;
 
-  observations.push({ organizationId, at: nowIso(), observation, contributed });
-  if (!contributed) return;
+  if (!contributed) {
+    observations.push({ organizationId, at: nowIso(), observation, contributed: false });
+    return;
+  }
 
   // A copy, not the same object. The local row knows which workspace it came
-  // from; the pool must never be able to reach it.
-  network.push({ ...observation });
+  // from; the pool must never be able to reach it. The token travels with the
+  // copy and is remembered locally, which is the only place the two meet.
+  const contributionId = newContributionId();
+  observations.push({
+    organizationId, at: nowIso(), observation, contributed: true, contributionId,
+  });
+  network.push({ ...observation, contributionId });
 }
 
 /**
@@ -665,9 +745,20 @@ export function learningFor(organizationId: string): LearningSummary {
   const mine = observations.filter((o) => o.organizationId === organizationId);
   const agreed = learningConsent(organizationId);
 
+  // ★ A WORKSPACE NEVER LEARNS FROM ITSELF THROUGH THE POOL ★
+  // Its own contributions are subtracted before anything is counted or derived,
+  // so "what the market thinks" is never partly its own echo. This matters most
+  // in the case that looks harmless: a workspace with too little of its own
+  // evidence to learn from directly is exactly the one that falls through to
+  // the pool, and exactly the one whose own rows would dominate a thin pool.
+  const ownContributions = new Set(
+    mine.map((o) => o.contributionId).filter((id): id is string => id !== undefined),
+  );
+  const fromOthers = network.filter((o) => !ownContributions.has(o.contributionId));
+
   const networkAvailability: NetworkLearningAvailability = !agreed.consume
     ? "consumption_disabled"
-    : network.length < MINIMUM_OBSERVATIONS
+    : fromOthers.length < MINIMUM_OBSERVATIONS
       ? "insufficient_evidence"
       : "available";
 
@@ -675,7 +766,10 @@ export function learningFor(organizationId: string): LearningSummary {
     consent: agreed,
     localObservations: mine.length,
     contributedObservations: mine.filter((o) => o.contributed).length,
-    networkObservations: network.length,
+    // Other workspaces' rows only. Reporting the whole pool would make a
+    // workspace that had just filled it look as though there were something
+    // there for it to learn from.
+    networkObservations: fromOthers.length,
     networkAvailability,
     sharedFields: [...SHARED_FIELDS],
     withheldFields: [...WITHHELD_FIELDS],
@@ -696,7 +790,7 @@ export function learningFor(organizationId: string): LearningSummary {
   // weaker one, not a quieter one.
   if (networkAvailability !== "available") return summary;
 
-  const fromNetwork = suggestFrom(network, base);
+  const fromNetwork = suggestFrom(fromOthers, base);
   if (fromNetwork) {
     summary.suggested = fromNetwork;
     summary.suggestedFrom = "network";
@@ -708,7 +802,7 @@ export function learningFor(organizationId: string): LearningSummary {
 const clampWeight = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
 /** Test hook: the anonymised pool, so a test can inspect what would be shared. */
-export function networkPoolForTests(): ReadonlyArray<Readonly<AnonymizedObservation>> {
+export function networkPoolForTests(): ReadonlyArray<Readonly<PooledObservation>> {
   return network;
 }
 

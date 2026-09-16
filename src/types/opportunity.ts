@@ -465,7 +465,13 @@ export interface LearningSummary {
    * for them afterwards: enabling contribution never reaches back.
    */
   contributedObservations: number;
-  /** Observations across Antcolos. An aggregate count, joined to nothing. */
+  /**
+   * Observations from OTHER workspaces that this one may learn from.
+   *
+   * Its own contributions are subtracted: a workspace never learns from itself
+   * through the pool, so counting its own rows here would promise evidence that
+   * is not there. An aggregate count, joined to nothing.
+   */
   networkObservations: number;
   /** Why network learning is or is not in use. */
   networkAvailability: NetworkLearningAvailability;

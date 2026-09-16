@@ -402,7 +402,7 @@ function RankingPanel({
         */}
         <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-muted">
           {learning.consent.contribute
-            ? `Sharing is on, so ${learning.contributedObservations} of them have gone to the shared pool in the anonymised form below. Across Antcolos there are ${learning.networkObservations}.`
+            ? `Sharing is on, so ${learning.contributedObservations} of them have gone to the shared pool in the anonymised form below. Other workspaces have contributed ${learning.networkObservations} you can learn from — your own are never counted back to you.`
             : "Sharing is off, so none of them have left this workspace. Nothing is held anywhere waiting to be sent."}{" "}
           <Link href="/settings/learning" className="font-medium text-primary underline-offset-2 hover:underline">
             Change what is shared
