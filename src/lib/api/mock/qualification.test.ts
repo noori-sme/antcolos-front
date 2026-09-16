@@ -13,9 +13,13 @@ import {
 import { allQualificationRecords } from "./qualification-store";
 import {
   addLink, allDocuments, createDocument, currentVersion, documentById,
-  lineageVersions, replaceDocument, revokeShare, shareDocument, sharesForLineage,
-  updateDocument,
+  endLink, endRelationshipDocuments, lineageVersions, replaceDocument,
+  revokeShare, shareDocument, sharesForLineage, updateDocument,
 } from "./document-store";
+import {
+  createSharePackage, recordShareReview, revokeSharePackage,
+} from "./document-shares";
+import { mockDocumentsService as documents } from "./documents";
 import { auditLedger } from "./audit-ledger";
 import { workforceNeedsYouItems } from "./workforce-needs-you";
 import { mockWorkforceService as workforce } from "./workforce";
@@ -647,3 +651,230 @@ describe("the driver sees the fact, never the carrier's private content", () => 
       .rejects.toThrow(PermissionDeniedError);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* THE CUSTODY BOUNDARY: what actually remains, and what does not              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ WHAT A CARRIER STILL HAS, VERSION BY VERSION AND EVENT BY EVENT ★
+ *
+ * These are the tests that stop the product over-claiming. An adoption record
+ * is a record of WHAT WAS RELIED ON — an identifier, a version number, a file
+ * name, a status and the carrier's own frozen review. It is NOT file retention,
+ * and this build could not retain a file if it wanted to: `DocumentFileRef` is
+ * a name, a type and a size, there is no URL because there is nothing to point
+ * at, and nothing is ever uploaded, stored or transmitted.
+ *
+ * So the honest claim is narrow and these tests hold it to exactly that width:
+ * the carrier keeps PROOF OF WHICH VERSION, not the version itself. Durable
+ * evidence custody — the bytes, a hash over them, and storage that survives the
+ * driver deleting their copy — is the backend's, and `integrityBasis` says so
+ * in the data rather than only in a comment.
+ */
+describe("the custody boundary after revocation, ending and replacement", () => {
+  async function adoptedLicence() {
+    const licence = seedDriverLicence();
+    reviewAs(licence.documentId, "org_northline", "Tess Ferraro");
+    const view = await qualification.adopt(northline(), {
+      documentId: licence.documentId, driverProfileId: DRIVER,
+      category: "commercial_licence", purpose: "driver_qualification_file",
+    });
+    return { licence, view };
+  }
+
+  function revokeEverySharedGrant(lineageId: string) {
+    for (const share of sharesForLineage(lineageId)) {
+      if (!share.revokedAt) revokeShare(share.id, "The driver withdrew it.", "Robin Vasquez");
+    }
+  }
+
+  it("ends ORDINARY document access when the driver revokes, not only the grant", async () => {
+    const { licence } = await adoptedLicence();
+    // Before: the carrier reads it through the Document Center like any other.
+    await expect(documents.get(northline(), licence.documentId)).resolves.toBeDefined();
+
+    revokeEverySharedGrant(licence.lineageId);
+    endRecipientLinksFor(licence.lineageId);
+
+    // After: the same read is refused. Revoking the grant alone used to leave
+    // the carrier reading it through its own review link, which made "withdraw"
+    // a button that changed nothing the driver could see.
+    await expect(documents.get(northline(), licence.documentId))
+      .rejects.toThrow(NotFoundError);
+  });
+
+  it("keeps the adoption record readable, behind the qualification key only", async () => {
+    const { licence, view } = await adoptedLicence();
+    revokeEverySharedGrant(licence.lineageId);
+    endRecipientLinksFor(licence.lineageId);
+
+    // Retained custody is reachable — through the qualification file.
+    const retained = await qualification.get(northline(), view.record.id);
+    expect(retained.record.evidence.documentId).toBe(licence.documentId);
+    expect(retained.shareEnded).toBe(true);
+
+    // And ONLY through it: a dispatcher holding every document permission and
+    // no qualification key reaches nothing.
+    const dispatcher = ctxFor("org_northline", {
+      permissions: ["documents:view", "documents:download", "compliance:view"],
+    });
+    await expect(qualification.get(dispatcher, view.record.id))
+      .rejects.toThrow(PermissionDeniedError);
+    await expect(documents.get(dispatcher, licence.documentId))
+      .rejects.toThrow(NotFoundError);
+  });
+
+  it("retains METADATA about the version, and no file — because none exists", async () => {
+    const { licence, view } = await adoptedLicence();
+    revokeEverySharedGrant(licence.lineageId);
+    endRecipientLinksFor(licence.lineageId);
+
+    const retained = await qualification.get(northline(), view.record.id);
+    const evidence = retained.record.evidence;
+
+    // What the carrier KEEPS: which document, which lineage, which version,
+    // what it was called, what state it was in, and its own frozen review.
+    expect(evidence.documentId).toBe(licence.documentId);
+    expect(evidence.documentVersion).toBe(1);
+    expect(evidence.fileName).toBe("cdl.jpg");
+    expect(evidence.statusAtAdoption).toBe("approved");
+    expect(retained.record.review.reviewedByName).toBe("Tess Ferraro");
+
+    // What it does NOT keep, and cannot: the file, anything to fetch it with,
+    // or any way to prove the bytes. The record says so in the data.
+    expect(evidence.integrityBasis).toBe("not_available_in_mock");
+    expect(evidence.contentHash).toBeUndefined();
+    expect(evidence).not.toHaveProperty("url");
+    expect(evidence).not.toHaveProperty("content");
+    expect(evidence).not.toHaveProperty("bytes");
+    // The underlying DocumentRecord holds a file REFERENCE, never a file.
+    const stored = documentById(licence.documentId)!;
+    expect(stored.file).toBeDefined();
+    expect(stored.file).not.toHaveProperty("url");
+  });
+
+  it("ends a carrier's access when the driver withdraws the package itself", async () => {
+    // The real driver-facing path, end to end: a package, a review, a
+    // withdrawal. `revokeSharePackage` has to do both halves by itself.
+    const licence = seedDriverLicence([]);
+    const created = createSharePackage({
+      driverProfileId: DRIVER,
+      driverName: "Robin Vasquez",
+      documentIds: [licence.documentId],
+      recipient: {
+        kind: "organization",
+        organizationId: "org_northline",
+        organizationName: "Northline Freight",
+      },
+      purpose: "driver_qualification",
+    });
+    expect(created.status).toBe("ok");
+    if (created.status !== "ok") return;
+
+    recordShareReview(
+      "org_northline", "Northline Freight", created.pkg.id, licence.documentId,
+      "accepted", "Tess Ferraro",
+    );
+    await expect(documents.get(northline(), licence.documentId)).resolves.toBeDefined();
+
+    revokeSharePackage(created.pkg.id, "Changed my mind.", "Robin Vasquez");
+
+    // Unadopted access ends outright, with no separate clean-up step.
+    await expect(documents.get(northline(), licence.documentId))
+      .rejects.toThrow(NotFoundError);
+    // The review itself is kept as history — ended, never deleted.
+    const stored = documentById(licence.documentId)!;
+    const theirLink = stored.links.find((l) => l.contextOrganizationId === "org_northline")!;
+    expect(theirLink.unlinkedAt).toBeTruthy();
+    expect(theirLink.review.state).toBe("approved");
+  });
+
+  it("does not cut access a second, still-live share grants", async () => {
+    const licence = seedDriverLicence([]);
+    const first = createSharePackage({
+      driverProfileId: DRIVER, driverName: "Robin Vasquez",
+      documentIds: [licence.documentId],
+      recipient: { kind: "organization", organizationId: "org_northline", organizationName: "Northline" },
+      purpose: "driver_qualification",
+    });
+    const second = createSharePackage({
+      driverProfileId: DRIVER, driverName: "Robin Vasquez",
+      documentIds: [licence.documentId],
+      recipient: { kind: "organization", organizationId: "org_northline", organizationName: "Northline" },
+      purpose: "onboarding",
+    });
+    if (first.status !== "ok" || second.status !== "ok") throw new Error("setup");
+    recordShareReview("org_northline", "Northline", first.pkg.id, licence.documentId,
+      "accepted", "Tess Ferraro");
+
+    revokeSharePackage(first.pkg.id, "Superseded by the onboarding share.", "Robin Vasquez");
+
+    // The newer package still grants it, so withdrawing the older one must not
+    // take the access with it.
+    await expect(documents.get(northline(), licence.documentId)).resolves.toBeDefined();
+  });
+
+  it("ends ordinary access when the relationship ends, and keeps the record", async () => {
+    const { licence, view } = await adoptedLicence();
+    endRelationshipDocuments({
+      subjectKind: "driver", subjectId: DRIVER, organizationId: "org_northline",
+      reason: "The engagement ended.", actorName: "Casey Hart",
+    });
+
+    await expect(documents.get(northline(), licence.documentId))
+      .rejects.toThrow(NotFoundError);
+    const retained = await qualification.get(northline(), view.record.id);
+    expect(retained.record.evidence.documentVersion).toBe(1);
+    expect(retained.record.history.some((h) => h.kind === "adopted")).toBe(true);
+  });
+
+  it("keeps the ADOPTED version reachable after the driver replaces it", async () => {
+    const { licence, view } = await adoptedLicence();
+    const v2 = replaceDocument(documentById(licence.documentId)!, {
+      status: "approved",
+      addedByName: "Robin Vasquez",
+      file: { fileName: "cdl-new.jpg", fileType: "image/jpeg", sizeBytes: 1100, selectedAt: new Date().toISOString() },
+    });
+
+    // The record still points at v1 and still describes v1 — not v2.
+    const retained = await qualification.get(northline(), view.record.id);
+    expect(retained.record.evidence.documentId).toBe(licence.documentId);
+    expect(retained.record.evidence.fileName).toBe("cdl.jpg");
+    expect(retained.newerVersionAvailable).toBe(true);
+
+    // v1 is superseded in the Document Center and is still the record it was.
+    const storedV1 = documentById(licence.documentId)!;
+    expect(storedV1.status).toBe("superseded");
+    expect(storedV1.file?.fileName).toBe("cdl.jpg");
+    expect(v2.file?.fileName).toBe("cdl-new.jpg");
+  });
+
+  it("names the backend requirement rather than implying the file is held", async () => {
+    const { view } = await adoptedLicence();
+    const preview = await qualification.previewAdoption(
+      northline(), view.record.evidence.documentId,
+    );
+    // The confirmation a person reads before adopting has to say this, because
+    // "adopt into the qualification file" sounds exactly like taking a copy.
+    expect(preview.consequences.join(" ")).toMatch(/no copy of the file/i);
+    expect(preview.consequences.join(" ")).toMatch(/does not store any file/i);
+  });
+});
+
+/**
+ * Ends every link the carrier holds on a lineage, the way a revocation does.
+ *
+ * A helper rather than a duplicate rule: the tests above that revoke a raw
+ * `DocumentShare` are exercising the store directly, and the package-level test
+ * exercises `revokeSharePackage`, which does both halves itself.
+ */
+function endRecipientLinksFor(lineageId: string) {
+  for (const version of lineageVersions(lineageId)) {
+    for (const link of version.links) {
+      if (link.unlinkedAt) continue;
+      if (link.contextOrganizationId !== "org_northline") continue;
+      endLink(version.documentId, link.id, "The driver withdrew it.", "Robin Vasquez");
+    }
+  }
+}

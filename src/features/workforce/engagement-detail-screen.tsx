@@ -247,6 +247,13 @@ export function EngagementDetailScreen({ engagementId }: { engagementId: string 
               person. Adopting is explicit — a shared document is not adopted by being opened.
             </p>
           )}
+          <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-[0.75rem] leading-relaxed text-fg-subtle">
+            These are records of <span className="font-medium">which version</span> this carrier
+            received and relied on, not copies of the documents. Antcolos stores no file in this
+            build, so a retained record proves what was reviewed and when — it is not evidence
+            custody. Durable storage, content hashing and retention enforcement are the
+            backend&rsquo;s.
+          </p>
         </section>
       ) : null}
 

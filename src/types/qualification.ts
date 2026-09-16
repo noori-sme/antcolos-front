@@ -175,10 +175,16 @@ export const QUALIFICATION_PURPOSE_LABEL: Record<QualificationPurpose, string> =
  * from version N to version N+1, not when the driver replaces the file, not
  * when a share is refreshed, not when the relationship ends.
  *
- * `contentHash` is absent in this build and `integrityBasis` says why. A
- * frontend cannot read a file, so it cannot hash one; a real backend stores the
- * hash beside the object and can prove the exact bytes years later. Saying so
- * beats an empty field somebody reads as "fine".
+ * ★ THIS IS A RECORD OF WHICH VERSION, NOT THE VERSION ITSELF ★
+ * Everything below is METADATA: an identity, a version number, a file name, a
+ * status. Antcolos stores no file anywhere — `DocumentFileRef` is a name, a
+ * type and a size, and there is no URL because there is nothing to point at. So
+ * an adoption is proof of WHAT WAS RELIED ON and is NOT evidence custody:
+ * retaining the document itself, surviving the driver deleting their copy, and
+ * proving the bytes years later all need the backend's durable storage and a
+ * content hash taken over the stored object. `integrityBasis` carries that gap
+ * in the DATA rather than only in a comment, so no screen can render this as
+ * though the file were held.
  */
 export interface QualificationEvidenceRef {
   documentId: string;

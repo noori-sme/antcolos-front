@@ -7,9 +7,10 @@ import { documentTypeLabel } from "@/lib/documents/catalog";
 import { effectiveStatus } from "@/lib/documents/status";
 import { shareReferenceCode } from "@/lib/documents/watermark";
 import {
-  addLink, documentById, documentsForSubject, putSharePackage, revokeShare,
-  shareDocument, sharePackageById, sharePackageByToken, sharePackagesForDriver,
-  sharePackagesForOrganization, sharesForLineage, updateDocument,
+  addLink, documentById, documentsForSubject, endLink, lineageVersions,
+  putSharePackage, revokeShare, shareDocument, sharePackageById,
+  sharePackageByToken, sharePackagesForDriver, sharePackagesForOrganization,
+  sharesForLineage, updateDocument,
 } from "./document-store";
 
 /**
@@ -482,8 +483,26 @@ function updateLinkReview(
  *
  * The package, its items and its whole history stay readable — what a carrier
  * saw and when it saw it is exactly the sort of thing a driver may need to
- * prove later. What stops is access from this moment on, and for a native
- * recipient the underlying grant is revoked with it.
+ * prove later. What stops is access from this moment on.
+ *
+ * ★ REVOKING THE GRANT IS NOT ENOUGH, AND THIS IS WHY ★
+ * A recipient organization that reviewed a shared document holds TWO things:
+ * the `DocumentShare` the driver granted, and its own `DocumentLink` carrying
+ * its review. The Document Center serves a document to an organization that
+ * holds EITHER. So revoking only the share left the carrier reading the
+ * document through its own review link afterwards — the driver pressed
+ * "withdraw" and nothing they could see actually stopped.
+ *
+ * So both end. The link is ENDED, not deleted: `endLink` keeps the row, the
+ * review on it and the whole history, exactly as a relationship ending already
+ * did through `endRelationshipDocuments`. The two paths now agree, which they
+ * did not before.
+ *
+ * What survives is what should: a carrier that ADOPTED a version into its
+ * qualification file keeps that record, and reaches it through the
+ * qualification file behind `qualification:view` rather than through ordinary
+ * document access. Unadopted access ends outright. See
+ * `docs/driver-qualification-custody.md`.
  */
 export function revokeSharePackage(
   packageId: string,
@@ -501,16 +520,58 @@ export function revokeSharePackage(
   });
 
   if (pkg.recipient.kind === "organization") {
+    const organizationId = pkg.recipient.organizationId;
     for (const item of pkg.items) {
       for (const share of sharesForLineage(item.lineageId)) {
         if (share.revokedAt) continue;
-        if (share.sharedWithOrganizationId !== pkg.recipient.organizationId) continue;
+        if (share.sharedWithOrganizationId !== organizationId) continue;
         if (share.basis.kind !== "driver_share" || share.basis.id !== pkg.id) continue;
         revokeShare(share.id, revoked.revokedReason!, actorName);
       }
+      endRecipientAccess(item.lineageId, organizationId, revoked.revokedReason!, actorName);
     }
   }
   return append(revoked, event("revoked", revoked.revokedReason!, { actorName }));
+}
+
+/**
+ * Ends the recipient's own review link on a lineage, once nothing else gives it
+ * access.
+ *
+ * "Nothing else" has to mean BOTH access paths, and that is easy to get wrong.
+ * A driver who shares the same licence with one carrier twice produces two
+ * packages and only ONE `DocumentShare`: `grantNativeAccess` deliberately does
+ * not grant a lineage twice. So checking live grants alone would cut the
+ * carrier off the moment the first package was withdrawn, while the second was
+ * still issued, still usable and still openable. Both are checked.
+ *
+ * Every version is walked, not just the current one, because a link lives on
+ * the version it was made against and a replacement leaves the older version
+ * holding its own.
+ */
+function endRecipientAccess(
+  lineageId: string,
+  organizationId: string,
+  reason: string,
+  actorName: string,
+) {
+  const stillGranted = sharesForLineage(lineageId).some(
+    (s) => !s.revokedAt && s.sharedWithOrganizationId === organizationId,
+  );
+  if (stillGranted) return;
+
+  const stillShared = sharePackagesForOrganization(organizationId).some(
+    (p) => isShareUsable(p) && p.items.some((i) => i.lineageId === lineageId),
+  );
+  if (stillShared) return;
+
+  for (const version of lineageVersions(lineageId)) {
+    for (const link of version.links) {
+      if (link.unlinkedAt) continue;
+      if (link.contextOrganizationId !== organizationId) continue;
+      endLink(version.documentId, link.id, reason, actorName);
+    }
+  }
 }
 
 /* -------------------------------------------------------------------------- */

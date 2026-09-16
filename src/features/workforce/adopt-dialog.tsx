@@ -21,6 +21,10 @@ import { useAdoptDocument, useAdoptionPreview } from "./hooks";
  *     on is not the driver's to withdraw.
  *   • Adopting is not verifying. It records that this carrier reviewed this
  *     version, and nothing about any authority having confirmed it.
+ *   • And it keeps a RECORD of the version, not the file. "Adopt into the
+ *     qualification file" sounds exactly like taking a copy, and this build
+ *     takes none — so the confirmation says so rather than letting the name do
+ *     the talking.
  */
 const CATEGORIES: QualificationRecordCategory[] = [
   "commercial_licence",
@@ -109,6 +113,15 @@ export function AdoptDialog({
 
               <p className="text-[0.75rem] leading-relaxed text-fg-subtle">
                 {preview.data.retentionSummary}
+              </p>
+
+              {/* The claim this dialog must not let a reader make for itself. */}
+              <p className="rounded-md border border-dashed border-border px-3 py-2.5 text-[0.75rem] leading-relaxed text-fg-subtle">
+                Antcolos stores no file in this build. What is kept is a record of{" "}
+                <span className="font-medium">which version</span> you relied on — its
+                identity, its version number, its file name and your review. Holding the
+                document itself, so that it survives the driver replacing or deleting
+                their copy, needs the backend&rsquo;s durable storage.
               </p>
             </>
           ) : null}

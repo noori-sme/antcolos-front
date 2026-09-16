@@ -552,6 +552,9 @@ export const mockQualificationService: QualificationService = {
       retentionSummary: RETENTION_POLICY_NOT_CONFIGURED,
       consequences: [
         "This creates a record belonging to THIS carrier, pinned to this exact version. No copy of the file is made and the driver keeps their document.",
+        // Said plainly, because "adopt into the qualification file" sounds
+        // exactly like taking a copy, and this build does not take one.
+        "What is kept is a record of WHICH version you relied on — its identity, its version number, its file name, its state and your review. Antcolos does not store any file in this build, so this is not evidence custody: retaining the document itself needs the backend's durable storage.",
         "If the driver later withdraws the share, or the relationship ends, this record is kept: a carrier's qualification history is not the driver's to erase.",
         "The record stays under a retention obligation. This build cannot compute when that obligation ends, so disposal is refused until a backend policy supplies the applicable period.",
         "Adopting is not verifying. It records that this carrier reviewed this version — not that any authority confirmed it.",

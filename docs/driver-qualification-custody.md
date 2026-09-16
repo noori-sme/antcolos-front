@@ -154,6 +154,53 @@ history survive; only the retention state changes, with who decided, when and
 why. The disposal evidence is deliberately non-sensitive and is never a copy of
 what was disposed of.
 
+## What a carrier actually retains — and what it does not
+
+This is the boundary most likely to be over-read, so it is stated exactly.
+
+**An adoption record is a record of WHICH version was relied on. It is not the
+version.** Everything it holds is metadata: `documentId`, `lineageId`,
+`documentVersion`, the type, the label, the file **name**, the status at
+adoption, the expiry, and the carrier's own frozen review. Antcolos stores no
+file anywhere in this build — `DocumentFileRef` is a name, a type and a size,
+and there is no URL because there is nothing to point at. `integrityBasis` is
+`"not_available_in_mock"` and carries that gap in the *data*, so no screen can
+render it as though the file were held.
+
+**Antcolos does not provide durable evidence custody.** A carrier retaining only
+this record could prove *which* version it reviewed and when; it could not
+produce the document. That requires the backend.
+
+### Measured behaviour, per event
+
+| After… | Ordinary Document Center read | Adoption record | What is actually retained |
+|---|---|---|---|
+| Driver revokes the share | **refused** | readable behind `qualification:view` | metadata + frozen review |
+| Relationship / engagement ends | **refused** | readable behind `qualification:view` | metadata + frozen review |
+| Driver replaces the document | v1 readable while access lasts, marked `superseded` | still pinned to **v1** | metadata for v1, unchanged |
+
+### A correction this verification produced
+
+Revoking a share used to revoke the `DocumentShare` **only**. A recipient that
+had reviewed a shared document also holds its own `DocumentLink`, and the
+Document Center serves a document to an organization holding *either* — so the
+carrier went on reading the document through its review link after the driver
+pressed "withdraw". The driver's most consequential control changed nothing they
+could see.
+
+`revokeSharePackage` now ends both. The link is **ended, not deleted**
+(`endLink` keeps the row, the review and the history), which is exactly what
+`endRelationshipDocuments` already did when a relationship ended — the two paths
+now agree, and they did not before. The guard checks both access paths: a
+still-live share *or* a still-usable package addressed to that organization
+keeps access, because a driver who shares the same licence twice produces two
+packages and only one grant.
+
+The result is the rule the milestone asked for: **unadopted access ends
+outright**, and adopted custody survives — reachable only through the
+qualification file behind `qualification:view`, not through ordinary document
+access that every dispatcher holds.
+
 ## Revocation, relationship ending and offboarding
 
 Five different things, kept apart:
@@ -198,7 +245,10 @@ claim) · idempotency · Audit and Needs You behaviour.
 
 ## What requires the backend
 
-Durable encrypted object storage · content hashing and byte-level integrity ·
+**Durable evidence custody**, which this build does not provide and does not
+claim: the stored object itself, kept so that it survives the driver replacing
+or deleting their copy · durable encrypted object storage · content hashing and
+byte-level integrity taken over that object ·
 immutable version storage with reference counting so a driver removing a
 document from their active wallet does not destroy an object a carrier must
 retain · retention locks and legal holds · record-specific, jurisdiction-aware
