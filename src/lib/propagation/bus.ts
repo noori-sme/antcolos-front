@@ -39,20 +39,108 @@ import { ambientCorrelationId } from "@/lib/audit/correlation";
 /* -------------------------------------------------------------------------- */
 
 /**
- * The deterministic event id for one intent.
+ * The deterministic event id for one intent, at one payload version.
  *
- * Built from the event kind and the caller's idempotency key, which is the
- * pair that means "this same thing happening". Signing the same rate
- * confirmation twice produces the same key, so it produces the same event id,
- * so nothing downstream runs twice. Nothing parses this; only equality matters.
+ * Three dimensions, and the third one is the whole reason this function has a
+ * comment this long.
+ *
+ * KIND and IDEMPOTENCY KEY are the pair that means "this same thing happening".
+ * Signing the same rate confirmation twice produces the same key, so it
+ * produces the same id, so nothing downstream runs twice. That is what makes a
+ * double-tapped button, a retried command and a replayed webhook safe.
+ *
+ * VERSION is here because without it the safety turns into a silent hole.
+ * `ProjectionSubscriber.versions` exists so that a subscriber which has not
+ * been taught v2 says `needs_review` out loud rather than reading fields it
+ * never agreed to — but a v2 of an intent already published at v1 would have
+ * collided with the v1 id, come back `duplicate: true`, and been DISCARDED
+ * before any subscriber was offered it. The version guard was unreachable
+ * through the normal path, and the v2 payload vanished without a record.
+ *
+ * So: same kind, same version, same key is one event and dedupes. Same kind,
+ * NEWER version, same key is a different event, and every subscriber gets to
+ * say whether it understands it.
+ *
+ * Nothing parses this; only equality matters.
  */
-export function domainEventId(kind: DomainEventKind, idempotencyKey: string): string {
-  return `dev_${kind}:${idempotencyKey}`;
+export function domainEventId(
+  kind: DomainEventKind,
+  version: number,
+  idempotencyKey: string,
+): string {
+  return `dev_${kind}:v${version}:${idempotencyKey}`;
 }
 
 /** `${eventId}:${subscriberId}` — the unit idempotency actually applies to. */
 function projectionKey(eventId: string, subscriberId: string): string {
   return `${eventId}:${subscriberId}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Immutability                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ A PUBLISHED EVENT IS A STATEMENT ABOUT THE PAST ★
+ *
+ * So it has to stop being reachable by whoever made it, and by whoever reads
+ * it. `Object.freeze({ ...event })` froze the envelope's own properties and
+ * nothing else — `payload`, `scope`, `provenance` and `actor` stayed shared,
+ * live references. Two consequences, both silent:
+ *
+ *  1. A subscriber could mutate the payload, and the NEXT subscriber in the
+ *     run order would read the mutated one. Projections are run sequentially
+ *     precisely so a replay is reproducible; a mutable payload undoes that.
+ *  2. A publisher holding its own payload object could change it after
+ *     `publish()` returned, and the stored event would change with it. The
+ *     ledger of what happened would quietly disagree with what happened.
+ *
+ * COPY, then freeze the copy. Freezing the caller's object in place would fix
+ * (1) and (2) by making the publisher's own object throw on its next write,
+ * which is a side effect nobody asked for.
+ *
+ * `structuredClone` is the platform's own deep copy: it handles nested objects,
+ * arrays, `Date`, `Map`, `Set` and cycles, and it REFUSES functions, symbols
+ * and class instances it cannot reproduce. That refusal is a feature here. A
+ * payload carrying something uncopyable cannot be stored faithfully, and the
+ * honest answer is to say so at the boundary rather than store a shallow copy
+ * that will drift. It throws before anything is recorded, so there is no
+ * half-published event to clean up.
+ *
+ * Deliberately local to this module rather than a shared utility: nothing else
+ * needs it. `audit-ledger.ts` hand-freezes the specific fields of an
+ * `AuditEvent` and cannot serve a generic payload; lifting either into
+ * `lib/utils` for one caller each would be a utility nobody reads.
+ *
+ * ███ FRONTEND ONLY ███
+ * This makes the in-memory record immutable. It is not durability, not
+ * integrity against a process that does not run this code, and not a signature.
+ */
+function frozenCopyOf<P>(event: DomainEvent<P>): DomainEvent {
+  let copy: DomainEvent;
+  try {
+    copy = structuredClone(event) as DomainEvent;
+  } catch (error) {
+    throw new TypeError(
+      `A ${event.kind} payload could not be copied, so it cannot be published as an immutable record. `
+      + "Domain event payloads are plain data: objects, arrays, numbers, strings, booleans and dates. "
+      + `Functions, symbols and class instances cannot be carried across the bus. (${
+        error instanceof Error ? error.message : String(error)
+      })`,
+    );
+  }
+  return deepFreeze(copy);
+}
+
+/** Freeze every object reachable from `value`. Cycle-safe. */
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    deepFreeze((value as Record<PropertyKey, unknown>)[key], seen);
+  }
+  return Object.freeze(value);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -120,7 +208,7 @@ class InMemoryDomainEventBus implements DomainEventBus {
       };
     }
 
-    const frozen = Object.freeze({ ...event }) as DomainEvent;
+    const frozen = frozenCopyOf(event);
     this.eventsById.set(frozen.eventId, frozen);
     this.order.push(frozen.eventId);
 
@@ -308,7 +396,7 @@ export function buildDomainEvent<P>(input: {
 }): DomainEvent<P> {
   const recordedAt = input.recordedAt ?? new Date().toISOString();
   return {
-    eventId: domainEventId(input.kind, input.idempotencyKey),
+    eventId: domainEventId(input.kind, input.version, input.idempotencyKey),
     kind: input.kind,
     version: input.version,
     scope: input.scope,

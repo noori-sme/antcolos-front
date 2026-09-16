@@ -98,21 +98,231 @@ function outcomeOf(
 
 /* -------------------------------------------------------------------------- */
 
-test("the event id is derived from the kind and the idempotency key", () => {
+test("the event id is derived from the kind, the version and the idempotency key", () => {
   assert.equal(
-    domainEventId("load.finalized", "abc"),
-    domainEventId("load.finalized", "abc"),
+    domainEventId("load.finalized", 1, "abc"),
+    domainEventId("load.finalized", 1, "abc"),
   );
   assert.notEqual(
-    domainEventId("load.finalized", "abc"),
-    domainEventId("fuel_transaction.confirmed", "abc"),
+    domainEventId("load.finalized", 1, "abc"),
+    domainEventId("fuel_transaction.confirmed", 1, "abc"),
   );
   // Nothing parses it; only equality matters. But it must not collide across
   // kinds, because two modules retrying different intents must not cancel out.
   assert.notEqual(
-    domainEventId("load.finalized", "abc"),
-    domainEventId("load.finalized", "abd"),
+    domainEventId("load.finalized", 1, "abc"),
+    domainEventId("load.finalized", 1, "abd"),
   );
+  // And it must not collide across versions, or a v2 of an intent already
+  // published at v1 is discarded as a duplicate before any subscriber sees it.
+  assert.notEqual(
+    domainEventId("load.finalized", 1, "abc"),
+    domainEventId("load.finalized", 2, "abc"),
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* Version is part of identity                                                 */
+/* -------------------------------------------------------------------------- */
+
+test("the same kind, version and key is one event", async () => {
+  const a = counting("ident_same", () => ok());
+  propagationBus.subscribe(a as never);
+
+  const first = await propagationBus.publish(event("same-key", 1));
+  const second = await propagationBus.publish(event("same-key", 1));
+
+  assert.equal(first.duplicate, false);
+  assert.equal(second.duplicate, true);
+  assert.equal(second.event.eventId, first.event.eventId);
+  assert.equal(a.runs, 1);
+});
+
+test("a newer version of the same intent is not swallowed as a duplicate", async () => {
+  // The hole this closes. Before the version was part of the identity, this
+  // second publish came back `duplicate: true` and the v2 payload was dropped
+  // on the floor — no record, no projection, no way to find out.
+  const a = counting("ident_v1_only", () => ok(), { versions: [1] });
+  propagationBus.subscribe(a as never);
+
+  const v1 = await propagationBus.publish(event("shared-key", 1));
+  const v2 = await propagationBus.publish(event("shared-key", 2));
+
+  assert.equal(v1.duplicate, false);
+  assert.equal(v2.duplicate, false);
+  assert.notEqual(v2.event.eventId, v1.event.eventId);
+
+  // Two events, each with its own projection record.
+  assert.equal(propagationBus.events("org_test").length, 2);
+});
+
+test("an unsupported version reaches the subscriber guard instead of being deduped away", async () => {
+  const a = counting("ident_guard", () => ok(), { versions: [1] });
+  propagationBus.subscribe(a as never);
+
+  await propagationBus.publish(event("guard-key", 1));
+  assert.equal(a.runs, 1);
+
+  const v2 = await propagationBus.publish(event("guard-key", 2));
+
+  // It was OFFERED, and the guard answered. That is the whole point: the
+  // subscriber says "I do not understand v2" out loud rather than the bus
+  // silently deciding it had already seen this.
+  const row = outcomeOf(v2, "ident_guard");
+  assert.equal(row.state, "needs_review");
+  assert.match(row.reason ?? "", /version/i);
+  // And it did not run the v1 code against a v2 payload.
+  assert.equal(a.runs, 1);
+});
+
+test("replaying the exact same version stays idempotent", async () => {
+  const a = counting("ident_replay", () => ok());
+  propagationBus.subscribe(a as never);
+
+  const original = await propagationBus.publish(event("replay-key", 1));
+  for (let i = 0; i < 5; i++) {
+    const again = await propagationBus.publish(event("replay-key", 1));
+    assert.equal(again.duplicate, true);
+    assert.equal(again.event.eventId, original.event.eventId);
+  }
+
+  assert.equal(a.runs, 1);
+  assert.equal(outcomeOf(original, "ident_replay").attempts, 1);
+  assert.equal(
+    propagationBus.events("org_test").filter((e) => e.idempotencyKey === "replay-key").length,
+    1,
+  );
+});
+
+test("a projection record keys on the corrected event id", async () => {
+  const a = counting("ident_record", () => ok());
+  propagationBus.subscribe(a as never);
+
+  const result = await propagationBus.publish(event("record-key", 3));
+  const expected = domainEventId("load.finalized", 3, "record-key");
+
+  assert.equal(result.event.eventId, expected);
+  assert.equal(outcomeOf(result, "ident_record").eventId, expected);
+  assert.equal(propagationBus.projectionsFor(expected).length > 0, true);
+  assert.ok(propagationBus.event("org_test", expected));
+});
+
+/* -------------------------------------------------------------------------- */
+/* A published event cannot be changed afterwards                              */
+/* -------------------------------------------------------------------------- */
+
+/** A payload with something nested to reach for. */
+function nestedEvent(key: string) {
+  return buildDomainEvent<{ inner: { value: string }; list: number[] }>({
+    kind: "load.finalized",
+    version: 1,
+    scope: { organizationId: "org_test" },
+    subjectId: "ld_nested",
+    subjectKind: "load",
+    occurredAt: "2026-09-15T00:00:00.000Z",
+    actor: ACTOR,
+    idempotencyKey: key,
+    provenance: PROVENANCE,
+    payload: { inner: { value: "original" }, list: [1, 2, 3] },
+  });
+}
+
+test("nested payload values cannot be changed after publication", async () => {
+  const result = await propagationBus.publish(nestedEvent("frozen-1"));
+  const stored = result.event as DomainEvent<{ inner: { value: string }; list: number[] }>;
+
+  assert.equal(Object.isFrozen(stored), true);
+  assert.equal(Object.isFrozen(stored.payload), true);
+  assert.equal(Object.isFrozen(stored.payload.inner), true);
+  assert.equal(Object.isFrozen(stored.payload.list), true);
+  // The envelope's other nested values too — a scope somebody could widen is
+  // the same problem wearing a different name.
+  assert.equal(Object.isFrozen(stored.scope), true);
+  assert.equal(Object.isFrozen(stored.provenance), true);
+
+  assert.throws(() => { stored.payload.inner.value = "changed"; }, TypeError);
+  assert.throws(() => { stored.payload.list.push(4); }, TypeError);
+  assert.equal(stored.payload.inner.value, "original");
+});
+
+test("mutating the caller's own object afterwards cannot alter what was published", async () => {
+  const original = nestedEvent("frozen-2");
+  const result = await propagationBus.publish(original);
+
+  // The publisher still holds its own object and is free to change it. It is
+  // not frozen out of its own data as a side effect of publishing.
+  assert.equal(Object.isFrozen(original.payload), false);
+  original.payload.inner.value = "MUTATED BY CALLER";
+  original.payload.list.push(99);
+
+  const stored = propagationBus.event("org_test", result.event.eventId) as
+    DomainEvent<{ inner: { value: string }; list: number[] }>;
+  assert.equal(stored.payload.inner.value, "original");
+  assert.deepEqual(stored.payload.list, [1, 2, 3]);
+});
+
+test("a subscriber cannot change the payload the next subscriber reads", async () => {
+  const seen: string[] = [];
+  const meddler: ProjectionSubscriber<{ inner: { value: string } }> = {
+    id: "frozen_meddler",
+    label: "meddler",
+    targetModule: "load",
+    handles: ["load.finalized"],
+    versions: [1],
+    mock: false,
+    project(e) {
+      // Projections run sequentially so a replay is reproducible. A mutable
+      // payload would undo exactly that.
+      assert.throws(() => { e.payload.inner.value = "tampered"; }, TypeError);
+      return ok();
+    },
+  };
+  const reader: ProjectionSubscriber<{ inner: { value: string } }> = {
+    id: "frozen_reader",
+    label: "reader",
+    targetModule: "load",
+    handles: ["load.finalized"],
+    versions: [1],
+    mock: false,
+    project(e) {
+      seen.push(e.payload.inner.value);
+      return ok();
+    },
+  };
+  propagationBus.subscribe(meddler as never);
+  propagationBus.subscribe(reader as never);
+
+  await propagationBus.publish(nestedEvent("frozen-3"));
+  assert.deepEqual(seen, ["original"]);
+});
+
+test("a payload that cannot be copied is refused at the boundary, not stored shallow", async () => {
+  const uncopyable = buildDomainEvent<{ fn: () => void }>({
+    kind: "load.finalized",
+    version: 1,
+    scope: { organizationId: "org_test" },
+    subjectId: "ld_bad",
+    subjectKind: "load",
+    occurredAt: "2026-09-15T00:00:00.000Z",
+    actor: ACTOR,
+    idempotencyKey: "uncopyable-1",
+    provenance: PROVENANCE,
+    payload: { fn: () => undefined },
+  });
+
+  await assert.rejects(
+    () => propagationBus.publish(uncopyable),
+    (error: Error) => {
+      assert.ok(error instanceof TypeError);
+      assert.match(error.message, /could not be copied/);
+      return true;
+    },
+  );
+
+  // It threw before anything was recorded: no half-published event, and no
+  // projection record claiming something happened.
+  assert.equal(propagationBus.event("org_test", uncopyable.eventId), undefined);
+  assert.equal(propagationBus.projectionsFor(uncopyable.eventId).length, 0);
 });
 
 test("publishing the same event twice runs no subscriber twice", async () => {
