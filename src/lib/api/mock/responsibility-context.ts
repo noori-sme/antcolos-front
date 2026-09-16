@@ -123,7 +123,16 @@ function loopSeverity(loop: MtLoop): ResponsibilitySeverity {
 export function responsibilityContextForLoop(loop: MtLoop): ResponsibilityContext {
   const scope: ResponsibilityScopeRef[] = [
     { kind: "truck", id: loop.truckId, label: `Truck ${loop.truckUnit}` },
-    { kind: "carrier", id: loop.carrierOrganizationId, label: loop.carrierName },
+    // A scope ref with no id is not written at all: routing responsibility at an
+    // organization the records never named is how the wrong workspace ends up
+    // answerable for somebody else's truck.
+    ...(loop.carrierOrganizationId
+      ? [{
+        kind: "carrier" as const,
+        id: loop.carrierOrganizationId,
+        label: loop.carrierName ?? loop.carrierOrganizationId,
+      }]
+      : []),
     { kind: "function", label: "Dispatch" },
   ];
   if (loop.driverProfileId) {

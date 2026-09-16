@@ -15,6 +15,35 @@ import type {
  * It creates no registry, stores nothing, and copies no relationship record. It
  * is given the canonical rows and returns one of them.
  *
+ * ── ONE RULE, RECONCILED ──────────────────────────────────────────────────
+ * Fuel had its own point-in-time carrier resolver before this one existed, and
+ * for a while the two ran side by side over the same canonical rows and
+ * disagreed in four ways. They were compared against what a lease and a
+ * relationship actually mean, and this is the settled answer — fuel now derives
+ * its attribution from this function rather than repeating it:
+ *
+ *  1. A LEASE WINDOW OPENS AT `reservedAt`, not `activatedAt`. Fuel had this
+ *     right: the registry's own `holdingLease` counts a reservation as holding
+ *     the truck, because that is the moment nobody else can activate. It does
+ *     NOT open at `createdAt`, which fuel also allowed — that is when the row
+ *     was written, not when anything happened.
+ *  2. A WINDOW IS HALF-OPEN, `[start, end)`. Fuel's inclusive end let a lease
+ *     that ended at T and one that began at T both cover T, which is two
+ *     carriers operating one truck at one instant.
+ *  3. A RELATIONSHIP PROVES A PERIOD ONLY FROM `approvedAt`. Fuel fell back to
+ *     `startedAt`, which let a relationship that was never approved — one that
+ *     went from pending straight to ended — cover the time it was merely asked
+ *     for.
+ *  4. THE OWNER'S OWN RELATIONSHIP DECIDES the multi-carrier case. Fuel had no
+ *     such step and answered "unresolved" for every truck with two approved
+ *     carriers, including a carrier's own truck that somebody else is merely
+ *     eligible to run.
+ *
+ * What did NOT change is what happens when this refuses. A meter reading cannot
+ * be published without a carrier; a fuel purchase that happened is still
+ * recorded, flagged `unresolved`, and put in front of a person. One rule, two
+ * outcomes.
+ *
  * ── WHY POINT-IN-TIME, NOT CURRENT STATE ──────────────────────────────────
  * A meter reading typed in from a receipt found in a glovebox three weeks later
  * is a fact about the day it was read, not about today. Deriving its carrier
@@ -48,7 +77,17 @@ export interface OperatingLeaseLike {
   organizationId: string;
   relationshipId: string;
   status: OperatingLeaseStatus;
-  /** When exclusive authority actually began. A reservation has none yet. */
+  /**
+   * When exclusivity was TAKEN. This is where the window starts.
+   *
+   * Not `activatedAt`, and the registry is the reason: `holdingLease` counts a
+   * reserved lease as holding the truck because "it is the moment exclusivity
+   * is taken, and it is what makes two simultaneous activations impossible".
+   * From that moment nobody else can be operating the equipment, so nobody else
+   * can own a fact about it.
+   */
+  reservedAt?: string;
+  /** When it went live. Later than `reservedAt`, or the same instant. */
   activatedAt?: string;
   endedAt?: string;
 }
@@ -118,6 +157,20 @@ function covers(start: string, end: string | undefined, instant: number): boolea
   return instant < to;
 }
 
+/**
+ * When a lease's window opens.
+ *
+ * `reservedAt` first, because that is when the truck stopped being anybody
+ * else's — see the field's own note. `activatedAt` is the fallback for a lease
+ * that was recorded as live without a separate reservation. `createdAt` is
+ * deliberately NOT a fallback: it is when the ROW was written, which can
+ * precede anything happening in the world, and a lease created in advance would
+ * otherwise cover time during which no exclusivity existed.
+ */
+function leaseStart(lease: OperatingLeaseLike): string | undefined {
+  return lease.reservedAt ?? lease.activatedAt;
+}
+
 const refuse = (
   code: OperatingContextRefusal["code"],
   reason: string,
@@ -178,7 +231,7 @@ export function resolveOperatingContextAt<
   // the next rule down, which is how a fact ends up attributed to the carrier
   // that was NOT running the equipment.
   const unplaceableLease = input.leases.find(
-    (l) => l.status === "ended" && !l.endedAt && covers(l.activatedAt ?? "", undefined, instant),
+    (l) => l.status === "ended" && !l.endedAt && covers(leaseStart(l) ?? "", undefined, instant),
   );
   if (unplaceableLease) {
     return refuse(
@@ -188,12 +241,10 @@ export function resolveOperatingContextAt<
     );
   }
 
-  // A reserved lease has taken exclusivity but has not begun operating, so it
-  // has no `activatedAt` and covers no instant. That is deliberate: a hold on a
-  // truck is not authority over what its meters did.
-  const holding = input.leases.filter(
-    (l) => l.activatedAt !== undefined && covers(l.activatedAt, l.endedAt, instant),
-  );
+  const holding = input.leases.filter((l) => {
+    const from = leaseStart(l);
+    return from !== undefined && covers(from, l.endedAt, instant);
+  });
   if (holding.length > 1) {
     return refuse(
       "conflicting_leases",

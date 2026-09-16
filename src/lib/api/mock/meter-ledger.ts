@@ -6,7 +6,7 @@ import type {
 import {
   buildDomainEvent, meterFactScopeAt, meterPublicationRefusal,
   METER_READING_RECORDED_VERSION, propagationBus,
-  type MeterReadingRecordedPayload,
+  type EventScopeRefusedError, type MeterReadingRecordedPayload,
 } from "@/lib/propagation";
 import { ambientCorrelationId } from "@/lib/audit/correlation";
 import { meterSeedRows } from "./meter-seed";
@@ -231,21 +231,36 @@ function append(
  * Throws `EventScopeRefusedError`, with the reason in the words of the domain.
  * Reads the registries and writes nothing.
  */
-export function assertMeterContributionAllowed(input: {
+export function assertMeterContributionAllowed(input: MeterContributionQuestion): void {
+  const refusal = meterContributionRefusal(input);
+  if (refusal) throw refusal;
+}
+
+export interface MeterContributionQuestion {
   equipmentKind: MeterEquipmentKind;
   equipmentId: string;
   /** When the meter was read. Defaults to now, like the contribution itself. */
   readAt?: string;
   /** The workspace that wants to record it. */
   organizationId: string;
-}): void {
-  const refusal = meterPublicationRefusal({
+}
+
+/**
+ * The same question, answered rather than thrown.
+ *
+ * Callers that treat the two kinds of refusal differently — see
+ * `EventScopeRefusedError.kind`, and fuel's note about a purchase that
+ * genuinely happened — need the reason before deciding, not an exception.
+ */
+export function meterContributionRefusal(
+  input: MeterContributionQuestion,
+): EventScopeRefusedError | null {
+  return meterPublicationRefusal({
     equipmentKind: input.equipmentKind,
     equipmentId: input.equipmentId,
     occurredAt: input.readAt ?? new Date().toISOString(),
     asserted: { organizationId: input.organizationId },
   });
-  if (refusal) throw refusal;
 }
 
 /**

@@ -253,14 +253,32 @@ const SEEDED_RESPONSIBILITY: Record<string, string> = {
 /** Which seeds have already been handed out. Cleared with the registry. */
 const seededAlready = new Set<string>();
 
+/**
+ * What a screen is told when the canonical records name no carrier.
+ *
+ * A label, never an identifier. Nothing compares against it, nothing routes on
+ * it, and it can never be mistaken for an organization id — which is the whole
+ * difference between this and the workspace id that used to sit in that field.
+ */
+export const CARRIER_NOT_ESTABLISHED = "Carrier not established";
+
 function openLoop(truck: FleetTruck, organizationId: string): MtLoop {
   const carrier = truckCarrierFor(truck.truckId, organizationId);
   const at = nowIso();
   const loop: MtLoop = {
     loopId: uuid(),
     dispatchOrganizationId: organizationId,
-    carrierOrganizationId: carrier?.organizationId ?? organizationId,
-    carrierName: carrier?.name ?? "This carrier",
+    /*
+     * No fallback. `truckCarrierFor` answers undefined when this workspace's
+     * reason for seeing the truck does not name a carrier — the recorded owner
+     * of a truck another organization operates is the plain case — and
+     * substituting this workspace's own id there recorded a DISPATCH
+     * organization as the carrier of somebody else's truck. That travelled into
+     * the booking, the assignment and the rate confirmation's applied
+     * signature, and from there into `load.finalized`.
+     */
+    carrierOrganizationId: carrier?.organizationId,
+    carrierName: carrier?.name,
     truckId: truck.truckId,
     truckUnit: truck.unit,
     equipment: truck.equipment,
@@ -690,8 +708,12 @@ function abilitiesFor(
     close: mayAct && open,
     // Only where there is a carrier on the other side of a grant, and only
     // once: a second escalation about the same thing is noise, not urgency.
+    // There has to BE a carrier on the other side. A cycle whose carrier was
+    // never established has nobody to escalate to, and offering the button
+    // would raise it at whoever the records failed to name.
     escalateToCarrier: open
       && mayAct
+      && loop.carrierOrganizationId !== undefined
       && loop.carrierOrganizationId !== loop.dispatchOrganizationId
       && !loop.carrierEscalation,
   };
@@ -727,7 +749,9 @@ function toCard(
     truckId: loop.truckId,
     truckUnit: loop.truckUnit,
     equipment: loop.equipment,
-    carrierName: loop.carrierName,
+    // A display string, always present, and never the dispatch workspace's own
+    // name standing in for a carrier nobody established.
+    carrierName: loop.carrierName ?? CARRIER_NOT_ESTABLISHED,
     status: loop.status,
     driverName: loop.driverName,
     trailerUnit: loop.trailerUnit,
@@ -1109,8 +1133,12 @@ export async function escalateLoopToCarrier(
   const loop = actableLoop(loopId, ctx);
   if (!loop) return { status: "not_found" };
   if (!mayActOn(loop, ctx)) return { status: "not_permitted" };
-  // A carrier dispatching its own trucks is already the top of the chain.
-  if (loop.carrierOrganizationId === loop.dispatchOrganizationId) {
+  // A carrier dispatching its own trucks is already the top of the chain, and a
+  // cycle whose carrier was never established has no chain at all.
+  if (
+    loop.carrierOrganizationId === undefined
+    || loop.carrierOrganizationId === loop.dispatchOrganizationId
+  ) {
     return { status: "not_permitted" };
   }
   if (loop.carrierEscalation) return { status: "ok", loop };

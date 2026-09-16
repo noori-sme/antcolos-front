@@ -26,7 +26,7 @@ import { progressOf, rateConsFor } from "./rate-confirmation";
 import { reviewsFor } from "./driver-review";
 import { driversForWorkspaceSync, driverDocumentProblems } from "./driver-registry";
 import { nowIso } from "./time";
-import { propagationBus } from "@/lib/propagation";
+import { readableEvent, readableProjections } from "@/lib/propagation";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -148,10 +148,8 @@ const PROJECTION_RESOLUTION: Record<string, { href: string; label: string; requi
 function propagationRules(ctx: DeriveContext): Derived[] {
   const out: Derived[] = [];
 
-  for (const record of propagationBus.projections(ctx.organizationId, {
-    state: ["failed", "needs_review"],
-  })) {
-    const event = propagationBus.event(ctx.organizationId, record.eventId);
+  for (const record of readableProjections(ctx, { state: ["failed", "needs_review"] })) {
+    const event = readableEvent(ctx, record.eventId);
     if (!event) continue;
 
     const resolution = PROJECTION_RESOLUTION[record.subscriberId];

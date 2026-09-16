@@ -11,7 +11,7 @@ import {
 } from "@/lib/propagation";
 import {
   approveCarrierRelationship, endCarrierRelationship, FIXTURE_VINS, operatingContextAt,
-  recordTerminationStep,
+  recordTerminationStep, truckCarrierFor,
   registerOrConnectTruck, releaseOperatingLease, resetTruckRegistry, truckContextFrom,
   TRUCK_IDS,
 } from "@/lib/api/mock/truck-registry";
@@ -19,12 +19,17 @@ import {
   resetTrailerRegistry, TRAILER_IDS, trailerOperatingContextAt,
 } from "@/lib/api/mock/trailer-registry";
 import { resolveOperatingContextAt } from "@/lib/fleet/operating-context";
+import { carrierEscalationsFor, responsibleOrganizationFor } from "@/lib/api/mock/mt-loop";
+import { responsibilityContextForLoop } from "@/lib/api/mock/responsibility-context";
 import { mockFleetService } from "@/lib/api/mock/fleet-operations";
 import { mockFuelService } from "@/lib/api/mock/fuel";
 import { resetFuelStore } from "@/lib/api/mock/fuel-store";
 import { resetFleetTelemetry } from "@/lib/api/mock/fleet-telemetry";
 import { recordMeterReading, resetMaintenanceRegistry } from "@/lib/api/mock/maintenance-registry";
 import { retryDistribution } from "@/lib/api/mock/rate-confirmation";
+import {
+  readableEvent, readableEvents, readableProjections, readableProjectionsFor, retryProjection,
+} from "@/lib/propagation";
 import { MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
 import { ALL_PERMISSIONS, ctxFor, serviceContext } from "./helpers.ts";
 import type { ActorRef, DomainEventKind, FactScope } from "@/types";
@@ -754,37 +759,75 @@ test("a carrier that has stopped operating cannot backdate into the history", as
 /* 8. An event id is not a capability                                          */
 /* -------------------------------------------------------------------------- */
 
-test("another organization's event id reads back nothing", async () => {
+test("a foreign organization and a known event id read back nothing", async () => {
   const { event } = await contributeAndPublish(contribution({
     equipmentId: TRUCK_IDS.nl107,
     scope: { organizationId: NORTHLINE },
   }));
 
-  // The owner sees its own distribution.
-  assert.ok(propagationBus.projectionsFor(NORTHLINE, event.eventId).length > 0);
+  // Northline sees its own. The context is the authentication; the
+  // organization is read off it and cannot be named by the caller.
+  const northline = serviceContext("mem_northline_owner");
+  assert.equal(readableEvents(northline).length, 1);
+  assert.ok(readableEvent(northline, event.eventId));
+  assert.ok(readableProjectionsFor(northline, event.eventId).length > 0);
 
-  // Holding the id is not holding the right. An id from another organization
-  // answers exactly as an id that was never published.
-  assert.deepEqual(propagationBus.projectionsFor(BAXTER, event.eventId), []);
-  assert.deepEqual(propagationBus.projectionsFor(MERIDIAN, event.eventId), []);
-  assert.equal(propagationBus.event(BAXTER, event.eventId), undefined);
-  assert.deepEqual(propagationBus.projectionsFor(NORTHLINE, "dev_made.up:v1:nothing"), []);
+  // Baxter is a real organization with a real membership, and it holds the
+  // event id — which appears in URLs, audit lines and screenshots. Neither of
+  // those is entitlement.
+  const baxter = serviceContext("mem_baxter_owner");
+  assert.deepEqual(readableEvents(baxter), []);
+  assert.equal(readableEvent(baxter, event.eventId), undefined);
+  assert.deepEqual(readableProjectionsFor(baxter, event.eventId), []);
+  assert.deepEqual(readableProjections(baxter), []);
+
+  // And a dispatch workspace named on nothing sees nothing either.
+  const meridian = serviceContext("mem_meridian_dispatcher");
+  assert.deepEqual(readableEvents(meridian), []);
+  assert.equal(readableEvent(meridian, event.eventId), undefined);
 });
 
-test("another organization cannot re-run a projection by knowing its event id", async () => {
+test("a known foreign event id cannot be re-run", async () => {
   const { event } = await contributeAndPublish(contribution({
     equipmentId: TRUCK_IDS.nl107,
     scope: { organizationId: NORTHLINE },
   }));
-  const [record] = propagationBus.projectionsFor(NORTHLINE, event.eventId);
+  const northline = serviceContext("mem_northline_owner");
+  const [record] = readableProjectionsFor(northline, event.eventId);
   assert.ok(record, "there is a projection to try to re-run");
-  const attemptsBefore = record.attempts;
+  const before = record.attempts;
 
-  const stolen = await propagationBus.retry(BAXTER, event.eventId, record.subscriberId);
-  assert.equal(stolen, undefined, "the retry did not happen");
+  // A retry WRITES into whatever module the projection targets. Another
+  // organization holding the id gets the same answer as for an id that was
+  // never published, and nothing runs.
+  const baxter = serviceContext("mem_baxter_owner");
+  const stolen = await retryProjection(baxter, event.eventId, record.subscriberId, []);
+  assert.equal(stolen, undefined);
   assert.equal(
-    propagationBus.projectionsFor(NORTHLINE, event.eventId)[0].attempts, attemptsBefore,
-    "and the projection did not run again",
+    readableProjectionsFor(northline, event.eventId)[0].attempts, before,
+    "the projection did not run again",
+  );
+});
+
+test("a retry is refused after the permission it needs is lost", async () => {
+  const { event } = await contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.nl107,
+    scope: { organizationId: NORTHLINE },
+  }));
+  const northline = serviceContext("mem_northline_owner");
+  const [record] = readableProjectionsFor(northline, event.eventId);
+  const before = record.attempts;
+
+  const stripped = serviceContext("mem_northline_owner", {
+    permissions: new Set([...ALL_PERMISSIONS].filter((k) => k !== "maintenance:view")),
+  });
+  await assert.rejects(
+    () => retryProjection(stripped, event.eventId, record.subscriberId, ["maintenance:view"]),
+    (error: Error) => error.name === "PermissionDeniedError",
+  );
+  assert.equal(
+    readableProjectionsFor(northline, event.eventId)[0].attempts, before,
+    "and nothing ran",
   );
 });
 
@@ -855,6 +898,86 @@ test("an event carrying an empty carrier organization is refused", async () => {
   });
   const published = await propagationBus.publish(honest);
   assert.equal(published.duplicate, false);
+});
+
+/* -------------------------------------------------------------------------- */
+/* 10. A refusal does not disclose what the registry withholds                 */
+/* -------------------------------------------------------------------------- */
+
+test("a refusal does not name a carrier the workspace is not entitled to know", async () => {
+  // Baxter handed Summit dispatch access to unit 107. Summit is entitled to
+  // know about BAXTER and is not entitled to know that Northline runs the truck
+  // under an operating lease — the registry keeps exactly that from it. An
+  // error message is not an exemption.
+  const refused = await refusal(() => contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.nl107,
+    scope: { organizationId: "org_summit" },
+  })));
+  assert.equal(refused.code, "not_the_operating_carrier");
+  assert.ok(!refused.message.includes("Northline"), "the operating carrier is not named");
+  assert.ok(!refused.message.includes(NORTHLINE), "nor is its id");
+  assert.ok(!refused.records.includes("rel_"), "and no relationship id is handed over");
+  assert.equal(refused.records.length, 1, "only the equipment the caller already named");
+  assert.ok(refused.message.includes("Summit"), "the workspace that asked is named to itself");
+
+  // Meridian holds its grant FROM Baxter on A-12, so naming Baxter tells it
+  // nothing it did not already have, and the message is allowed to be useful.
+  const known = await refusal(() => contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.mdA12,
+    scope: { organizationId: MERIDIAN },
+  })));
+  assert.ok(known.message.includes("Baxter"), "the carrier it already sees is named");
+});
+
+/* -------------------------------------------------------------------------- */
+/* 11. A dispatch workspace is never written down as the carrier               */
+/* -------------------------------------------------------------------------- */
+
+test("every workspace responsible for a cycle has a carrier the records name", () => {
+  // The invariant that kept `truckCarrierFor(...) ?? organizationId` from
+  // producing a false carrier in practice, and which nothing stated or tested.
+  // A fourth responsibility rule — "otherwise the recorded owner dispatches
+  // it" — would have started naming owners and dispatch workspaces as carriers,
+  // silently, on the day it was added.
+  for (const truckId of Object.values(TRUCK_IDS)) {
+    const responsible = responsibleOrganizationFor(truckId);
+    if (!responsible) continue;
+    assert.ok(
+      truckCarrierFor(truckId, responsible),
+      `${truckId}: ${responsible} is responsible for the cycle but the records name no carrier for it`,
+    );
+  }
+});
+
+test("a cycle with no established carrier says so, and routes at nobody", () => {
+  // The state the type now permits and the registry does not currently reach.
+  // What matters is what every consumer does with it: nothing may read the
+  // absence as "the workspace holding the cycle".
+  const loop = {
+    loopId: "loop_test",
+    dispatchOrganizationId: MERIDIAN,
+    carrierOrganizationId: undefined,
+    carrierName: undefined,
+    truckId: TRUCK_IDS.mdA12,
+    truckUnit: "A-12",
+    equipment: "tractor" as const,
+    trailerRequired: true,
+    status: "unclaimed" as const,
+    openedAt: new Date().toISOString(),
+    assignments: [],
+    history: [],
+  };
+
+  const context = responsibilityContextForLoop(loop);
+  const carrierScope = context.scope.filter((r) => r.kind === "carrier");
+  assert.deepEqual(carrierScope, [], "no carrier scope is written at all");
+  assert.ok(
+    !JSON.stringify(context).includes(MERIDIAN) || context.scope.every((r) => r.kind !== "carrier"),
+    "and the dispatch workspace is not standing in as one",
+  );
+
+  // Escalation has nobody to reach, so it is not offered and not accepted.
+  assert.equal(carrierEscalationsFor(MERIDIAN).some((l) => l.loopId === "loop_test"), false);
 });
 
 test("the derivation is a pure read: asking twice changes nothing", () => {

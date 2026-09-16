@@ -1,4 +1,7 @@
 import type { CarrierAttribution } from "@/types";
+import type {
+  CarrierRelationshipLike, OperatingContextResult, OperatingLeaseLike,
+} from "@/lib/fleet/operating-context";
 
 /**
  * Who was responsible, at a moment in the past.
@@ -8,86 +11,64 @@ import type { CarrierAttribution } from "@/types";
  * HAPPENED. Not the carrier that owns the truck today, not the carrier the
  * driver works for now, not whoever is looking at the screen.
  *
- * The function is pure and takes the authority history as an argument, so it
- * can be reasoned about and tested without a registry: the caller assembles
- * the windows from operating leases and approved carrier relationships, and
- * this decides which one covers the instant in question.
+ * The rule itself lives in `@/lib/fleet/operating-context`, where the truck and
+ * trailer registries and the meter ledger read it too. This module no longer
+ * decides anything about intervals; it says what fuel does with the answer.
  */
-
-export interface AuthorityWindow {
-  carrierOrganizationId: string;
-  /** The carrier's name as it reads now; snapshotted into the attribution. */
-  carrierNameSnapshot: string;
-  /** How the authority arose. A lease always beats a bare relationship. */
-  kind: "operating_lease" | "carrier_relationship";
-  startedAt: string;
-  /** Open-ended when absent. */
-  endedAt?: string;
-  operatingLeaseId?: string;
-  relationshipId?: string;
-}
-
-function covers(window: AuthorityWindow, at: number): boolean {
-  const from = Date.parse(window.startedAt);
-  if (Number.isNaN(from) || at < from) return false;
-  if (!window.endedAt) return true;
-  const to = Date.parse(window.endedAt);
-  return Number.isNaN(to) ? true : at <= to;
-}
 
 /**
- * Resolves attribution for one instant.
+ * Fuel's attribution, derived from the ONE operating-context rule.
  *
- * Precedence, and the reason for each step:
+ * This module used to carry a second point-in-time resolver of its own, over
+ * the same canonical leases and relationships, and the two disagreed about
+ * reserved leases, end boundaries, unapproved relationships and the carrier's
+ * own truck. `resolveOperatingContextAt` is now the single rule for every
+ * module, and this function is the translation: what that rule establishes,
+ * said in the vocabulary a fuel record and an IFTA return speak.
  *
- *  1. An operating lease that covers the instant. Only one lease can hold a
- *     truck at a time, so this is unambiguous by construction, and it is the
- *     strongest possible statement of who was running the truck.
- *  2. Exactly ONE approved carrier relationship covering the instant. Several
- *     carriers can be approved on a truck at once; if more than one covers the
- *     moment, nothing here can tell them apart and guessing would be worse
- *     than admitting it.
- *  3. Unresolved. The record is written anyway, flagged, and put in front of a
- *     person — a fuel purchase that happened is not deleted because Antcolos
- *     cannot work out whose it was.
+ * ★ WHAT DID NOT MOVE: `unresolved` ★
+ * A refusal here is not a refusal to record. A fuel purchase that happened is
+ * a fact whether or not Antcolos can work out whose authority it was under, so
+ * the record is written, flagged, and put in front of a person. Only a MODULE
+ * that would be writing into somebody's permanent history on the strength of
+ * that answer — the meter ledger — refuses outright.
  */
-export function resolveAttribution(
-  windows: readonly AuthorityWindow[],
-  occurredAt: string,
+export function attributionFrom<
+  L extends OperatingLeaseLike,
+  R extends CarrierRelationshipLike & { organizationName: string },
+>(
+  context: OperatingContextResult<L, R>,
   resolvedAt: string,
 ): CarrierAttribution {
-  const at = Date.parse(occurredAt);
-  const covering = windows.filter((w) => covers(w, at));
-
-  const lease = covering.find((w) => w.kind === "operating_lease");
-  if (lease) {
+  if (!context.resolved) {
     return {
-      carrierOrganizationId: lease.carrierOrganizationId,
-      carrierNameSnapshot: lease.carrierNameSnapshot,
-      basis: "operating_lease",
-      operatingLeaseId: lease.operatingLeaseId,
-      relationshipId: lease.relationshipId,
+      carrierOrganizationId: "",
+      carrierNameSnapshot: "Not established",
+      basis: "unresolved",
       resolvedAt,
     };
   }
 
-  const relationships = covering.filter((w) => w.kind === "carrier_relationship");
-  const carriers = new Set(relationships.map((w) => w.carrierOrganizationId));
-  if (carriers.size === 1) {
-    const only = relationships[0];
+  // Two bases, not three. `carrier_owned` and `sole_approved_relationship` are
+  // both "a relationship said so" as far as a return is concerned; the
+  // difference between them is how the rule got there, and it is on the
+  // relationship record for anybody who needs it.
+  if (context.basis === "operating_lease" && context.lease) {
     return {
-      carrierOrganizationId: only.carrierOrganizationId,
-      carrierNameSnapshot: only.carrierNameSnapshot,
-      basis: "carrier_relationship",
-      relationshipId: only.relationshipId,
+      carrierOrganizationId: context.operatingCarrierOrganizationId,
+      carrierNameSnapshot: context.relationship.organizationName,
+      basis: "operating_lease",
+      operatingLeaseId: context.lease.id,
+      relationshipId: context.relationship.id,
       resolvedAt,
     };
   }
 
   return {
-    carrierOrganizationId: "",
-    carrierNameSnapshot: "Not established",
-    basis: "unresolved",
+    carrierOrganizationId: context.operatingCarrierOrganizationId,
+    carrierNameSnapshot: context.relationship.organizationName,
+    basis: "carrier_relationship",
+    relationshipId: context.relationship.id,
     resolvedAt,
   };
 }

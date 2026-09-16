@@ -238,7 +238,13 @@ export const CONSENT_LABEL: Record<ConsentRequirement, string> = {
 export interface BookingRecord {
   bookingId: string;
   organizationId: string;
-  carrierOrganizationId: string;
+  /**
+   * The carrier the load is booked under. Absent when the cycle it came from
+   * never established one — see `MtLoop.carrierOrganizationId`. Absent is never
+   * to be read as "the booking workspace"; a rate confirmation cannot be signed
+   * for a carrier nobody named.
+   */
+  carrierOrganizationId?: string;
   negotiationId: string;
   matchId: string;
   listingId: string;

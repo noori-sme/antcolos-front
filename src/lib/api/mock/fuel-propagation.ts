@@ -6,7 +6,7 @@ import {
   buildDomainEvent, FUEL_TRANSACTION_CONFIRMED_VERSION, propagationBus,
   type FuelExtractedValues, type FuelTransactionConfirmedPayload,
 } from "@/lib/propagation";
-import { assertMeterContributionAllowed, contributeAndPublish } from "./meter-ledger";
+import { contributeAndPublish, meterContributionRefusal } from "./meter-ledger";
 // Side-effect import: wires every projection to the bus before anything is
 // published. A publisher with no subscribers registered would drop events.
 import "./projections";
@@ -81,12 +81,7 @@ export function assertFuelOdometerAllowed(args: {
   odometerMiles?: number;
 }): void {
   if (args.odometerMiles === undefined) return;
-  assertMeterContributionAllowed({
-    equipmentKind: "truck",
-    equipmentId: args.truckId,
-    readAt: args.purchasedAt,
-    organizationId: args.organizationId,
-  });
+  refuseOnAuthority(args.organizationId, args.truckId, args.purchasedAt);
 }
 
 /** The same question for the odometer at the end of a jurisdiction leg. */
@@ -97,12 +92,41 @@ export function assertMileageOdometerAllowed(args: {
   odometerEndMiles?: number;
 }): void {
   if (args.odometerEndMiles === undefined) return;
-  assertMeterContributionAllowed({
+  refuseOnAuthority(args.organizationId, args.truckId, args.travelEndedAt);
+}
+
+/**
+ * ★ WHY FUEL REFUSES ON ONE KIND OF REASON AND NOT THE OTHER ★
+ *
+ * Two rules meet here and both are right.
+ *
+ * A6 says a workspace that does not operate a truck may not write its meter
+ * history, and that the command must be refused BEFORE it writes a record of
+ * its own rather than leaving a receipt behind with an exception after it.
+ *
+ * Fuel says a purchase that genuinely happened is not deleted because Antcolos
+ * cannot work out whose authority it was under: the record is kept, its
+ * attribution reads `unresolved`, it is flagged `no_active_operating_authority`
+ * and a person is asked. That is this module's oldest deliberate decision.
+ *
+ * They only collide when the reason is ATTRIBUTION — nobody can say whose the
+ * truck was at that moment, which is the ordinary state of a receipt found
+ * weeks later for a period before the carrier was onboarded. Refusing the
+ * purchase there would be A6 quietly deleting a fuel record, which is not what
+ * fail-closed on meter WRITES was ever for.
+ *
+ * So: an AUTHORITY refusal stops the command, and an attribution refusal stops
+ * only the odometer. The purchase lands, says `unresolved` out loud, and the
+ * meter ledger stays free of a reading nobody can attribute.
+ */
+function refuseOnAuthority(organizationId: string, truckId: string, at: string): void {
+  const refusal = meterContributionRefusal({
     equipmentKind: "truck",
-    equipmentId: args.truckId,
-    readAt: args.travelEndedAt,
-    organizationId: args.organizationId,
+    equipmentId: truckId,
+    readAt: at,
+    organizationId,
   });
+  if (refusal?.kind === "authority") throw refusal;
 }
 
 /**
@@ -120,6 +144,13 @@ export async function contributeFuelOdometer(
   opts: { correctsTransactionId?: string; correctionReason?: string } = {},
 ): Promise<void> {
   if (t.odometerMiles === undefined) return;
+  // An attribution refusal has already been allowed through by the command, and
+  // the purchase is on file saying so. The ledger still will not hold a reading
+  // it cannot attribute, so the odometer simply does not travel.
+  if (meterContributionRefusal({
+    equipmentKind: "truck", equipmentId: t.truckId,
+    readAt: t.purchasedAt, organizationId: t.organizationId,
+  })) return;
   await contributeAndPublish({
     actor,
     equipmentKind: "truck",
@@ -148,6 +179,10 @@ export async function contributeMileageOdometer(
   actor: ActorRef,
 ): Promise<void> {
   if (record.odometerEndMiles === undefined) return;
+  if (meterContributionRefusal({
+    equipmentKind: "truck", equipmentId: record.truckId,
+    readAt: record.travelEndedAt, organizationId: record.organizationId,
+  })) return;
   await contributeAndPublish({
     actor,
     equipmentKind: "truck",

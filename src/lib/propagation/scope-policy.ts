@@ -2,8 +2,12 @@ import type {
   DomainEvent, DomainEventKind, FactScope, MeterEquipmentKind,
   OperatingContextRefusalCode,
 } from "@/types";
-import { operatingContextAt, organizationNameFor } from "@/lib/api/mock/truck-registry";
-import { trailerOperatingContextAt } from "@/lib/api/mock/trailer-registry";
+import {
+  operatingContextAt, organizationNameFor, truckCarrierFor,
+} from "@/lib/api/mock/truck-registry";
+import {
+  trailerCarrierFor, trailerOperatingContextAt,
+} from "@/lib/api/mock/trailer-registry";
 import type { MeterReadingRecordedPayload } from "./events";
 
 /**
@@ -57,6 +61,38 @@ export type ScopeRefusalCode =
   | "unknown_equipment_kind";
 
 /**
+ * The two reasons a meter publication is refused, which callers treat
+ * differently.
+ *
+ * `authority` — THIS WORKSPACE MUST NOT WRITE THIS. Somebody else operates the
+ * equipment, or this workspace's own authority over it has ended. The command
+ * that asked is refused outright, before it writes anything of its own: there
+ * is no version of it that is allowed to happen.
+ *
+ * `attribution` — NOBODY CAN SAY WHOSE THIS IS. The canonical records do not
+ * establish a carrier for that instant, or they contradict each other. Nothing
+ * improper is being attempted, and what the calling module does about it is the
+ * calling module's business: the meter ledger will not record a reading it
+ * cannot attribute, and fuel still records a purchase that genuinely happened
+ * and flags it for a person. One rule, two outcomes.
+ */
+export type ScopeRefusalKind = "authority" | "attribution";
+
+const AUTHORITY_CODES: ReadonlySet<ScopeRefusalCode> = new Set<ScopeRefusalCode>([
+  "not_the_operating_carrier",
+  "write_authority_ended",
+  "dispatch_write_not_authorized",
+  "carrier_mismatch",
+  "lease_mismatch",
+  "lease_wrong_equipment_kind",
+  "operating_authority_reserved",
+  "missing_recording_organization",
+  "attribution_mismatch",
+  "subject_payload_mismatch",
+  "unknown_equipment_kind",
+]);
+
+/**
  * What a refused publication throws.
  *
  * Carries the code and the canonical record ids so the refusal can be recorded
@@ -71,6 +107,11 @@ export class EventScopeRefusedError extends Error {
   ) {
     super(message);
     this.name = "EventScopeRefusedError";
+  }
+
+  /** See `ScopeRefusalKind`. Derived from the code so the two cannot drift. */
+  get kind(): ScopeRefusalKind {
+    return AUTHORITY_CODES.has(this.code) ? "authority" : "attribution";
   }
 }
 
@@ -173,6 +214,15 @@ export const EVENT_SCOPE_MATRIX: Record<DomainEventKind, EventScopeRule> = {
 const METER_EQUIPMENT_RULES: Record<MeterEquipmentKind, {
   contextAt: (equipmentId: string, instant: string) => ReturnType<typeof operatingContextAt>
     | ReturnType<typeof trailerOperatingContextAt>;
+  /**
+   * The carrier this workspace is ENTITLED to see this equipment under.
+   *
+   * Used only to decide what a refusal may say out loud. A dispatch workspace
+   * sees the carrier that granted its access and nothing else, so a refusal
+   * that named whoever really operates the equipment would disclose, in an
+   * error message, the relationship the registry deliberately withholds.
+   */
+  carrierKnownTo: (equipmentId: string, organizationId: string) => string | undefined;
   /** The `FactScope` field this kind's lease id belongs in. */
   leaseField: "truckOperatingLeaseId" | "trailerOperatingLeaseId";
   /** The field it must never appear in. */
@@ -180,11 +230,13 @@ const METER_EQUIPMENT_RULES: Record<MeterEquipmentKind, {
 }> = {
   truck: {
     contextAt: operatingContextAt,
+    carrierKnownTo: (id, org) => truckCarrierFor(id, org)?.organizationId,
     leaseField: "truckOperatingLeaseId",
     foreignLeaseField: "trailerOperatingLeaseId",
   },
   trailer: {
     contextAt: trailerOperatingContextAt,
+    carrierKnownTo: (id, org) => trailerCarrierFor(id, org)?.organizationId,
     leaseField: "trailerOperatingLeaseId",
     foreignLeaseField: "truckOperatingLeaseId",
   },
@@ -297,10 +349,27 @@ export function meterPublicationRefusal(
    * of a permission that company never granted.
    */
   if (recording !== carrier) {
+    /*
+     * ★ A REFUSAL MAY NOT DISCLOSE WHAT THE REGISTRY WITHHOLDS ★
+     *
+     * Summit holds dispatch access on unit 107 granted by Baxter, while
+     * Northline actually runs it under an operating lease. Summit is entitled
+     * to know about Baxter and is NOT entitled to know that Northline operates
+     * the truck — the truck registry keeps exactly that from it. Naming the
+     * operating carrier here would hand it over in an error message, which is
+     * the oldest way there is to leak a relationship.
+     *
+     * So the carrier is named only when this workspace already sees the
+     * equipment under that carrier, and the record ids are withheld for the
+     * same reason.
+     */
+    const known = rule.carrierKnownTo(input.equipmentId, recording) === carrier;
     return new EventScopeRefusedError(
       "not_the_operating_carrier",
-      `${organizationNameFor(recording)} was not operating this ${input.equipmentKind} when the meter was read — ${organizationNameFor(carrier)} was. Dispatch access lets a workspace see equipment and move freight on it; it is not the carrier's permission to write its meter history, and nothing in Antcolos grants that today.`,
-      [input.equipmentId, context.relationship.id],
+      known
+        ? `${organizationNameFor(recording)} was not operating this ${input.equipmentKind} when the meter was read — ${organizationNameFor(carrier)} was. Dispatch access lets a workspace see equipment and move freight on it; it is not the carrier's permission to write its meter history, and nothing in Antcolos grants that today.`
+        : `${organizationNameFor(recording)} was not operating this ${input.equipmentKind} when the meter was read, so it cannot write to its meter history. Seeing a unit and being allowed to record its meters are different things, and only the operating carrier may do the second.`,
+      known ? [input.equipmentId, context.relationship.id] : [input.equipmentId],
     );
   }
 

@@ -734,6 +734,36 @@ function operatingCarrier(trailerId: string) {
  * A reefer's hour meter is as much an operational fact as a tractor's odometer,
  * and it belongs to whoever was running the trailer when it was read.
  */
+/**
+ * The carrier whose authority this organization sees a trailer under.
+ *
+ * The truck registry's `truckCarrierFor` for trailers, and it answers the same
+ * two ways: a carrier sees itself, a dispatch workspace sees the carrier that
+ * granted its access. Nothing is inferred from anything else, and a workspace
+ * with neither gets `undefined` — which is an answer, not a gap to fill in.
+ *
+ * Used to decide what a refusal may SAY: naming an organization this workspace
+ * is not entitled to know about would leak, through an error message, exactly
+ * the relationship the registry keeps from it.
+ */
+export function trailerCarrierFor(
+  trailerId: string,
+  organizationId: string,
+): { organizationId: string; name: string } | undefined {
+  const grant = activeDispatchAccess(trailerId, organizationId);
+  if (grant) {
+    return {
+      organizationId: grant.grantedByCarrierOrganizationId,
+      name: grant.grantedByCarrierName,
+    };
+  }
+  const relationship = approvedRelationship(trailerId, organizationId);
+  if (relationship) {
+    return { organizationId: relationship.organizationId, name: relationship.organizationName };
+  }
+  return undefined;
+}
+
 export function trailerOperatingContextAt(
   trailerId: string,
   instant: string,

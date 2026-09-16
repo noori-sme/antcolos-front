@@ -4,7 +4,7 @@ import type {
   IftaJurisdictionSummary, IftaPeriod, IftaPeriodSummary,
   JurisdictionMileageRecord, MileageRecordFilters, PermissionKey, Quarter,
 } from "@/types";
-import { declareAttribution, resolveAttribution, type AuthorityWindow } from "@/lib/fuel/attribution";
+import { attributionFrom, declareAttribution } from "@/lib/fuel/attribution";
 import { countableMileage, countableTransactions, groupBy, summarize } from "@/lib/fuel/economy";
 import {
   derivePeriodState, jurisdictionSummaries, mileageInPeriod, qualifyForIfta,
@@ -28,7 +28,7 @@ import {
   fuelDb, jurisdictionsTravelled, ledgerHistoryFor, nextFuelId, referencePriceMills,
   type FuelState,
 } from "./fuel-store";
-import { truckAuthorityHistory, truckIdsRelatedTo, truckUnitNumber } from "./truck-registry";
+import { operatingContextAt, truckIdsRelatedTo, truckUnitNumber } from "./truck-registry";
 import { mockStore } from "./store";
 import {
   assertFuelOdometerAllowed, assertMileageOdometerAllowed,
@@ -280,41 +280,17 @@ function matchesMileage(r: JurisdictionMileageRecord, f: MileageRecordFilters): 
 /* -------------------------------------------------------------------------- */
 
 /**
- * The operating-authority history for a truck, as the attribution resolver
- * wants it.
+ * Who was running this truck at this instant, for an attribution snapshot.
  *
- * Built from the truck registry: live and past operating leases first, then
- * approved carrier relationships as the weaker fallback. This is the ONLY
- * place fuel reads authority, so there is one answer to "who was running it",
- * shared with the fleet module rather than reinvented here.
+ * One line, because the rule is not fuel's to own. It lives in
+ * `@/lib/fleet/operating-context` and the truck registry runs it over its own
+ * canonical rows; the meter ledger asks the same question of the same function.
+ * Fuel used to assemble authority windows and resolve them itself, which is how
+ * two answers to "who was running it" came to exist for one truck and one
+ * moment.
  */
-function authorityWindows(truckId: string): AuthorityWindow[] {
-  const { leases, relationships } = truckAuthorityHistory(truckId);
-
-  const fromLeases: AuthorityWindow[] = leases.map((l) => ({
-    carrierOrganizationId: l.organizationId,
-    carrierNameSnapshot: l.organizationName,
-    kind: "operating_lease",
-    // A reservation is when exclusivity is taken, so it is when responsibility
-    // starts — not the moment the truck rolls.
-    startedAt: l.reservedAt ?? l.activatedAt ?? l.createdAt,
-    endedAt: l.endedAt,
-    operatingLeaseId: l.id,
-    relationshipId: l.relationshipId,
-  }));
-
-  const fromRelationships: AuthorityWindow[] = relationships
-    .filter((r) => r.status === "approved" || r.status === "ended")
-    .map((r) => ({
-      carrierOrganizationId: r.organizationId,
-      carrierNameSnapshot: r.organizationName,
-      kind: "carrier_relationship",
-      startedAt: r.approvedAt ?? r.startedAt,
-      endedAt: r.endedAt,
-      relationshipId: r.id,
-    }));
-
-  return [...fromLeases, ...fromRelationships];
+function attributionAt(truckId: string, occurredAt: string, resolvedAt: string) {
+  return attributionFrom(operatingContextAt(truckId, occurredAt), resolvedAt);
 }
 
 function auditEntry(
@@ -691,11 +667,7 @@ export const mockFuelService: FuelService = {
     }
 
     const resolvedAt = nowIso();
-    const resolved = resolveAttribution(
-      authorityWindows(input.truckId),
-      input.purchasedAt,
-      resolvedAt,
-    );
+    const resolved = attributionAt(input.truckId, input.purchasedAt, resolvedAt);
 
     // A person may fill a gap the history left. A person may not overrule the
     // history — that is how a filed quarter gets quietly re-attributed.
@@ -1040,11 +1012,9 @@ export const mockFuelService: FuelService = {
     }
 
     const resolvedAt = nowIso();
-    const resolved = resolveAttribution(
-      authorityWindows(input.truckId),
-      input.travelStartedAt,
-      resolvedAt,
-    );
+    // The leg's START, which is what the previous resolver was given too: a
+    // jurisdiction leg belongs to whoever was running the truck when it began.
+    const resolved = attributionAt(input.truckId, input.travelStartedAt, resolvedAt);
     let attribution = resolved;
     if (input.declaredCarrierOrganizationId) {
       if (resolved.basis !== "unresolved") {

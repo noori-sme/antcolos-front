@@ -44,9 +44,21 @@ export interface MtLoop {
    * For a carrier owner who dispatches their own trucks this is the same
    * organization as the dispatch workspace — the same person wearing both hats,
    * not a special kind of loop.
+   *
+   * ★ OPTIONAL, BECAUSE "NOT ESTABLISHED" IS A REAL ANSWER ★
+   *
+   * A workspace can see a truck for reasons that do not name a carrier — the
+   * clearest being the recorded legal OWNER of a truck somebody else operates.
+   * This used to fall back to the dispatch workspace's own id, which wrote down
+   * "Meridian Dispatch is the carrier of this truck" about a truck Meridian
+   * neither owns nor runs, and carried it into the booking, the assignment and
+   * the rate confirmation. Absent says what is true: the canonical records do
+   * not name a carrier for this cycle, so nothing downstream may act as though
+   * one was named.
    */
-  carrierOrganizationId: string;
-  carrierName: string;
+  carrierOrganizationId?: string;
+  /** Absent for the same reason. Screens show an explicit "not established". */
+  carrierName?: string;
 
   truckId: string;
   /** The unit label the responsible workspace knows the truck by. */
