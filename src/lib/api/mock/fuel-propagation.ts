@@ -161,6 +161,31 @@ export function mileageAttributionRefusal(
  * Order is not evidence: the same ids in another order are the same records.
  * Deliberately not a stored "reviewed" flag, which would keep saying yes long
  * after it stopped being true.
+ *
+ * ███ REQUIRED OF THE AUTHORITY-CORRECTION MILESTONE ███
+ *
+ * Identity is as far as this can currently see, and identity is not the whole
+ * of evidence. Two records with the same ids can say different things: a lease
+ * whose interval is corrected to start a week earlier, a relationship whose
+ * approval date moves, an ownership row re-dated — each still covers the
+ * instant, still conflicts, still reports the same id under the same code, and
+ * is no longer the evidence the reviewer looked at.
+ *
+ * Nothing in this build can produce that: every canonical write starts its
+ * interval at `now` and no record's effective dates can be changed after the
+ * fact. The milestone that adds historical authority correction is exactly the
+ * thing that makes it producible, and it MUST NOT ship without closing this:
+ *
+ *   A finding expires when the EFFECTIVE EVIDENCE changes, not only when the
+ *   record ids do.
+ *
+ * Which means the comparison has to move from ids to what the correction
+ * milestone gives those records — the effective interval each one contributed
+ * to the refusal, or the revision identity of the correction that last changed
+ * it. Both are the registry's to publish alongside the refusal; neither is a
+ * copy of a relationship or a lease kept over here. Until then this comparison
+ * is the strongest one the available facts support, and saying so is the point
+ * of this note.
  */
 function stands(
   review: AttributionReview | undefined,

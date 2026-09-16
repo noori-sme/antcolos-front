@@ -674,6 +674,12 @@ export interface AttributionReview {
    * that survived that swap would be a person's conclusion about evidence they
    * never saw. The ids are the evidence's own identity, held by the registry
    * that owns it; nothing here is a second copy of a relationship or a lease.
+   *
+   * An id is identity, not content. When historical authority correction
+   * arrives, a record's effective dates will be able to change while its id
+   * stays put — and a finding must expire for that too. See the note on
+   * `stands` in `fuel-propagation.ts`: it is a requirement of that milestone,
+   * not a nice-to-have.
    */
   refusalRecords: string[];
 }
