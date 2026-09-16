@@ -980,6 +980,45 @@ test("a cycle with no established carrier says so, and routes at nobody", () => 
   assert.equal(carrierEscalationsFor(MERIDIAN).some((l) => l.loopId === "loop_test"), false);
 });
 
+test("the ServiceContext wrapper is the only way application code reads the bus", async () => {
+  // `events`, `event`, `projections`, `projectionsFor` and `retry` take an
+  // organization as a STRING, because inside the bus that is all it is. A
+  // string is not an authentication, so nothing outside the propagation layer
+  // may reach them: application code goes through `lib/propagation/access.ts`,
+  // which reads the organization off the authenticated context instead.
+  //
+  // `subscribe` and `publish` are deliberately not on this list. They are the
+  // bus operating — wiring a projection, and a publisher handing over its own
+  // write — not somebody asking it for another organization's records.
+  const { readdir, readFile } = await import("node:fs/promises");
+  const root = new URL("../src/", import.meta.url);
+
+  async function walk(dir: URL): Promise<URL[]> {
+    const out: URL[] = [];
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const child = new URL(entry.name + (entry.isDirectory() ? "/" : ""), dir);
+      if (entry.isDirectory()) out.push(...await walk(child));
+      else if (/\.tsx?$/.test(entry.name)) out.push(child);
+    }
+    return out;
+  }
+
+  const guarded = /propagationBus\s*\.\s*(events|event|projections|projectionsFor|retry)\b/;
+  const offenders: string[] = [];
+  for (const file of await walk(root)) {
+    const path = file.pathname;
+    // The propagation layer itself is where these live and where the
+    // authorized wrapper calls them.
+    if (path.includes("/src/lib/propagation/")) continue;
+    if (guarded.test(await readFile(file, "utf8"))) offenders.push(path.split("/src/")[1]);
+  }
+
+  assert.deepEqual(
+    offenders, [],
+    "these reach the bus's string-scoped methods directly instead of the authorized wrapper",
+  );
+});
+
 test("the derivation is a pure read: asking twice changes nothing", () => {
   const seededRows = meterReadings(TRUCK_IDS.nl107).length;
   const first = meterFactScopeAt({

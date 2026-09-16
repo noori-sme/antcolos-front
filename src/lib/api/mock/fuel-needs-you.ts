@@ -3,7 +3,9 @@ import type {
   NeedsYouSeverity, PermissionKey,
 } from "@/types";
 import { countableMileage, countableTransactions } from "@/lib/fuel/economy";
-import { FUEL_FLAG_LABEL, MILEAGE_FLAG_LABEL } from "@/lib/fuel/labels";
+import {
+  FUEL_FLAG_DESCRIPTION, FUEL_FLAG_LABEL, MILEAGE_FLAG_LABEL,
+} from "@/lib/fuel/labels";
 import {
   isPeriodFinished, isQuarterFinished, periodLabel, quarterOf, quarterDueDate, yearOf,
 } from "@/lib/fuel/periods";
@@ -158,8 +160,14 @@ function suspiciousItem(organizationId: string, t: FuelTransaction, flags: strin
       reason: flags
         .map((f) => FUEL_FLAG_LABEL[f as keyof typeof FUEL_FLAG_LABEL] ?? f)
         .join(" · "),
-      detail:
+      // Each flag's own sentence, then the standing note. A person acting on
+      // this needs to know what the check actually found — including, for an
+      // unestablished carrier, that the odometer on the receipt did not reach
+      // the Equipment Meter Ledger and the purchase kept it either way.
+      detail: [
+        ...flags.map((f) => FUEL_FLAG_DESCRIPTION[f as keyof typeof FUEL_FLAG_DESCRIPTION]).filter(Boolean),
         "These are arithmetic checks, not an accusation and not fraud detection. Somebody looks, and either accepts the purchase or corrects it.",
+      ].join(" "),
       entity: {
         kind: "fuel_transaction",
         id: t.id,

@@ -61,7 +61,7 @@ export const FUEL_FLAG_DESCRIPTION: Record<FuelTransactionFlag, string> = {
   price_out_of_band: "Far from what the rest of the fleet paid that week. Often a mis-keyed price, occasionally a different fuel.",
   possible_duplicate: "Same truck, same moment, same amount as an existing purchase. A person decides which one is real.",
   jurisdiction_outside_travel: "Fuel was bought in a jurisdiction where no miles are recorded. Legitimate now and then, and the first thing an auditor asks about.",
-  no_active_operating_authority: "Nothing in the operating-authority history covers this moment, so responsibility could not be established.",
+  no_active_operating_authority: "Nothing in the operating-authority history covers this moment, so responsibility could not be established. Any odometer on it stayed out of the Equipment Meter Ledger, which does not hold a reading it cannot attribute — the purchase keeps the number either way.",
 };
 
 export const MILEAGE_STATE_LABEL: Record<MileageRecordState, string> = {

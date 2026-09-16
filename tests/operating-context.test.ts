@@ -104,6 +104,40 @@ test("a lease window does not open at the moment the ROW was written", () => {
   assert.equal(early.resolved, false, "a lease booked in advance covers nothing yet");
 });
 
+test("a reservation cannot put two carriers on the same instant", () => {
+  // The registry will not let two leases hold one truck, and this rule does not
+  // rely on that: if the records ever said two did, it refuses rather than
+  // choosing. A reservation is a hold, so it counts for exactly the same reason
+  // an activation does — and so it conflicts the same way.
+  const instant = "2026-03-01T10:00:00.000Z";
+  const both: OperatingLeaseLike[] = [
+    {
+      id: "lease_reserved", organizationId: "org_a", relationshipId: "rel_org_a",
+      status: "reserved", reservedAt: "2026-03-01T08:00:00.000Z",
+    },
+    {
+      id: "lease_active", organizationId: "org_b", relationshipId: "rel_org_b",
+      status: "active", reservedAt: "2026-02-01T00:00:00.000Z",
+      activatedAt: "2026-02-01T00:00:00.000Z",
+    },
+  ];
+  const clash = at(instant, { leases: both, relationships: [rel("org_a"), rel("org_b")] });
+  assert.equal(clash.resolved, false);
+  assert.ok(!clash.resolved && clash.code === "conflicting_leases");
+  assert.ok(!clash.resolved && clash.records.includes("lease_reserved"));
+  assert.ok(!clash.resolved && clash.records.includes("lease_active"));
+
+  // And a reservation alone answers with exactly one carrier, even while
+  // another carrier is approved and eligible on the same truck.
+  const alone = at(instant, {
+    leases: [both[0]],
+    relationships: [rel("org_a"), rel("org_b")],
+  });
+  assert.ok(alone.resolved);
+  assert.equal(alone.operatingCarrierOrganizationId, "org_a");
+  assert.equal(alone.lease?.id, "lease_reserved");
+});
+
 /* -------------------------------------------------------------------------- */
 /* 2. A window is half-open                                                    */
 /* -------------------------------------------------------------------------- */
