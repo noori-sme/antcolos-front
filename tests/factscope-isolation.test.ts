@@ -5,7 +5,8 @@ import {
   type ContributeMeterReadingInput,
 } from "@/lib/api/mock/meter-ledger";
 import {
-  buildDomainEvent, EVENT_SCOPE_MATRIX, EventScopeRefusedError, LOAD_FINALIZED_VERSION,
+  buildDomainEvent, EVENT_SCOPE_MATRIX, EventScopeRefusedError,
+  FUEL_TRANSACTION_CONFIRMED_VERSION, LOAD_FINALIZED_VERSION,
   METER_READING_RECORDED_VERSION, meterFactScopeAt, propagationBus, resetPropagationBus,
 } from "@/lib/propagation";
 import {
@@ -19,9 +20,13 @@ import {
 } from "@/lib/api/mock/trailer-registry";
 import { resolveOperatingContextAt } from "@/lib/fleet/operating-context";
 import { mockFleetService } from "@/lib/api/mock/fleet-operations";
+import { mockFuelService } from "@/lib/api/mock/fuel";
+import { resetFuelStore } from "@/lib/api/mock/fuel-store";
 import { resetFleetTelemetry } from "@/lib/api/mock/fleet-telemetry";
 import { recordMeterReading, resetMaintenanceRegistry } from "@/lib/api/mock/maintenance-registry";
-import { ctxFor, serviceContext } from "./helpers.ts";
+import { retryDistribution } from "@/lib/api/mock/rate-confirmation";
+import { MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
+import { ALL_PERMISSIONS, ctxFor, serviceContext } from "./helpers.ts";
 import type { ActorRef, DomainEventKind, FactScope } from "@/types";
 
 /**
@@ -104,6 +109,7 @@ test.beforeEach(() => {
   resetMaintenanceRegistry();
   resetFleetTelemetry();
   resetMeterLedger();
+  resetFuelStore();
   resetPropagationBus();
   n = 0;
 });
@@ -172,7 +178,7 @@ test("NL-104: the owner's relationship wins over a second approved carrier", asy
     equipmentId: TRUCK_IDS.nl104,
     scope: { organizationId: BAXTER },
   })));
-  assert.equal(refused.code, "unauthorized_dispatch_workspace");
+  assert.equal(refused.code, "not_the_operating_carrier");
 });
 
 test("ownership decides the carrier-owned case, never relationship age", () => {
@@ -284,43 +290,140 @@ test("a truck reading carrying a trailer lease id is refused outright", async ()
 /* 3. Recording is not operating                                               */
 /* -------------------------------------------------------------------------- */
 
-test("a dispatcher recording telemetry does not become the operating carrier", async () => {
-  // Meridian dispatches Baxter's A-12 and can see it in its own fleet, so it
-  // really can record a reading on it. Before A6 the reading was written down
-  // as Meridian's, with Meridian as the carrier of a truck it neither owns nor
-  // runs, and Meridian could then read the whole history back.
-  const meridian = serviceContext("mem_meridian_dispatcher");
-  await mockFleetService.recordTelemetry(meridian, {
+test("a dispatcher recording telemetry is refused BEFORE anything is written", async () => {
+  // Meridian dispatches Baxter's A-12 and sees it in its own fleet, and the
+  // seeded Dispatcher template carries `fleet:telemetry:record`. Neither is
+  // Baxter's consent to write Baxter's meter history, and no record in
+  // Antcolos grants that — so the command refuses.
+  //
+  // Given EVERY permission on purpose: the point is that no permission a
+  // dispatch workspace holds, and no amount of equipment visibility, adds up
+  // to the operating carrier's consent.
+  const meridian = serviceContext("mem_meridian_dispatcher", { permissions: ALL_PERMISSIONS });
+  const seeded = meterReadings(TRUCK_IDS.mdA12).length;
+
+  const error = await refusal(() => mockFleetService.recordTelemetry(meridian, {
     assetKind: "truck",
     assetId: TRUCK_IDS.mdA12,
     odometerMiles: 390_000,
-  });
+  }));
+  assert.equal(error.code, "not_the_operating_carrier");
 
-  const baxterSees = propagationBus.events(BAXTER)
-    .filter((e) => e.subjectId === TRUCK_IDS.mdA12);
-  assert.equal(baxterSees.length, 1, "the reading is Baxter's");
-  assert.equal(baxterSees[0].scope.organizationId, BAXTER);
-  assert.equal(baxterSees[0].scope.carrierOrganizationId, BAXTER);
-  assert.equal(baxterSees[0].scope.dispatchOrganizationId, MERIDIAN,
-    "and Meridian is on the record as the workspace that recorded it");
-  assert.equal(baxterSees[0].actor.membershipId, "mem_meridian_dispatcher");
-
-  // Being named on the fact is not a reason to be shown it.
+  // Nothing partially succeeded: no telemetry row, no ledger row, no event,
+  // for either organization.
+  const detail = await mockFleetService.asset(meridian, "truck", TRUCK_IDS.mdA12);
+  assert.equal(
+    detail.telemetryHistory.filter((r) => r.odometerMiles === 390_000).length, 0,
+    "the telemetry row was not written either",
+  );
+  assert.equal(meterReadings(TRUCK_IDS.mdA12).length, seeded);
+  assert.equal(propagationBus.events(BAXTER).length, 0);
   assert.equal(propagationBus.events(MERIDIAN).length, 0);
   assert.equal(propagationBus.projections(MERIDIAN).length, 0);
 });
 
-test("a dispatch grant from the WRONG carrier authorizes nothing", async () => {
-  // Baxter handed Summit dispatch access to unit 107 — a truck Northline is
-  // running under its own operating lease. Both records are genuine and they
-  // disagree, and the grant Summit holds is not from the carrier operating it.
+test("the dispatcher keeps everything that is not writing somebody's meters", async () => {
+  // The refusal is narrow on purpose. A dispatch workspace still sees the
+  // equipment it dispatches and still records where a truck is — what it
+  // cannot do is write the carrier's odometer.
+  const meridian = serviceContext("mem_meridian_dispatcher", { permissions: ALL_PERMISSIONS });
+
+  const rows = await mockFleetService.equipment(meridian);
+  assert.ok(
+    rows.some((r) => r.assetId === TRUCK_IDS.mdA12),
+    "Baxter's A-12 is still in Meridian's fleet",
+  );
+
+  const reading = await mockFleetService.recordTelemetry(meridian, {
+    assetKind: "truck",
+    assetId: TRUCK_IDS.mdA12,
+    location: { city: "Allentown", state: "PA" },
+  });
+  assert.ok(reading.id, "a location-only submission still lands");
+});
+
+test("the operating carrier's own telemetry still writes both rows", async () => {
+  // The same command, from the carrier that actually runs the truck. This is
+  // what must not have been broken by closing the door on everybody else.
+  const northline = serviceContext("mem_northline_owner");
+  const before = meterReadings(TRUCK_IDS.nl104).length;
+
+  const reading = await mockFleetService.recordTelemetry(northline, {
+    assetKind: "truck",
+    assetId: TRUCK_IDS.nl104,
+    odometerMiles: 900_000,
+  });
+
+  assert.equal(reading.odometerMiles, 900_000);
+  assert.equal(meterReadings(TRUCK_IDS.nl104).length, before + 1);
+  const published = propagationBus.events(NORTHLINE)
+    .filter((e) => e.subjectId === TRUCK_IDS.nl104);
+  assert.equal(published.length, 1);
+  assert.equal(published[0].scope.organizationId, NORTHLINE);
+  assert.equal(published[0].scope.dispatchOrganizationId, undefined,
+    "and no dispatch workspace is named on it");
+});
+
+test("a fuel purchase by a dispatch workspace refuses the odometer, not the receipt", async () => {
+  const meridian = serviceContext("mem_meridian_dispatcher", { permissions: ALL_PERMISSIONS });
+  const purchase = {
+    truckId: TRUCK_IDS.mdA12,
+    purchasedAt: hoursAgo(3),
+    location: { jurisdiction: "PA", merchantName: "Pilot Allentown" },
+    fuelType: "diesel" as const,
+    gallonsThousandths: 100_000,
+    pricePerGallonMills: 4_100,
+    totalCostCents: 41_000,
+  };
+
+  const error = await refusal(() => mockFuelService.recordTransaction(meridian, {
+    ...purchase, odometerMiles: 391_000,
+  }));
+  assert.equal(error.code, "not_the_operating_carrier");
+
+  // And the receipt itself was not written. A refusal that left a purchase on
+  // file with no odometer would be a worse outcome than either answer.
+  const after = await mockFuelService.listTransactions(meridian);
+  assert.equal(
+    after.filter((t) => t.odometerMiles === 391_000).length, 0,
+    "no transaction was stored",
+  );
+
+  // The same purchase with no odometer on it writes nothing to anybody's meter
+  // history, so it is not this rule's business and still lands.
+  const ok = await mockFuelService.recordTransaction(meridian, purchase);
+  assert.equal(ok.organizationId, MERIDIAN);
+});
+
+test("no dispatch grant authorizes a meter write, from any carrier", async () => {
+  // Baxter handed Summit dispatch access to unit 107 — a truck Northline runs
+  // under its own operating lease. Both records are genuine and they disagree.
+  // Under A6 the disagreement does not need resolving to answer this: neither
+  // grant would have authorized the write.
   const refused = await refusal(() => contributeAndPublish(contribution({
     equipmentId: TRUCK_IDS.nl107,
     scope: { organizationId: "org_summit" },
   })));
-  assert.equal(refused.code, "unauthorized_dispatch_workspace");
+  assert.equal(refused.code, "not_the_operating_carrier");
+
+  // And Summit's grant on unit 111 is from Northline, the carrier that really
+  // does operate it — still no.
+  const alsoRefused = await refusal(() => contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.nl111,
+    scope: { organizationId: "org_summit" },
+  })));
+  assert.equal(alsoRefused.code, "not_the_operating_carrier");
+
   assert.equal(propagationBus.events("org_summit").length, 0);
-  assert.equal(propagationBus.events(NORTHLINE).length, 0, "and nothing was published for anybody");
+  assert.equal(propagationBus.events(NORTHLINE).length, 0);
+});
+
+test("naming a dispatch workspace on a reading is refused outright", async () => {
+  const refused = await refusal(() => contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.mdA12,
+    scope: { organizationId: BAXTER, dispatchOrganizationId: MERIDIAN },
+  })));
+  assert.equal(refused.code, "dispatch_write_not_authorized");
 });
 
 test("a caller cannot name a carrier the canonical records disagree with", async () => {
@@ -584,37 +687,174 @@ test("a load event cannot carry an equipment operating lease id", async () => {
   );
 });
 
-test("every event kind has an explicit scope rule and none of them is a wildcard", () => {
+test("the matrix describes the rules that are actually enforced", () => {
   const kinds: DomainEventKind[] = [
     "load.finalized", "fuel_transaction.confirmed", "equipment_meter.reading_recorded",
   ];
   for (const kind of kinds) {
     const rule = EVENT_SCOPE_MATRIX[kind];
     assert.ok(rule, `${kind} has a rule`);
-    assert.ok(rule.note.length > 40, `${kind} says why, in the domain's words`);
-    // Named grant types only. "any relationship", "any share" or a catch-all
-    // would make the matrix a rubber stamp.
-    for (const grant of rule.crossOrganizationWrite ?? []) {
-      assert.ok(
-        grant === "TruckDispatchAccess" || grant === "TrailerDispatchAccess",
-        `${kind} names a canonical grant type, not a category`,
-      );
-    }
+    assert.ok(rule.writeRule.length > 40, `${kind} says what is enforced on the way in`);
+    assert.ok(rule.readRule.length > 20, `${kind} says what is enforced on the way out`);
+    // No canonical grant delegates a cross-organization write on ANY kind
+    // today. Naming one here would be a claim the records do not support.
+    assert.equal(
+      rule.crossOrganizationWrite, null,
+      `${kind} names no cross-organization write grant`,
+    );
   }
 
-  // The kinds that are not about equipment delegate no cross-organization write
-  // at all, and carry no lease reference.
-  assert.equal(EVENT_SCOPE_MATRIX["load.finalized"].crossOrganizationWrite, null);
-  assert.equal(EVENT_SCOPE_MATRIX["fuel_transaction.confirmed"].crossOrganizationWrite, null);
   assert.equal(EVENT_SCOPE_MATRIX["load.finalized"].leaseReference, "none");
   assert.equal(EVENT_SCOPE_MATRIX["fuel_transaction.confirmed"].leaseReference, "none");
   assert.equal(
     EVENT_SCOPE_MATRIX["equipment_meter.reading_recorded"].leaseReference, "by_equipment_kind",
   );
 
-  // And the matrix covers exactly the kinds that exist: a fourth one cannot be
-  // published until somebody decides its rule.
+  // Exhaustive: a fourth kind cannot be published until somebody decides its
+  // rule.
   assert.deepEqual(Object.keys(EVENT_SCOPE_MATRIX).sort(), [...kinds].sort());
+});
+
+/* -------------------------------------------------------------------------- */
+/* 7. Authority is checked when the write happens                              */
+/* -------------------------------------------------------------------------- */
+
+test("a carrier that has stopped operating cannot backdate into the history", async () => {
+  // Northline runs unit 118 today and records a reading two hours ago.
+  const during = await contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.nl118,
+    readAt: hoursAgo(2),
+    scope: { organizationId: NORTHLINE },
+  }));
+  assert.equal(during.event.scope.organizationId, NORTHLINE);
+
+  const northline = truckContextFrom(serviceContext("mem_northline_owner"));
+  const context = operatingContextAt(TRUCK_IDS.nl118, hoursAgo(2));
+  assert.ok(context.resolved);
+  await endCarrierRelationship(context.relationship.id, "Owner took the truck back.", northline);
+
+  // A reading dated INSIDE the window Northline really did operate it is still
+  // refused, because the authority to write is a question about now. Attribution
+  // looks at `occurredAt`; permission does not.
+  const seeded = meterReadings(TRUCK_IDS.nl118).length;
+  const refused = await refusal(() => contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.nl118,
+    readAt: hoursAgo(3),
+    scope: { organizationId: NORTHLINE },
+  })));
+  assert.equal(refused.code, "write_authority_ended");
+  assert.equal(meterReadings(TRUCK_IDS.nl118).length, seeded, "nothing was appended");
+
+  // And what was published while it did operate is untouched.
+  assert.equal(during.event.scope.organizationId, NORTHLINE);
+  assert.equal(propagationBus.events(NORTHLINE).length, 1);
+});
+
+/* -------------------------------------------------------------------------- */
+/* 8. An event id is not a capability                                          */
+/* -------------------------------------------------------------------------- */
+
+test("another organization's event id reads back nothing", async () => {
+  const { event } = await contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.nl107,
+    scope: { organizationId: NORTHLINE },
+  }));
+
+  // The owner sees its own distribution.
+  assert.ok(propagationBus.projectionsFor(NORTHLINE, event.eventId).length > 0);
+
+  // Holding the id is not holding the right. An id from another organization
+  // answers exactly as an id that was never published.
+  assert.deepEqual(propagationBus.projectionsFor(BAXTER, event.eventId), []);
+  assert.deepEqual(propagationBus.projectionsFor(MERIDIAN, event.eventId), []);
+  assert.equal(propagationBus.event(BAXTER, event.eventId), undefined);
+  assert.deepEqual(propagationBus.projectionsFor(NORTHLINE, "dev_made.up:v1:nothing"), []);
+});
+
+test("another organization cannot re-run a projection by knowing its event id", async () => {
+  const { event } = await contributeAndPublish(contribution({
+    equipmentId: TRUCK_IDS.nl107,
+    scope: { organizationId: NORTHLINE },
+  }));
+  const [record] = propagationBus.projectionsFor(NORTHLINE, event.eventId);
+  assert.ok(record, "there is a projection to try to re-run");
+  const attemptsBefore = record.attempts;
+
+  const stolen = await propagationBus.retry(BAXTER, event.eventId, record.subscriberId);
+  assert.equal(stolen, undefined, "the retry did not happen");
+  assert.equal(
+    propagationBus.projectionsFor(NORTHLINE, event.eventId)[0].attempts, attemptsBefore,
+    "and the projection did not run again",
+  );
+});
+
+test("a rate confirmation's distribution cannot be re-run after permission loss", async () => {
+  // `retryDistribution` re-runs a projection, which WRITES into whatever module
+  // it targets. It needs the same authority that distributing the rate
+  // confirmation needed in the first place.
+  const workflow = { distribution: [{ key: "driver_workflow" }] } as never;
+  const withoutSigning = {
+    ...serviceContext("mem_northline_owner", {
+      permissions: new Set([...ALL_PERMISSIONS].filter((k) => k !== "loads:create")),
+    }),
+    organization: MOCK_ORGANIZATIONS.find((o) => o.id === NORTHLINE)!,
+    membership: MOCK_MEMBERSHIPS.find((m) => m.id === "mem_northline_owner")!,
+  };
+
+  const out = await retryDistribution(withoutSigning, workflow, "dev_anything", "driver_workflow");
+  assert.deepEqual(out, [{ key: "driver_workflow" }], "the stored distribution came back untouched");
+});
+
+/* -------------------------------------------------------------------------- */
+/* 9. An empty carrier is not a carrier                                        */
+/* -------------------------------------------------------------------------- */
+
+test("an event carrying an empty carrier organization is refused", async () => {
+  // `resolveAttribution` answers `basis: "unresolved"` with an empty carrier id
+  // when nothing covers a purchase. That is an honest state for the fuel record
+  // and a lie on an event, where every reader compares the field.
+  const event = buildDomainEvent({
+    kind: "fuel_transaction.confirmed",
+    version: FUEL_TRANSACTION_CONFIRMED_VERSION,
+    scope: { organizationId: NORTHLINE, carrierOrganizationId: "" },
+    subjectId: "fuel_test",
+    subjectKind: "fuel_transaction",
+    occurredAt: hoursAgo(1),
+    actor: ACTOR,
+    idempotencyKey: "a6:empty-carrier",
+    provenance: {
+      module: "fuel", adapter: "mock:test", mock: true,
+      observedAt: hoursAgo(1), receivedAt: hoursAgo(1),
+    },
+    payload: {},
+  });
+
+  await assert.rejects(
+    () => propagationBus.publish(event),
+    (error: Error) => error instanceof EventScopeRefusedError
+      && error.code === "empty_carrier_organization",
+  );
+
+  // Absent is fine: it says "nobody established this", which is true.
+  const honest = buildDomainEvent({
+    ...({
+      kind: "fuel_transaction.confirmed" as const,
+      version: FUEL_TRANSACTION_CONFIRMED_VERSION,
+      scope: { organizationId: NORTHLINE },
+      subjectId: "fuel_test_2",
+      subjectKind: "fuel_transaction",
+      occurredAt: hoursAgo(1),
+      actor: ACTOR,
+      idempotencyKey: "a6:absent-carrier",
+      provenance: {
+        module: "fuel" as const, adapter: "mock:test", mock: true,
+        observedAt: hoursAgo(1), receivedAt: hoursAgo(1),
+      },
+      payload: {},
+    }),
+  });
+  const published = await propagationBus.publish(honest);
+  assert.equal(published.duplicate, false);
 });
 
 test("the derivation is a pure read: asking twice changes nothing", () => {

@@ -2189,37 +2189,6 @@ export function operatingContextAt(
   });
 }
 
-/**
- * The dispatch grant that let this dispatch workspace act on this truck at this
- * instant, if it had one.
- *
- * Read at a moment in time for the same reason as everything else here: a
- * dispatcher who recorded an odometer in March was authorized in March, and a
- * grant ended since does not retroactively make that record unauthorized.
- *
- * A grant proves the dispatch workspace could ACT. It never makes them the
- * operating carrier, and it is not a read grant for anybody else's history.
- */
-export function truckDispatchGrantAt(
-  truckId: string,
-  dispatchOrganizationId: string,
-  instant: string,
-): TruckDispatchAccess | undefined {
-  const ms = Date.parse(instant);
-  if (Number.isNaN(ms)) return undefined;
-  return db().dispatchAccess.find((d) => {
-    if (d.truckId !== truckId) return false;
-    if (d.dispatchOrganizationId !== dispatchOrganizationId) return false;
-    // A grant that is suspended or pending says nothing about a past moment, so
-    // only a grant that is live or was properly ended can prove one.
-    if (d.status !== "active" && !(d.status === "ended" && d.endedAt)) return false;
-    const from = Date.parse(d.startedAt);
-    if (Number.isNaN(from) || ms < from) return false;
-    if (!d.endedAt) return true;
-    const to = Date.parse(d.endedAt);
-    return Number.isNaN(to) ? false : ms < to;
-  });
-}
 
 /** The carrier that currently operates the truck under its own authority. */
 export function truckOperatingCarrier(

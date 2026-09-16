@@ -756,30 +756,6 @@ export function trailerOperatingContextAt(
   });
 }
 
-/**
- * The dispatch grant that let this dispatch workspace act on this trailer at
- * this instant, if it had one. The truck registry's `truckDispatchGrantAt` for
- * trailers, with the same meaning: it proves they could act, never that they
- * were the carrier, and never that anybody may read anybody else's history.
- */
-export function trailerDispatchGrantAt(
-  trailerId: string,
-  dispatchOrganizationId: string,
-  instant: string,
-): TrailerDispatchAccess | undefined {
-  const ms = Date.parse(instant);
-  if (Number.isNaN(ms)) return undefined;
-  return db().dispatchAccess.find((d) => {
-    if (d.trailerId !== trailerId) return false;
-    if (d.dispatchOrganizationId !== dispatchOrganizationId) return false;
-    if (d.status !== "active" && !(d.status === "ended" && d.endedAt)) return false;
-    const from = Date.parse(d.startedAt);
-    if (Number.isNaN(from) || ms < from) return false;
-    if (!d.endedAt) return true;
-    const to = Date.parse(d.endedAt);
-    return Number.isNaN(to) ? false : ms < to;
-  });
-}
 
 export function trailerActivationStateFor(
   trailerId: string,

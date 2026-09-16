@@ -31,6 +31,7 @@ import {
 import { truckAuthorityHistory, truckIdsRelatedTo, truckUnitNumber } from "./truck-registry";
 import { mockStore } from "./store";
 import {
+  assertFuelOdometerAllowed, assertMileageOdometerAllowed,
   contributeMileageOdometer, publishFuelTransaction,
 } from "./fuel-propagation";
 
@@ -714,6 +715,16 @@ export const mockFuelService: FuelService = {
       );
     }
 
+    // The pump odometer is a meter reading, and only the carrier operating the
+    // truck may write one. Checked here so a refusal happens instead of the
+    // purchase, rather than after it is already on the ledger.
+    assertFuelOdometerAllowed({
+      organizationId: ctx.organizationId,
+      truckId: input.truckId,
+      purchasedAt: input.purchasedAt,
+      odometerMiles: input.odometerMiles,
+    });
+
     const qualification = qualifyForIfta(input.fuelType, input.location.jurisdiction);
     const id = nextFuelId("fuel");
     const load = input.loadId
@@ -781,6 +792,15 @@ export const mockFuelService: FuelService = {
     if (t.state === "duplicate" || t.state === "rejected") {
       throw new Error(`A ${t.state} purchase cannot be verified. Reopen it with a correction instead.`);
     }
+    // Re-publishing re-contributes the odometer, so the same rule applies
+    // before anything on the record changes.
+    assertFuelOdometerAllowed({
+      organizationId: ctx.organizationId,
+      truckId: t.truckId,
+      purchasedAt: t.purchasedAt,
+      odometerMiles: t.odometerMiles,
+    });
+
     const before = t.state;
     t.state = "verified";
     t.verifiedBy = ctx.actor;
@@ -859,6 +879,13 @@ export const mockFuelService: FuelService = {
     if (!original.revision.isCurrent) {
       throw new Error("This revision has already been superseded. Correct the current one.");
     }
+
+    assertFuelOdometerAllowed({
+      organizationId: ctx.organizationId,
+      truckId: original.truckId,
+      purchasedAt: input.purchasedAt ?? original.purchasedAt,
+      odometerMiles: input.odometerMiles ?? original.odometerMiles,
+    });
 
     const jurisdiction = input.location?.jurisdiction ?? original.location.jurisdiction;
     const fuelType = input.fuelType ?? original.fuelType;
@@ -1033,6 +1060,13 @@ export const mockFuelService: FuelService = {
         resolvedAt,
       );
     }
+
+    assertMileageOdometerAllowed({
+      organizationId: ctx.organizationId,
+      truckId: input.truckId,
+      travelEndedAt: input.travelEndedAt,
+      odometerEndMiles: input.odometerEndMiles,
+    });
 
     const id = nextFuelId("mil");
     const record: JurisdictionMileageRecord = {

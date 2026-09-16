@@ -6,7 +6,7 @@ import {
   buildDomainEvent, FUEL_TRANSACTION_CONFIRMED_VERSION, propagationBus,
   type FuelExtractedValues, type FuelTransactionConfirmedPayload,
 } from "@/lib/propagation";
-import { contributeAndPublish } from "./meter-ledger";
+import { assertMeterContributionAllowed, contributeAndPublish } from "./meter-ledger";
 // Side-effect import: wires every projection to the bus before anything is
 // published. A publisher with no subscribers registered would drop events.
 import "./projections";
@@ -66,6 +66,46 @@ export function fuelVerificationOf(t: FuelTransaction): FactVerification {
 }
 
 /**
+ * May this workspace record a pump odometer for this truck, at this moment?
+ *
+ * Asked by the fuel service BEFORE it writes the purchase, because the
+ * odometer reaches the meter ledger afterwards and a refusal there would leave
+ * a receipt on file with an exception instead of a reading. A purchase with no
+ * odometer on it contributes nothing, so it is not restricted by this at all —
+ * this is a rule about writing somebody's meter history, not about buying fuel.
+ */
+export function assertFuelOdometerAllowed(args: {
+  organizationId: string;
+  truckId: string;
+  purchasedAt: string;
+  odometerMiles?: number;
+}): void {
+  if (args.odometerMiles === undefined) return;
+  assertMeterContributionAllowed({
+    equipmentKind: "truck",
+    equipmentId: args.truckId,
+    readAt: args.purchasedAt,
+    organizationId: args.organizationId,
+  });
+}
+
+/** The same question for the odometer at the end of a jurisdiction leg. */
+export function assertMileageOdometerAllowed(args: {
+  organizationId: string;
+  truckId: string;
+  travelEndedAt: string;
+  odometerEndMiles?: number;
+}): void {
+  if (args.odometerEndMiles === undefined) return;
+  assertMeterContributionAllowed({
+    equipmentKind: "truck",
+    equipmentId: args.truckId,
+    readAt: args.travelEndedAt,
+    organizationId: args.organizationId,
+  });
+}
+
+/**
  * Contribute the pump odometer to the canonical meter ledger.
  *
  * Idempotent on the transaction's own id, so re-publishing a revision cannot
@@ -89,10 +129,10 @@ export async function contributeFuelOdometer(
     readAt: t.purchasedAt,
     source: "fuel_receipt",
     contributor: "fuel",
-    scope: {
-      organizationId: t.organizationId,
-      carrierOrganizationId: t.attribution.carrierOrganizationId,
-    },
+    // The recording workspace only. Who was operating the truck when the pump
+    // was read is derived by `meterFactScopeAt` from the truck registry, which
+    // also refuses the contribution outright when this workspace was not it.
+    scope: { organizationId: t.organizationId },
     verification: fuelVerificationOf(t),
     recordedBy: actor,
     note: `Read at the pump: ${t.location.merchantName ?? t.location.jurisdiction}.`,
@@ -117,10 +157,7 @@ export async function contributeMileageOdometer(
     readAt: record.travelEndedAt,
     source: "driver_report",
     contributor: "fuel",
-    scope: {
-      organizationId: record.organizationId,
-      carrierOrganizationId: record.attribution.carrierOrganizationId,
-    },
+    scope: { organizationId: record.organizationId },
     verification: record.state === "verified" ? "confirmed" : "pending",
     recordedBy: actor,
     note: `End of ${record.jurisdiction} leg.`,
@@ -153,9 +190,24 @@ export async function publishFuelTransaction(
   const event = buildDomainEvent<FuelTransactionConfirmedPayload>({
     kind: "fuel_transaction.confirmed",
     version: FUEL_TRANSACTION_CONFIRMED_VERSION,
+    /*
+     * The carrier comes from the transaction's own attribution snapshot —
+     * `resolveAttribution` decided it at record time from the truck's authority
+     * history, and re-deriving it now from today's relationships is the mistake
+     * that model exists to prevent.
+     *
+     * When that resolution found nothing, the snapshot holds an EMPTY carrier
+     * id and says so in `basis: "unresolved"`. The field is then left off
+     * entirely rather than published as "": a fuel purchase whose carrier
+     * nobody could establish is flagged and put in front of a person by the
+     * fuel module, and an empty string on the event would turn that honest gap
+     * into a value every reader compares against.
+     */
     scope: {
       organizationId: t.organizationId,
-      carrierOrganizationId: t.attribution.carrierOrganizationId,
+      ...(t.attribution.carrierOrganizationId
+        ? { carrierOrganizationId: t.attribution.carrierOrganizationId }
+        : {}),
     },
     subjectId: t.id,
     subjectKind: "fuel_transaction",

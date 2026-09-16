@@ -4,7 +4,8 @@ import type {
   MeterReadingFlag, MeterSourceKind, Provenance,
 } from "@/types";
 import {
-  buildDomainEvent, meterFactScopeAt, METER_READING_RECORDED_VERSION, propagationBus,
+  buildDomainEvent, meterFactScopeAt, meterPublicationRefusal,
+  METER_READING_RECORDED_VERSION, propagationBus,
   type MeterReadingRecordedPayload,
 } from "@/lib/propagation";
 import { ambientCorrelationId } from "@/lib/audit/correlation";
@@ -215,6 +216,36 @@ function append(
   ledger.byIdempotencyKey.set(input.idempotencyKey, reading.readingId);
 
   return { reading, duplicate: false };
+}
+
+/**
+ * May this workspace contribute a reading for this equipment, right now?
+ *
+ * The same rule `contributeAndPublish` enforces, asked BEFORE a command writes
+ * a record of its own. A fuel purchase, a jurisdiction leg and a telemetry
+ * submission each write their own row first and contribute the odometer
+ * second; without this the refusal would land after that row was already
+ * stored, leaving a receipt on file whose odometer never reached the ledger
+ * and an error the person cannot act on.
+ *
+ * Throws `EventScopeRefusedError`, with the reason in the words of the domain.
+ * Reads the registries and writes nothing.
+ */
+export function assertMeterContributionAllowed(input: {
+  equipmentKind: MeterEquipmentKind;
+  equipmentId: string;
+  /** When the meter was read. Defaults to now, like the contribution itself. */
+  readAt?: string;
+  /** The workspace that wants to record it. */
+  organizationId: string;
+}): void {
+  const refusal = meterPublicationRefusal({
+    equipmentKind: input.equipmentKind,
+    equipmentId: input.equipmentId,
+    occurredAt: input.readAt ?? new Date().toISOString(),
+    asserted: { organizationId: input.organizationId },
+  });
+  if (refusal) throw refusal;
 }
 
 /**

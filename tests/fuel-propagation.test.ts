@@ -69,7 +69,7 @@ test("one receipt produces one canonical transaction and one event", async () =>
   assert.equal(events[0].version, 1);
 
   // Every subscriber ran, exactly once, and said something.
-  const rows = propagationBus.projectionsFor(events[0].eventId);
+  const rows = propagationBus.projectionsFor(ORG, events[0].eventId);
   const ids = rows.map((r) => r.subscriberId);
   for (const expected of [
     "fuel_cost", "fuel_economy", "ifta_preparation", "fuel_accounting", "fuel_reports",
@@ -86,7 +86,7 @@ test("one receipt produces one canonical transaction and one event", async () =>
   const replay = await propagationBus.publish(events[0]);
   assert.equal(replay.duplicate, true);
   assert.deepEqual(
-    propagationBus.projectionsFor(events[0].eventId).map((r) => r.attempts),
+    propagationBus.projectionsFor(ORG, events[0].eventId).map((r) => r.attempts),
     rows.map(() => 1),
   );
 });
@@ -130,7 +130,7 @@ test("a correction keeps both values and does not duplicate the transaction", as
 
   // The projection spells the difference out rather than quietly replacing it.
   const cost = propagationBus
-    .projectionsFor(corrected.eventId)
+    .projectionsFor(ORG, corrected.eventId)
     .find((r) => r.subscriberId === "fuel_cost")!;
   assert.match(cost.detail, /shown as 132\.400, corrected to 128\.400/);
 });
@@ -141,7 +141,7 @@ test("a purchase with no odometer cannot move fuel economy, and says so", async 
     .events(ORG)
     .find((e) => e.kind === "fuel_transaction.confirmed" && e.subjectId === t.id)!;
   const economy = propagationBus
-    .projectionsFor(event.eventId)
+    .projectionsFor(ORG, event.eventId)
     .find((r) => r.subscriberId === "fuel_economy")!;
   assert.equal(economy.state, "needs_review");
   assert.match(economy.reason ?? "", /odometer/i);
@@ -184,7 +184,7 @@ test("a receipt whose odometer runs backwards is kept as evidence, never accepte
     .filter((e) => e.kind === "equipment_meter.reading_recorded")
     .find((e) => (e.payload as { odometerMiles?: number }).odometerMiles === 98_000)!;
   const row = propagationBus
-    .projectionsFor(event.eventId)
+    .projectionsFor(ORG, event.eventId)
     .find((r) => r.subscriberId === "maintenance_meter")!;
   assert.equal(row.state, "needs_review");
   assert.match(row.reason ?? "", /backwards|already on file/i);

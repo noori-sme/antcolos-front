@@ -710,7 +710,7 @@ export async function confirmAndSign(
     },
   });
 
-  workflow.distribution = distributionFrom(finalized.eventId);
+  workflow.distribution = distributionFrom(ctx, finalized.eventId);
   const counts = summarizeDistribution(workflow.distribution);
   record(
     workflow, "distributed", "Antcolos",
@@ -727,8 +727,11 @@ export async function confirmAndSign(
  * its reason, instead of the screen claiming a module was updated because the
  * code meant to update it.
  */
-export function distributionFrom(eventId: string): DistributionOutcome[] {
-  return propagationBus.projectionsFor(eventId).map((p) => ({
+export function distributionFrom(
+  ctx: MtLoopContext,
+  eventId: string,
+): DistributionOutcome[] {
+  return propagationBus.projectionsFor(ctx.organizationId, eventId).map((p) => ({
     key: p.subscriberId,
     label: p.subscriberLabel,
     state: p.state,
@@ -761,12 +764,18 @@ function summarizeDistribution(rows: DistributionOutcome[]): string {
  * rather than from an optimistic guess.
  */
 export async function retryDistribution(
+  ctx: MtLoopContext,
   workflow: RateConWorkflow,
   eventId: string,
   subscriberId: string,
 ): Promise<DistributionOutcome[]> {
-  await propagationBus.retry(eventId, subscriberId);
-  workflow.distribution = distributionFrom(eventId);
+  // Re-running a projection writes into the module it targets, so it needs the
+  // same authority as distributing the rate confirmation did in the first
+  // place — and the event has to be this organization's. An event id read off a
+  // screen, an audit line or a URL is not a key to somebody else's workflow.
+  if (!maySign(ctx)) return workflow.distribution ?? [];
+  await propagationBus.retry(ctx.organizationId, eventId, subscriberId);
+  workflow.distribution = distributionFrom(ctx, eventId);
   return workflow.distribution;
 }
 
