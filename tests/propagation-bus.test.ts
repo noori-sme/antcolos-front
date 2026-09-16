@@ -452,8 +452,14 @@ test("events and projections never cross the organization boundary", async () =>
   assert.equal(propagationBus.events("org_test").length, 1);
   assert.equal(propagationBus.events("org_other").length, 0);
   assert.equal(propagationBus.projections("org_other").length, 0);
+
+  // The id of the event that WAS published — `event()` builds it at v1. Asserted
+  // present for its own organization first, so that the absence below is about
+  // the boundary rather than about having asked for an id nobody ever minted.
+  const published = domainEventId("load.finalized", 1, "k7");
+  assert.ok(propagationBus.event("org_test", published));
   assert.equal(
-    propagationBus.event("org_other", domainEventId("load.finalized", "k7")),
+    propagationBus.event("org_other", published),
     undefined,
     "another organization's event is absent, not forbidden",
   );
