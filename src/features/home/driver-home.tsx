@@ -4,6 +4,8 @@ import {
   ArrowRight, Clock3, MapPin, Package, Upload,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { LoadStatusBadge } from "@/components/common/status-badge";
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +19,9 @@ import { destinationStop, originStop } from "@/types";
 import { CATEGORY_LABEL } from "@/types";
 import { useHomeSummary } from "./hooks";
 import { ProfileChecklistBanner } from "@/features/driver/profile-checklist-banner";
+import { driverHomeMode } from "@/features/driver/home-mode";
+import { UnattachedDriverHome } from "@/features/driver/unattached-home";
+import { useDriverData } from "@/features/driver/use-driver-data";
 import {
   ActiveTripCard, ProposalsWaitingCard,
 } from "@/features/driver-workflow/home-cards";
@@ -28,17 +33,44 @@ import {
  *
  * Milestone 2 scope: this is the read + triage surface. Status transitions and
  * document upload land with the driver portal milestone.
+ *
+ * A driver with no carrier — one who signed up on their own and has not been
+ * invited anywhere yet — gets the unattached version of this same home. Every
+ * card below belongs to a carrier relationship, so for them there is nothing
+ * here that is honestly theirs to see.
  */
 export function DriverHomeScreen() {
   const { user } = useSession();
-  const { organization } = useActiveMembership();
+  const { organization, membership } = useActiveMembership();
+  const router = useRouter();
   const summary = useHomeSummary();
+  const driver = useDriverData();
   const now = useNow();
 
   const tz = organization?.timeZone ?? "UTC";
   const firstName = user.displayName.split(" ")[0];
+  const unfinished = !driver.loading && !driver.profile && !membership;
+
+  useEffect(() => {
+    if (unfinished) router.replace("/onboarding");
+  }, [unfinished, router]);
+
+  if (driver.loading) return <LoadingSkeleton rows={4} />;
+
+  // Nothing at all: no carrier to draw a dashboard from and no driver profile
+  // to show instead. That person has not finished setting up, so they are sent
+  // to do it rather than left on a skeleton that will never resolve.
+  if (!driver.profile && !membership) return <LoadingSkeleton rows={4} />;
+
+  // Decided before the carrier summary is consulted at all: a driver with no
+  // carrier has no carrier query worth waiting for, and must never be held on a
+  // skeleton by one.
+  if (driver.profile && driverHomeMode(driver.profile, driver.relationships) === "unattached") {
+    return <UnattachedDriverHome firstName={firstName} profile={driver.profile} />;
+  }
 
   if (summary.isPending) return <LoadingSkeleton rows={4} />;
+
   if (summary.isError) {
     return <ErrorState description={summary.error.message} onRetry={() => summary.refetch()} />;
   }

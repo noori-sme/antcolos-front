@@ -1,10 +1,11 @@
 "use client";
 
-import { CircleCheck, FileText } from "lucide-react";
+import { CircleCheck, FileText, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
-import type { CarrierRelationship, DriverDocument } from "@/types";
+import type { CarrierRelationship, DocumentRequirement, DriverDocument } from "@/types";
+import { driverRequirements } from "@/lib/documents/requirements";
 import { DocumentItem } from "./document-item";
 import { ENGAGEMENT_LABEL } from "./driver-rules";
 import {
@@ -35,18 +36,23 @@ export function DocumentChecklistScreen() {
 
   if (data.loading) return <LoadingSkeleton rows={5} />;
 
-  if (!data.profile || !active) {
+  if (!data.profile) {
     return (
       <div className="space-y-section">
-        <PageHeader title="My documents" description="Paperwork your carrier needs from you." />
+        <PageHeader title="My documents" description="The paperwork that belongs to you." />
         <EmptyState
           icon={FileText}
-          title="No carrier is asking for anything yet"
-          description="Once you accept a carrier's invitation, the documents they need appear here."
+          title="You don't have a driver profile yet"
+          description="Sign up as a driver, or accept a carrier's invitation, and your documents live here."
         />
       </div>
     );
   }
+
+  // No carrier yet — but the driver's own paperwork is still theirs to supply,
+  // and supplying it now is the whole point of being able to start alone. The
+  // carrier-independent driver set is what anybody will ask for.
+  if (!active) return <OwnDocuments data={data} />;
 
   return (
     <div className="space-y-section">
@@ -82,18 +88,62 @@ export function DocumentChecklistScreen() {
   );
 }
 
+/**
+ * The driver's own paperwork, before any carrier is in the picture.
+ *
+ * Same screen, same checklist rows, same upload path — the only difference is
+ * that nobody is asking and nobody has reviewed it. These documents belong to
+ * the driver: they are kept when a carrier arrives, shown to that carrier
+ * because the driver shared them, and still here when the carrier is gone.
+ */
+function OwnDocuments({ data }: { data: ReturnType<typeof useDriverData> }) {
+  // The carrier-independent driver set — what every carrier asks a company
+  // driver for. Owner-operator paperwork depends on an engagement, which is a
+  // carrier's decision, so it is not pre-empted here.
+  const requirements = driverRequirements("company_driver");
+
+  return (
+    <div className="space-y-section">
+      <PageHeader
+        title="My documents"
+        description="Your licence, medical card and tax details — yours, and kept between carriers."
+      />
+
+      <div className="flex items-start gap-2.5 rounded-lg border border-border bg-surface-sunken px-3.5 py-3">
+        <ShieldCheck className="mt-px size-4 shrink-0 text-fg-subtle" aria-hidden />
+        <p className="text-[0.8125rem] leading-relaxed text-fg-muted">
+          No carrier has reviewed any of these. You are not working with one yet, so nothing here
+          has been approved or rejected by anybody — it is simply what you have supplied. When a
+          carrier invites you and you share these, they review the same documents; you do not
+          upload them again.
+        </p>
+      </div>
+
+      <ChecklistBody requirements={requirements} data={data} />
+    </div>
+  );
+}
+
 export function ChecklistBody({
   relationship,
+  requirements: given,
   data,
   compact,
 }: {
-  relationship: CarrierRelationship;
+  /** Absent when the driver is supplying their own paperwork with no carrier. */
+  relationship?: CarrierRelationship;
+  /** Overrides the carrier's checklist. Used for the driver's own document set. */
+  requirements?: readonly DocumentRequirement[];
   data: ReturnType<typeof useDriverData>;
   compact?: boolean;
 }) {
   const requirements = useMemo(
-    () => documentRequirements(relationship.engagementType, relationship.carrierId),
-    [relationship.engagementType, relationship.carrierId],
+    () =>
+      given
+        ?? (relationship
+          ? documentRequirements(relationship.engagementType, relationship.carrierId)
+          : []),
+    [given, relationship],
   );
   const byKey = new Map(data.documents.map((d) => [d.requirementKey, d]));
   const progress = completion(requirements, data.documents);
@@ -135,11 +185,13 @@ export function ChecklistBody({
 
   const handlers = (key: string) => ({
     onUpload: (file: File) => void upload(key, file),
+    // Submitting means "a carrier should look at this". With no carrier there
+    // is nobody to send it to, and the row says so instead of offering it.
+    onSubmit: relationship ? () => void mockSubmitDocument(key).then(patch) : undefined,
     onRemove: () => {
       void mockRemoveDocument(key);
       data.setDocuments(data.documents.filter((d) => d.requirementKey !== key));
     },
-    onSubmit: () => void mockSubmitDocument(key).then(patch),
     onExpiryChange: (value: string) => {
       const existing = data.documents.find((d) => d.requirementKey === key);
       if (!existing) return;
@@ -217,7 +269,7 @@ function ProgressPanel({
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <p className="flex items-center gap-2 text-[0.9375rem] font-semibold text-fg">
           {done ? <CircleCheck className="size-4 text-st-success" aria-hidden /> : null}
-          {done ? "Everything the carrier asked for is in" : "Complete your driver profile"}
+          {done ? "Everything asked for is in" : "Complete your driver profile"}
         </p>
         <p className="text-[0.8125rem] text-fg-muted tabular-nums">
           {progress.done} of {progress.required} required

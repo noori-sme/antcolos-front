@@ -8,7 +8,7 @@ import { BackLink, ChoiceCard } from "./controls";
 import { CarrierVerification } from "./carrier-verification";
 import { DispatchCreation } from "./dispatch-creation";
 import { IndividualDispatcherSetup } from "./individual-dispatcher";
-import { DriverNeedsInvitationScreen } from "@/features/driver/needs-invitation-screen";
+import { DriverSelfOnboarding } from "@/features/driver/self-onboarding-screen";
 import { useStageFocus } from "./use-stage-focus";
 
 type Stage = "role" | "carrier" | "driver" | "dispatch-fork" | "create-org" | "individual";
@@ -20,12 +20,11 @@ type Role = "carrier-owner" | "driver" | "dispatch";
  * A returning user never lands here: Sign In goes straight to the product,
  * because their role and organization were settled the first time.
  *
- * Three of the paths are more than a choice, so they own their own screens: a
- * carrier owner has to prove the carrier is theirs, a new dispatch organization
- * has to confirm the address carriers will hear from, and an individual
- * dispatcher has to confirm their work address. Only the driver path finishes
- * here, and it finishes by saying an invitation is needed rather than by
- * claiming anything is set up.
+ * Every path that is more than a choice owns its own screen: a carrier owner
+ * has to prove the carrier is theirs, a new dispatch organization has to
+ * confirm the address carriers will hear from, an individual dispatcher has to
+ * confirm their work address, and a driver has to confirm theirs before they
+ * get the profile that is theirs for good. None of them finishes here.
  *
  * Joining an existing dispatch organization is not offered here any more. It
  * was never something this screen could do on its own — an invitation link
@@ -50,13 +49,13 @@ export function OnboardingScreen() {
       setStage("dispatch-fork");
       return;
     }
-    // Picking "Driver" is not the same as being hired. No carrier relationship
-    // exists until a carrier's invitation is accepted, so nothing is created
-    // here and nothing claims to be finished.
+    // Picking "Driver" is not the same as being hired: the driver path creates
+    // a driver profile and only that. No carrier relationship exists until a
+    // carrier's invitation is accepted.
     setStage("driver");
   }
 
-  // These two run their own multi-step screens, headings and progress.
+  // Each of these runs its own multi-step screen, heading and progress.
   if (stage === "carrier") {
     return (
       <CarrierVerification onEnterWorkspace={enterWorkspace} onBack={() => setStage("role")} />
@@ -67,6 +66,16 @@ export function OnboardingScreen() {
       <DispatchCreation
         onEnterWorkspace={enterWorkspace}
         onBack={() => setStage("dispatch-fork")}
+      />
+    );
+  }
+  if (stage === "driver") {
+    return (
+      <DriverSelfOnboarding
+        onBack={() => setStage("role")}
+        // The driver portal they now belong in. It is the dashboard that
+        // already exists; nothing about it was built for this flow.
+        onEnterDriverPortal={() => router.push("/driver/home")}
       />
     );
   }
@@ -84,10 +93,6 @@ export function OnboardingScreen() {
       title: "How will you use Antcolos?",
       description:
         "This sets up your workspace and decides what you see first. You only answer this once.",
-    },
-    driver: {
-      title: "Joining as a driver",
-      description: "Drivers join a carrier through the carrier's invitation.",
     },
     "dispatch-fork": {
       title: "How do you dispatch?",
@@ -125,10 +130,6 @@ export function OnboardingScreen() {
             selected={role === "dispatch"}
           />
         </div>
-      ) : null}
-
-      {stage === "driver" ? (
-        <DriverNeedsInvitationScreen onBack={() => setStage("role")} />
       ) : null}
 
       {stage === "dispatch-fork" ? (

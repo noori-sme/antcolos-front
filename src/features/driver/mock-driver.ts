@@ -2,6 +2,7 @@
 
 import type {
   CarrierRelationship,
+  DocumentLink,
   DocumentRecord,
   DocumentRequirement,
   DriverDocument,
@@ -10,9 +11,10 @@ import type {
   RelationshipStatus,
 } from "@/types";
 import { driverRequirements, requirementByKey } from "@/lib/documents/requirements";
+import { isNewcomerSession } from "@/lib/session/scenarios";
 import { effectiveStatus } from "@/lib/documents/status";
 import {
-  clearDocumentsForSubjectKind, createDocument, documentInSlot, documentsForSubject,
+  addLink, clearDocumentsForSubjectKind, createDocument, documentInSlot, documentsForSubject,
   endRelationshipDocuments, recordEvent, replaceDocument, slotKey, updateDocument,
 } from "@/lib/api/mock/document-store";
 
@@ -210,19 +212,44 @@ const DRIVER_SEED_ROWS: DriverSeedRow[] = [
   { requirementKey: "northline_handbook", status: "rejected", fileName: "handbook-scan.pdf", fileType: "application/pdf", sizeBytes: 980_000, rejectionReason: "Page 4 is missing a signature. Please sign every page marked with an X and upload again.", submittedAt: daysAgo(4), updatedAt: daysAgo(2), contextOrganizationId: "org_northline", contextOrganizationName: "Northline Freight" },
 ];
 
+/** The carrier's decision on a seeded document, as that carrier's own link. */
+function seededCarrierReview(row: DriverSeedRow): DocumentLink["review"] {
+  if (row.status === "rejected") {
+    return {
+      state: "rejected",
+      reviewedAt: row.updatedAt,
+      reviewedByName: row.contextOrganizationName,
+      rejectionReason: row.rejectionReason,
+    };
+  }
+  if (row.status === "approved" || row.status === "expiring_soon" || row.status === "expired") {
+    return { state: "approved", reviewedAt: row.updatedAt, reviewedByName: row.contextOrganizationName };
+  }
+  return { state: "pending" };
+}
+
+/**
+ * Seeds the driver's paperwork the way the model actually holds it.
+ *
+ * Every row becomes ONE document owned by the driver, whose primary link names
+ * no organization — it is theirs. The carrier that has seen it gets a SECOND
+ * link carrying its own review. That is not bookkeeping: it is why ending a
+ * carrier relationship takes the carrier's link and leaves the driver holding
+ * the document, and why a new carrier reviews the same record instead of asking
+ * for the file again.
+ */
 function seedDocuments(profile: DriverProfile | null) {
   clearDocumentsForSubjectKind("driver");
   if (!profile) return;
   for (const row of DRIVER_SEED_ROWS) {
     const requirement = requirementByKey(row.requirementKey)
       ?? CARRIER_EXTRA_DOCUMENTS.org_northline.find((r) => r.key === row.requirementKey);
-    createDocument({
+    const record = createDocument({
       owner: driverOwner(profile),
       typeKey: requirement?.typeKey ?? "other",
       subject: driverSubject(profile),
       requirementKey: row.requirementKey,
-      contextOrganizationId: row.contextOrganizationId,
-      contextOrganizationName: row.contextOrganizationName,
+      // No contextOrganization: the driver holds their own licence.
       status: row.status,
       file: {
         fileName: row.fileName, fileType: row.fileType,
@@ -232,41 +259,100 @@ function seedDocuments(profile: DriverProfile | null) {
       addedByName: profile.legalName,
       createdAt: row.submittedAt,
       idSeed: slotKey("driver", profile.id, row.requirementKey),
-      reviewedAt: row.updatedAt,
-      reviewedByName: row.contextOrganizationName,
-      rejectionReason: row.rejectionReason,
+    });
+
+    const linked = addLink(record.documentId, {
+      subject: driverSubject(profile),
+      requirementKey: row.requirementKey,
+      contextOrganizationId: row.contextOrganizationId,
+      contextOrganizationName: row.contextOrganizationName,
+      actorName: profile.legalName,
+    });
+    const carrierLink = linked.links[linked.links.length - 1];
+    updateDocument(record.documentId, {
+      links: linked.links.map((l) =>
+        l.id === carrierLink.id ? { ...l, review: seededCarrierReview(row) } : l,
+      ),
     });
   }
 }
 
-let PROFILE: DriverProfile | null = seedProfile();
-let RELATIONSHIPS: CarrierRelationship[] = seedRelationships();
-seedDocuments(PROFILE);
+let PROFILE: DriverProfile | null = null;
+let RELATIONSHIPS: CarrierRelationship[] = [];
+let seeded = false;
+
+/**
+ * Seeds on first use rather than on import, because WHAT to seed depends on who
+ * is looking.
+ *
+ * The demo account is a driver with two carriers and years of paperwork. A
+ * newcomer tab (`?fixture=newcomer`) is a person who has just made an account:
+ * no profile, no carrier, no documents. Deciding at import time would answer
+ * before the browser has told us which one this is — and would answer on the
+ * server, where there is no tab at all.
+ */
+function ensureSeeded() {
+  if (seeded) return;
+  seeded = true;
+  if (isNewcomerSession()) {
+    PROFILE = null;
+    RELATIONSHIPS = [];
+    seedDocuments(null);
+    return;
+  }
+  PROFILE = seedProfile();
+  RELATIONSHIPS = seedRelationships();
+  seedDocuments(PROFILE);
+}
 
 /** Test hook. Never called by the UI. */
 export function resetDriverMock(options?: { withProfile?: boolean }) {
+  seeded = true;
   PROFILE = options?.withProfile === false ? null : seedProfile();
   RELATIONSHIPS = options?.withProfile === false ? [] : seedRelationships();
   seedDocuments(PROFILE);
   sequence = 0;
 }
 
-/** Turns a stored record into the row the driver screens read. */
-function projectDriverDocument(record: DocumentRecord): DriverDocument | undefined {
-  const link = record.links.find((l) => l.primary) ?? record.links[0];
-  if (!link?.requirementKey) return undefined;
+/**
+ * Turns a stored record into the row the driver screens read.
+ *
+ * The document is read from the driver's own link — that is the one that says
+ * whose it is. A carrier's opinion of it is read from that carrier's link, so
+ * "Cascade rejected page 4" is a fact about Cascade's review and not about the
+ * driver's document, and a driver with no carrier simply has no review to show.
+ */
+function projectDriverDocument(
+  record: DocumentRecord,
+  carrierId?: string,
+): DriverDocument | undefined {
+  const own = record.links.find((l) => l.primary) ?? record.links[0];
+  if (!own?.requirementKey) return undefined;
+  const review = carrierReviewOf(record, carrierId);
   return {
-    requirementKey: link.requirementKey,
+    requirementKey: own.requirementKey,
     documentId: record.documentId,
     status: effectiveStatus(record),
     fileName: record.file?.fileName,
     fileType: record.file?.fileType,
     sizeBytes: record.file?.sizeBytes,
     expiresAt: record.expiresAt,
-    rejectionReason: link.review.rejectionReason,
-    submittedAt: link.review.state === "not_required" ? undefined : record.createdAt,
+    rejectionReason: review?.rejectionReason,
+    submittedAt: record.file ? record.createdAt : undefined,
     updatedAt: record.updatedAt,
   };
+}
+
+/** A carrier's review of this document: the named one, or whichever rejected it. */
+function carrierReviewOf(
+  record: DocumentRecord,
+  carrierId?: string,
+): DocumentLink["review"] | undefined {
+  const carrierLinks = record.links.filter((l) => !l.unlinkedAt && l.contextOrganizationId);
+  if (carrierId) {
+    return carrierLinks.find((l) => l.contextOrganizationId === carrierId)?.review;
+  }
+  return carrierLinks.find((l) => l.review.state === "rejected")?.review;
 }
 
 function currentDriverDocument(requirementKey: string): DocumentRecord | undefined {
@@ -285,10 +371,12 @@ function currentDriverDocument(requirementKey: string): DocumentRecord | undefin
  * driver sees about themselves; it never copies the person.
  */
 export function driverProfileSync(): DriverProfile | null {
+  ensureSeeded();
   return PROFILE ? { ...PROFILE } : null;
 }
 
 export function driverRelationshipsSync(): CarrierRelationship[] {
+  ensureSeeded();
   return RELATIONSHIPS.map((r) => ({ ...r }));
 }
 
@@ -300,10 +388,12 @@ export function driverRelationshipsSync(): CarrierRelationship[] {
  * Center holds them — so this reads the same rows mockListDocuments returns.
  */
 export function driverDocumentsSync(): DriverDocument[] {
+  ensureSeeded();
   return driverDocumentRows();
 }
 
 export async function mockGetDriverProfile(): Promise<DriverProfile | null> {
+  ensureSeeded();
   await sleep(250);
   return PROFILE ? { ...PROFILE } : null;
 }
@@ -313,6 +403,13 @@ export interface QuickOnboardingInput {
   cdlNumber: string;
   cdlState: string;
   cdlExpiresAt: string;
+  /**
+   * The address the profile is reachable on for work, once it has been
+   * verified. Omitted by the invitation flow, which already knows the account
+   * it is onboarding; supplied by driver self-onboarding, where the address the
+   * driver just proved is the one that belongs on the profile.
+   */
+  email?: string;
 }
 
 /**
@@ -320,11 +417,17 @@ export interface QuickOnboardingInput {
  *
  * A driver who already has a profile and accepts a second carrier's invitation
  * must not be asked for their licence again, and must certainly not end up with
- * a second Antcolos account.
+ * a second Antcolos account. The same is true the other way round: a driver who
+ * signed up on their own keeps this profile when a carrier later invites them.
+ *
+ * A profile is a PERSON, not an engagement. Nothing here creates a carrier
+ * relationship, and nothing here may: that is `mockCreateRelationship`, and it
+ * is reached only by accepting a carrier's invitation.
  */
 export async function mockCreateOrGetDriverProfile(
   input: QuickOnboardingInput,
 ): Promise<DriverProfile> {
+  ensureSeeded();
   await sleep(LATENCY_MS);
   if (PROFILE) return { ...PROFILE };
   PROFILE = {
@@ -332,7 +435,7 @@ export async function mockCreateOrGetDriverProfile(
     userId: "usr_sam",
     username: "sam_murtaza",
     legalName: input.legalName.trim(),
-    email: "sam@antcolos.com",
+    email: input.email?.trim() || "sam@antcolos.com",
     cdlNumber: input.cdlNumber.trim().toUpperCase(),
     cdlState: input.cdlState,
     cdlExpiresAt: input.cdlExpiresAt,
@@ -346,6 +449,7 @@ export async function mockCreateOrGetDriverProfile(
 /* -------------------------------------------------------------------------- */
 
 export async function mockListRelationships(): Promise<CarrierRelationship[]> {
+  ensureSeeded();
   await sleep(250);
   return RELATIONSHIPS.map((r) => ({ ...r }));
 }
@@ -363,6 +467,7 @@ export async function mockCreateRelationship(
   profileId: string,
   input: NewRelationshipInput,
 ): Promise<CarrierRelationship> {
+  ensureSeeded();
   await sleep(LATENCY_MS);
   const relationship: CarrierRelationship = {
     id: nextId("rel"),
@@ -374,7 +479,33 @@ export async function mockCreateRelationship(
     sharedDocumentKeys: [...input.sharedDocumentKeys],
   };
   RELATIONSHIPS = [relationship, ...RELATIONSHIPS];
+
+  // Sharing consent, applied to the documents the driver ALREADY has: the
+  // carrier gets its own link to each shared one, carrying its own review. Not
+  // a copy, not a re-upload, and not a change of owner — the driver's link is
+  // untouched, and ending this relationship will end only the carrier's.
+  attachSharedDocuments(relationship);
+
   return { ...relationship };
+}
+
+function attachSharedDocuments(relationship: CarrierRelationship) {
+  const profileId = PROFILE?.id ?? DRIVER_PROFILE_ID;
+  for (const requirementKey of relationship.sharedDocumentKeys) {
+    const existing = documentInSlot("driver", profileId, requirementKey);
+    if (!existing) continue;
+    const alreadyLinked = existing.links.some(
+      (l) => !l.unlinkedAt && l.contextOrganizationId === relationship.carrierId,
+    );
+    if (alreadyLinked) continue;
+    addLink(existing.documentId, {
+      subject: driverSubject(PROFILE),
+      requirementKey,
+      contextOrganizationId: relationship.carrierId,
+      contextOrganizationName: relationship.carrierName,
+      actorName: PROFILE?.legalName ?? "Driver",
+    });
+  }
 }
 
 /**
@@ -388,6 +519,7 @@ export async function mockEndRelationship(
   relationshipId: string,
   reason: string,
 ): Promise<CarrierRelationship> {
+  ensureSeeded();
   await sleep(LATENCY_MS);
   const index = RELATIONSHIPS.findIndex((r) => r.id === relationshipId);
   if (index < 0) throw new Error(`No such relationship: ${relationshipId}`);
@@ -417,6 +549,7 @@ export async function mockSetRelationshipStatus(
   relationshipId: string,
   status: RelationshipStatus,
 ): Promise<CarrierRelationship> {
+  ensureSeeded();
   await sleep(LATENCY_MS);
   const index = RELATIONSHIPS.findIndex((r) => r.id === relationshipId);
   if (index < 0) throw new Error(`No such relationship: ${relationshipId}`);
@@ -429,34 +562,42 @@ export async function mockSetRelationshipStatus(
 /* Documents                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export async function mockListDocuments(): Promise<DriverDocument[]> {
+export async function mockListDocuments(carrierId?: string): Promise<DriverDocument[]> {
+  ensureSeeded();
   await sleep(250);
-  return driverDocumentRows();
+  return driverDocumentRows(carrierId);
 }
 
-function driverDocumentRows(): DriverDocument[] {
+function driverDocumentRows(carrierId?: string): DriverDocument[] {
   const profileId = PROFILE?.id ?? DRIVER_PROFILE_ID;
   return documentsForSubject("driver", profileId)
-    .map(projectDriverDocument)
+    .map((record) => projectDriverDocument(record, carrierId))
     .filter((d): d is DriverDocument => Boolean(d));
 }
 
 /**
- * The carrier whose checklist a requirement belongs to.
+ * Which organization, if any, governs the document filling a requirement.
  *
- * The standard driver requirements are asked by whichever carrier the driver is
- * currently working for; a carrier-specific extra is asked by the carrier that
- * added it, and says so.
+ * A driver's licence, medical card and W-9 are the DRIVER'S. They are supplied
+ * once, kept between carriers, and belong to nobody else — so they are created
+ * with no organization at all, and the previous fallback that quietly stamped
+ * them with "whichever carrier is around, and Cascade Haul if there is none" is
+ * gone. It named a carrier that had never seen the file, and for a driver with
+ * no carrier it invented one outright.
+ *
+ * A carrier-specific extra is different: that carrier asked for it, and it
+ * exists only inside that relationship, so it carries their name.
  */
-function contextForRequirement(requirementKey: string): { id: string; name: string } {
+function contextForRequirement(
+  requirementKey: string,
+): { id?: string; name?: string } {
   for (const [organizationId, extras] of Object.entries(CARRIER_EXTRA_DOCUMENTS)) {
     if (extras.some((r) => r.key === requirementKey)) {
       const relationship = RELATIONSHIPS.find((r) => r.carrierId === organizationId);
       return { id: organizationId, name: relationship?.carrierName ?? organizationId };
     }
   }
-  const live = RELATIONSHIPS.find((r) => r.status !== "ended");
-  return { id: live?.carrierId ?? "org_cascade", name: live?.carrierName ?? "Cascade Haul" };
+  return {};
 }
 
 /**
@@ -477,6 +618,7 @@ export async function mockUploadDocument(
 ): Promise<DriverDocument> {
   for (let percent = 0; percent <= 100; percent += 20) {
     onProgress(percent);
+    ensureSeeded();
     await sleep(140);
   }
   const fileRef = {
@@ -521,6 +663,7 @@ export async function mockUploadDocument(
  * so what happened is still readable afterwards.
  */
 export async function mockRemoveDocument(requirementKey: string): Promise<void> {
+  ensureSeeded();
   await sleep(250);
   const existing = currentDriverDocument(requirementKey);
   if (!existing) return;
@@ -545,6 +688,7 @@ export async function mockSetDocumentExpiry(
   requirementKey: string,
   expiresAt: string,
 ): Promise<DriverDocument> {
+  ensureSeeded();
   await sleep(200);
   const existing = currentDriverDocument(requirementKey);
   if (!existing) throw new Error(`Nothing selected for ${requirementKey}`);
@@ -557,15 +701,22 @@ export async function mockSetDocumentExpiry(
   return projectDriverDocument(updated)!;
 }
 
-/** Hands the document to the carrier for review. Nobody actually reviews it. */
+/**
+ * Hands the document to the carriers who asked for it. Nobody actually reviews it.
+ *
+ * Only the carriers' links become pending. The driver's own link is not a
+ * review queue — nobody reviews a person's document on their behalf — so it
+ * stays as it is, and a driver with no carrier has nothing to submit to.
+ */
 export async function mockSubmitDocument(requirementKey: string): Promise<DriverDocument> {
+  ensureSeeded();
   await sleep(LATENCY_MS);
   const existing = currentDriverDocument(requirementKey);
   if (!existing) throw new Error(`Nothing selected for ${requirementKey}`);
   const updated = updateDocument(existing.documentId, {
     status: "pending_review",
     links: existing.links.map((l) =>
-      l.unlinkedAt ? l : { ...l, review: { state: "pending" as const } },
+      l.unlinkedAt || !l.contextOrganizationId ? l : { ...l, review: { state: "pending" as const } },
     ),
   });
   recordEvent({

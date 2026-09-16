@@ -16,7 +16,9 @@ import {
 } from "./active-membership-store";
 import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_SESSION, MOCK_TEMPLATES, MOCK_USER,
+  NEWCOMER_MEMBERSHIPS, NEWCOMER_ORGANIZATIONS, NEWCOMER_USER,
 } from "./fixtures";
+import { readSessionScenario, type SessionScenario } from "./scenarios";
 
 export interface SessionContextValue {
   /** Permanent. Identical across every organization switch. */
@@ -36,8 +38,31 @@ export interface SessionContextValue {
 
 export const SessionContext = createContext<SessionContextValue | null>(null);
 
+/** The fixture set never changes within a tab, so there is nothing to notify. */
+const subscribeNothing = () => () => {};
+const serverScenario = (): SessionScenario => "demo";
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  /**
+   * Which fixtures this tab runs on.
+   *
+   * Read through `useSyncExternalStore` for the same reason the active
+   * membership is: the server has no window, so it answers "demo", and the
+   * client picks up the real answer at hydration without a render-time read.
+   * A tab's scenario never changes while it is open, so there is nothing to
+   * subscribe to.
+   */
+  const scenario = useSyncExternalStore<SessionScenario>(
+    subscribeNothing,
+    readSessionScenario,
+    serverScenario,
+  );
+  const newcomer = scenario === "newcomer";
+
+  const user = newcomer ? NEWCOMER_USER : MOCK_USER;
+  const memberships = newcomer ? NEWCOMER_MEMBERSHIPS : MOCK_MEMBERSHIPS;
+  const organizations = newcomer ? NEWCOMER_ORGANIZATIONS : MOCK_ORGANIZATIONS;
   // Restored from storage after hydration; falls back to the default membership.
   const storedMembershipId = useSyncExternalStore(
     subscribeActiveMembership,
@@ -48,7 +73,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const activeMembershipId =
     switchedTo ??
-    (storedMembershipId && MOCK_MEMBERSHIPS.some((m) => m.id === storedMembershipId)
+    (storedMembershipId && memberships.some((m) => m.id === storedMembershipId)
       ? storedMembershipId
       : MOCK_SESSION.activeMembershipId);
   const [density, setDensityState] = useState<DensityPreference>(
@@ -60,16 +85,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.density = density;
   }, [density]);
 
+  // A person who belongs to nothing has no active membership, and therefore no
+  // organization and no permissions. Every screen already treats that as a
+  // possible answer; nothing here invents a workspace to avoid it.
   const activeMembership = useMemo(
-    () => MOCK_MEMBERSHIPS.find((m) => m.id === activeMembershipId) ?? null,
-    [activeMembershipId],
+    () => memberships.find((m) => m.id === activeMembershipId) ?? null,
+    [memberships, activeMembershipId],
   );
 
   const activeOrganization = useMemo(
-    () =>
-      MOCK_ORGANIZATIONS.find((o) => o.id === activeMembership?.organizationId) ??
-      null,
-    [activeMembership],
+    () => organizations.find((o) => o.id === activeMembership?.organizationId) ?? null,
+    [organizations, activeMembership],
   );
 
   const permissions = useMemo<ReadonlySet<PermissionKey>>(() => {
@@ -91,9 +117,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SessionContextValue>(
     () => ({
-      user: MOCK_USER,
-      memberships: MOCK_MEMBERSHIPS,
-      organizations: MOCK_ORGANIZATIONS,
+      user,
+      memberships,
+      organizations,
       templates: MOCK_TEMPLATES,
       activeMembership,
       activeOrganization,
@@ -103,7 +129,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setDensity: setDensityState,
       switchOrganization,
     }),
-    [activeMembership, activeOrganization, permissions, density, switchOrganization],
+    [user, memberships, organizations, activeMembership, activeOrganization, permissions, density, switchOrganization],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

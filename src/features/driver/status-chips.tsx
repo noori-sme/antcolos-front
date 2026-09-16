@@ -13,7 +13,16 @@ const DOCUMENT_TONE: Record<DocumentStatus, string> = {
   superseded: "bg-st-neutral-bg text-st-neutral",
 };
 
-export function DocumentStatusChip({ status, className }: { status: DocumentStatus; className?: string }) {
+export function DocumentStatusChip({
+  status,
+  label,
+  className,
+}: {
+  status: DocumentStatus;
+  /** Overrides the canonical wording where it would say something untrue. */
+  label?: string;
+  className?: string;
+}) {
   return (
     <span
       className={cn(
@@ -22,7 +31,7 @@ export function DocumentStatusChip({ status, className }: { status: DocumentStat
         className,
       )}
     >
-      {DOCUMENT_STATUS_LABEL[status]}
+      {label ?? DOCUMENT_STATUS_LABEL[status]}
     </span>
   );
 }
