@@ -17,6 +17,9 @@ import { destinationStop, originStop } from "@/types";
 import { CATEGORY_LABEL } from "@/types";
 import { useHomeSummary } from "./hooks";
 import { ProfileChecklistBanner } from "@/features/driver/profile-checklist-banner";
+import { driverHomeMode } from "@/features/driver/home-mode";
+import { UnattachedDriverHome } from "@/features/driver/unattached-home";
+import { useDriverData } from "@/features/driver/use-driver-data";
 import {
   ActiveTripCard, ProposalsWaitingCard,
 } from "@/features/driver-workflow/home-cards";
@@ -28,17 +31,28 @@ import {
  *
  * Milestone 2 scope: this is the read + triage surface. Status transitions and
  * document upload land with the driver portal milestone.
+ *
+ * A driver with no carrier — one who signed up on their own and has not been
+ * invited anywhere yet — gets the unattached version of this same home. Every
+ * card below belongs to a carrier relationship, so for them there is nothing
+ * here that is honestly theirs to see.
  */
 export function DriverHomeScreen() {
   const { user } = useSession();
   const { organization } = useActiveMembership();
   const summary = useHomeSummary();
+  const driver = useDriverData();
   const now = useNow();
 
   const tz = organization?.timeZone ?? "UTC";
   const firstName = user.displayName.split(" ")[0];
 
-  if (summary.isPending) return <LoadingSkeleton rows={4} />;
+  if (driver.loading || summary.isPending) return <LoadingSkeleton rows={4} />;
+
+  if (driver.profile && driverHomeMode(driver.profile, driver.relationships) === "unattached") {
+    return <UnattachedDriverHome firstName={firstName} profile={driver.profile} />;
+  }
+
   if (summary.isError) {
     return <ErrorState description={summary.error.message} onRetry={() => summary.refetch()} />;
   }

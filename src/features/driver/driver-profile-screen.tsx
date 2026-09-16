@@ -35,7 +35,7 @@ export function DriverProfileScreen() {
         <EmptyState
           icon={IdCard}
           title="You don't have a driver profile yet"
-          description="Your driver profile is created when you accept a carrier's invitation. It then belongs to you and follows you between carriers."
+          description="Your driver profile is created when you sign up as a driver, or when you accept a carrier's invitation. Either way it belongs to you and follows you between carriers."
         />
       </div>
     );
@@ -202,7 +202,12 @@ export function DriverProfileScreen() {
 function RelationshipRow({ relationship }: { relationship: CarrierRelationship }) {
   const ended = relationship.status === "ended";
   return (
-    <li className="rounded-lg border border-border bg-surface p-4 shadow-e1">
+    // The carrier is on the row itself: a test that asks "did signing up add a
+    // carrier?" should not have to read layout to answer it.
+    <li
+      data-carrier-id={relationship.carrierId}
+      className="rounded-lg border border-border bg-surface p-4 shadow-e1"
+    >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-2">

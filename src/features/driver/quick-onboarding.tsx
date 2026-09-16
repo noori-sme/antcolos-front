@@ -2,26 +2,23 @@
 
 import { CircleCheck, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { AuthShell } from "@/features/auth/shell";
 import { FormAlert } from "@/features/auth/form-alert";
-import { validateFullName } from "@/features/auth/rules";
+
 import { PermissionSummary } from "@/features/access/permission-summary";
 import { useStageFocus } from "@/features/auth/use-stage-focus";
 import type { DriverProfile, Invitation } from "@/types";
+import { ENGAGEMENT_LABEL, formatDate, maskCdl } from "./driver-rules";
 import {
-  ENGAGEMENT_LABEL,
-  US_STATES,
-  formatDate,
-  maskCdl,
-  todayIsoDate,
-  validateCdlNumber,
-  validateExpiryDate,
-  validateState,
-} from "./driver-rules";
+  type DriverIdentityDraft,
+  driverIdentityErrors,
+  driverIdentityIsComplete,
+  emptyDriverIdentity,
+  normalizeDriverIdentity,
+} from "./identity";
+import { DriverIdentityFields } from "./identity-fields";
 import {
   documentRequirements,
   mockCreateOrGetDriverProfile,
@@ -41,17 +38,13 @@ type Stage = "details" | "review" | "done";
  */
 export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
   const router = useRouter();
-  const uid = useId();
   const [stage, setStage] = useState<Stage>("details");
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
   const [existing, setExisting] = useState<DriverProfile | null>(null);
   const [checked, setChecked] = useState(false);
 
-  const [legalName, setLegalName] = useState("");
-  const [cdlNumber, setCdlNumber] = useState("");
-  const [cdlState, setCdlState] = useState("");
-  const [cdlExpiresAt, setCdlExpiresAt] = useState("");
+  const [identity, setIdentity] = useState<DriverIdentityDraft>(emptyDriverIdentity);
 
   const [submitted, setSubmitted] = useState(false);
   const [consented, setConsented] = useState(false);
@@ -74,10 +67,9 @@ export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
   const engagement = invitation.engagementType ?? "company_driver";
   const requirements = documentRequirements(engagement, invitation.organizationId);
 
-  const nameError = submitted ? validateFullName(legalName) : null;
-  const cdlError = submitted ? validateCdlNumber(cdlNumber) : null;
-  const stateError = submitted ? validateState(cdlState) : null;
-  const expiryError = submitted ? validateExpiryDate(cdlExpiresAt, "expiration date") : null;
+  const errors = submitted
+    ? driverIdentityErrors(identity)
+    : { legalName: null, cdlNumber: null, cdlState: null, cdlExpiresAt: null };
 
   const shown = existing
     ? {
@@ -86,23 +78,11 @@ export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
         cdlState: existing.cdlState,
         cdlExpiresAt: existing.cdlExpiresAt,
       }
-    : {
-        legalName: legalName.trim(),
-        cdlNumber: cdlNumber.trim().toUpperCase(),
-        cdlState,
-        cdlExpiresAt: cdlExpiresAt ? new Date(`${cdlExpiresAt}T00:00:00`).toISOString() : "",
-      };
+    : normalizeDriverIdentity(identity);
 
   function continueToReview() {
     setSubmitted(true);
-    if (
-      validateFullName(legalName) ||
-      validateCdlNumber(cdlNumber) ||
-      validateState(cdlState) ||
-      validateExpiryDate(cdlExpiresAt, "expiration date")
-    ) {
-      return;
-    }
+    if (!driverIdentityIsComplete(identity)) return;
     setConsented(false);
     setStage("review");
   }
@@ -164,65 +144,7 @@ export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
             continueToReview();
           }}
         >
-          <Field label="Full legal name" htmlFor={`${uid}-name`} hint={nameError ? undefined : "Exactly as it appears on your licence."} error={nameError ?? undefined}>
-            <Input
-              id={`${uid}-name`}
-              value={legalName}
-              onChange={(e) => setLegalName(e.target.value)}
-              autoComplete="name"
-              placeholder="Yusuf Demir"
-              maxLength={80}
-              aria-invalid={nameError ? true : undefined}
-              className={cn(nameError && "border-st-danger")}
-            />
-          </Field>
-
-          <Field label="Driver license / CDL number" htmlFor={`${uid}-cdl`} error={cdlError ?? undefined}>
-            <Input
-              id={`${uid}-cdl`}
-              value={cdlNumber}
-              onChange={(e) => setCdlNumber(e.target.value.toUpperCase())}
-              spellCheck={false}
-              autoCapitalize="characters"
-              placeholder="K4471182993"
-              maxLength={24}
-              aria-invalid={cdlError ? true : undefined}
-              className={cn("font-mono", cdlError && "border-st-danger")}
-            />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Issuing state" htmlFor={`${uid}-state`} error={stateError ?? undefined}>
-              <select
-                id={`${uid}-state`}
-                value={cdlState}
-                onChange={(e) => setCdlState(e.target.value)}
-                aria-invalid={stateError ? true : undefined}
-                className={cn(
-                  "h-control w-full rounded-md border border-border bg-surface px-3 text-[0.875rem] text-fg shadow-e1 transition-colors",
-                  "hover:border-border-strong focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
-                  stateError && "border-st-danger",
-                )}
-              >
-                <option value="">Choose…</option>
-                {US_STATES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="License expiration date" htmlFor={`${uid}-expiry`} error={expiryError ?? undefined}>
-              <Input
-                id={`${uid}-expiry`}
-                type="date"
-                min={todayIsoDate()}
-                value={cdlExpiresAt}
-                onChange={(e) => setCdlExpiresAt(e.target.value)}
-                aria-invalid={expiryError ? true : undefined}
-                className={cn(expiryError && "border-st-danger")}
-              />
-            </Field>
-          </div>
+          <DriverIdentityFields draft={identity} onChange={setIdentity} errors={errors} />
 
           <Button type="submit" variant="primary" size="lg" className="w-full">
             Continue

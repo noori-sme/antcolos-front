@@ -313,6 +313,13 @@ export interface QuickOnboardingInput {
   cdlNumber: string;
   cdlState: string;
   cdlExpiresAt: string;
+  /**
+   * The address the profile is reachable on for work, once it has been
+   * verified. Omitted by the invitation flow, which already knows the account
+   * it is onboarding; supplied by driver self-onboarding, where the address the
+   * driver just proved is the one that belongs on the profile.
+   */
+  email?: string;
 }
 
 /**
@@ -320,7 +327,12 @@ export interface QuickOnboardingInput {
  *
  * A driver who already has a profile and accepts a second carrier's invitation
  * must not be asked for their licence again, and must certainly not end up with
- * a second Antcolos account.
+ * a second Antcolos account. The same is true the other way round: a driver who
+ * signed up on their own keeps this profile when a carrier later invites them.
+ *
+ * A profile is a PERSON, not an engagement. Nothing here creates a carrier
+ * relationship, and nothing here may: that is `mockCreateRelationship`, and it
+ * is reached only by accepting a carrier's invitation.
  */
 export async function mockCreateOrGetDriverProfile(
   input: QuickOnboardingInput,
@@ -332,7 +344,7 @@ export async function mockCreateOrGetDriverProfile(
     userId: "usr_sam",
     username: "sam_murtaza",
     legalName: input.legalName.trim(),
-    email: "sam@antcolos.com",
+    email: input.email?.trim() || "sam@antcolos.com",
     cdlNumber: input.cdlNumber.trim().toUpperCase(),
     cdlState: input.cdlState,
     cdlExpiresAt: input.cdlExpiresAt,
