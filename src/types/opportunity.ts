@@ -378,28 +378,71 @@ export interface RankingPreferences {
   updatedByName?: string;
 }
 
+/** Whether network learning is being used, and if not, why not. */
+export type NetworkLearningAvailability =
+  /** The pool holds enough from other workspaces to speak. */
+  | "available"
+  /** It does not yet hold enough to say anything. */
+  | "insufficient_evidence";
+
+/** Which body of evidence produced a suggestion. Never both at once. */
+export type LearningEvidenceSource =
+  /** This workspace's own decisions. They never leave it. */
+  | "local"
+  /** The anonymised cross-organization pool. */
+  | "network";
+
 /**
  * What the ranking has learned, and exactly what leaves this workspace.
  *
- * Antcolos can get better at ranking by watching which loads dispatchers
- * actually pursue — but only if what crosses the boundary carries nothing that
- * identifies a workspace, a carrier, a broker contact or a person, and no
- * credential of any kind. Both lists are spelled out in the data rather than
- * described in a policy document, so a test can assert them and a dispatcher
- * can read them.
+ * Antcolos gets better at ranking by watching which loads dispatchers actually
+ * pursue. That is a platform function rather than a per-workspace setting, so
+ * the weight falls entirely on the BOUNDARY: what crosses it is an exhaustive
+ * allowlist of derived signals, spelled out in `src/config/learning.ts` as data
+ * rather than described in a policy document, so a test can assert it and a
+ * dispatcher can read it. Nothing on it identifies a workspace, a carrier, a
+ * broker contact, a person or a credential.
+ *
+ * Local and network evidence are reported SEPARATELY on purpose. "Antcolos
+ * suggests this" and "the workspaces around you suggest this" are different
+ * claims, and a summary that could not tell them apart could not be checked.
  */
 export interface LearningSummary {
-  /** Decisions this workspace has contributed. */
-  observations: number;
-  /** Observations across Antcolos that fed the suggestion. */
+  /**
+   * The data-use policy version these numbers were produced under.
+   *
+   * Carried so a screen never describes the boundary from memory, and so a row
+   * gathered under older terms is never silently re-licensed by a newer list.
+   */
+  policyVersion: number;
+  /**
+   * Decisions this workspace has recorded. One per load, however many times
+   * somebody pressed the button.
+   */
+  localObservations: number;
+  /** How many of those are in the shared pool under the current policy. */
+  contributedObservations: number;
+  /**
+   * Observations from OTHER workspaces that this one may learn from.
+   *
+   * Its own contributions are subtracted: a workspace never learns from itself
+   * through the pool, so counting its own rows here would promise evidence that
+   * is not there. An aggregate count, joined to nothing.
+   */
   networkObservations: number;
+  /** Why network learning is or is not in use. */
+  networkAvailability: NetworkLearningAvailability;
   /** Weights the learning would suggest. Never applied without a person. */
   suggested?: Record<RankingFactorKey, number>;
+  /** Which evidence produced `suggested`. Absent when there is no suggestion. */
+  suggestedFrom?: LearningEvidenceSource;
   lastLearnedAt?: IsoDateTime;
-  /** Field names that leave the workspace, anonymised. */
+  /** Field labels that may leave the workspace. Derived from the policy. */
   sharedFields: string[];
-  /** Field names that never leave it, whatever happens. */
+  /** Categories that never leave it, whatever happens. Derived from the policy. */
   withheldFields: string[];
+  /** The honest note about what this build does and does not settle. */
+  dataUseNote: string;
 }
 
 /* -------------------------------------------------------------------------- */

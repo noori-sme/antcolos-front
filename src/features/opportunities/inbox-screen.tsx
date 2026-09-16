@@ -388,16 +388,35 @@ function RankingPanel({
           What Antcolos learns, and what it never sees
         </h3>
         <p className="mt-1 text-[0.75rem] leading-relaxed text-fg-muted">
-          You have made {learning.observations} decision{learning.observations === 1 ? "" : "s"} the
-          ranking could learn from. Across Antcolos there are {learning.networkObservations}.
-          Weights never move on their own — a suggestion is offered and you decide.
+          You have made {learning.localObservations} decision
+          {learning.localObservations === 1 ? "" : "s"} the ranking could learn from. Those
+          stay in this workspace. Weights never move on their own — a suggestion is
+          offered and you decide.
+        </p>
+
+        {/*
+          What leaves is stated here in the workspace's own words rather than
+          left to be inferred from a count. Nobody opted in, so this panel and
+          the policy page are where a dispatcher finds out at all — and the link
+          goes to the exhaustive list rather than to a reassuring sentence.
+        */}
+        <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-muted">
+          {learning.contributedObservations} of them contributed derived signals
+          — a shape, four rounded bands and a yes or no, under policy v
+          {learning.policyVersion}. Other workspaces have contributed{" "}
+          {learning.networkObservations} you can learn from; your own are never
+          counted back to you.{" "}
+          <Link href="/settings/learning" className="font-medium text-primary underline-offset-2 hover:underline">
+            See exactly what leaves, and what never does
+          </Link>
         </p>
 
         {learning.suggested ? (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="text-[0.75rem] text-fg-muted">
-              Based on what you have chased and what you have thrown away, it would suggest a
-              different balance.
+              {learning.suggestedFrom === "network"
+                ? "Based on what workspaces across Antcolos have chased and thrown away, it would suggest a different balance."
+                : "Based on what you have chased and what you have thrown away, it would suggest a different balance."}
             </span>
             <Button variant="secondary" size="sm" onClick={onApplySuggested}>
               Use the suggestion
@@ -405,7 +424,8 @@ function RankingPanel({
           </div>
         ) : (
           <p className="mt-2 text-[0.75rem] text-fg-subtle">
-            Not enough decisions yet to suggest anything. It will say so rather than guess.
+            Not enough decisions yet to suggest anything. It will say so rather
+            than guess.
           </p>
         )}
 

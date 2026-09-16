@@ -3,6 +3,7 @@ import {
   BadgeCheck, Bell, Building2, CalendarClock, ClipboardList, Container, FileBadge,
   FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
   Inbox, Layers, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
+  Share2,
   ReceiptText, Route, Satellite, ScrollText, Settings2, Shield, ShieldCheck,
   TriangleAlert, Truck, UserCircle, Users, UsersRound, Wrench,
 } from "lucide-react";
@@ -148,6 +149,11 @@ export const SETTINGS_NAV: NavSection[] = [
       { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:view"] },
       { label: "Roles and permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
       { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["integrations:view"] },
+      // What the ranking learns from, and what it never touches. Not a setting —
+      // there is nothing on the page to change — but it belongs here rather than
+      // beside the ranking sliders, because it is an account of what happens to
+      // the workspace's data rather than a dispatcher's preference about sorting.
+      { label: "Learning and your data", href: "/settings/learning", icon: Share2, requires: ["organization:manage"] },
       { label: "Audit", href: "/settings/audit", icon: ScrollText, requires: ["audit:view"] },
     ],
   },
