@@ -745,7 +745,7 @@ export async function shortlistMatch(matchId: string, ctx: MtLoopContext): Promi
   });
 
   const listing = listingById(ctx.organizationId, match.listingId);
-  if (listing) observeDecision(ctx.organizationId, match, listing, true);
+  if (listing) observeDecision(ctx, match, listing, true);
   return { status: "ok", match };
 }
 
@@ -771,7 +771,7 @@ export async function dismissMatch(
   });
 
   const listing = listingById(ctx.organizationId, match.listingId);
-  if (listing) observeDecision(ctx.organizationId, match, listing, false);
+  if (listing) observeDecision(ctx, match, listing, false);
   return { status: "ok", match };
 }
 
