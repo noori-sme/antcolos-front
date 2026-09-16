@@ -38,7 +38,8 @@ export function DocumentItem({
   document?: DriverDocument;
   onUpload: (file: File) => void;
   onRemove: () => void;
-  onSubmit: () => void;
+  /** Absent when there is nobody to submit to — a driver with no carrier yet. */
+  onSubmit?: () => void;
   onExpiryChange: (value: string) => void;
 }) {
   const uid = useId();
@@ -85,7 +86,11 @@ export function DocumentItem({
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-2">
             <span className="text-[0.875rem] font-semibold text-fg">{requirement.label}</span>
-            <DocumentStatusChip status={status} />
+            <DocumentStatusChip
+              status={status}
+              // "Ready to submit" is a lie when there is nobody to submit to.
+              label={!onSubmit && status === "selected_local" ? "On your profile" : undefined}
+            />
             {requirement.applicability !== "required" ? (
               <span className="text-[0.6875rem] text-fg-subtle">Optional</span>
             ) : null}
@@ -256,7 +261,7 @@ export function DocumentItem({
             </Button>
           ) : null}
 
-          {hasFile ? (
+          {hasFile && onSubmit ? (
             <Button
               variant="primary"
               size="sm"
@@ -271,9 +276,11 @@ export function DocumentItem({
 
           <p className="w-full text-[0.75rem] text-fg-subtle max-sm:hidden">
             {hasFile
-              ? requirement.expires && !document?.expiresAt
-                ? "Add the expiration date above, then submit."
-                : "Check it is readable, then submit it to the carrier."
+              ? !onSubmit
+                ? "Kept on your profile. No carrier has reviewed it."
+                : requirement.expires && !document?.expiresAt
+                  ? "Add the expiration date above, then submit."
+                  : "Check it is readable, then submit it to the carrier."
               : "Drag a photo or PDF here, or use the button."}
           </p>
         </div>

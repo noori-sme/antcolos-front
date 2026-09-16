@@ -6,6 +6,7 @@ import {
   type NavItem, type NavSection,
 } from "@/config/nav";
 import { canAll } from "@/lib/permissions/can";
+import { driverProfileSync } from "@/features/driver/mock-driver";
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
 
 /**
@@ -14,7 +15,16 @@ import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
  */
 export function useVisibleNav() {
   const permissions = usePermissions();
-  const { isDriverMembership } = useActiveMembership();
+  const { isDriverMembership, membership } = useActiveMembership();
+
+  /**
+   * The driver portal is reached two ways, and belonging to a carrier is only
+   * one of them. A driver who signed up for themselves has a profile and no
+   * membership at all: the portal is the only thing they have, and hiding it
+   * behind a carrier's membership would lock them out of their own documents.
+   */
+  const unattachedDriver = !membership && Boolean(driverProfileSync());
+  const driverPortal = isDriverMembership || unattachedDriver;
 
   return useMemo(() => {
     const filterSections = (sections: NavSection[]): NavSection[] =>
@@ -23,7 +33,7 @@ export function useVisibleNav() {
           ...section,
           items: section.items.filter(
             (item) =>
-              (!item.driverOnly || isDriverMembership) &&
+              (!item.driverOnly || driverPortal) &&
               canAll(permissions, item.requires),
           ),
         }))
@@ -33,7 +43,7 @@ export function useVisibleNav() {
     // organization-wide equivalents beside them duplicates the destination and
     // the label, so they are dropped rather than shown twice.
     const DRIVER_REPLACED = new Set(["/home", "/loads", "/dispatch"]);
-    const productSource = isDriverMembership
+    const productSource = driverPortal
       ? PRODUCT_NAV.map((s) => ({
           ...s,
           items: s.items.filter((i) => !DRIVER_REPLACED.has(i.href)),
@@ -46,7 +56,7 @@ export function useVisibleNav() {
     const account = filterSections(ACCOUNT_NAV);
 
     // A driver membership leads with the driver portal.
-    const main = isDriverMembership ? [...driver, ...product] : [...product, ...driver];
+    const main = driverPortal ? [...driver, ...product] : [...product, ...driver];
 
     const mobilePrimary: NavItem[] = main
       .flatMap((s) => s.items)
@@ -54,5 +64,5 @@ export function useVisibleNav() {
       .slice(0, 4);
 
     return { main, settings, account, mobilePrimary };
-  }, [permissions, isDriverMembership]);
+  }, [permissions, driverPortal]);
 }

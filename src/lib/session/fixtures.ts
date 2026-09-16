@@ -32,6 +32,31 @@ export const MOCK_USER: User = {
   createdAt: "2025-11-04T16:20:00.000Z",
 };
 
+/**
+ * A person who has just created an account and belongs to nothing.
+ *
+ * No membership, no organization, no carrier relationship, no driver profile —
+ * the state every real user starts in and the one the demo account can never
+ * show. Reached with `?fixture=newcomer`; see ./scenarios.ts.
+ */
+export const NEWCOMER_USER: User = {
+  id: "usr_newcomer",
+  displayName: "Alex Rivera",
+  email: "alex.rivera@example.com",
+  locale: "en-US",
+  timeZone: "America/Chicago",
+  preferences: {
+    theme: "system",
+    density: "comfortable",
+    language: "en",
+    notifications: { email: true, push: true, telegram: false },
+  },
+  createdAt: "2026-09-16T00:00:00.000Z",
+};
+
+export const NEWCOMER_MEMBERSHIPS: Membership[] = [];
+export const NEWCOMER_ORGANIZATIONS: Organization[] = [];
+
 export const MOCK_ORGANIZATIONS: Organization[] = [
   {
     id: "org_northline",

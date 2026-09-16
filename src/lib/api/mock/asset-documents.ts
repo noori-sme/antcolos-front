@@ -74,7 +74,9 @@ export function projectAssetDocument<K extends string>(
     expiresAt: record.expiresAt,
     rejectionReason: link.review.rejectionReason,
     supersededByDocumentId: record.supersededByDocumentId,
-    addedByOrganizationId: link.contextOrganizationId,
+    // Asset links always name the organization that asked for them; the
+    // optional field exists for person-owned documents, which never reach here.
+    addedByOrganizationId: link.contextOrganizationId ?? "",
     carrierOrganizationId: link.contextPrivate ? link.contextOrganizationId : undefined,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,

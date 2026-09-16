@@ -288,7 +288,7 @@ function LinkRow({
   link,
   primary,
 }: {
-  link?: { id: string; subject: { kind: string; label: string; href?: string }; contextOrganizationName: string; review: { state: string; rejectionReason?: string }; unlinkedAt?: string; unlinkReason?: string };
+  link?: { id: string; subject: { kind: string; label: string; href?: string }; contextOrganizationName?: string; review: { state: string; rejectionReason?: string }; unlinkedAt?: string; unlinkReason?: string };
   primary?: boolean;
 }) {
   if (!link) return null;
@@ -301,7 +301,9 @@ function LinkRow({
         {link.unlinkedAt ? <Badge tone="neutral">Link ended</Badge> : null}
       </p>
       <p className="mt-0.5 text-[0.75rem] text-fg-subtle">
-        Reviewed by {link.contextOrganizationName} · {link.review.state.replace(/_/g, " ")}
+        {link.contextOrganizationName
+          ? `Reviewed by ${link.contextOrganizationName} · ${link.review.state.replace(/_/g, " ")}`
+          : "Held by the owner · no organization reviews this"}
         {link.unlinkReason ? ` · ${link.unlinkReason}` : ""}
       </p>
       {link.subject.href ? (

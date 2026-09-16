@@ -223,8 +223,9 @@ export interface CreateDocumentInput {
   typeKey: DocumentTypeKey;
   subject: DocumentSubjectRef;
   requirementKey?: string;
-  contextOrganizationId: string;
-  contextOrganizationName: string;
+  /** Omitted for a document its owner holds with no organization reviewing it. */
+  contextOrganizationId?: string;
+  contextOrganizationName?: string;
   status: DocumentStatus;
   file?: DocumentFileRef;
   expiresAt?: string;
@@ -304,7 +305,8 @@ export interface ReplaceDocumentInput {
   status: DocumentStatus;
   addedByName: string;
   addedByMembershipId?: string;
-  contextOrganizationId: string;
+  /** Absent when no organization governs the document being replaced. */
+  contextOrganizationId?: string;
 }
 
 /**

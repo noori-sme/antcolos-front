@@ -200,9 +200,23 @@ export interface DocumentLink {
   requirementKey?: string;
   /** The relationship the document was created for. Exactly one per document. */
   primary: boolean;
-  /** The organization that governs this context and reviews in it. */
-  contextOrganizationId: string;
-  contextOrganizationName: string;
+  /**
+   * The organization that governs this context and reviews in it — ABSENT when
+   * no organization does.
+   *
+   * A driver's licence uploaded before any carrier has invited them is the
+   * case: the document belongs to the driver, nobody is reviewing it, and there
+   * is no organization to name. Inventing one would be a lie about who holds
+   * the record and who approved it, so the field is simply not there, exactly
+   * as `DocumentRecord.organizationId` is absent for person-owned documents.
+   *
+   * A link with no context organization is never ended by a relationship
+   * ending, and never appears in an organization's own document lists. When a
+   * carrier is later given the document, that is a SECOND link carrying the
+   * carrier's own review — the driver-owned one is untouched.
+   */
+  contextOrganizationId?: string;
+  contextOrganizationName?: string;
   /**
    * True when the link exists for ONE organization's onboarding rather than for
    * the entity itself — a carrier's own insurance evidence on a trailer several
