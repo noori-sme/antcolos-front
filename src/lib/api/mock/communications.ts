@@ -146,6 +146,10 @@ export function contextForCycle(
 ): MessageContext | undefined {
   const loop = mtLoopById(dispatchCycleId, ctx);
   if (!loop) return undefined;
+  // A message written on a carrier's behalf needs a carrier. A cycle whose
+  // carrier the records never established has none, and the workspace holding
+  // the cycle is not a substitute for one.
+  if (!loop.carrierOrganizationId) return undefined;
   const carrier = carrierViewSync(loop.carrierOrganizationId, truckContextFrom(ctx));
   if (!carrier) return undefined;
 
@@ -290,6 +294,7 @@ export function prepareMessageSync(
   if (!mayRead(ctx)) return { status: "not_permitted" };
   const loop = mtLoopById(dispatchCycleId, ctx);
   if (!loop) return { status: "not_found" };
+  if (!loop.carrierOrganizationId) return { status: "not_found" };
   const carrier = carrierViewSync(loop.carrierOrganizationId, truckContextFrom(ctx));
   if (!carrier) return { status: "not_found" };
 

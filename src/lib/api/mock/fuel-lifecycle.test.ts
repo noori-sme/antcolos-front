@@ -18,8 +18,13 @@ const anHourAgo = () => new Date(Date.now() - 3_600_000).toISOString();
 
 /**
  * Unit 111 is approved to exactly ONE carrier, so its attribution resolves
- * cleanly. Unit 104 is approved to two at once and is used below for the case
- * where it deliberately does not.
+ * cleanly.
+ *
+ * Unit 104 used to be the unresolved case here — two approved carriers — until
+ * the one operating-context rule gained the step that says a carrier's OWN
+ * truck is not unanswerable because a second carrier is eligible to run it.
+ * The genuinely unanswerable case is a moment before anybody was onboarded,
+ * which is what a receipt found long after the fact looks like.
  */
 const purchase = {
   truckId: TRUCK_IDS.nl111,
@@ -99,26 +104,51 @@ describe("recording a purchase", () => {
     expect(created.attribution.carrierOrganizationId).toBe("org_northline");
   });
 
-  it("refuses to guess when two carriers are approved on the truck and neither holds it", async () => {
-    // Unit 104: Northline and Baxter are both approved, no lease is live. The
-    // purchase is kept and flagged rather than attributed to whoever asked.
+  it("resolves a carrier's own truck even when a second carrier is eligible", async () => {
+    // Unit 104: Northline owns it and runs it; Baxter is also approved on it.
+    // The one operating-context rule reads the ownership record and answers,
+    // where fuel's own resolver used to send this to a person.
     const created = await mockFuelService.recordTransaction(ctx(), {
       ...purchase,
       truckId: TRUCK_IDS.nl104,
       fuelType: "gasoline",
       purchasedAt: anHourAgo(),
     });
+    expect(created.attribution.carrierOrganizationId).toBe("org_northline");
+    expect(created.attribution.basis).toBe("carrier_relationship");
+    expect(created.flags).not.toContain("no_active_operating_authority");
+  });
+
+  it("keeps a purchase whose carrier nobody can establish, and says so", async () => {
+    // A receipt for a period before anybody was onboarded on the truck. The
+    // purchase happened, so it is recorded; whose authority it was under is
+    // genuinely unknown, so it says that rather than guessing.
+    const beforeOnboarding = new Date(Date.now() - 300 * 86_400_000).toISOString();
+    const created = await mockFuelService.recordTransaction(ctx(), {
+      ...purchase,
+      truckId: TRUCK_IDS.nl131,
+      odometerMiles: 40_000,
+      purchasedAt: beforeOnboarding,
+    });
     expect(created.attribution.basis).toBe("unresolved");
     expect(created.attribution.carrierOrganizationId).toBe("");
     expect(created.flags).toContain("no_active_operating_authority");
+
+    // And the odometer on it did NOT become a meter reading: the ledger holds
+    // nothing it cannot attribute. Fuel keeps the receipt, the ledger keeps its
+    // standard, and neither one pretends.
+    const { meterReadings } = await import("./meter-ledger");
+    expect(
+      meterReadings(TRUCK_IDS.nl131).some((r) => r.odometerMiles === 40_000),
+    ).toBe(false);
   });
 
   it("lets a person fill the gap, and marks the answer as theirs", async () => {
+    const beforeOnboarding = new Date(Date.now() - 300 * 86_400_000).toISOString();
     const created = await mockFuelService.recordTransaction(ctx(), {
       ...purchase,
-      truckId: TRUCK_IDS.nl104,
-      fuelType: "gasoline",
-      purchasedAt: anHourAgo(),
+      truckId: TRUCK_IDS.nl131,
+      purchasedAt: beforeOnboarding,
       declaredCarrierOrganizationId: "org_northline",
     });
     expect(created.attribution.basis).toBe("manual_declaration");

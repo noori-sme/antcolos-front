@@ -25,7 +25,9 @@ import {
 import {
   appendReading, latestReading, meterContributionFor, readingHistory,
 } from "./fleet-telemetry";
-import { contributeAndPublish, meterStateOf } from "./meter-ledger";
+import {
+  assertMeterContributionAllowed, contributeAndPublish, meterStateOf,
+} from "./meter-ledger";
 // Side-effect import: wires every projection to the bus before anything is
 // published. A publisher with no subscribers registered would drop events.
 import "./projections";
@@ -742,6 +744,27 @@ export const mockFleetService: FleetService = {
       (r) => r.assetKind === input.assetKind && r.assetId === input.assetId,
     );
     if (!row) throw new Error("Equipment not found");
+
+    /*
+     * A submission carrying meters is checked BEFORE the telemetry row is
+     * written, not after.
+     *
+     * Seeing a truck and being allowed to write its meter history are different
+     * things, and a dispatch workspace has the first and not the second. That
+     * refusal used to arrive after `appendReading` had already stored the row,
+     * which left a reading in this store that never reached the canonical
+     * ledger — the exact split-brain the ledger exists to end. A location-only
+     * submission contributes no meter and is untouched by this.
+     */
+    if (input.odometerMiles != null || input.engineHours != null) {
+      assertMeterContributionAllowed({
+        equipmentKind: input.assetKind === "trailer" ? "trailer" : "truck",
+        equipmentId: input.assetId,
+        readAt: input.observedAt,
+        organizationId: ctx.organizationId,
+      });
+    }
+
     const reading = appendReading(input, {
       organizationId: ctx.organizationId,
       membershipId: ctx.membershipId,

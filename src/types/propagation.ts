@@ -114,15 +114,60 @@ export const FACT_VERIFICATION_NEEDS_PERSON: readonly FactVerification[] = [
  * a lease ending without being reset or split.
  */
 export interface FactScope {
-  /** The organization whose workspace recorded it. Always present. */
+  /**
+   * The organization the fact is attributed to. Always present.
+   *
+   * For an operational fact about a piece of equipment this is the carrier that
+   * was operating it when the fact happened — NOT whoever happened to type it
+   * in. A dispatch agency recording an odometer for a carrier it dispatches for
+   * appears below as `dispatchOrganizationId`, and does not become the carrier
+   * by having pressed the button.
+   */
   organizationId: string;
   /** The carrier whose operating authority the fact happened under. */
   carrierOrganizationId?: string;
   /** The dispatch workspace responsible at the time, when there was one. */
   dispatchOrganizationId?: string;
-  /** The operating authority record, where one applies. */
+  /**
+   * RESERVED. There is no canonical Operating Authority record in Antcolos, so
+   * nothing can populate this and nothing may read it. Supplying it is refused
+   * rather than ignored: a field nobody can validate is a field that will
+   * eventually be trusted. The lease references below are what actually prove
+   * operating authority for an interval.
+   */
   operatingAuthorityId?: string;
+  /**
+   * The `TruckOperatingLease.id` that covered `occurredAt`, for a fact about a
+   * truck. Absent when the operating carrier was proven another way.
+   *
+   * Pinned permanently at publication and never rewritten: ending a lease does
+   * not move the facts that happened under it, and a relationship id alone
+   * cannot tell two separate lease cycles apart. A trailer's lease id NEVER
+   * goes in this field.
+   */
+  truckOperatingLeaseId?: string;
+  /**
+   * The `TrailerOperatingLease.id` that covered `occurredAt`, for a fact about
+   * a trailer. The same rules as above, over the trailer's own registry.
+   */
+  trailerOperatingLeaseId?: string;
 }
+
+/**
+ * ★ A FACT SCOPE IS ATTRIBUTION, NOT A GRANT ★
+ *
+ * Every field above answers "who was this true of", and NONE of them answers
+ * "who may read it". Being named as the carrier or the dispatch workspace on a
+ * fact is not permission to read it, and never has been: reading is decided by
+ * the canonical sharing grants each module already owns — `TruckDispatchAccess`,
+ * `MaintenanceShare`, `FuelSharingGrant`, `DocumentShare` and the rest — and by
+ * the permissions on the membership doing the reading.
+ *
+ * This is written down because the opposite is the easy mistake to make. A
+ * filter of the form `scope.carrierOrganizationId === myOrganizationId` reads
+ * like a scope check and is actually a silent cross-organization grant: it
+ * hands a whole history to anyone a fact happens to mention.
+ */
 
 /* -------------------------------------------------------------------------- */
 /* 2. A canonical fact                                                         */

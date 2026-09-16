@@ -203,7 +203,7 @@ test("a projection record keys on the corrected event id", async () => {
 
   assert.equal(result.event.eventId, expected);
   assert.equal(outcomeOf(result, "ident_record").eventId, expected);
-  assert.equal(propagationBus.projectionsFor(expected).length > 0, true);
+  assert.equal(propagationBus.projectionsFor("org_test", expected).length > 0, true);
   assert.ok(propagationBus.event("org_test", expected));
 });
 
@@ -325,7 +325,7 @@ async function publishPayload(key: string, payload: unknown) {
 /** Nothing was stored, nothing ran, nothing claims it did. */
 function assertNothingHappened(eventId: string, runsBefore: number, sub: { runs: number }) {
   assert.equal(propagationBus.event("org_test", eventId), undefined);
-  assert.equal(propagationBus.projectionsFor(eventId).length, 0);
+  assert.equal(propagationBus.projectionsFor("org_test", eventId).length, 0);
   assert.equal(
     propagationBus.events("org_test").some((e) => e.eventId === eventId),
     false,
@@ -513,7 +513,7 @@ test("a failure can be retried without republishing the event", async () => {
   assert.equal(outcomeOf(published, "flaky").attempts, 1);
 
   fail = false;
-  const retried = await propagationBus.retry(published.event.eventId, "flaky");
+  const retried = await propagationBus.retry("org_test", published.event.eventId, "flaky");
   assert.ok(retried);
   assert.equal(retried.state, "processed");
   assert.equal(retried.attempts, 2, "the attempt count is the history of trying");
@@ -534,7 +534,7 @@ test("a projection marked not retryable is not re-run", async () => {
   propagationBus.subscribe(asks as never);
 
   const published = await propagationBus.publish(event("k4"));
-  const again = await propagationBus.retry(published.event.eventId, "asks");
+  const again = await propagationBus.retry("org_test", published.event.eventId, "asks");
   assert.equal(asks.runs, 1, "running it again would ask the same question");
   assert.equal(again?.state, "needs_review");
   assert.equal(again?.attempts, 1);

@@ -448,11 +448,18 @@ export function meterFor(ref: MaintenanceEquipmentRef): EquipmentMeter | undefin
 }
 
 /** How maintenance describes a reading it is contributing to the ledger. */
+/**
+ * The workspace a maintenance record was entered in.
+ *
+ * Deliberately NOT a carrier claim. Maintenance only lets an operator record a
+ * reading, so today this workspace and the operating carrier are the same
+ * organization — but asserting that here would be this module's opinion, and
+ * the canonical answer belongs to the truck and trailer registries at the
+ * instant the meter was read. `meterFactScopeAt` derives it and refuses a
+ * reading whose carrier cannot be established.
+ */
 function maintenanceScope(ctx: MaintenanceContext) {
-  return {
-    organizationId: ctx.organizationId,
-    carrierOrganizationId: ctx.organizationId,
-  };
+  return { organizationId: ctx.organizationId };
 }
 
 const MAINTENANCE_PROVENANCE = (at: string) => ({

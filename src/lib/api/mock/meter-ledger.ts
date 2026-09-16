@@ -4,8 +4,9 @@ import type {
   MeterReadingFlag, MeterSourceKind, Provenance,
 } from "@/types";
 import {
-  buildDomainEvent, METER_READING_RECORDED_VERSION, propagationBus,
-  type MeterReadingRecordedPayload,
+  buildDomainEvent, meterFactScopeAt, meterPublicationRefusal,
+  METER_READING_RECORDED_VERSION, propagationBus,
+  type EventScopeRefusedError, type MeterReadingRecordedPayload,
 } from "@/lib/propagation";
 import { ambientCorrelationId } from "@/lib/audit/correlation";
 import { meterSeedRows } from "./meter-seed";
@@ -169,7 +170,14 @@ function append(
   if (
     rows.some(
       (r) =>
-        r.readAt === readAt
+        // The row this one explicitly REPLACES is not a row it duplicates.
+        // A correction that restates the same number — the receipt's gallons
+        // were wrong, the dash reading was right — would otherwise be flagged a
+        // duplicate while also marking its predecessor corrected, and the
+        // reading would vanish from the derivation entirely: one flagged out by
+        // each rule, none left standing.
+        r.readingId !== input.correctsReadingId
+        && r.readAt === readAt
         && r.odometerMiles === input.odometerMiles
         && r.engineHours === input.engineHours
         && r.contributor === input.contributor,
@@ -218,20 +226,91 @@ function append(
 }
 
 /**
+ * May this workspace contribute a reading for this equipment, right now?
+ *
+ * The same rule `contributeAndPublish` enforces, asked BEFORE a command writes
+ * a record of its own. A fuel purchase, a jurisdiction leg and a telemetry
+ * submission each write their own row first and contribute the odometer
+ * second; without this the refusal would land after that row was already
+ * stored, leaving a receipt on file whose odometer never reached the ledger
+ * and an error the person cannot act on.
+ *
+ * Throws `EventScopeRefusedError`, with the reason in the words of the domain.
+ * Reads the registries and writes nothing.
+ */
+export function assertMeterContributionAllowed(input: MeterContributionQuestion): void {
+  const refusal = meterContributionRefusal(input);
+  if (refusal) throw refusal;
+}
+
+export interface MeterContributionQuestion {
+  equipmentKind: MeterEquipmentKind;
+  equipmentId: string;
+  /** When the meter was read. Defaults to now, like the contribution itself. */
+  readAt?: string;
+  /** The workspace that wants to record it. */
+  organizationId: string;
+}
+
+/**
+ * The same question, answered rather than thrown.
+ *
+ * Callers that treat the two kinds of refusal differently — see
+ * `EventScopeRefusedError.kind`, and fuel's note about a purchase that
+ * genuinely happened — need the reason before deciding, not an exception.
+ */
+export function meterContributionRefusal(
+  input: MeterContributionQuestion,
+): EventScopeRefusedError | null {
+  return meterPublicationRefusal({
+    equipmentKind: input.equipmentKind,
+    equipmentId: input.equipmentId,
+    occurredAt: input.readAt ?? new Date().toISOString(),
+    asserted: { organizationId: input.organizationId },
+  });
+}
+
+/**
  * Append a reading AND publish it, so downstream projections follow.
  *
  * Kept separate from `contributeMeterReading` so a seed can fill the ledger
  * without publishing a hundred events nobody will read.
+ *
+ * ★ THE ONE DOOR WHERE A READING BECOMES A PUBLISHED FACT ★
+ *
+ * Which is why the scope is DERIVED here rather than taken. Every contributor
+ * used to pass its own workspace id as the carrier, so a dispatch agency
+ * recording an odometer wrote itself down as the operating carrier of a truck
+ * it neither owns nor runs. Now the canonical truck or trailer registry says
+ * who was operating the equipment when the meter was READ — not when the
+ * receipt was typed in — and the contributor's own organization stays in the
+ * record as the dispatch workspace when that is what it was.
+ *
+ * A contributor may still state what it believes. A statement that disagrees
+ * with the canonical records throws `EventScopeRefusedError` and NOTHING is
+ * appended: a reading whose owner cannot be established is not a reading the
+ * ledger can hold, because every reader of it would be told a wrong owner.
  */
 export async function contributeAndPublish(
   input: ContributeMeterReadingInput & { actor: ActorRef },
 ): Promise<ContributeResult & { event: DomainEvent<MeterReadingRecordedPayload> }> {
-  const result = contributeMeterReading(input);
+  // Pinned before the append so the ledger row, the derivation and the event
+  // all describe the same instant. Left to default inside `append`, the row
+  // would be stamped a few microseconds after the moment the carrier was
+  // derived for, which is a difference that matters at a lease boundary.
+  const readAt = input.readAt ?? new Date().toISOString();
+  const scope = meterFactScopeAt({
+    equipmentKind: input.equipmentKind,
+    equipmentId: input.equipmentId,
+    occurredAt: readAt,
+    asserted: input.scope,
+  });
+  const result = contributeMeterReading({ ...input, readAt, scope });
 
   const event = buildDomainEvent<MeterReadingRecordedPayload>({
     kind: "equipment_meter.reading_recorded",
     version: METER_READING_RECORDED_VERSION,
-    scope: input.scope,
+    scope,
     subjectId: input.equipmentId,
     subjectKind: input.equipmentKind,
     occurredAt: result.reading.readAt,
@@ -356,7 +435,8 @@ function accepted<T extends number>(
  * Takes no organization: the odometer of a physical truck is one number, and
  * narrowing it per organization is what produced three conflicting values in the
  * first place. Deciding whether a given membership may SEE it is the service
- * layer's job — see `visibleMeterReadings` for the history, which is scoped.
+ * layer's job, and it belongs to the module that owns the equipment rather
+ * than to a filter over a reading's own scope fields.
  */
 export function meterStateOf(equipmentId: string): EquipmentMeterState {
   const rows = db().byEquipment.get(equipmentId) ?? [];
@@ -405,6 +485,22 @@ export function meterDisputeReason(
   return undefined;
 }
 
+/**
+ * The reading one earlier contribution produced, by the key it was written with.
+ *
+ * Exists so a contributor can point a correction at what it corrects. Fuel is
+ * the caller that needs it: a corrected receipt is a NEW transaction with a new
+ * id, and without this the ledger would hold the superseded pump reading and the
+ * corrected one side by side, both eligible, with nothing saying one replaced
+ * the other.
+ *
+ * Takes the key rather than exposing the map, because the map is the ledger's
+ * own idempotency index and nothing outside it has any business iterating it.
+ */
+export function readingIdForContribution(idempotencyKey: string): string | undefined {
+  return db().byIdempotencyKey.get(idempotencyKey);
+}
+
 /** Every reading for one piece of equipment, newest first. Unscoped. */
 export function meterReadings(equipmentId: string): EquipmentMeterReading[] {
   return [...(db().byEquipment.get(equipmentId) ?? [])].sort(
@@ -413,24 +509,21 @@ export function meterReadings(equipmentId: string): EquipmentMeterReading[] {
 }
 
 /**
- * The readings one organization may see in a history list.
+ * ███ REMOVED: `visibleMeterReadings(organizationId, equipmentId)` ███
  *
- * Its own, plus those recorded under a carrier it is the carrier for. The
- * DERIVED value above is deliberately not filtered this way — a carrier that
- * takes over a truck needs the odometer it actually has, not the odometer it can
- * see the paperwork for — and that asymmetry is the point of the split.
+ * It returned every reading whose scope NAMED the caller — as the recording
+ * organization, as the carrier, or as the dispatch workspace — and called that
+ * a visibility rule. It was not one. Being mentioned on a fact is not
+ * permission to read it, so the helper was a cross-organization read grant
+ * handed out by the attribution fields themselves: put an organization's id in
+ * `carrierOrganizationId` and it could read the history back.
+ *
+ * Nothing called it outside its own test, so nothing replaces it. When a
+ * screen does need a scoped history, the rule belongs to the module that owns
+ * the equipment — the truck and trailer registries already decide who may see
+ * what about a unit, through relationships, dispatch grants and assignments —
+ * and never to a filter over a fact's own scope fields.
  */
-export function visibleMeterReadings(
-  organizationId: string,
-  equipmentId: string,
-): EquipmentMeterReading[] {
-  return meterReadings(equipmentId).filter(
-    (r) =>
-      r.scope.organizationId === organizationId
-      || r.scope.carrierOrganizationId === organizationId
-      || r.scope.dispatchOrganizationId === organizationId,
-  );
-}
 
 /** Whether the accepted reading is older than a module's staleness threshold. */
 export function meterIsStale(

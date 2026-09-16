@@ -214,6 +214,20 @@ export interface FuelTransaction {
 
   /** Frozen at write time. See CarrierAttribution. */
   attribution: CarrierAttribution;
+  /**
+   * A person's finding that the attribution above cannot be established.
+   *
+   * Separate from `attribution` and never a substitute for it: the snapshot
+   * keeps saying `unresolved`, because that is what the records said when the
+   * purchase was recorded and this build does not rewrite that. What this adds
+   * is the one thing the snapshot cannot express — that somebody with the
+   * authority to look HAS looked, found no evidence either way, and said so.
+   *
+   * Without it the queue asks a question nobody can answer and reopens itself
+   * forever. With it the question has an ending that names no carrier, moves no
+   * responsibility and contributes no meter reading.
+   */
+  attributionReview?: AttributionReview;
 
   /** When fuel actually went into the tank. */
   purchasedAt: IsoDateTime;
@@ -335,6 +349,15 @@ export interface JurisdictionMileageRecord {
 
   /** Frozen at write time, exactly as on a purchase. */
   attribution: CarrierAttribution;
+  /**
+   * The same finding a purchase can carry, for the same reason.
+   *
+   * A leg whose operating authority nobody can establish is flagged exactly as
+   * a purchase is, raises exactly the same Needs You item, and had exactly the
+   * same problem: nothing could close it. Resolved against `travelStartedAt`,
+   * which is the instant the attribution snapshot was resolved for.
+   */
+  attributionReview?: AttributionReview;
 
   jurisdiction: Jurisdiction;
   /** The continuous stretch inside that jurisdiction. */
@@ -614,6 +637,53 @@ export interface FuelSharingGrant {
 /* Audit                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A reviewer's finding about attribution that could not be resolved.
+ *
+ * One outcome, deliberately. "Not establishable with the available evidence" is
+ * a statement about the EVIDENCE, and it is the only thing a person can honestly
+ * conclude without the historical-authority correction and carrier-dispute
+ * records that do not exist in this build. There is no "it was carrier X" here,
+ * because a person choosing a name to clear a warning is precisely the failure
+ * this whole layer is built to prevent.
+ */
+export interface AttributionReview {
+  at: IsoDateTime;
+  by: ActorRef;
+  outcome: "not_establishable";
+  /** Why, in the reviewer's own words. Required — a finding needs a reason. */
+  reason: string;
+  /**
+   * What the canonical records answered at the moment of the review.
+   *
+   * The finding stands only while that answer stands. If the truck registry
+   * later says something different — a lease corrected, a relationship
+   * established, a dispute decided — this review no longer describes reality,
+   * the queue raises the purchase again, and somebody looks with the new
+   * evidence in front of them. A finding about evidence expires when the
+   * evidence changes.
+   */
+  refusalCode: string;
+  /**
+   * The canonical record ids that refusal named — the conflicting relationships,
+   * the leases that overlap, the ownership row that cannot be placed in time.
+   *
+   * The code alone is a CATEGORY, and a category does not change when the facts
+   * behind it do. "Two carriers cover this moment" reads the same whether it is
+   * the two carriers the reviewer looked at or two different ones, and a finding
+   * that survived that swap would be a person's conclusion about evidence they
+   * never saw. The ids are the evidence's own identity, held by the registry
+   * that owns it; nothing here is a second copy of a relationship or a lease.
+   *
+   * An id is identity, not content. When historical authority correction
+   * arrives, a record's effective dates will be able to change while its id
+   * stays put — and a finding must expire for that too. See the note on
+   * `stands` in `fuel-propagation.ts`: it is a requirement of that milestone,
+   * not a nice-to-have.
+   */
+  refusalRecords: string[];
+}
+
 export type FuelAuditKind =
   | "transaction.recorded"
   | "transaction.imported"
@@ -622,12 +692,14 @@ export type FuelAuditKind =
   | "transaction.rejected"
   | "transaction.marked_duplicate"
   | "transaction.corrected"
+  | "transaction.attribution_reviewed"
   | "transaction.receipt_attached"
   | "mileage.recorded"
   | "mileage.imported"
   | "mileage.verified"
   | "mileage.rejected"
   | "mileage.corrected"
+  | "mileage.attribution_reviewed"
   | "period.opened"
   | "period.state_changed"
   | "period.filed"

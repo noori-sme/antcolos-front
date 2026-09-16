@@ -119,3 +119,59 @@ export type AssetActivationState =
   | "pending_release"
   | "ended"
   | "suspended";
+
+/* -------------------------------------------------------------------------- */
+/* Point-in-time operating context                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * HOW the carrier operating an asset at one moment was proven.
+ *
+ * Three bases, in the order they are tried, and the order is the whole point:
+ * a lease is an explicit grant of exclusive authority for an interval, so it
+ * beats everything; legal ownership plus the owner's own carrier relationship
+ * is the ordinary case for a fleet running its own equipment; and one lone
+ * approved relationship is what proves an owner-operator's truck, where the
+ * carrier runs equipment it does not own and never took a lease on.
+ *
+ * `sole_approved_relationship` is deliberately NOT "the earliest of several".
+ * With two carriers approved and nothing to separate them, the honest answer is
+ * that the canonical records do not say, and a guess would attribute somebody's
+ * meter reading, fuel or mileage to the wrong company.
+ */
+export type OperatingContextBasis =
+  /** An operating lease covering the instant. Its id is pinned to the event. */
+  | "operating_lease"
+  /** The carrier is the recorded legal owner and holds a `carrier_owned` relationship. */
+  | "carrier_owned"
+  /** Exactly one carrier relationship covered the instant. No lease existed. */
+  | "sole_approved_relationship";
+
+/** Why no operating context could be established for an instant. */
+export type OperatingContextRefusalCode =
+  | "unreadable_instant"
+  | "unknown_equipment"
+  | "no_relationship"
+  | "conflicting_leases"
+  | "lease_without_relationship"
+  | "indeterminate_lease"
+  | "indeterminate_relationship"
+  | "indeterminate_ownership"
+  | "conflicting_ownership"
+  | "conflicting_relationships";
+
+/**
+ * What is returned instead of a guess.
+ *
+ * Carries the canonical record ids involved so a refusal names the data a
+ * person has to go and fix, rather than saying "not allowed" and leaving them
+ * to find out which of four registries disagrees.
+ */
+export interface OperatingContextRefusal {
+  resolved: false;
+  code: OperatingContextRefusalCode;
+  /** In the words the person who has to fix it would use. */
+  reason: string;
+  /** The conflicting or missing canonical record ids, when there are any. */
+  records: string[];
+}

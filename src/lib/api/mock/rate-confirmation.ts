@@ -15,7 +15,7 @@ import { buildRateConDocument, documentDate, signDocument } from "./ratecon-docu
 import { truckContextFrom } from "./truck-registry";
 import { commitRateConfirmation } from "./rate-confirmation-record";
 import { mockLoadsService } from "./loads";
-import { propagationBus } from "@/lib/propagation";
+import { readableProjectionsFor, retryProjection } from "@/lib/propagation";
 import { newCorrelationId, withCorrelation } from "@/lib/audit/correlation";
 
 /**
@@ -230,7 +230,23 @@ export async function receiveRateConfirmation(
 
   const loop = mtLoopById(booking.dispatchCycleId, ctx);
   const listing = listingOf(booking, ctx);
-  const carrier = carrierViewSync(booking.carrierOrganizationId, truckContextFrom(ctx));
+
+  /*
+   * A rate confirmation is SIGNED AS a carrier. There has to be one.
+   *
+   * The booking carries the carrier its dispatch cycle established, and that is
+   * absent when the canonical records never named one. Blocked rather than
+   * not_found, because the difference matters to the person reading it: this
+   * booking exists and this is what is missing from it.
+   */
+  const carrierOrganizationId = booking.carrierOrganizationId;
+  if (!carrierOrganizationId) {
+    return {
+      status: "blocked",
+      reason: "No carrier is established for this cycle, so there is nobody to sign the rate confirmation as. Connect the truck to the carrier that operates it first — this workspace is not a stand-in for one.",
+    };
+  }
+  const carrier = carrierViewSync(carrierOrganizationId, truckContextFrom(ctx));
   if (!loop || !listing || !carrier) return { status: "not_found" };
 
   const negotiation = negotiationsForCycle(booking.dispatchCycleId, ctx)
@@ -297,7 +313,7 @@ export async function receiveRateConfirmation(
   const workflow: RateConWorkflow = {
     rateConId: rowId("rc"),
     organizationId: ctx.organizationId,
-    carrierOrganizationId: booking.carrierOrganizationId,
+    carrierOrganizationId,
     carrierName: carrier.displayName,
     bookingId: booking.bookingId,
     dispatchCycleId: booking.dispatchCycleId,
@@ -710,7 +726,7 @@ export async function confirmAndSign(
     },
   });
 
-  workflow.distribution = distributionFrom(finalized.eventId);
+  workflow.distribution = distributionFrom(ctx, finalized.eventId);
   const counts = summarizeDistribution(workflow.distribution);
   record(
     workflow, "distributed", "Antcolos",
@@ -727,8 +743,11 @@ export async function confirmAndSign(
  * its reason, instead of the screen claiming a module was updated because the
  * code meant to update it.
  */
-export function distributionFrom(eventId: string): DistributionOutcome[] {
-  return propagationBus.projectionsFor(eventId).map((p) => ({
+export function distributionFrom(
+  ctx: MtLoopContext,
+  eventId: string,
+): DistributionOutcome[] {
+  return readableProjectionsFor(ctx, eventId).map((p) => ({
     key: p.subscriberId,
     label: p.subscriberLabel,
     state: p.state,
@@ -761,12 +780,20 @@ function summarizeDistribution(rows: DistributionOutcome[]): string {
  * rather than from an optimistic guess.
  */
 export async function retryDistribution(
+  ctx: MtLoopContext,
   workflow: RateConWorkflow,
   eventId: string,
   subscriberId: string,
 ): Promise<DistributionOutcome[]> {
-  await propagationBus.retry(eventId, subscriberId);
-  workflow.distribution = distributionFrom(eventId);
+  // Re-running a projection writes into the module it targets, so it needs the
+  // same authority as distributing the rate confirmation did in the first
+  // place — and the event has to be this organization's. An event id read off a
+  // screen, an audit line or a URL is not a key to somebody else's workflow.
+  if (!maySign(ctx)) return workflow.distribution ?? [];
+  // `loads:create` is what signing and distributing needed; re-running one of
+  // those projections is the same act, done again.
+  await retryProjection(ctx, eventId, subscriberId, ["loads:create"]);
+  workflow.distribution = distributionFrom(ctx, eventId);
   return workflow.distribution;
 }
 

@@ -4,7 +4,7 @@ import type {
   IftaJurisdictionSummary, IftaPeriod, IftaPeriodSummary,
   JurisdictionMileageRecord, MileageRecordFilters, PermissionKey, Quarter,
 } from "@/types";
-import { declareAttribution, resolveAttribution, type AuthorityWindow } from "@/lib/fuel/attribution";
+import { attributionFrom, declareAttribution } from "@/lib/fuel/attribution";
 import { countableMileage, countableTransactions, groupBy, summarize } from "@/lib/fuel/economy";
 import {
   derivePeriodState, jurisdictionSummaries, mileageInPeriod, qualifyForIfta,
@@ -28,10 +28,12 @@ import {
   fuelDb, jurisdictionsTravelled, ledgerHistoryFor, nextFuelId, referencePriceMills,
   type FuelState,
 } from "./fuel-store";
-import { truckAuthorityHistory, truckIdsRelatedTo, truckUnitNumber } from "./truck-registry";
+import { operatingContextAt, truckIdsRelatedTo, truckUnitNumber } from "./truck-registry";
 import { mockStore } from "./store";
 import {
-  contributeMileageOdometer, publishFuelTransaction,
+  assertFuelOdometerAllowed, assertMileageOdometerAllowed, attributionReviewStanding,
+  contributeMileageOdometer, fuelAttributionRefusal, mileageAttributionRefusal,
+  mileageAttributionReviewStanding, publishFuelTransaction,
 } from "./fuel-propagation";
 
 /**
@@ -279,41 +281,17 @@ function matchesMileage(r: JurisdictionMileageRecord, f: MileageRecordFilters): 
 /* -------------------------------------------------------------------------- */
 
 /**
- * The operating-authority history for a truck, as the attribution resolver
- * wants it.
+ * Who was running this truck at this instant, for an attribution snapshot.
  *
- * Built from the truck registry: live and past operating leases first, then
- * approved carrier relationships as the weaker fallback. This is the ONLY
- * place fuel reads authority, so there is one answer to "who was running it",
- * shared with the fleet module rather than reinvented here.
+ * One line, because the rule is not fuel's to own. It lives in
+ * `@/lib/fleet/operating-context` and the truck registry runs it over its own
+ * canonical rows; the meter ledger asks the same question of the same function.
+ * Fuel used to assemble authority windows and resolve them itself, which is how
+ * two answers to "who was running it" came to exist for one truck and one
+ * moment.
  */
-function authorityWindows(truckId: string): AuthorityWindow[] {
-  const { leases, relationships } = truckAuthorityHistory(truckId);
-
-  const fromLeases: AuthorityWindow[] = leases.map((l) => ({
-    carrierOrganizationId: l.organizationId,
-    carrierNameSnapshot: l.organizationName,
-    kind: "operating_lease",
-    // A reservation is when exclusivity is taken, so it is when responsibility
-    // starts — not the moment the truck rolls.
-    startedAt: l.reservedAt ?? l.activatedAt ?? l.createdAt,
-    endedAt: l.endedAt,
-    operatingLeaseId: l.id,
-    relationshipId: l.relationshipId,
-  }));
-
-  const fromRelationships: AuthorityWindow[] = relationships
-    .filter((r) => r.status === "approved" || r.status === "ended")
-    .map((r) => ({
-      carrierOrganizationId: r.organizationId,
-      carrierNameSnapshot: r.organizationName,
-      kind: "carrier_relationship",
-      startedAt: r.approvedAt ?? r.startedAt,
-      endedAt: r.endedAt,
-      relationshipId: r.id,
-    }));
-
-  return [...fromLeases, ...fromRelationships];
+function attributionAt(truckId: string, occurredAt: string, resolvedAt: string) {
+  return attributionFrom(operatingContextAt(truckId, occurredAt), resolvedAt);
 }
 
 function auditEntry(
@@ -690,11 +668,7 @@ export const mockFuelService: FuelService = {
     }
 
     const resolvedAt = nowIso();
-    const resolved = resolveAttribution(
-      authorityWindows(input.truckId),
-      input.purchasedAt,
-      resolvedAt,
-    );
+    const resolved = attributionAt(input.truckId, input.purchasedAt, resolvedAt);
 
     // A person may fill a gap the history left. A person may not overrule the
     // history — that is how a filed quarter gets quietly re-attributed.
@@ -713,6 +687,16 @@ export const mockFuelService: FuelService = {
         resolvedAt,
       );
     }
+
+    // The pump odometer is a meter reading, and only the carrier operating the
+    // truck may write one. Checked here so a refusal happens instead of the
+    // purchase, rather than after it is already on the ledger.
+    assertFuelOdometerAllowed({
+      organizationId: ctx.organizationId,
+      truckId: input.truckId,
+      purchasedAt: input.purchasedAt,
+      odometerMiles: input.odometerMiles,
+    });
 
     const qualification = qualifyForIfta(input.fuelType, input.location.jurisdiction);
     const id = nextFuelId("fuel");
@@ -769,6 +753,69 @@ export const mockFuelService: FuelService = {
     return redact(db, ctx, transaction);
   },
 
+  async acceptAttributionNotEstablishable(ctx, transactionId, reason) {
+    await wait();
+    requirePermissions(ctx, "fuel:review");
+    const db = fuelDb();
+    const t = findTransaction(db, ctx, transactionId);
+    requireOwnLedger(ctx, t);
+    if (!reason.trim()) {
+      throw new Error("Say what was looked at and what was not there. A finding needs a reason.");
+    }
+    if (!t.revision.isCurrent) {
+      throw new Error("This revision has been superseded. Review the current one instead.");
+    }
+    if (t.attribution.basis !== "unresolved") {
+      throw new Error(
+        `The operating authority for this purchase is already on record as ${t.attribution.carrierNameSnapshot}. There is nothing to find.`,
+      );
+    }
+
+    /*
+     * A refusal code is not proof that an answer can never be found, so the
+     * reviewer's finding is only accepted where a finding is the honest thing
+     * to make.
+     *
+     * NOT when the records answer. NOT when the obstacle is authority — that
+     * says somebody else operates the truck, which is an answer, and recording
+     * "nobody can tell" over the top of it would be false. Only where the
+     * canonical records genuinely do not cover the moment.
+     */
+    const refusal = fuelAttributionRefusal(t);
+    if (!refusal) {
+      throw new Error(
+        "The canonical records establish who was operating this truck when the pump was read, so this is not a purchase anybody has to give up on.",
+      );
+    }
+    if (refusal.kind !== "attribution") {
+      throw new Error(
+        "This purchase is not unattributable — it belongs to another carrier's authority. That is an answer, not a gap, and it is not this workspace's to close.",
+      );
+    }
+
+    // Already found, and the records have not moved since. Nothing happens
+    // twice: no second finding, no second audit line.
+    if (attributionReviewStanding(t)) return redact(db, ctx, t);
+
+    t.attributionReview = {
+      at: nowIso(),
+      by: ctx.actor,
+      outcome: "not_establishable",
+      reason: reason.trim(),
+      refusalCode: refusal.code,
+      refusalRecords: [...refusal.records],
+    };
+
+    auditEntry(
+      db, ctx.organizationId, "transaction.attribution_reviewed", ctx.actor,
+      { kind: "transaction", id: t.id, label: t.location.merchantName ?? t.location.jurisdiction },
+      `Operating authority could not be established and will not be guessed at: ${t.attributionReview.reason} The purchase stands, its attribution still reads unresolved, and its odometer stays out of the Equipment Meter Ledger.`,
+      { attributionReview: null },
+      { attributionReview: "not_establishable", refusalCode: refusal.code },
+    );
+    return redact(db, ctx, t);
+  },
+
   async verifyTransaction(ctx, transactionId) {
     await wait();
     requirePermissions(ctx, "fuel:review");
@@ -781,6 +828,15 @@ export const mockFuelService: FuelService = {
     if (t.state === "duplicate" || t.state === "rejected") {
       throw new Error(`A ${t.state} purchase cannot be verified. Reopen it with a correction instead.`);
     }
+    // Re-publishing re-contributes the odometer, so the same rule applies
+    // before anything on the record changes.
+    assertFuelOdometerAllowed({
+      organizationId: ctx.organizationId,
+      truckId: t.truckId,
+      purchasedAt: t.purchasedAt,
+      odometerMiles: t.odometerMiles,
+    });
+
     const before = t.state;
     t.state = "verified";
     t.verifiedBy = ctx.actor;
@@ -859,6 +915,13 @@ export const mockFuelService: FuelService = {
     if (!original.revision.isCurrent) {
       throw new Error("This revision has already been superseded. Correct the current one.");
     }
+
+    assertFuelOdometerAllowed({
+      organizationId: ctx.organizationId,
+      truckId: original.truckId,
+      purchasedAt: input.purchasedAt ?? original.purchasedAt,
+      odometerMiles: input.odometerMiles ?? original.odometerMiles,
+    });
 
     const jurisdiction = input.location?.jurisdiction ?? original.location.jurisdiction;
     const fuelType = input.fuelType ?? original.fuelType;
@@ -1013,11 +1076,9 @@ export const mockFuelService: FuelService = {
     }
 
     const resolvedAt = nowIso();
-    const resolved = resolveAttribution(
-      authorityWindows(input.truckId),
-      input.travelStartedAt,
-      resolvedAt,
-    );
+    // The leg's START, which is what the previous resolver was given too: a
+    // jurisdiction leg belongs to whoever was running the truck when it began.
+    const resolved = attributionAt(input.truckId, input.travelStartedAt, resolvedAt);
     let attribution = resolved;
     if (input.declaredCarrierOrganizationId) {
       if (resolved.basis !== "unresolved") {
@@ -1033,6 +1094,13 @@ export const mockFuelService: FuelService = {
         resolvedAt,
       );
     }
+
+    assertMileageOdometerAllowed({
+      organizationId: ctx.organizationId,
+      truckId: input.truckId,
+      travelEndedAt: input.travelEndedAt,
+      odometerEndMiles: input.odometerEndMiles,
+    });
 
     const id = nextFuelId("mil");
     const record: JurisdictionMileageRecord = {
@@ -1069,6 +1137,59 @@ export const mockFuelService: FuelService = {
     // The odometer at the end of the leg is a meter reading like any other.
     await contributeMileageOdometer(record, ctx.actor);
     return record;
+  },
+
+  async acceptMileageAttributionNotEstablishable(ctx, recordId, reason) {
+    await wait();
+    requirePermissions(ctx, "mileage:review");
+    const db = fuelDb();
+    const r = findMileage(db, ctx, recordId);
+    requireOwnLedger(ctx, r);
+    if (!reason.trim()) {
+      throw new Error("Say what was looked at and what was not there. A finding needs a reason.");
+    }
+    if (!r.revision.isCurrent) {
+      throw new Error("This revision has been superseded. Review the current one instead.");
+    }
+    if (r.attribution.basis !== "unresolved") {
+      throw new Error(
+        `The operating authority for this leg is already on record as ${r.attribution.carrierNameSnapshot}. There is nothing to find.`,
+      );
+    }
+
+    // The same two refusals as a purchase, for the same reasons: the records
+    // answering is not a gap, and another carrier's authority is an answer.
+    const refusal = mileageAttributionRefusal(r);
+    if (!refusal) {
+      throw new Error(
+        "The canonical records establish who was operating this truck for that travel, so this is not a leg anybody has to give up on.",
+      );
+    }
+    if (refusal.kind !== "attribution") {
+      throw new Error(
+        "This leg is not unattributable — it belongs to another carrier's authority. That is an answer, not a gap, and it is not this workspace's to close.",
+      );
+    }
+
+    if (mileageAttributionReviewStanding(r)) return r;
+
+    r.attributionReview = {
+      at: nowIso(),
+      by: ctx.actor,
+      outcome: "not_establishable",
+      reason: reason.trim(),
+      refusalCode: refusal.code,
+      refusalRecords: [...refusal.records],
+    };
+
+    auditEntry(
+      db, ctx.organizationId, "mileage.attribution_reviewed", ctx.actor,
+      { kind: "mileage", id: r.id, label: `${r.jurisdiction} · ${r.totalMiles} mi` },
+      `Operating authority could not be established and will not be guessed at: ${r.attributionReview.reason} The leg stands, its attribution still reads unresolved, and its odometer stays out of the Equipment Meter Ledger.`,
+      { attributionReview: null },
+      { attributionReview: "not_establishable", refusalCode: refusal.code },
+    );
+    return r;
   },
 
   async verifyMileage(ctx, recordId) {

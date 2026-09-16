@@ -3,7 +3,9 @@ import type {
   NeedsYouSeverity, PermissionKey,
 } from "@/types";
 import { countableMileage, countableTransactions } from "@/lib/fuel/economy";
-import { FUEL_FLAG_LABEL, MILEAGE_FLAG_LABEL } from "@/lib/fuel/labels";
+import {
+  FUEL_FLAG_DESCRIPTION, FUEL_FLAG_LABEL, MILEAGE_FLAG_LABEL,
+} from "@/lib/fuel/labels";
 import {
   isPeriodFinished, isQuarterFinished, periodLabel, quarterOf, quarterDueDate, yearOf,
 } from "@/lib/fuel/periods";
@@ -11,6 +13,9 @@ import { READINESS_ISSUE_LABEL, readinessIssues } from "@/lib/fuel/ifta";
 import { formatGallons } from "@/lib/fuel/units";
 import type { ServiceContext } from "../contracts/context";
 import { fuelDb } from "./fuel-store";
+import {
+  attributionReviewStanding, mileageAttributionReviewStanding,
+} from "./fuel-propagation";
 import { mockStore } from "./store";
 import { fleetSync, truckContextFrom } from "./truck-registry";
 
@@ -158,8 +163,14 @@ function suspiciousItem(organizationId: string, t: FuelTransaction, flags: strin
       reason: flags
         .map((f) => FUEL_FLAG_LABEL[f as keyof typeof FUEL_FLAG_LABEL] ?? f)
         .join(" · "),
-      detail:
+      // Each flag's own sentence, then the standing note. A person acting on
+      // this needs to know what the check actually found — including, for an
+      // unestablished carrier, that the odometer on the receipt did not reach
+      // the Equipment Meter Ledger and the purchase kept it either way.
+      detail: [
+        ...flags.map((f) => FUEL_FLAG_DESCRIPTION[f as keyof typeof FUEL_FLAG_DESCRIPTION]).filter(Boolean),
         "These are arithmetic checks, not an accusation and not fraud detection. Somebody looks, and either accepts the purchase or corrects it.",
+      ].join(" "),
       entity: {
         kind: "fuel_transaction",
         id: t.id,
@@ -178,10 +189,14 @@ function suspiciousItem(organizationId: string, t: FuelTransaction, flags: strin
   );
 }
 
-function mileageItem(organizationId: string, r: JurisdictionMileageRecord): NeedsYouItem {
+function mileageItem(
+  organizationId: string,
+  r: JurisdictionMileageRecord,
+  flags: JurisdictionMileageRecord["flags"],
+): NeedsYouItem {
   const period = dueForRecord(r.travelStartedAt);
   const impossible =
-    r.flags.includes("taxable_exceeds_total") || r.flags.includes("negative_miles");
+    flags.includes("taxable_exceeds_total") || flags.includes("negative_miles");
   return item(
     organizationId,
     `${FUEL_PREFIX}mileage_${r.id}`,
@@ -189,7 +204,7 @@ function mileageItem(organizationId: string, r: JurisdictionMileageRecord): Need
       category: "invalid_mileage",
       severity: impossible ? "high" : "medium",
       title: `Mileage to fix — ${r.jurisdiction}, ${truckLabel(r)}`,
-      reason: r.flags.map((f) => MILEAGE_FLAG_LABEL[f]).join(" · "),
+      reason: flags.map((f) => MILEAGE_FLAG_LABEL[f]).join(" · "),
       detail: impossible
         ? "A record that cannot be true will not be accepted for a return. Correct it — the original stays on the record with the reason."
         : "Worth a look before the quarter closes.",
@@ -293,8 +308,21 @@ export function syncFuelNeedsYou(ctx: ServiceContext) {
       const built = duplicateItem(ctx.organizationId, t);
       desired.set(built.id, built);
     }
+    /*
+     * A finding that the carrier cannot be established closes THAT question and
+     * only that one. The purchase can still be in the queue for a receipt, a
+     * duplicate or an odometer that ran backwards; what it stops being is a
+     * question nobody could answer, asked again on every read.
+     *
+     * The finding is checked against the canonical records rather than trusted
+     * as a stored flag — see `attributionReviewStanding` — so the moment the
+     * registry says something new, this comes back.
+     */
+    const reviewed = attributionReviewStanding(t);
     const suspicious = t.flags.filter(
-      (f) => f !== "missing_receipt" && f !== "possible_duplicate",
+      (f) => f !== "missing_receipt"
+        && f !== "possible_duplicate"
+        && !(reviewed && f === "no_active_operating_authority"),
     );
     if (suspicious.length > 0) {
       const built = suspiciousItem(ctx.organizationId, t, suspicious);
@@ -303,8 +331,14 @@ export function syncFuelNeedsYou(ctx: ServiceContext) {
   }
 
   for (const r of countableMileage(myMileage)) {
-    if (r.flags.length === 0) continue;
-    const built = mileageItem(ctx.organizationId, r);
+    // A standing finding closes the attribution question for a leg exactly as
+    // it does for a purchase. Every other flag on the record still raises it.
+    const reviewed = mileageAttributionReviewStanding(r);
+    const flags = r.flags.filter(
+      (f) => !(reviewed && f === "no_active_operating_authority"),
+    );
+    if (flags.length === 0) continue;
+    const built = mileageItem(ctx.organizationId, r, flags);
     desired.set(built.id, built);
   }
 

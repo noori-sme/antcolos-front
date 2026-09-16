@@ -24,6 +24,9 @@ import type {
   TruckSpecs,
 } from "@/types";
 import { DOCUMENT_LABEL } from "@/lib/fleet/equipment";
+import {
+  resolveOperatingContextAt, type OperatingContextResult,
+} from "@/lib/fleet/operating-context";
 import { normalizeVin, validateVin } from "@/lib/fleet/vin";
 import { truckDocumentTypeKey, truckRequirementKey } from "@/lib/documents/requirements";
 import {
@@ -2146,6 +2149,46 @@ export function truckDispatchGrants(truckId: string): TruckDispatchAccess[] {
     .filter((d) => d.truckId === truckId && d.status === "active")
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 }
+
+/**
+ * ★ THE ONE POINT-IN-TIME OPERATING CONTEXT FOR A TRUCK ★
+ *
+ * Who was operating this truck at this instant, proven from the canonical
+ * ownership records, carrier relationships and operating leases this registry
+ * already holds. No second registry, no copied relationship row: the canonical
+ * rows themselves come back.
+ *
+ * `truckOperatingCarrier` above answers "right now, and only if a lease is
+ * live", which is the right answer for a screen showing today's fleet and the
+ * wrong one for a fact about the past. This answers "at that moment", and a
+ * meter reading entered from a receipt three weeks late depends on it: today's
+ * lease holder must not inherit a fact from the carrier that actually ran the
+ * truck that day.
+ *
+ * Refuses rather than guesses. See `resolveOperatingContextAt` for the rule.
+ */
+export function operatingContextAt(
+  truckId: string,
+  instant: string,
+): OperatingContextResult<TruckOperatingLease, TruckCarrierRelationship> {
+  const truck = db().trucks.find((t) => t.truckId === truckId);
+  if (!truck) {
+    return {
+      resolved: false,
+      code: "unknown_equipment",
+      reason: "No truck with that id exists in the truck registry.",
+      records: [truckId],
+    };
+  }
+  return resolveOperatingContextAt({
+    equipmentNoun: "truck",
+    instant,
+    leases: db().leases.filter((l) => l.truckId === truckId),
+    relationships: db().relationships.filter((r) => r.truckId === truckId),
+    ownership: db().ownership.filter((o) => o.truckId === truckId),
+  });
+}
+
 
 /** The carrier that currently operates the truck under its own authority. */
 export function truckOperatingCarrier(

@@ -186,7 +186,7 @@ test("one versioned load.finalized event is published, and a retry publishes not
   // Republishing the same event directly is the retry a flaky network produces.
   const replay = await propagationBus.publish(published[0]);
   assert.equal(replay.duplicate, true);
-  const attempts = propagationBus.projectionsFor(published[0].eventId).map((p) => p.attempts);
+  const attempts = propagationBus.projectionsFor(published[0].scope.organizationId, published[0].eventId).map((p) => p.attempts);
   assert.deepEqual(
     attempts, attempts.map(() => 1),
     "no projection ran twice",
@@ -298,7 +298,7 @@ test("signing unlocks the Driver Load Post, which the fixture gate never did", a
   // Re-running the projection is safe: one post, whatever happens.
   const event = propagationBus.events(ctx.organizationId)
     .find((e) => e.kind === "load.finalized" && e.subjectId === workflow.loadId)!;
-  await propagationBus.retry(event.eventId, "driver_workflow");
+  await propagationBus.retry(event.scope.organizationId, event.eventId, "driver_workflow");
   assert.equal(
     driverWorkflowStore.org(ctx.organizationId).posts
       .filter((p) => p.loadId === workflow.loadId).length,

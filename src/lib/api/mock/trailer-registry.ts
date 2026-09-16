@@ -28,6 +28,9 @@ import type {
   TrailerSpecs,
   TrailerType,
 } from "@/types";
+import {
+  resolveOperatingContextAt, type OperatingContextResult,
+} from "@/lib/fleet/operating-context";
 import { normalizeVin, validateVin } from "@/lib/fleet/vin";
 import { TRAILER_DOCUMENT_LABEL } from "@/lib/fleet/trailer-equipment";
 import { checkMechanicalCompatibility } from "@/lib/fleet/compatibility";
@@ -718,6 +721,71 @@ function operatingCarrier(trailerId: string) {
   if (!held) return undefined;
   return db().relationships.find((r) => r.id === held.relationshipId);
 }
+
+/**
+ * ★ THE ONE POINT-IN-TIME OPERATING CONTEXT FOR A TRAILER ★
+ *
+ * The truck registry's `operatingContextAt` for the other half of the fleet,
+ * over this registry's own canonical ownership records, carrier relationships
+ * and operating leases. Same rule, run once, defined in
+ * `@/lib/fleet/operating-context` so a trailer and a truck can never be
+ * attributed by two subtly different sets of rules.
+ *
+ * A reefer's hour meter is as much an operational fact as a tractor's odometer,
+ * and it belongs to whoever was running the trailer when it was read.
+ */
+/**
+ * The carrier whose authority this organization sees a trailer under.
+ *
+ * The truck registry's `truckCarrierFor` for trailers, and it answers the same
+ * two ways: a carrier sees itself, a dispatch workspace sees the carrier that
+ * granted its access. Nothing is inferred from anything else, and a workspace
+ * with neither gets `undefined` — which is an answer, not a gap to fill in.
+ *
+ * Used to decide what a refusal may SAY: naming an organization this workspace
+ * is not entitled to know about would leak, through an error message, exactly
+ * the relationship the registry keeps from it.
+ */
+export function trailerCarrierFor(
+  trailerId: string,
+  organizationId: string,
+): { organizationId: string; name: string } | undefined {
+  const grant = activeDispatchAccess(trailerId, organizationId);
+  if (grant) {
+    return {
+      organizationId: grant.grantedByCarrierOrganizationId,
+      name: grant.grantedByCarrierName,
+    };
+  }
+  const relationship = approvedRelationship(trailerId, organizationId);
+  if (relationship) {
+    return { organizationId: relationship.organizationId, name: relationship.organizationName };
+  }
+  return undefined;
+}
+
+export function trailerOperatingContextAt(
+  trailerId: string,
+  instant: string,
+): OperatingContextResult<TrailerOperatingLease, TrailerCarrierRelationship> {
+  const trailer = db().trailers.find((t) => t.trailerId === trailerId);
+  if (!trailer) {
+    return {
+      resolved: false,
+      code: "unknown_equipment",
+      reason: "No trailer with that id exists in the trailer registry.",
+      records: [trailerId],
+    };
+  }
+  return resolveOperatingContextAt({
+    equipmentNoun: "trailer",
+    instant,
+    leases: db().leases.filter((l) => l.trailerId === trailerId),
+    relationships: db().relationships.filter((r) => r.trailerId === trailerId),
+    ownership: db().ownership.filter((o) => o.trailerId === trailerId),
+  });
+}
+
 
 export function trailerActivationStateFor(
   trailerId: string,

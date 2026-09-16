@@ -2,11 +2,15 @@ import type {
   ActorRef, FactVerification, FuelTransaction, JurisdictionMileageRecord,
   Provenance,
 } from "@/types";
+import type { AttributionReview } from "@/types";
+import type { EventScopeRefusedError } from "@/lib/propagation";
 import {
   buildDomainEvent, FUEL_TRANSACTION_CONFIRMED_VERSION, propagationBus,
   type FuelExtractedValues, type FuelTransactionConfirmedPayload,
 } from "@/lib/propagation";
-import { contributeAndPublish } from "./meter-ledger";
+import {
+  contributeAndPublish, meterContributionRefusal, readingIdForContribution,
+} from "./meter-ledger";
 // Side-effect import: wires every projection to the bus before anything is
 // published. A publisher with no subscribers registered would drop events.
 import "./projections";
@@ -66,6 +70,177 @@ export function fuelVerificationOf(t: FuelTransaction): FactVerification {
 }
 
 /**
+ * May this workspace record a pump odometer for this truck, at this moment?
+ *
+ * Asked by the fuel service BEFORE it writes the purchase, because the
+ * odometer reaches the meter ledger afterwards and a refusal there would leave
+ * a receipt on file with an exception instead of a reading. A purchase with no
+ * odometer on it contributes nothing, so it is not restricted by this at all —
+ * this is a rule about writing somebody's meter history, not about buying fuel.
+ */
+export function assertFuelOdometerAllowed(args: {
+  organizationId: string;
+  truckId: string;
+  purchasedAt: string;
+  odometerMiles?: number;
+}): void {
+  if (args.odometerMiles === undefined) return;
+  refuseOnAuthority(args.organizationId, args.truckId, args.purchasedAt);
+}
+
+/** The same question for the odometer at the end of a jurisdiction leg. */
+export function assertMileageOdometerAllowed(args: {
+  organizationId: string;
+  truckId: string;
+  travelEndedAt: string;
+  odometerEndMiles?: number;
+}): void {
+  if (args.odometerEndMiles === undefined) return;
+  refuseOnAuthority(args.organizationId, args.truckId, args.travelEndedAt);
+}
+
+/**
+ * What the canonical records answer about who was operating the truck at one
+ * instant, in the form the meter door would refuse with.
+ *
+ * Deliberately NOT conditional on there being an odometer. The question a
+ * reviewer is asked — can anybody establish whose this was — is about
+ * attribution, and a purchase with no dash reading on it can be just as
+ * unattributable as one that has. Tying this to the odometer made the one
+ * ending available to an unattributable receipt unreachable for every receipt
+ * that happened not to carry a number.
+ */
+export function attributionRefusalAt(
+  organizationId: string,
+  truckId: string,
+  instant: string,
+): EventScopeRefusedError | null {
+  return meterContributionRefusal({
+    equipmentKind: "truck",
+    equipmentId: truckId,
+    readAt: instant,
+    organizationId,
+  });
+}
+
+/** The answer for a purchase, asked at the moment fuel went into the tank. */
+export function fuelAttributionRefusal(t: FuelTransaction): EventScopeRefusedError | null {
+  return attributionRefusalAt(t.organizationId, t.truckId, t.purchasedAt);
+}
+
+/**
+ * The answer for a jurisdiction leg, asked at the moment the travel BEGAN.
+ *
+ * The same instant the attribution snapshot was resolved for. A leg's odometer
+ * is contributed against `travelEndedAt` instead, and the two can fall either
+ * side of a lease boundary — which is why this asks the question the flag on
+ * the record is actually about.
+ */
+export function mileageAttributionRefusal(
+  r: JurisdictionMileageRecord,
+): EventScopeRefusedError | null {
+  return attributionRefusalAt(r.organizationId, r.truckId, r.travelStartedAt);
+}
+
+/**
+ * Does a reviewer's finding still describe the records?
+ *
+ * A finding says "with the evidence available, nobody can establish this". That
+ * is a statement about a moment AND about a set of records, and both are
+ * checked, because the code on its own is only a category:
+ * `conflicting_relationships` reads the same whether it names the two carriers
+ * the reviewer looked at or two entirely different ones. A finding that
+ * survived that swap would be somebody's conclusion about evidence they never
+ * saw.
+ *
+ * So the finding stands while the registry gives the same refusal about the
+ * same records. Anything else — resolved, a different category, the same
+ * category about different rows — brings the record back to be looked at with
+ * what is in front of somebody now.
+ *
+ * Order is not evidence: the same ids in another order are the same records.
+ * Deliberately not a stored "reviewed" flag, which would keep saying yes long
+ * after it stopped being true.
+ *
+ * ███ REQUIRED OF THE AUTHORITY-CORRECTION MILESTONE ███
+ *
+ * Identity is as far as this can currently see, and identity is not the whole
+ * of evidence. Two records with the same ids can say different things: a lease
+ * whose interval is corrected to start a week earlier, a relationship whose
+ * approval date moves, an ownership row re-dated — each still covers the
+ * instant, still conflicts, still reports the same id under the same code, and
+ * is no longer the evidence the reviewer looked at.
+ *
+ * Nothing in this build can produce that: every canonical write starts its
+ * interval at `now` and no record's effective dates can be changed after the
+ * fact. The milestone that adds historical authority correction is exactly the
+ * thing that makes it producible, and it MUST NOT ship without closing this:
+ *
+ *   A finding expires when the EFFECTIVE EVIDENCE changes, not only when the
+ *   record ids do.
+ *
+ * Which means the comparison has to move from ids to what the correction
+ * milestone gives those records — the effective interval each one contributed
+ * to the refusal, or the revision identity of the correction that last changed
+ * it. Both are the registry's to publish alongside the refusal; neither is a
+ * copy of a relationship or a lease kept over here. Until then this comparison
+ * is the strongest one the available facts support, and saying so is the point
+ * of this note.
+ */
+function stands(
+  review: AttributionReview | undefined,
+  live: EventScopeRefusedError | null,
+): boolean {
+  if (!review || !live) return false;
+  if (live.code !== review.refusalCode) return false;
+  if (live.records.length !== review.refusalRecords.length) return false;
+  const seen = new Set(review.refusalRecords);
+  return live.records.every((id) => seen.has(id));
+}
+
+export function attributionReviewStanding(t: FuelTransaction): boolean {
+  return stands(t.attributionReview, fuelAttributionRefusal(t));
+}
+
+export function mileageAttributionReviewStanding(r: JurisdictionMileageRecord): boolean {
+  return stands(r.attributionReview, mileageAttributionRefusal(r));
+}
+
+/**
+ * ★ WHY FUEL REFUSES ON ONE KIND OF REASON AND NOT THE OTHER ★
+ *
+ * Two rules meet here and both are right.
+ *
+ * A6 says a workspace that does not operate a truck may not write its meter
+ * history, and that the command must be refused BEFORE it writes a record of
+ * its own rather than leaving a receipt behind with an exception after it.
+ *
+ * Fuel says a purchase that genuinely happened is not deleted because Antcolos
+ * cannot work out whose authority it was under: the record is kept, its
+ * attribution reads `unresolved`, it is flagged `no_active_operating_authority`
+ * and a person is asked. That is this module's oldest deliberate decision.
+ *
+ * They only collide when the reason is ATTRIBUTION — nobody can say whose the
+ * truck was at that moment, which is the ordinary state of a receipt found
+ * weeks later for a period before the carrier was onboarded. Refusing the
+ * purchase there would be A6 quietly deleting a fuel record, which is not what
+ * fail-closed on meter WRITES was ever for.
+ *
+ * So: an AUTHORITY refusal stops the command, and an attribution refusal stops
+ * only the odometer. The purchase lands, says `unresolved` out loud, and the
+ * meter ledger stays free of a reading nobody can attribute.
+ */
+function refuseOnAuthority(organizationId: string, truckId: string, at: string): void {
+  const refusal = meterContributionRefusal({
+    equipmentKind: "truck",
+    equipmentId: truckId,
+    readAt: at,
+    organizationId,
+  });
+  if (refusal?.kind === "authority") throw refusal;
+}
+
+/**
  * Contribute the pump odometer to the canonical meter ledger.
  *
  * Idempotent on the transaction's own id, so re-publishing a revision cannot
@@ -80,6 +255,13 @@ export async function contributeFuelOdometer(
   opts: { correctsTransactionId?: string; correctionReason?: string } = {},
 ): Promise<void> {
   if (t.odometerMiles === undefined) return;
+  // An attribution refusal has already been allowed through by the command, and
+  // the purchase is on file saying so. The ledger still will not hold a reading
+  // it cannot attribute, so the odometer simply does not travel.
+  if (meterContributionRefusal({
+    equipmentKind: "truck", equipmentId: t.truckId,
+    readAt: t.purchasedAt, organizationId: t.organizationId,
+  })) return;
   await contributeAndPublish({
     actor,
     equipmentKind: "truck",
@@ -89,13 +271,36 @@ export async function contributeFuelOdometer(
     readAt: t.purchasedAt,
     source: "fuel_receipt",
     contributor: "fuel",
-    scope: {
-      organizationId: t.organizationId,
-      carrierOrganizationId: t.attribution.carrierOrganizationId,
-    },
+    // The recording workspace only. Who was operating the truck when the pump
+    // was read is derived by `meterFactScopeAt` from the truck registry, which
+    // also refuses the contribution outright when this workspace was not it.
+    scope: { organizationId: t.organizationId },
     verification: fuelVerificationOf(t),
     recordedBy: actor,
     note: `Read at the pump: ${t.location.merchantName ?? t.location.jurisdiction}.`,
+    /*
+     * ★ A CORRECTED RECEIPT CORRECTS ITS READING, IT DOES NOT ADD ONE ★
+     *
+     * `correctTransaction` mints a NEW transaction id, so the revision
+     * contributes under its own key — which is right, because a revision is a
+     * distinct thing somebody wrote down. What was missing is the link. Without
+     * it the ledger held the superseded pump reading and the corrected one side
+     * by side, both eligible, and the derivation had no way to know one
+     * replaced the other:
+     *
+     *   - correct the odometer down and the SUPERSEDED value could still win;
+     *   - correct the purchase instant and one physical dash reading became two
+     *     readings at two different moments, with nothing linking them.
+     *
+     * The revision lineage already carries what is needed — `supersedesId` is
+     * threaded here as `correctsTransactionId` — so the reading points at the
+     * one it replaces. The ledger then flags that one `corrected` and stops
+     * counting it, keeping it as evidence, which is exactly what it does for
+     * every other contributor's corrections.
+     */
+    correctsReadingId: opts.correctsTransactionId
+      ? readingIdForContribution(`fuel:odometer:${opts.correctsTransactionId}`)
+      : undefined,
     correctionReason: opts.correctionReason,
     idempotencyKey: `fuel:odometer:${t.id}`,
     provenance: fuelProvenance(t.purchasedAt),
@@ -108,6 +313,10 @@ export async function contributeMileageOdometer(
   actor: ActorRef,
 ): Promise<void> {
   if (record.odometerEndMiles === undefined) return;
+  if (meterContributionRefusal({
+    equipmentKind: "truck", equipmentId: record.truckId,
+    readAt: record.travelEndedAt, organizationId: record.organizationId,
+  })) return;
   await contributeAndPublish({
     actor,
     equipmentKind: "truck",
@@ -117,10 +326,7 @@ export async function contributeMileageOdometer(
     readAt: record.travelEndedAt,
     source: "driver_report",
     contributor: "fuel",
-    scope: {
-      organizationId: record.organizationId,
-      carrierOrganizationId: record.attribution.carrierOrganizationId,
-    },
+    scope: { organizationId: record.organizationId },
     verification: record.state === "verified" ? "confirmed" : "pending",
     recordedBy: actor,
     note: `End of ${record.jurisdiction} leg.`,
@@ -153,9 +359,24 @@ export async function publishFuelTransaction(
   const event = buildDomainEvent<FuelTransactionConfirmedPayload>({
     kind: "fuel_transaction.confirmed",
     version: FUEL_TRANSACTION_CONFIRMED_VERSION,
+    /*
+     * The carrier comes from the transaction's own attribution snapshot —
+     * `resolveAttribution` decided it at record time from the truck's authority
+     * history, and re-deriving it now from today's relationships is the mistake
+     * that model exists to prevent.
+     *
+     * When that resolution found nothing, the snapshot holds an EMPTY carrier
+     * id and says so in `basis: "unresolved"`. The field is then left off
+     * entirely rather than published as "": a fuel purchase whose carrier
+     * nobody could establish is flagged and put in front of a person by the
+     * fuel module, and an empty string on the event would turn that honest gap
+     * into a value every reader compares against.
+     */
     scope: {
       organizationId: t.organizationId,
-      carrierOrganizationId: t.attribution.carrierOrganizationId,
+      ...(t.attribution.carrierOrganizationId
+        ? { carrierOrganizationId: t.attribution.carrierOrganizationId }
+        : {}),
     },
     subjectId: t.id,
     subjectKind: "fuel_transaction",

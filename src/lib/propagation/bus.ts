@@ -3,6 +3,7 @@ import type {
   ProjectionSubscriber, PublishResult,
 } from "@/types";
 import { ambientCorrelationId } from "@/lib/audit/correlation";
+import { assertPublishableScope } from "./scope-policy";
 
 /**
  * ★ THE CENTRAL DATA-PROPAGATION LAYER ★
@@ -250,8 +251,17 @@ export interface DomainEventBus {
   events(organizationId: string): DomainEvent[];
   /** One event by id, scoped. */
   event(organizationId: string, eventId: string): DomainEvent | undefined;
-  /** Projection records for one event, in registration order. */
-  projectionsFor(eventId: string): ProjectionRecord[];
+  /**
+   * Projection records for one event, in registration order, for one
+   * organization.
+   *
+   * The organization comes first because an event id is NOT a capability: it
+   * appears in URLs, in audit lines and in screenshots, and a lookup that took
+   * only the id handed anybody holding one the full distribution of somebody
+   * else's load. An id that does not belong to this organization answers the
+   * same as an id that does not exist.
+   */
+  projectionsFor(organizationId: string, eventId: string): ProjectionRecord[];
   /** Every projection record for an organization, newest event first. */
   projections(organizationId: string, filter?: {
     state?: ProjectionState[];
@@ -264,7 +274,7 @@ export interface DomainEventBus {
    * the record's state and bumps `attempts`; the event itself is untouched,
    * because the event is a statement about the past and retrying is not.
    */
-  retry(eventId: string, subscriberId: string): Promise<ProjectionRecord | undefined>;
+  retry(organizationId: string, eventId: string, subscriberId: string): Promise<ProjectionRecord | undefined>;
   /** Test/debug helper. Never called by the UI. */
   reset(): void;
 }
@@ -292,9 +302,15 @@ class InMemoryDomainEventBus implements DomainEventBus {
       return {
         event: existing,
         duplicate: true,
-        projections: this.projectionsFor(event.eventId),
+        projections: this.recordsFor(event.eventId),
       };
     }
+
+    // Refused BEFORE anything is stored and before any subscriber is offered
+    // it. An event whose scope disagrees with the canonical records must not
+    // exist even as a failed projection: a wrong attribution in the log is read
+    // as fact by everything downstream, and there is no un-publishing it.
+    assertPublishableScope(event as DomainEvent);
 
     const frozen = frozenCopyOf(event);
     this.eventsById.set(frozen.eventId, frozen);
@@ -385,6 +401,15 @@ class InMemoryDomainEventBus implements DomainEventBus {
     }
   }
 
+  /**
+   * The events attributed to one organization, newest first.
+   *
+   * `scope.organizationId` and nothing else. The carrier, dispatch and lease
+   * references on a scope are attribution, not entitlement: widening this
+   * filter to `carrierOrganizationId` or `dispatchOrganizationId` would hand a
+   * whole event history to every organization a fact happens to mention, which
+   * is a cross-organization grant wearing a scope check's clothes.
+   */
   events(organizationId: string): DomainEvent[] {
     return [...this.order]
       .reverse()
@@ -398,10 +423,25 @@ class InMemoryDomainEventBus implements DomainEventBus {
     return event;
   }
 
-  projectionsFor(eventId: string): ProjectionRecord[] {
+  /**
+   * The records themselves, unscoped.
+   *
+   * Private, and it stays private. It is what `publish` returns to the caller
+   * that just wrote the canonical record — which is the one moment nobody has
+   * to be checked, because they are holding the result of their own write.
+   * Every other route in goes through the organization-scoped method below.
+   */
+  private recordsFor(eventId: string): ProjectionRecord[] {
     return this.subscribers
       .map((s) => this.records.get(projectionKey(eventId, s.id)))
       .filter((r): r is ProjectionRecord => r !== undefined);
+  }
+
+  projectionsFor(organizationId: string, eventId: string): ProjectionRecord[] {
+    // Knowing the id is not being entitled to it. An id from another
+    // organization answers exactly as an id that was never published.
+    if (!this.event(organizationId, eventId)) return [];
+    return this.recordsFor(eventId);
   }
 
   projections(
@@ -410,7 +450,9 @@ class InMemoryDomainEventBus implements DomainEventBus {
   ): ProjectionRecord[] {
     const out: ProjectionRecord[] = [];
     for (const eventId of [...this.order].reverse()) {
-      for (const record of this.projectionsFor(eventId)) {
+      for (const record of this.recordsFor(eventId)) {
+        // The record carries the event's own organization, so this is the same
+        // question the scoped lookup asks, answered once per record.
         if (record.organizationId !== organizationId) continue;
         if (filter.state?.length && !filter.state.includes(record.state)) continue;
         if (filter.eventKind?.length && !filter.eventKind.includes(record.eventKind)) continue;
@@ -420,9 +462,17 @@ class InMemoryDomainEventBus implements DomainEventBus {
     return out;
   }
 
-  async retry(eventId: string, subscriberId: string): Promise<ProjectionRecord | undefined> {
+  async retry(
+    organizationId: string,
+    eventId: string,
+    subscriberId: string,
+  ): Promise<ProjectionRecord | undefined> {
+    // Re-running a projection WRITES into whatever module it targets, so this
+    // is a mutation reached by id. Scoped for the same reason the read above
+    // is, and more urgently.
+    const event = this.event(organizationId, eventId);
+    if (!event) return undefined;
     const record = this.records.get(projectionKey(eventId, subscriberId));
-    const event = this.eventsById.get(eventId);
     const subscriber = this.subscribers.find((s) => s.id === subscriberId);
     if (!record || !event || !subscriber) return undefined;
     if (!record.retryable) return record;

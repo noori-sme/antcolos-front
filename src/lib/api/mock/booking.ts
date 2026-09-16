@@ -4,7 +4,7 @@ import type {
 } from "@/types";
 import { authorityAllowsDispatch } from "@/types";
 import { listingById } from "./listing-registry";
-import { markLoopBooked, mtLoopById } from "./mt-loop";
+import { CARRIER_NOT_ESTABLISHED, markLoopBooked, mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
 import { allMatches, bookMatch, truckMatchContext, type BookingOutcome } from "./opportunity-matching";
 import {
@@ -184,7 +184,7 @@ export function canBook(negotiationId: string, ctx: MtLoopContext): BookCheck {
       trailerUnit: loop.trailerUnit,
       driverName: loop.driverName,
       consent,
-      carrierName: loop.carrierName,
+      carrierName: loop.carrierName ?? CARRIER_NOT_ESTABLISHED,
       brokerName: listing.broker.name,
       otherMatchesClosing: standing.matches,
       draftsStandingDown: standing.drafts,
@@ -382,7 +382,7 @@ export async function bookNegotiation(
       ratePerMileCents: Math.round(agreed / Math.max(listing.loadedMiles, 1)),
     },
     consent,
-    note: `Booked from the Opportunity Inbox at ${money(agreed)} with ${listing.broker.name}. Unit ${loop.truckUnit}${loop.driverName ? ` with ${loop.driverName}` : ""}${consent === "pending" ? `, offered to ${loop.driverName} because ${loop.carrierName} requires the driver to accept` : ""}.`,
+    note: `Booked from the Opportunity Inbox at ${money(agreed)} with ${listing.broker.name}. Unit ${loop.truckUnit}${loop.driverName ? ` with ${loop.driverName}` : ""}${consent === "pending" ? `, offered to ${loop.driverName} because ${loop.carrierName ?? "the carrier"} requires the driver to accept` : ""}.`,
     at,
   });
 
