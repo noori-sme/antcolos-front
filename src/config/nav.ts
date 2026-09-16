@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BadgeCheck, Bell, Building2, CalendarClock, ClipboardList, Container, FileBadge,
+  BadgeCheck, Bell, Briefcase, Building2, CalendarClock, ClipboardList, Container, FileBadge,
   FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
   Inbox, Layers, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
   Share2,
@@ -62,6 +62,10 @@ export const PRODUCT_NAV: NavSection[] = [
       // without being allowed to know which truck it is on.
       { label: "ELD & Telematics", href: "/eld", icon: Satellite, requires: ["eld:view", "trucks:view"] },
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
+      // The working relationship, which is not the driver record and not the
+      // member list. Gated on its own key: somebody who may see who drives here
+      // is not thereby somebody who may see on what basis they are employed.
+      { label: "Workforce", href: "/workforce", icon: Briefcase, requires: ["workforce:view"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
       { label: "Safety & Compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"] },

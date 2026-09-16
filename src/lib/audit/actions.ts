@@ -71,6 +71,32 @@ export const AUDIT_ACTIONS: readonly AuditActionMeta[] = [
   { key: "invoices.record_changed", label: "Invoice changed", module: "invoices" },
   { key: "integrations.connection_changed", label: "Integration changed", module: "integrations", permissionSensitive: true },
 
+  // The working relationship. None of these changes anybody's access: the two
+  // that ask the access system for something record only that it was asked,
+  // and the access system's own `access.*` line is what proves it happened.
+  { key: "workforce.engagement_created", label: "Engagement created", module: "workforce" },
+  { key: "workforce.onboarding_started", label: "Onboarding started", module: "workforce" },
+  { key: "workforce.classification_changed", label: "Classification changed", module: "workforce", permissionSensitive: true },
+  { key: "workforce.position_changed", label: "Position changed", module: "workforce" },
+  { key: "workforce.manager_changed", label: "Manager changed", module: "workforce" },
+  { key: "workforce.activated", label: "Engagement activated", module: "workforce", highValue: true },
+  { key: "workforce.suspended", label: "Engagement suspended", module: "workforce", permissionSensitive: true },
+  { key: "workforce.restored", label: "Engagement restored", module: "workforce" },
+  { key: "workforce.ended", label: "Engagement ended", module: "workforce", permissionSensitive: true, highValue: true },
+  { key: "workforce.rejected", label: "Candidate not taken forward", module: "workforce" },
+  { key: "workforce.withdrawn", label: "Candidate withdrew", module: "workforce" },
+  { key: "workforce.contract_linked", label: "Linked contract changed", module: "workforce" },
+  { key: "workforce.onboarding_step_waived", label: "Onboarding step waived", module: "workforce", permissionSensitive: true },
+  { key: "workforce.access_step_requested", label: "Access step requested", module: "workforce", permissionSensitive: true },
+  { key: "workforce.offboarding_step_recorded", label: "Offboarding step recorded", module: "workforce" },
+
+  // A carrier's custody of evidence it relied on. Adoption and disposal are
+  // high-value: one creates a retention obligation, the other discharges it.
+  { key: "compliance.qualification_adopted", label: "Document version adopted into the qualification file", module: "compliance", highValue: true },
+  { key: "compliance.qualification_superseded", label: "Qualification record superseded", module: "compliance" },
+  { key: "compliance.qualification_retention_changed", label: "Retention state changed", module: "compliance" },
+  { key: "compliance.qualification_disposed", label: "Qualification record disposed", module: "compliance", permissionSensitive: true, highValue: true },
+
   { key: "risk.signal_raised", label: "Risk signal raised", module: "risk" },
   { key: "risk.signal_dismissed", label: "Risk signal dismissed", module: "risk" },
   { key: "risk.case_opened", label: "Risk case opened", module: "risk" },
@@ -122,6 +148,7 @@ export const AUDIT_MODULE_LABEL: Record<AuditModule, string> = {
   settlements: "Settlements",
   invoices: "Invoices",
   integrations: "Integrations",
+  workforce: "Workforce & HR",
   risk: "Audit & Risk",
 };
 

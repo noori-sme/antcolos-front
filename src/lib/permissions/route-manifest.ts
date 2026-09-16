@@ -43,6 +43,11 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   // inheriting it.
   "/settings/responsibility": ["organization:manage"],
   "/account": [],
+  // Ending somebody's engagement is a stronger power than reading the roster,
+  // and the detail page is where it happens. The nav entry gates the list; this
+  // keeps the child route from falling through to a weaker parent by accident
+  // if the list's own requirement is ever relaxed.
+  "/workforce": ["workforce:view"],
 };
 
 export const ROUTE_MANIFEST: Record<string, PermissionKey[]> = {

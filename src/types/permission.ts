@@ -79,6 +79,25 @@ export type PermissionKey =
   | "contracts:terminate" | "contracts:cancel"
   | "contracts:signers:manage" | "contracts:requirements:waive"
   | "contracts:links:manage" | "contracts:financials:view" | "contracts:export"
+  // Workforce & HR — the WORKING RELATIONSHIP, and nothing else.
+  //
+  // Deliberately separate from `members:*`, which is ACCESS. An HR coordinator
+  // who may onboard somebody must not thereby be able to change what anybody
+  // can do in Antcolos, and `members:edit` is exactly that power. Ending an
+  // engagement is split from managing one because they are different
+  // authorities: whoever fills a seat is not automatically whoever may end
+  // somebody's employment.
+  | "workforce:view" | "workforce:manage" | "workforce:end"
+  // Driver qualification file — a carrier's retained custody records.
+  //
+  // `qualification:view` exists because `documents:view` and `compliance:view`
+  // are held broadly — every seeded dispatcher has both — and retained
+  // qualification evidence must not follow a relationship's end into their
+  // hands. Adoption itself reuses `compliance:manage`: deciding somebody is
+  // qualified has always been Safety's. Disposal is its own narrow key because
+  // it discharges a retention obligation, which is a different act from
+  // reading the file.
+  | "qualification:view" | "qualification:dispose"
   // Organization members
   | "members:view" | "members:edit" | "members:suspend" | "permissions:manage"
   // Invitations
@@ -105,6 +124,7 @@ export type PermissionGroup =
   | "accounting" | "fuel" | "compliance"
   | "accounting" | "compliance" | "maintenance" | "insurance" | "claims"
   | "contracts"
+  | "workforce"
   | "members" | "invitations" | "organization" | "audit";
 
 export interface PermissionMeta {

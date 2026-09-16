@@ -196,6 +196,13 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "contracts:financials:view", label: "See contract money terms", description: "See the compensation rules an agreement sets — percentages, rates, flat amounts and deductions.", group: "contracts", sensitive: true, financial: true },
   { key: "contracts:export", label: "Download contracts", description: "Export agreements and their terms out of Antcolos as a file.", group: "contracts", sensitive: true },
 
+  // ---- Workforce & HR ----------------------------------------------------
+  { key: "workforce:view", label: "View the workforce", description: "See who works with this organization, on what basis, from when and in what status. Not their permissions, and not their pay.", group: "workforce" },
+  { key: "workforce:manage", label: "Manage engagements", description: "Take somebody forward, record their classification, position and manager, and activate or suspend an engagement. This never changes anybody's permissions.", group: "workforce", sensitive: true },
+  { key: "workforce:end", label: "End engagements", description: "End somebody's working relationship and work through the offboarding steps. Access is revoked by the access system, not here.", group: "workforce", sensitive: true },
+  { key: "qualification:view", label: "View the qualification file", description: "See the exact document versions this carrier received, reviewed and relied on — including records it keeps after the relationship ends.", group: "compliance", sensitive: true },
+  { key: "qualification:dispose", label: "Authorise disposal of retained records", description: "Decide that a qualification record whose retention obligation has ended may be disposed of. A record still under retention can never be disposed of, whoever holds this.", group: "compliance", sensitive: true },
+
   // ---- Organization members ----------------------------------------------
   { key: "members:view", label: "View members", description: "See everyone who belongs to this organization.", group: "members" },
   { key: "members:edit", label: "Edit members", description: "Change someone's job title and which role they hold.", group: "members", sensitive: true },
@@ -247,6 +254,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   insurance: "Insurance",
   claims: "Claims",
   contracts: "Contracts and relationships",
+  workforce: "Workforce & HR",
   members: "Organization members",
   invitations: "Invitations",
   organization: "Organization settings",
@@ -258,7 +266,7 @@ export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "loads", "dispatch", "tracking", "driver_workflow", "drivers", "trucks", "trailers",
   "fleet", "eld", "customers", "documents", "settlements", "invoices", "reports",
   "accounting", "fuel", "compliance", "maintenance", "insurance", "claims",
-  "contracts", "members", "invitations", "organization", "audit",
+  "contracts", "workforce", "members", "invitations", "organization", "audit",
 ] as const;
 
 /**

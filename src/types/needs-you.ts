@@ -151,6 +151,25 @@ export type NeedsYouCategory =
   /** A draft was sent for review and nobody has read it. */
   | "contract_review_waiting"
 
+  /* ---- Workforce & HR. Derived from engagement state and from the modules
+     onboarding reads. Raised ONLY when a person must act: an active engagement
+     with nothing outstanding produces nothing at all, which is what keeps this
+     from becoming an HR inbox. ---- */
+  /** Somebody was taken forward and nobody has decided about them. */
+  | "workforce_applicant_review"
+  /** A step required for activation is blocked in the module that owns it. */
+  | "workforce_onboarding_blocked"
+  /** Everything onboarding asks for is done and nobody has started them. */
+  | "workforce_start_approval"
+  /** An offboarding step failed and the person still holds what it would end. */
+  | "workforce_offboarding_incomplete"
+
+  /* ---- Driver qualification file. Derived from the custody records. ---- */
+  /** A driver shared a document this carrier has not reviewed or adopted. */
+  | "qualification_review_required"
+  /** The driver replaced a version this carrier adopted and relies on. */
+  | "qualification_replacement_available"
+
   /* ---- Audit & Risk. Derived from open risk cases, never seeded. ---- */
   /** A high-severity risk case somebody has been made responsible for. */
   | "risk_case_assigned"
@@ -205,6 +224,10 @@ export type NeedsYouEntityKind =
   | "contract_version"
   /** One investigation, opened off one or more risk signals. */
   | "risk_case"
+  /** One person's working relationship with one organization. */
+  | "workforce_engagement"
+  /** One carrier's pinned custody record of one document version. */
+  | "qualification_record"
   /** One ELD or telematics device. Never the truck it happens to be on. */
   | "eld_device"
   /** One organization's link to a provider. */
@@ -270,6 +293,20 @@ export type NeedsYouActionKind =
   | "satisfy_requirement"
   /** Work through the closeout steps of a termination. */
   | "complete_termination"
+
+  /* ---- Workforce & HR ---- */
+  /** Decide whether to take a prospective person forward. Never automatic. */
+  | "review_applicant"
+  /** Open the engagement and deal with whatever is blocking onboarding. */
+  | "open_engagement"
+  /** Start somebody whose onboarding is finished. */
+  | "start_engagement"
+  /** Finish an offboarding step that did not complete. */
+  | "finish_offboarding"
+
+  /* ---- Driver qualification file ---- */
+  /** Look at a shared document version and decide whether to rely on it. */
+  | "review_qualification_document"
 
   /* ---- Audit & Risk ---- */
   /** Open the case and work it. The queue is never where a case is closed. */
@@ -439,6 +476,12 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   contract_requirement_unmet: "Contract requirement outstanding",
   contract_termination_unresolved: "Termination unfinished",
   contract_review_waiting: "Contract waiting for review",
+  workforce_applicant_review: "Somebody waiting on a decision",
+  workforce_onboarding_blocked: "Onboarding blocked",
+  workforce_start_approval: "Ready to start",
+  workforce_offboarding_incomplete: "Offboarding unfinished",
+  qualification_review_required: "Qualification document to review",
+  qualification_replacement_available: "Newer version available",
   risk_case_assigned: "Risk case assigned to you",
   risk_case_critical: "Critical risk case",
   risk_case_overdue: "Risk case overdue",

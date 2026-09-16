@@ -80,6 +80,13 @@ export type AuditModule =
   | "settlements"
   | "invoices"
   | "integrations"
+  /**
+   * The working relationship with a person: engagements, onboarding,
+   * activation, suspension and offboarding. NOT access — a permission or seat
+   * change is still `access.*`, recorded by the access system, however it came
+   * to be asked for.
+   */
+  | "workforce"
   | "risk";
 
 /* -------------------------------------------------------------------------- */
@@ -154,6 +161,29 @@ export type AuditAction =
   | "settlements.record_changed"
   | "invoices.record_changed"
   | "integrations.connection_changed"
+  /* The working relationship. None of these changes anybody's access: the two
+     that ask the access system for something record only the asking. -------- */
+  | "workforce.engagement_created"
+  | "workforce.onboarding_started"
+  | "workforce.classification_changed"
+  | "workforce.position_changed"
+  | "workforce.manager_changed"
+  | "workforce.activated"
+  | "workforce.suspended"
+  | "workforce.restored"
+  | "workforce.ended"
+  | "workforce.rejected"
+  | "workforce.withdrawn"
+  | "workforce.contract_linked"
+  | "workforce.onboarding_step_waived"
+  | "workforce.access_step_requested"
+  | "workforce.offboarding_step_recorded"
+  /* A carrier's custody of a document version it relied on. Projected into the
+     ONE ledger under compliance, because that is whose file it is. ---------- */
+  | "compliance.qualification_adopted"
+  | "compliance.qualification_superseded"
+  | "compliance.qualification_retention_changed"
+  | "compliance.qualification_disposed"
   /* This module's own work ------------------------------------------------ */
   | "risk.signal_raised"
   | "risk.signal_dismissed"
@@ -189,6 +219,10 @@ export type AuditEntityKind =
   | "mileage_record"
   | "ifta_period"
   | "compliance_requirement"
+  /** One person's working relationship with one organization. */
+  | "workforce_engagement"
+  /** One carrier's pinned custody record of one document version. */
+  | "qualification_record"
   | "maintenance_record"
   | "policy"
   | "claim"

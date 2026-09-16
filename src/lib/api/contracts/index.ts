@@ -15,6 +15,8 @@ export type * from "./agreements";
 export type * from "./audit";
 export type * from "./risk";
 export type * from "./responsibility";
+export type * from "./workforce";
+export type * from "./qualification";
 
 
 
@@ -36,6 +38,8 @@ import type { SettlementsService } from "./settlements";
 import type { NeedsYouService } from "./needs-you";
 import type { ReportsService } from "./reports";
 import type { ResponsibilityService } from "./responsibility";
+import type { WorkforceService } from "./workforce";
+import type { QualificationService } from "./qualification";
 
 /** The seam Taqi implements against. The UI only ever sees this shape. */
 export interface AntcolosServices {
@@ -86,4 +90,22 @@ export interface AntcolosServices {
    * contracts/responsibility.ts for what it deliberately is not.
    */
   responsibility: ResponsibilityService;
+  /**
+   * Workforce & HR — the WORKING RELATIONSHIP with a person.
+   *
+   * It owns no identity, no access, no document, no contract term, no
+   * qualification decision and no money. It answers the one question the
+   * records above could not: on what basis, in what capacity, from what date
+   * and in what status does this person work with this organization.
+   */
+  workforce: WorkforceService;
+  /**
+   * The driver qualification file: a carrier's custody of the exact document
+   * VERSIONS it received, reviewed and relied on, and of its obligation to keep
+   * them.
+   *
+   * Not a second Document Center. Every record is a pinned reference into the
+   * one document store, and there is no method that takes or stores a file.
+   */
+  qualification: QualificationService;
 }

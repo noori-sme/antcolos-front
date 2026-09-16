@@ -17,6 +17,8 @@ import { mockNeedsYouService } from "./mock/needs-you";
 import { mockReportsService } from "./mock/reports";
 import { mockResponsibilityService } from "./mock/responsibility";
 import { mockSettlementsService } from "./mock/settlements";
+import { mockWorkforceService } from "./mock/workforce";
+import { mockQualificationService } from "./mock/qualification";
 
 /**
  * Service registry. Today every call resolves to the mock adapter; when Taqi
@@ -42,6 +44,8 @@ const mockServices: AntcolosServices = {
   audit: mockAuditService,
   risk: mockRiskService,
   responsibility: mockResponsibilityService,
+  workforce: mockWorkforceService,
+  qualification: mockQualificationService,
 };
 
 export const services: AntcolosServices =
