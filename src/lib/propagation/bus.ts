@@ -39,20 +39,196 @@ import { ambientCorrelationId } from "@/lib/audit/correlation";
 /* -------------------------------------------------------------------------- */
 
 /**
- * The deterministic event id for one intent.
+ * The deterministic event id for one intent, at one payload version.
  *
- * Built from the event kind and the caller's idempotency key, which is the
- * pair that means "this same thing happening". Signing the same rate
- * confirmation twice produces the same key, so it produces the same event id,
- * so nothing downstream runs twice. Nothing parses this; only equality matters.
+ * Three dimensions, and the third one is the whole reason this function has a
+ * comment this long.
+ *
+ * KIND and IDEMPOTENCY KEY are the pair that means "this same thing happening".
+ * Signing the same rate confirmation twice produces the same key, so it
+ * produces the same id, so nothing downstream runs twice. That is what makes a
+ * double-tapped button, a retried command and a replayed webhook safe.
+ *
+ * VERSION is here because without it the safety turns into a silent hole.
+ * `ProjectionSubscriber.versions` exists so that a subscriber which has not
+ * been taught v2 says `needs_review` out loud rather than reading fields it
+ * never agreed to — but a v2 of an intent already published at v1 would have
+ * collided with the v1 id, come back `duplicate: true`, and been DISCARDED
+ * before any subscriber was offered it. The version guard was unreachable
+ * through the normal path, and the v2 payload vanished without a record.
+ *
+ * So: same kind, same version, same key is one event and dedupes. Same kind,
+ * NEWER version, same key is a different event, and every subscriber gets to
+ * say whether it understands it.
+ *
+ * Nothing parses this; only equality matters.
  */
-export function domainEventId(kind: DomainEventKind, idempotencyKey: string): string {
-  return `dev_${kind}:${idempotencyKey}`;
+export function domainEventId(
+  kind: DomainEventKind,
+  version: number,
+  idempotencyKey: string,
+): string {
+  return `dev_${kind}:v${version}:${idempotencyKey}`;
 }
 
 /** `${eventId}:${subscriberId}` — the unit idempotency actually applies to. */
 function projectionKey(eventId: string, subscriberId: string): string {
   return `${eventId}:${subscriberId}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Immutability                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ A PUBLISHED EVENT IS A STATEMENT ABOUT THE PAST ★
+ *
+ * So it has to stop being reachable by whoever made it, and by whoever reads
+ * it. `Object.freeze({ ...event })` froze the envelope's own properties and
+ * nothing else — `payload`, `scope`, `provenance` and `actor` stayed shared,
+ * live references. Two consequences, both silent:
+ *
+ *  1. A subscriber could mutate the payload, and the NEXT subscriber in the
+ *     run order would read the mutated one. Projections are run sequentially
+ *     precisely so a replay is reproducible; a mutable payload undoes that.
+ *  2. A publisher holding its own payload object could change it after
+ *     `publish()` returned, and the stored event would change with it. The
+ *     ledger of what happened would quietly disagree with what happened.
+ *
+ * COPY, then freeze the copy. Freezing the caller's object in place would fix
+ * (1) and (2) by making the publisher's own object throw on its next write,
+ * which is a side effect nobody asked for.
+ *
+ * ── AND THE COPY IS VALIDATED, NOT JUST DEEP ──────────────────────────────
+ * A deep copy alone is not enough, because `Object.freeze` is a shallower
+ * promise than it looks: a frozen `Map` still accepts `.set()`, a frozen `Set`
+ * still accepts `.add()`, and a frozen `Date` still accepts `.setTime()`.
+ * Freezing those and calling the event immutable would be a claim this code
+ * cannot keep. A cyclic payload is the same problem from the other side: it
+ * survives an in-memory copy and cannot survive a durable JSON, event-log or
+ * outbox boundary, which is where these events are eventually going.
+ *
+ * So the boundary accepts TRANSPORT-SAFE PLAIN DATA only, and everything else
+ * is refused by name and by path before anything is recorded. That is not a
+ * restriction on the existing payloads: `load.finalized`,
+ * `fuel_transaction.confirmed` and `equipment_meter.reading_recorded` are
+ * strings, finite numbers, booleans and string-union enums in plain objects
+ * and arrays, with every instant already an `IsoDateTime` string. Nothing is
+ * being taken away — what is being removed is the room for a later payload to
+ * smuggle in something that cannot be frozen, cannot be serialized, and would
+ * have been found by a backend rather than here.
+ *
+ * ███ FRONTEND ONLY ███
+ * This makes the in-memory record immutable and portable. It is not
+ * durability, not integrity against a process that does not run this code, and
+ * not a signature.
+ */
+function frozenCopyOf<P>(event: DomainEvent<P>): DomainEvent {
+  return deepFreeze(plainDataCopy(event, "event", []) as DomainEvent);
+}
+
+/** What a value has to be to cross the bus, in the words the error uses. */
+const PLAIN_DATA_CONTRACT =
+  "A domain event carries transport-safe plain data only: null, strings, "
+  + "booleans, finite numbers, arrays, and plain objects of those. Instants "
+  + "travel as ISO strings.";
+
+function refuse(path: string, found: string): never {
+  throw new TypeError(
+    `${path} is ${found}, which cannot be published. ${PLAIN_DATA_CONTRACT}`,
+  );
+}
+
+/**
+ * Validate and copy one value, or refuse it by name and by path.
+ *
+ * One pass does both on purpose. A validate-then-clone pair would walk the
+ * same tree twice and could disagree about what it found on the second walk.
+ *
+ * `ancestors` is the path from the root to here, so a true cycle is caught
+ * while two properties pointing at the same object are not — sharing is
+ * lossless once copied, and refusing it would reject payloads that are fine.
+ */
+function plainDataCopy(value: unknown, path: string, ancestors: object[]): unknown {
+  if (value === null) return null;
+
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return value;
+    case "number":
+      // NaN and Infinity survive a copy and become `null` in JSON. A rate or a
+      // mileage that turns into null on the way to a database is worse than a
+      // refusal here, and the refusal names which field it was.
+      if (!Number.isFinite(value)) refuse(path, `the number ${String(value)}`);
+      return value;
+    case "undefined":
+      // Reached only inside an array — object properties are handled below.
+      // JSON turns a hole into `null`, which silently changes what the array
+      // says. An optional value belongs in an object property, not a slot.
+      refuse(path, "undefined inside an array");
+      break;
+    case "bigint":
+      refuse(path, "a bigint");
+      break;
+    case "symbol":
+      refuse(path, "a symbol");
+      break;
+    case "function":
+      refuse(path, "a function");
+      break;
+  }
+
+  const object = value as object;
+  if (ancestors.includes(object)) {
+    throw new TypeError(
+      `${path} is a cyclic reference, which cannot be published. A domain event `
+      + "must survive being written to a log or an outbox, and a cycle does not.",
+    );
+  }
+
+  if (Array.isArray(object)) {
+    const next = [...ancestors, object];
+    return object.map((item, i) => plainDataCopy(item, `${path}[${i}]`, next));
+  }
+
+  const prototype = Object.getPrototypeOf(object);
+  if (prototype !== Object.prototype && prototype !== null) {
+    // Named rather than lumped together, because the fix differs: a Date
+    // becomes an ISO string, a Map becomes an object or an array of pairs, a
+    // class instance becomes the plain shape it was standing in for.
+    const name = object.constructor?.name ?? "an object with a prototype";
+    refuse(
+      path,
+      name === "Date"
+        ? "a Date — freezing one does not stop setTime, so instants travel as ISO strings"
+        : name === "Map" || name === "Set"
+          ? `a ${name} — freezing one does not stop ${name === "Map" ? "set()" : "add()"}`
+          : `a ${name} instance`,
+    );
+  }
+
+  const next = [...ancestors, object];
+  const copy: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(object)) {
+    // An absent optional field. JSON has no way to say "present and
+    // undefined", so the copy says what a durable record would say: the key is
+    // not there. No reader can tell the difference — `payload.weightLbs` reads
+    // `undefined` either way — and the stored event now matches what a backend
+    // would keep.
+    if (item === undefined) continue;
+    copy[key] = plainDataCopy(item, `${path}.${key}`, next);
+  }
+  return copy;
+}
+
+/** Freeze every object reachable from `value`. */
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object") return value;
+  for (const key of Reflect.ownKeys(value)) {
+    deepFreeze((value as Record<PropertyKey, unknown>)[key]);
+  }
+  return Object.freeze(value);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -120,7 +296,7 @@ class InMemoryDomainEventBus implements DomainEventBus {
       };
     }
 
-    const frozen = Object.freeze({ ...event }) as DomainEvent;
+    const frozen = frozenCopyOf(event);
     this.eventsById.set(frozen.eventId, frozen);
     this.order.push(frozen.eventId);
 
@@ -308,7 +484,7 @@ export function buildDomainEvent<P>(input: {
 }): DomainEvent<P> {
   const recordedAt = input.recordedAt ?? new Date().toISOString();
   return {
-    eventId: domainEventId(input.kind, input.idempotencyKey),
+    eventId: domainEventId(input.kind, input.version, input.idempotencyKey),
     kind: input.kind,
     version: input.version,
     scope: input.scope,
