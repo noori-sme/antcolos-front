@@ -137,8 +137,15 @@ function matchFixture(over: Partial<OpportunityMatch> = {}): OpportunityMatch {
  * dismissed ones, which is the pattern `suggestFrom` looks for. A flat set
  * produces no suggestion and would make the consent assertions vacuous.
  */
-function recordDecisions(organizationId: string, count = 12) {
-  for (let i = 0; i < count; i++) {
+/**
+ * `offset` keeps successive calls on DISTINCT matches.
+ *
+ * One match is one decision however often it is observed, so a second call that
+ * reused the first call's match ids would add nothing and would quietly make
+ * every test about accumulation prove the opposite of what it says.
+ */
+function recordDecisions(organizationId: string, count = 12, offset = 0) {
+  for (let i = offset; i < offset + count; i++) {
     const pursued = i % 2 === 0;
     observeDecision(
       organizationId,
@@ -224,7 +231,7 @@ describe("turning contribution on and off", () => {
     // The four refused decisions stay refused. Enabling reaches forward only.
     expect(networkPoolForTests()).toHaveLength(0);
 
-    recordDecisions(ORG_A, 4);
+    recordDecisions(ORG_A, 4, 4);
     expect(networkPoolForTests()).toHaveLength(4);
     expect(localPoolForTests(ORG_A)).toHaveLength(8);
     expect(learningFor(ORG_A).contributedObservations).toBe(4);
@@ -237,7 +244,7 @@ describe("turning contribution on and off", () => {
     expect(networkPoolForTests()).toHaveLength(4);
 
     setLearningConsent(admin, { contribute: false });
-    recordDecisions(ORG_A, 6);
+    recordDecisions(ORG_A, 6, 4);
 
     // Not one more row, and no queue anywhere holding the six.
     expect(networkPoolForTests()).toHaveLength(4);
@@ -344,6 +351,111 @@ describe("consumption consent", () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* One decision is one row, however many times it arrives                      */
+/* -------------------------------------------------------------------------- */
+
+describe("duplicate observations", () => {
+  /** The same load, decided the same way, arriving again. */
+  const again = (organizationId: string, pursued = true, matchId = "mch_repeat") =>
+    observeDecision(
+      organizationId,
+      matchFixture({ matchId }),
+      listingFixture(),
+      pursued,
+    );
+
+  it("does not grow local evidence when the same decision is retried", () => {
+    for (let i = 0; i < 12; i++) again(ORG_A);
+
+    expect(localPoolForTests(ORG_A)).toHaveLength(1);
+    expect(learningFor(ORG_A).localObservations).toBe(1);
+  });
+
+  it("does not grow network evidence when the same contributed decision is retried", () => {
+    setLearningConsent(ctxFor(ORG_A, ADMIN), { contribute: true });
+    for (let i = 0; i < 12; i++) again(ORG_A);
+
+    expect(networkPoolForTests()).toHaveLength(1);
+    expect(learningFor(ORG_A).contributedObservations).toBe(1);
+    expect(learningFor(ORG_B).networkObservations).toBe(1);
+  });
+
+  it("cannot manufacture enough rows to clear the minimum-evidence floor", () => {
+    // The attack this closes: one real decision, pressed enough times to look
+    // like a market. Sixty presses, split both ways so the derivation would
+    // have something to chew on, on a grand total of two loads.
+    setLearningConsent(ctxFor(ORG_A, ADMIN), { contribute: true });
+    for (let i = 0; i < 30; i++) {
+      again(ORG_A, true, "mch_one");
+      again(ORG_A, false, "mch_two");
+    }
+
+    expect(networkPoolForTests()).toHaveLength(2);
+    expect(localPoolForTests(ORG_A)).toHaveLength(2);
+
+    // Two loads is not eight, so nobody gets a suggestion out of it.
+    expect(learningFor(ORG_A).suggested).toBeUndefined();
+    const b = learningFor(ORG_B);
+    expect(b.networkObservations).toBe(2);
+    expect(b.networkAvailability).toBe("insufficient_evidence");
+    expect(b.suggested).toBeUndefined();
+  });
+
+  it("keeps one contribution identity per decision, and unlinkable ones across decisions", () => {
+    setLearningConsent(ctxFor(ORG_A, ADMIN), { contribute: true });
+
+    again(ORG_A, true, "mch_one");
+    const firstToken = networkPoolForTests()[0].contributionId;
+
+    // Retried, and changed: still one row, still the same identity.
+    for (let i = 0; i < 5; i++) again(ORG_A, true, "mch_one");
+    again(ORG_A, false, "mch_one");
+
+    expect(networkPoolForTests()).toHaveLength(1);
+    expect(networkPoolForTests()[0].contributionId).toBe(firstToken);
+    // The change of mind corrected the row rather than adding a second one.
+    expect(networkPoolForTests()[0].pursued).toBe(false);
+
+    // A different load is a different decision, and its token shares nothing.
+    again(ORG_A, true, "mch_two");
+    const tokens = networkPoolForTests().map((o) => o.contributionId);
+    expect(tokens).toHaveLength(2);
+    expect(new Set(tokens).size).toBe(2);
+    expect(tokens[1]).not.toBe(tokens[0]);
+  });
+
+  it("does not let a repeat under withdrawn consent write to the pool", () => {
+    const admin = ctxFor(ORG_A, ADMIN);
+    setLearningConsent(admin, { contribute: true });
+    again(ORG_A, true, "mch_one");
+    const pooledBefore = { ...networkPoolForTests()[0] };
+
+    setLearningConsent(admin, { contribute: false });
+    again(ORG_A, false, "mch_one");
+
+    // The row that was already shared stays as it was — it cannot be recalled,
+    // and it is not written to again either.
+    expect(networkPoolForTests()).toHaveLength(1);
+    expect(networkPoolForTests()[0]).toEqual(pooledBefore);
+    // The workspace's own copy still reflects what they actually decided.
+    expect(localPoolForTests(ORG_A)[0].observation.pursued).toBe(false);
+  });
+
+  it("keeps two workspaces deciding the same load apart", () => {
+    setLearningConsent(ctxFor(ORG_A, ADMIN), { contribute: true });
+    setLearningConsent(ctxFor(ORG_B, ADMIN), { contribute: true });
+
+    again(ORG_A, true, "mch_shared");
+    again(ORG_B, false, "mch_shared");
+
+    // One opinion each, not one between them.
+    expect(localPoolForTests(ORG_A)).toHaveLength(1);
+    expect(localPoolForTests(ORG_B)).toHaveLength(1);
+    expect(networkPoolForTests()).toHaveLength(2);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* A workspace never learns from itself through the pool                       */
 /* -------------------------------------------------------------------------- */
 
@@ -399,7 +511,7 @@ describe("self-contributed evidence", () => {
     expect(learningFor(ORG_B).suggested).toBeUndefined();
 
     // Over it, and with both classes present, B may learn from A's rows.
-    recordDecisions(ORG_A, 8);
+    recordDecisions(ORG_A, 8, 4);
     const b = learningFor(ORG_B);
     expect(b.networkObservations).toBe(12);
     expect(b.networkAvailability).toBe("available");
@@ -542,6 +654,28 @@ describe("audit", () => {
       (e) => e.sourceAction === "learning.consent_changed",
     );
     expect(consentEvents).toHaveLength(1);
+  });
+
+  it("is idempotent turning contribution off as well as on", async () => {
+    const admin = ctxFor(ORG_A, ADMIN);
+    setLearningConsent(admin, { contribute: true });
+
+    const off = setLearningConsent(admin, { contribute: false });
+    const offAgain = setLearningConsent(admin, { contribute: false });
+    const offOnceMore = setLearningConsent(admin, { contribute: false, consume: true });
+
+    expect(offAgain).toEqual(off);
+    expect(offOnceMore).toEqual(off);
+    expect(offAgain.updatedAt).toBe(off.updatedAt);
+    expect(learningConsent(ORG_A).contribute).toBe(false);
+
+    // On, then off. Two real changes, two events — and nothing for the repeats.
+    const page = await mockAuditService.list(admin, {
+      filters: { module: ["organization"] },
+      limit: 200,
+    });
+    expect(page.items.filter((e) => e.sourceAction === "learning.consent_changed"))
+      .toHaveLength(2);
   });
 
   it("does not write a second log of its own", () => {

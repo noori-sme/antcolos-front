@@ -68,6 +68,14 @@ import { appendAuditEvent, recordPermissionDenied } from "./audit";
  * anonymous contributions are retained forever, expire on a schedule, or are
  * purged wholesale on withdrawal is a policy decision with legal weight, and it
  * belongs to the backend and to whoever writes the privacy terms — not here.
+ *
+ * It must also own the UNIQUE CONSTRAINT that makes one decision one row. Here
+ * that is a `Map` keyed by `(organizationId, matchId)` inside one tab, which is
+ * a contract rather than a guarantee: two tabs, two devices or a retried request
+ * under a real backend would each get their own. The backend needs
+ * `UNIQUE (organization_id, match_id)` on the workspace-side decision table, and
+ * the pool row reached through the contribution token that table holds — never
+ * by writing an organization id onto the pool to make the constraint easier.
  */
 
 const nowIso = () => new Date().toISOString();
@@ -113,6 +121,7 @@ export function resetRanking() {
   preferences.clear();
   consent.clear();
   observations.length = 0;
+  byDecision.clear();
   network.length = 0;
 }
 
@@ -458,6 +467,13 @@ interface PooledObservation extends AnonymizedObservation {
 
 /** Every workspace's own decisions, kept per workspace and never joined to the pool. */
 const observations: LocalObservation[] = [];
+/**
+ * decision key -> the one row that decision owns.
+ *
+ * The same shape `meter-ledger.ts` uses for `byIdempotencyKey`, and for the same
+ * reason: a retried contribution must write once. See `decisionKey` below.
+ */
+const byDecision = new Map<string, LocalObservation>();
 /** The anonymised pool. Deliberately holds no organization id at all. */
 const network: PooledObservation[] = [];
 
@@ -643,6 +659,44 @@ export function anonymize(
 }
 
 /**
+ * ★ WHAT COUNTS AS ONE DECISION ★
+ *
+ * One MATCH — one load offered to one truck's cycle — is one opinion, however
+ * many times somebody presses the button.
+ *
+ * `matchId` is the identity, because it is the stable one that already exists:
+ * an immutable id minted once when the match is formed, unchanged by
+ * short-listing, dismissing or restoring it. Nothing new had to be invented and
+ * nothing about the organization goes anywhere near the pool.
+ *
+ * This matters more than a tidy count. `shortlistMatch` does not refuse a match
+ * that is already short-listed, so a double-click, a retried command or a
+ * replayed action reaches here again — and before this existed, twelve clicks
+ * on ONE load produced twelve local rows and twelve pool rows, each with its own
+ * unlinkable token. That is enough to clear the minimum-evidence floor from a
+ * single decision, and another workspace would then have consumed it as the
+ * market's opinion. The floor is only worth having if the rows under it are
+ * distinct loads.
+ *
+ * A change of mind REPLACES the row rather than adding one, so a mis-click that
+ * is immediately corrected leaves the right opinion rather than both.
+ *
+ * Note what is deliberately NOT de-duplicated: the match's own history still
+ * records every press. Those are acts a person took and the record of acts
+ * should be complete. This is a corpus of opinions, and one load is one opinion.
+ *
+ * ███ FRONTEND ONLY ███
+ * A `Map` in one tab. The backend needs a real unique constraint — see the note
+ * on `decisionKey`.
+ */
+function decisionKey(organizationId: string, match: OpportunityMatch): string {
+  // Scoped by organization so two workspaces looking at the same load each keep
+  // their own opinion. The key never reaches the pool; it lives only in the
+  // workspace-side index, next to the organization id it already holds.
+  return `${organizationId}:${match.matchId}`;
+}
+
+/**
  * Record that a dispatcher pursued a load, or threw it away.
  *
  * Called from the match service when somebody short-lists or dismisses.
@@ -661,11 +715,47 @@ export function observeDecision(
   listing: Listing,
   pursued: boolean,
 ): void {
+  const key = decisionKey(organizationId, match);
   const observation = anonymize(match, listing, pursued);
-  const contributed = learningConsent(organizationId).contribute;
+  const mayContribute = learningConsent(organizationId).contribute;
+  const existing = byDecision.get(key);
 
-  if (!contributed) {
-    observations.push({ organizationId, at: nowIso(), observation, contributed: false });
+  if (existing) {
+    // Seen before. The opinion may have changed — somebody short-listed a load
+    // and then thought better of it — so the row is REPLACED, never joined by a
+    // second one. One match has not become two loads.
+    existing.observation = observation;
+    existing.at = nowIso();
+
+    const pooled = existing.contributionId
+      ? network.find((o) => o.contributionId === existing.contributionId)
+      : undefined;
+
+    if (pooled) {
+      // Updated in place under the token it already has, so a change of mind
+      // corrects the row rather than adding one. Only while consent still
+      // stands: writing to the pool after it was withdrawn would be a write
+      // nobody authorised, and the row simply stays as it was.
+      if (mayContribute) Object.assign(pooled, observation);
+      return;
+    }
+
+    // Never contributed before. It may be contributed now — that is this act,
+    // made under consent as it stands now, not a backfill of the earlier one.
+    if (!mayContribute) return;
+    const contributionId = newContributionId();
+    existing.contributed = true;
+    existing.contributionId = contributionId;
+    network.push({ ...observation, contributionId });
+    return;
+  }
+
+  if (!mayContribute) {
+    const row: LocalObservation = {
+      organizationId, at: nowIso(), observation, contributed: false,
+    };
+    observations.push(row);
+    byDecision.set(key, row);
     return;
   }
 
@@ -673,9 +763,11 @@ export function observeDecision(
   // from; the pool must never be able to reach it. The token travels with the
   // copy and is remembered locally, which is the only place the two meet.
   const contributionId = newContributionId();
-  observations.push({
+  const row: LocalObservation = {
     organizationId, at: nowIso(), observation, contributed: true, contributionId,
-  });
+  };
+  observations.push(row);
+  byDecision.set(key, row);
   network.push({ ...observation, contributionId });
 }
 
