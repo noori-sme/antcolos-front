@@ -247,7 +247,17 @@ export type DocumentShareBasisKind =
   | "carrier_relationship"
   | "driver_relationship"
   | "load"
-  | "workspace_upgrade";
+  | "workspace_upgrade"
+  /**
+   * A driver handing documents to a carrier BEFORE any relationship exists.
+   *
+   * Every other basis rests on a relationship record. This one rests on a share
+   * package the driver created, which is the whole point: a driver may show a
+   * carrier their licence without being that carrier's driver, and the grant
+   * has to be able to say so rather than implying an engagement that does not
+   * exist.
+   */
+  | "driver_share";
 
 export interface DocumentShareBasis {
   kind: DocumentShareBasisKind;

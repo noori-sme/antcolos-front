@@ -95,6 +95,9 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Directory", href: "/directory", icon: Building2, requires: ["customers:view"] },
       { label: "Contracts", href: "/contracts", icon: FileSignature, requires: ["contracts:view"] },
       { label: "Documents", href: "/documents", icon: FileText, requires: ["documents:view"] },
+      // What drivers have sent this carrier before any relationship exists.
+      // Same permission as the Document Center: it is the same documents.
+      { label: "Shared with us", href: "/documents/shared", icon: Share2, requires: ["documents:view"] },
       { label: "Settlements", href: "/finance/settlements", icon: Receipt, requires: ["settlements:view"] },
       { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, requires: ["invoices:view"] },
       { label: "Reports", href: "/reports", icon: Gauge, requires: ["reports:view"] },
@@ -125,6 +128,7 @@ export const DRIVER_NAV: NavSection[] = [
       { label: "Proposals", href: "/driver/proposals", icon: Handshake, requires: ["proposals:view"], driverOnly: true, primaryMobile: true },
       { label: "My loads", href: "/driver/loads", icon: ClipboardList, requires: ["loads:view"], driverOnly: true, primaryMobile: true },
       { label: "My documents", href: "/driver/documents", icon: FileText, requires: [], driverOnly: true, primaryMobile: true },
+      { label: "My shares", href: "/driver/shares", icon: Share2, requires: [], driverOnly: true },
       { label: "My compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"], driverOnly: true },
       { label: "My agreements", href: "/contracts", icon: FileSignature, requires: ["contracts:view"], driverOnly: true },
       // The device on the truck they are on, and their own hours-of-service

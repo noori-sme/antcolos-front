@@ -129,6 +129,17 @@ export type AuditAction =
   | "documents.shared"
   | "documents.share_revoked"
   | "documents.downloaded"
+  /* A driver's own share package: issued, carried, opened, refused, reviewed.
+     Distinct from `documents.shared`, which is an organization granting another
+     organization access to a document it holds. ------------------------------ */
+  | "documents.share_issued"
+  | "documents.share_delivery_attempted"
+  | "documents.share_delivery_failed"
+  | "documents.share_opened"
+  | "documents.share_access_refused"
+  | "documents.share_expired"
+  | "documents.share_review_recorded"
+  | "documents.share_refreshed"
   /* Operational modules, projected from their own histories ---------------- */
   | "loads.timeline_appended"
   | "dispatch.assignment_changed"

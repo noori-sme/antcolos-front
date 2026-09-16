@@ -7,6 +7,7 @@ import { resetComplianceNeedsYou } from "./compliance-needs-you";
 import { resetComplianceRegistry } from "./compliance-registry";
 import { resetWorkAssignments } from "./dispatch-workspace";
 import { resetDocumentNeedsYou } from "./document-needs-you";
+import { resetShareSequence } from "./document-shares";
 import { resetDocumentStore } from "./document-store";
 import { resetDocumentCenter } from "./documents";
 import { resetDriverRegistry } from "./driver-registry";
@@ -94,6 +95,9 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   { id: "core", holds: "Loads, events, documents, customers, drivers and the Needs You bucket", module: "store.ts", reset: () => mockStore.reset() },
   { id: "documents", holds: "The one document store, per version and lineage", module: "document-store.ts", reset: resetDocumentStore },
   { id: "document_center", holds: "Document Center links, shares and review decisions", module: "documents.ts", reset: resetDocumentCenter },
+  // The packages themselves live in the document store above; this resets only
+  // the id sequence the share service mints from.
+  { id: "document_shares", holds: "Driver share package id sequence", module: "document-shares.ts", reset: resetShareSequence },
   { id: "trucks", holds: "The global truck registry, leases and grants", module: "truck-registry.ts", reset: resetTruckRegistry },
   { id: "trailers", holds: "The global trailer registry", module: "trailer-registry.ts", reset: resetTrailerRegistry },
   { id: "drivers", holds: "Driver profiles and their carrier relationships", module: "driver-registry.ts", reset: resetDriverRegistry },
