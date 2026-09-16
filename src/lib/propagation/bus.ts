@@ -3,6 +3,7 @@ import type {
   ProjectionSubscriber, PublishResult,
 } from "@/types";
 import { ambientCorrelationId } from "@/lib/audit/correlation";
+import { assertPublishableScope } from "./scope-policy";
 
 /**
  * ★ THE CENTRAL DATA-PROPAGATION LAYER ★
@@ -296,6 +297,12 @@ class InMemoryDomainEventBus implements DomainEventBus {
       };
     }
 
+    // Refused BEFORE anything is stored and before any subscriber is offered
+    // it. An event whose scope disagrees with the canonical records must not
+    // exist even as a failed projection: a wrong attribution in the log is read
+    // as fact by everything downstream, and there is no un-publishing it.
+    assertPublishableScope(event as DomainEvent);
+
     const frozen = frozenCopyOf(event);
     this.eventsById.set(frozen.eventId, frozen);
     this.order.push(frozen.eventId);
@@ -385,6 +392,15 @@ class InMemoryDomainEventBus implements DomainEventBus {
     }
   }
 
+  /**
+   * The events attributed to one organization, newest first.
+   *
+   * `scope.organizationId` and nothing else. The carrier, dispatch and lease
+   * references on a scope are attribution, not entitlement: widening this
+   * filter to `carrierOrganizationId` or `dispatchOrganizationId` would hand a
+   * whole event history to every organization a fact happens to mention, which
+   * is a cross-organization grant wearing a scope check's clothes.
+   */
   events(organizationId: string): DomainEvent[] {
     return [...this.order]
       .reverse()

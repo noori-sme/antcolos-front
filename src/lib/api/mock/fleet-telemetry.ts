@@ -269,10 +269,12 @@ export function meterContributionFor(
     readAt: row.observedAt,
     source: "manual_entry",
     contributor: "fleet",
-    scope: {
-      organizationId: row.organizationId,
-      carrierOrganizationId: row.organizationId,
-    },
+    // The RECORDING workspace, and only that. This used to name the same
+    // organization as the carrier, which made a dispatch agency recording an
+    // odometer the operating carrier of a truck it does not run. Who the
+    // carrier was is derived from the truck or trailer registry at the moment
+    // the meter was read — see `meterFactScopeAt`.
+    scope: { organizationId: row.organizationId },
     verification: "confirmed",
     recordedBy: row.recordedByMembershipId
       ? {

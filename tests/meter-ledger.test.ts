@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   contributeMeterReading, meterDisputeReason, meterIsStale, meterReadings,
-  meterStateOf, resetMeterLedger, visibleMeterReadings,
+  meterStateOf, resetMeterLedger,
 } from "@/lib/api/mock/meter-ledger";
+import * as meterLedger from "@/lib/api/mock/meter-ledger";
 import { TRUCK_IDS } from "@/lib/api/mock/truck-registry";
 import type { ContributeMeterReadingInput } from "@/lib/api/mock/meter-ledger";
 
@@ -204,7 +205,7 @@ test("history is never reset or split when the carrier or authority changes", ()
   assert.equal(state.disputed.length, 0, "with no dispute caused by the handover");
 });
 
-test("who may SEE the history is scoped, but the derived value is not", () => {
+test("a fact's own scope fields never decide who may read it", () => {
   contributeMeterReading(reading(800_000, hoursAgo(6), {
     scope: { organizationId: "org_northline", carrierOrganizationId: "org_northline" },
   }));
@@ -212,16 +213,23 @@ test("who may SEE the history is scoped, but the derived value is not", () => {
     scope: { organizationId: "org_baxter", carrierOrganizationId: "org_baxter" },
   }));
 
-  // Baxter sees its own operational reporting, not Northline's.
-  const baxterSees = visibleMeterReadings("org_baxter", TRUCK);
-  assert.ok(baxterSees.every((r) => r.scope.organizationId === "org_baxter"
-    || r.scope.carrierOrganizationId === "org_baxter"
-    || r.scope.dispatchOrganizationId === "org_baxter"));
-  assert.ok(!baxterSees.some((r) => r.odometerMiles === 800_000));
+  // `visibleMeterReadings` used to return every reading whose scope NAMED the
+  // caller — as the recorder, the carrier or the dispatch workspace — which is
+  // a cross-organization read grant handed out by the attribution fields
+  // themselves. It is gone, and the ledger exports nothing that takes an
+  // organization and hands back rows.
+  assert.equal(
+    (meterLedger as Record<string, unknown>).visibleMeterReadings, undefined,
+    "the scope-equality read helper is not back",
+  );
 
-  // The accepted value is deliberately NOT narrowed the same way: a carrier
-  // taking over a truck needs the odometer it has, not the odometer it can see
-  // the paperwork for.
+  // What remains is unscoped and says so. Deciding who may see a unit's history
+  // belongs to the module that owns the equipment.
+  assert.equal(meterReadings(TRUCK).length, 2);
+
+  // The accepted value is deliberately not narrowed either: a carrier taking
+  // over a truck needs the odometer it has, not the odometer it can see the
+  // paperwork for.
   assert.equal(meterStateOf(TRUCK).odometer?.value, 800_500);
 });
 

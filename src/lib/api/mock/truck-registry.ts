@@ -24,6 +24,9 @@ import type {
   TruckSpecs,
 } from "@/types";
 import { DOCUMENT_LABEL } from "@/lib/fleet/equipment";
+import {
+  resolveOperatingContextAt, type OperatingContextResult,
+} from "@/lib/fleet/operating-context";
 import { normalizeVin, validateVin } from "@/lib/fleet/vin";
 import { truckDocumentTypeKey, truckRequirementKey } from "@/lib/documents/requirements";
 import {
@@ -2145,6 +2148,77 @@ export function truckDispatchGrants(truckId: string): TruckDispatchAccess[] {
   return db().dispatchAccess
     .filter((d) => d.truckId === truckId && d.status === "active")
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+
+/**
+ * ★ THE ONE POINT-IN-TIME OPERATING CONTEXT FOR A TRUCK ★
+ *
+ * Who was operating this truck at this instant, proven from the canonical
+ * ownership records, carrier relationships and operating leases this registry
+ * already holds. No second registry, no copied relationship row: the canonical
+ * rows themselves come back.
+ *
+ * `truckOperatingCarrier` above answers "right now, and only if a lease is
+ * live", which is the right answer for a screen showing today's fleet and the
+ * wrong one for a fact about the past. This answers "at that moment", and a
+ * meter reading entered from a receipt three weeks late depends on it: today's
+ * lease holder must not inherit a fact from the carrier that actually ran the
+ * truck that day.
+ *
+ * Refuses rather than guesses. See `resolveOperatingContextAt` for the rule.
+ */
+export function operatingContextAt(
+  truckId: string,
+  instant: string,
+): OperatingContextResult<TruckOperatingLease, TruckCarrierRelationship> {
+  const truck = db().trucks.find((t) => t.truckId === truckId);
+  if (!truck) {
+    return {
+      resolved: false,
+      code: "unknown_equipment",
+      reason: "No truck with that id exists in the truck registry.",
+      records: [truckId],
+    };
+  }
+  return resolveOperatingContextAt({
+    equipmentNoun: "truck",
+    instant,
+    leases: db().leases.filter((l) => l.truckId === truckId),
+    relationships: db().relationships.filter((r) => r.truckId === truckId),
+    ownership: db().ownership.filter((o) => o.truckId === truckId),
+  });
+}
+
+/**
+ * The dispatch grant that let this dispatch workspace act on this truck at this
+ * instant, if it had one.
+ *
+ * Read at a moment in time for the same reason as everything else here: a
+ * dispatcher who recorded an odometer in March was authorized in March, and a
+ * grant ended since does not retroactively make that record unauthorized.
+ *
+ * A grant proves the dispatch workspace could ACT. It never makes them the
+ * operating carrier, and it is not a read grant for anybody else's history.
+ */
+export function truckDispatchGrantAt(
+  truckId: string,
+  dispatchOrganizationId: string,
+  instant: string,
+): TruckDispatchAccess | undefined {
+  const ms = Date.parse(instant);
+  if (Number.isNaN(ms)) return undefined;
+  return db().dispatchAccess.find((d) => {
+    if (d.truckId !== truckId) return false;
+    if (d.dispatchOrganizationId !== dispatchOrganizationId) return false;
+    // A grant that is suspended or pending says nothing about a past moment, so
+    // only a grant that is live or was properly ended can prove one.
+    if (d.status !== "active" && !(d.status === "ended" && d.endedAt)) return false;
+    const from = Date.parse(d.startedAt);
+    if (Number.isNaN(from) || ms < from) return false;
+    if (!d.endedAt) return true;
+    const to = Date.parse(d.endedAt);
+    return Number.isNaN(to) ? false : ms < to;
+  });
 }
 
 /** The carrier that currently operates the truck under its own authority. */

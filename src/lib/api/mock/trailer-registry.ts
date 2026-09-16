@@ -28,6 +28,9 @@ import type {
   TrailerSpecs,
   TrailerType,
 } from "@/types";
+import {
+  resolveOperatingContextAt, type OperatingContextResult,
+} from "@/lib/fleet/operating-context";
 import { normalizeVin, validateVin } from "@/lib/fleet/vin";
 import { TRAILER_DOCUMENT_LABEL } from "@/lib/fleet/trailer-equipment";
 import { checkMechanicalCompatibility } from "@/lib/fleet/compatibility";
@@ -717,6 +720,65 @@ function operatingCarrier(trailerId: string) {
   const held = holdingLease(trailerId);
   if (!held) return undefined;
   return db().relationships.find((r) => r.id === held.relationshipId);
+}
+
+/**
+ * ★ THE ONE POINT-IN-TIME OPERATING CONTEXT FOR A TRAILER ★
+ *
+ * The truck registry's `operatingContextAt` for the other half of the fleet,
+ * over this registry's own canonical ownership records, carrier relationships
+ * and operating leases. Same rule, run once, defined in
+ * `@/lib/fleet/operating-context` so a trailer and a truck can never be
+ * attributed by two subtly different sets of rules.
+ *
+ * A reefer's hour meter is as much an operational fact as a tractor's odometer,
+ * and it belongs to whoever was running the trailer when it was read.
+ */
+export function trailerOperatingContextAt(
+  trailerId: string,
+  instant: string,
+): OperatingContextResult<TrailerOperatingLease, TrailerCarrierRelationship> {
+  const trailer = db().trailers.find((t) => t.trailerId === trailerId);
+  if (!trailer) {
+    return {
+      resolved: false,
+      code: "unknown_equipment",
+      reason: "No trailer with that id exists in the trailer registry.",
+      records: [trailerId],
+    };
+  }
+  return resolveOperatingContextAt({
+    equipmentNoun: "trailer",
+    instant,
+    leases: db().leases.filter((l) => l.trailerId === trailerId),
+    relationships: db().relationships.filter((r) => r.trailerId === trailerId),
+    ownership: db().ownership.filter((o) => o.trailerId === trailerId),
+  });
+}
+
+/**
+ * The dispatch grant that let this dispatch workspace act on this trailer at
+ * this instant, if it had one. The truck registry's `truckDispatchGrantAt` for
+ * trailers, with the same meaning: it proves they could act, never that they
+ * were the carrier, and never that anybody may read anybody else's history.
+ */
+export function trailerDispatchGrantAt(
+  trailerId: string,
+  dispatchOrganizationId: string,
+  instant: string,
+): TrailerDispatchAccess | undefined {
+  const ms = Date.parse(instant);
+  if (Number.isNaN(ms)) return undefined;
+  return db().dispatchAccess.find((d) => {
+    if (d.trailerId !== trailerId) return false;
+    if (d.dispatchOrganizationId !== dispatchOrganizationId) return false;
+    if (d.status !== "active" && !(d.status === "ended" && d.endedAt)) return false;
+    const from = Date.parse(d.startedAt);
+    if (Number.isNaN(from) || ms < from) return false;
+    if (!d.endedAt) return true;
+    const to = Date.parse(d.endedAt);
+    return Number.isNaN(to) ? false : ms < to;
+  });
 }
 
 export function trailerActivationStateFor(
