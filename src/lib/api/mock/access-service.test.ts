@@ -494,17 +494,29 @@ describe("accepting is not blanket access to restricted paperwork", () => {
     const result = await acceptInvitation("INV-NEWDRIVER", NEWCOMER, { driverIdentity: LICENCE });
     if (result.status !== "accepted") throw new Error("expected acceptance");
 
-    const { sharedDocumentKeys, withheldDocumentKeys } = result.outcome;
+    const { sharedDocuments, withheldDocuments } = result.outcome;
+    const sharedKeys = sharedDocuments.map((d) => d.key);
 
-    expect(sharedDocumentKeys).toContain("cdl_front");
-    expect(sharedDocumentKeys).toContain("medical_front");
-    expect(withheldDocumentKeys.sort())
+    expect(sharedKeys).toContain("cdl_front");
+    expect(sharedKeys).toContain("medical_front");
+    expect(withheldDocuments.map((d) => d.key).sort())
       .toEqual(["northline_employment_application", "northline_mvr"]);
+    // Named in the words the person is shown, never as an internal key, and
+    // each carrying why its category is withheld.
+    expect(withheldDocuments.map((d) => d.label).sort())
+      .toEqual(["DOT employment application", "Motor vehicle record"]);
+    for (const doc of withheldDocuments) {
+      expect(doc.reason).toBeTruthy();
+      expect(doc.label).not.toBe(doc.key);
+    }
 
-    for (const key of sharedDocumentKeys) {
-      const requirement = requirementByKey(key)
-        ?? documentRequirements("company_driver", "org_northline").find((r) => r.key === key)!;
+    for (const doc of sharedDocuments) {
+      const requirement = requirementByKey(doc.key)
+        ?? documentRequirements("company_driver", "org_northline").find((r) => r.key === doc.key)!;
       expect(isRestrictedDocumentType(requirement.typeKey)).toBe(false);
+      // No internal key ever reaches a screen, including for a carrier's own
+      // extra row — which is exactly the one a global lookup cannot resolve.
+      expect(doc.label).not.toBe(doc.key);
     }
 
     // And the relationship itself carries only the ordinary ones.
@@ -517,7 +529,7 @@ describe("accepting is not blanket access to restricted paperwork", () => {
     const result = await acceptInvitation("INV-NEWDRIVER", NEWCOMER, { driverIdentity: LICENCE });
     if (result.status !== "accepted") throw new Error("expected acceptance");
     // `medical_back` is optional on every driver checklist.
-    expect(result.outcome.sharedDocumentKeys).not.toContain("medical_back");
+    expect(result.outcome.sharedDocuments.map((d) => d.key)).not.toContain("medical_back");
   });
 });
 

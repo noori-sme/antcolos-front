@@ -186,26 +186,38 @@ test("moving around the portal keeps resolving to it; a reload forgets, as the m
 });
 
 test("a carrier invitation still onboards a driver who has nothing", async ({ page }) => {
-  // The invitation road, walked by the same newcomer: INV-DRIVER is addressed to
-  // somebody returning from signing up, which is exactly this person.
-  await page.goto(`/invitation/INV-DRIVER?signedin=1&fixture=newcomer`, { waitUntil: "networkidle" });
+  /*
+   * The invitation road, walked by the same newcomer.
+   *
+   * PR-2 changed two things about how this is written, and neither weakens it.
+   * The token is INV-NEWDRIVER because an invitation is now tied to the ACCOUNT
+   * it names — the old `?signedin=1` fiction, which meant "assume whoever
+   * followed the link is the recipient", is exactly what the Access service
+   * exists to stop. And the licence questions are on the acceptance screen
+   * rather than on a page after it, so joining is one act instead of a seat
+   * followed by a form somebody can walk away from.
+   *
+   * What is being proved is unchanged: somebody who belongs to nothing accepts
+   * a carrier's invitation, answers the licence questions once, and ends up
+   * with that carrier's checklist in their own portal.
+   */
+  await page.goto("/invitation/INV-NEWDRIVER?fixture=newcomer", { waitUntil: "networkidle" });
 
-  await page.getByRole("button", { name: "Accept invitation" }).click();
   await expect(page.getByRole("heading", { name: "Set up your driver profile" })).toBeVisible();
-
-  await page.getByLabel("Full legal name").fill("Yusuf Demir");
+  await page.getByLabel("Full legal name").fill("Alex Rivera");
   await page.getByLabel("Driver license / CDL number").fill("K4471182993");
   await page.getByLabel("Issuing state").selectOption("TX");
   await page.getByLabel("License expiration date").fill("2030-04-01");
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByTestId("accept-invitation").click();
 
-  await expect(page.getByRole("heading", { name: "Check this is right" })).toBeVisible();
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Confirm and join" }).click();
-  await expect(page.getByRole("heading", { name: /^You.re set up with/ })).toBeVisible();
+  await expect(page.getByTestId("acceptance-confirmed")).toBeVisible();
+  await page.getByRole("button", { name: "Go to Antcolos" }).click();
+  await expect(page).toHaveURL(/\/driver\/home(\?.*)?$/);
 
-  await page.getByRole("button", { name: "Go to my documents" }).click();
-  await expect(page).toHaveURL(/\/driver\/documents$/);
   // A carrier is asking now, so the checklist is theirs and submitting exists.
+  const drawer = page.getByRole("button", { name: "Open navigation" });
+  if (await drawer.isVisible()) await drawer.click();
+  await page.getByRole("link", { name: "My documents", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/driver\/documents$/);
   await expect(page.getByText(/What Northline Freight needs from you/)).toBeVisible();
 });

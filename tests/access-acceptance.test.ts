@@ -161,17 +161,22 @@ test("accepting never hands over restricted paperwork", async () => {
   assert.equal(accepted.status, "accepted");
   if (accepted.status !== "accepted") return;
 
-  const { sharedDocumentKeys, withheldDocumentKeys, relationship } = accepted.outcome;
-  assert.ok(sharedDocumentKeys.includes("cdl_front"));
+  const { sharedDocuments, withheldDocuments, relationship } = accepted.outcome;
+  assert.ok(sharedDocuments.some((d) => d.key === "cdl_front"));
+  for (const doc of sharedDocuments) assert.notEqual(doc.label, doc.key);
   assert.deepEqual(
-    [...withheldDocumentKeys].sort(),
+    withheldDocuments.map((d) => d.key).sort(),
     ["northline_employment_application", "northline_mvr"],
   );
-  for (const key of withheldDocumentKeys) {
+  for (const doc of withheldDocuments) {
     assert.ok(
-      !relationship!.sharedDocumentKeys.includes(key),
-      `${key} must not be shared by accepting`,
+      !relationship!.sharedDocumentKeys.includes(doc.key),
+      `${doc.key} must not be shared by accepting`,
     );
+    // Shown by name, with a reason. An internal key is not something to put in
+    // front of a person.
+    assert.notEqual(doc.label, doc.key);
+    assert.ok(doc.reason, `${doc.key} says why it is withheld`);
   }
 });
 

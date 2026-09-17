@@ -9,7 +9,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AuthShell } from "@/features/auth/shell";
 import { FormAlert } from "@/features/auth/form-alert";
-import { useStageFocus } from "@/features/auth/use-stage-focus";
 import { PermissionSummary, SensitiveAccessWarning } from "./permission-summary";
 import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import {
@@ -20,7 +19,6 @@ import {
   normalizeDriverIdentity,
 } from "@/features/driver/identity";
 import { DriverIdentityFields } from "@/features/driver/identity-fields";
-import { requirementLabel } from "@/lib/documents/requirements";
 import { useSession } from "@/lib/session/hooks";
 import { readSessionScenario } from "@/lib/session/scenarios";
 import { profileForUser } from "@/lib/api/mock/driver-registry";
@@ -94,9 +92,6 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
    */
   const hasProfile = isDriver ? profileForUser(user.id) !== undefined : true;
   const needsLicence = isDriver && !hasProfile;
-
-  const stage = outcome ? "done" : needsLicence ? "licence" : "review";
-  const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
   const accept = useCallback(async () => {
     if (!invitation || accepting) return;
@@ -173,10 +168,6 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
       description={`You have been invited as ${offer.roleName}. Here is exactly what that lets you do.`}
     >
       <div className="space-y-4">
-        <h1 ref={headingRef} tabIndex={-1} className="sr-only">
-          Invitation to {offer.organizationName}
-        </h1>
-
         <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-sunken p-3.5">
           <span
             aria-hidden
@@ -398,7 +389,7 @@ function RefusalPanel({
 function AcceptedPanel({
   outcome, onContinue,
 }: { outcome: AcceptanceOutcome; onContinue: () => void }) {
-  const { invitation, relationship, sharedDocumentKeys, withheldDocumentKeys } = outcome;
+  const { invitation, relationship, sharedDocuments, withheldDocuments } = outcome;
   return (
     <AuthShell
       title={`You've joined ${invitation.organizationName}`}
@@ -446,20 +437,29 @@ function AcceptedPanel({
           <div className="rounded-lg border border-border bg-surface p-3.5">
             <h2 className="text-[0.875rem] font-semibold text-fg">What you shared</h2>
             <p className="mt-1 text-[0.8125rem] leading-relaxed text-fg-muted">
-              {sharedDocumentKeys.length > 0
-                ? sharedDocumentKeys.map((k) => requirementLabel(k, k)).join(" · ")
+              {sharedDocuments.length > 0
+                ? sharedDocuments.map((doc) => doc.label).join(" · ")
                 : "Nothing yet — you have no paperwork on file to share."}
             </p>
-            {withheldDocumentKeys.length > 0 ? (
-              <div className="mt-3 rounded-md border border-border bg-surface-sunken px-3 py-2.5" data-testid="withheld-documents">
+            {withheldDocuments.length > 0 ? (
+              <div
+                className="mt-3 rounded-md border border-border bg-surface-sunken px-3 py-2.5"
+                data-testid="withheld-documents"
+              >
                 <p className="text-[0.8125rem] font-medium text-fg">
                   Not shared by accepting
                 </p>
-                <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-                  {withheldDocumentKeys.map((k) => requirementLabel(k, k)).join(" · ")}. These carry
-                  things like a social security number, bank details or a driving record pulled from
-                  the state. Handing one over is its own decision, asked for separately — never a
-                  consequence of joining.
+                <ul className="mt-1 space-y-1.5">
+                  {withheldDocuments.map((doc) => (
+                    <li key={doc.key} className="text-[0.75rem] leading-relaxed text-fg-muted">
+                      <span className="font-medium text-fg">{doc.label}</span>
+                      {doc.reason ? ` — ${doc.reason}` : null}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-subtle">
+                  {invitation.organizationName} still needs these. Handing one over is its own
+                  decision, asked for separately — never a consequence of joining.
                 </p>
               </div>
             ) : null}

@@ -161,33 +161,30 @@ test("a real invitation still goes through the invitation flow", async ({ page }
   await page.goto("/invitation/INV-DRIVER-ACCT", { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await page.getByRole("button", { name: "Accept invitation" }).click();
 
-  // The carrier-specific driver onboarding, unchanged — and because this driver
-  // already has a profile it asks for no licence, it asks what to SHARE.
-  await expect(page.getByRole("heading", { name: /^Share your profile with/ })).toBeVisible();
+  // Because this driver already has a profile they are asked for NO licence.
+  // The claim is the same one the old two-step flow made; PR-2 moved the
+  // questions onto this screen, so their absence is now visible here.
   await expect(page.getByLabel("Driver license / CDL number")).toHaveCount(0);
+  await expect(page.getByTestId("accept-invitation")).toBeVisible();
 });
 
 test("accepting a carrier invitation attaches to the driver's existing profile", async ({ page }) => {
   await page.goto("/invitation/INV-DRIVER-ACCT", { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "Accept invitation" }).click();
-  await expect(page.getByRole("heading", { name: /^Share your profile with/ })).toBeVisible();
+  await page.getByTestId("accept-invitation").click();
+  await expect(page.getByTestId("acceptance-confirmed")).toBeVisible();
 
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Confirm and join" }).click();
-  await expect(page.getByRole("heading", { name: /^You.re set up with/ })).toBeVisible();
-
-  // Straight on to the documents — a client-side move, so the profile the flow
-  // just used is still the live one.
-  await page.getByRole("button", { name: "Go to my documents" }).click();
-  await expect(page).toHaveURL(/\/driver\/documents$/);
-
-  // One profile carrying both the new carrier and the ones it already had.
-  // A second profile would have arrived empty.
-  const carriers = page.getByRole("group", { name: "Choose a carrier" });
-  await expect(carriers.getByRole("button", { name: "Northline Freight" })).toBeVisible();
-  await expect(carriers.getByRole("button", { name: "Cascade Haul" })).toBeVisible();
+  /*
+   * One profile, carrying the new carrier as well as the ones it already had.
+   *
+   * The old flow inferred this from a carrier picker two screens later. The
+   * acceptance screen now states it outright, which is a more direct assertion
+   * of the same rule: `createOrResumeProfile` resumes first, always, so a
+   * driver who already has a profile never gets a second one and is never
+   * asked for their licence again.
+   */
+  await expect(page.getByText("Your existing profile — reused, not duplicated.")).toBeVisible();
+  await expect(page.getByTestId("no-start-date")).toContainText("Not recorded yet");
 });
 
 test("a refresh mid-flow returns to the role question, as it always did", async ({ page }) => {

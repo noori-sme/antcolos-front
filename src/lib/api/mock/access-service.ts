@@ -3,6 +3,7 @@ import type {
 } from "@/types";
 import { INVITATION_REFUSAL_REASON } from "@/types";
 import { ordinaryDocumentKeys, splitByRestriction } from "@/lib/documents/requirements";
+import { restrictedReason } from "@/lib/documents/catalog";
 import { effectivePermissions } from "@/lib/permissions/effective";
 import { ungrantablePermissions, clampToGrantable } from "@/lib/permissions/grantable";
 import { DEFAULT_SCOPE, OWN_RECORDS_SCOPE } from "@/lib/permissions/scope";
@@ -20,6 +21,7 @@ import {
 import type {
   AcceptInvitationResult, AcceptanceOutcome, AcceptingIdentity, EndSeatResult,
   InvitationResolution, IssueInvitationInput, IssueInvitationResult,
+  DocumentRow,
 } from "../contracts/access";
 import { appendAuditEvent, recordPermissionDenied } from "./audit";
 import {
@@ -464,7 +466,7 @@ export async function acceptInvitation(
   /* 3 · The engagement, for a driver. `acceptedAt` and NO `startedAt`. */
   const share = isDriver
     ? documentShareDecision(invitation)
-    : { shared: [] as string[], withheld: [] as string[] };
+    : { shared: [] as DocumentRow[], withheld: [] as DocumentRow[] };
 
   let relationship;
   if (isDriver && driverProfileId) {
@@ -475,7 +477,8 @@ export async function acceptInvitation(
       engagementType: invitation.engagementType ?? "company_driver",
       roleName: invitation.roleName,
       permissions: invitation.permissions,
-      sharedDocumentKeys: share.shared,
+      // The registry stores keys; the labels are for the person, not the record.
+      sharedDocumentKeys: share.shared.map((d) => d.key),
       // The carrier offered on the invitation's OWN date, not today.
       invitedAt: invitation.createdAt,
       acceptedAt: at,
@@ -546,8 +549,8 @@ export async function acceptInvitation(
       relationship,
       driverProfileId,
       driverProfileResumed,
-      sharedDocumentKeys: share.shared,
-      withheldDocumentKeys: share.withheld,
+      sharedDocuments: share.shared,
+      withheldDocuments: share.withheld,
       created,
     },
   };
@@ -568,15 +571,28 @@ export async function acceptInvitation(
  * was held back. A shorter list than the checklist it just showed, with no
  * explanation, is how people conclude the product lost their paperwork.
  */
-function documentShareDecision(invitation: Invitation): { shared: string[]; withheld: string[] } {
+function documentShareDecision(
+  invitation: Invitation,
+): { shared: DocumentRow[]; withheld: DocumentRow[] } {
   const requirements = documentRequirements(
     invitation.engagementType ?? "company_driver",
     invitation.organizationId,
   );
+  const shareable = new Set(ordinaryDocumentKeys(requirements));
   const { restricted } = splitByRestriction(requirements);
+
+  // Both carry the CHECKLIST'S OWN label, which is the only place a
+  // carrier-specific row's wording exists. A global lookup would resolve the
+  // standard rows and hand back a raw key for exactly the carrier extras.
   return {
-    shared: ordinaryDocumentKeys(requirements),
-    withheld: restricted.map((r) => r.key),
+    shared: requirements
+      .filter((r) => shareable.has(r.key))
+      .map((r) => ({ key: r.key, label: r.label })),
+    withheld: restricted.map((r) => ({
+      key: r.key,
+      label: r.label,
+      reason: restrictedReason(r.typeKey),
+    })),
   };
 }
 
@@ -596,15 +612,15 @@ function replayOutcome(
     : undefined;
   const share = invitation.kind === "driver"
     ? documentShareDecision(invitation)
-    : { shared: [], withheld: [] };
+    : { shared: [] as DocumentRow[], withheld: [] as DocumentRow[] };
   return {
     invitation: { ...invitation },
     membership: seat,
     relationship,
     driverProfileId: relationship ? profile?.id : undefined,
     driverProfileResumed: true,
-    sharedDocumentKeys: relationship?.sharedDocumentKeys ?? share.shared,
-    withheldDocumentKeys: share.withheld,
+    sharedDocuments: share.shared,
+    withheldDocuments: share.withheld,
     created: false,
   };
 }

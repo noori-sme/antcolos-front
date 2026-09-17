@@ -126,6 +126,22 @@ export type InvitationResolution =
 /* Accepting                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * One checklist row, in the words the person is shown.
+ *
+ * Both lists below are rows rather than keys on purpose. A requirement key is
+ * an internal identifier — `northline_employment_application` — and a screen
+ * that printed one would be showing somebody a database column and calling it
+ * paperwork. Carrier-specific rows are exactly the ones a global label lookup
+ * cannot resolve, so the answer travels with the decision instead.
+ */
+export interface DocumentRow {
+  key: string;
+  label: string;
+  /** For a withheld row: why its category is never handed over in bulk. */
+  reason?: string;
+}
+
 export interface AcceptanceOutcome {
   invitation: Invitation;
   /** The seat. Observable in the session the moment this returns. */
@@ -140,10 +156,17 @@ export interface AcceptanceOutcome {
   /** The permanent profile, reused if the person already had one. */
   driverProfileId?: string;
   driverProfileResumed?: boolean;
-  /** Requirement keys the person agreed to share. Ordinary paperwork only. */
-  sharedDocumentKeys: string[];
-  /** Restricted requirement keys deliberately NOT shared, so a screen can say so. */
-  withheldDocumentKeys: string[];
+  /** What the person agreed to share. Ordinary paperwork only. */
+  sharedDocuments: DocumentRow[];
+  /**
+   * The restricted paperwork deliberately NOT shared.
+   *
+   * Carried as rows rather than keys because a screen has to NAME them and say
+   * why: a person who has just read a checklist and then sees a shorter shared
+   * list needs to be told the difference was on purpose. A bare requirement key
+   * is not something to show anybody.
+   */
+  withheldDocuments: DocumentRow[];
   /** True when this call created the seat; false when it already existed. */
   created: boolean;
 }
