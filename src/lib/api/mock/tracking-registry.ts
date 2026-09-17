@@ -14,6 +14,7 @@ import {
 import { resolveWorkspace } from "@/lib/workspace/resolve";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
 import { mockStore } from "./store";
+import { loadsReachableBy, reachableLoadById } from "./dispatch-delegation";
 import {
   truckApprovedCarriers, truckDispatchGrants, truckOperatingCarrier,
 } from "./truck-registry";
@@ -295,13 +296,24 @@ export function organizationStillHasTruck(organizationId: string, truckId?: stri
   return truckApprovedCarriers(truckId).some((c) => c.organizationId === organizationId);
 }
 
-function linkContextFor(session: TrackingSession, now = new Date()): LinkContext {
+/**
+ * The link context, for ONE recipient.
+ *
+ * `relationshipActive` is asked of the organization that MINTED the link, not
+ * of the session's owner: a carrier's own links stay alive while it holds the
+ * truck, and a provider's die with its grant, on the same session.
+ */
+function linkContextFor(
+  session: TrackingSession,
+  issuedByOrganizationId: string,
+  now = new Date(),
+): LinkContext {
   const load = loadInOrg(session.organizationId, session.loadId);
   return {
     loadStatus: load?.status ?? "cancelled",
     deliveredAt: deliveredAtOf(session.organizationId, session.loadId),
     postDeliveryGraceHours: session.postDeliveryGraceHours,
-    relationshipActive: organizationStillHasTruck(session.organizationId, session.truckId),
+    relationshipActive: organizationStillHasTruck(issuedByOrganizationId, session.truckId),
     sessionActive: session.status === "active",
     now,
   };
@@ -316,8 +328,10 @@ function linkContextFor(session: TrackingSession, now = new Date()): LinkContext
  * writes the audit line, which is honest — it is when Antcolos noticed.
  */
 function reconcile(session: TrackingSession, now = new Date()): TrackingSession {
-  const ctx = linkContextFor(session, now);
+  let ctx = linkContextFor(session, session.organizationId, now);
   for (const recipient of session.recipients) {
+    const issuer = recipient.issuedByOrganizationId ?? session.organizationId;
+    ctx = linkContextFor(session, issuer, now);
     const next = linkStateOf(recipient.link, ctx);
     if (next !== recipient.state) {
       const previous = recipient.state;
@@ -359,12 +373,24 @@ function closeReasonFor(state: TrackingLinkState): string {
 /* Sessions                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Every session this workspace may see: its own, plus those on loads a live
+ * grant reaches. Narrowed the same way everywhere, so there is no second path.
+ */
+function readableSessions(ctx: TrackingContext): TrackingSession[] {
+  const own = sessionBucket(ctx.organizationId);
+  const reachable = loadsReachableBy(ctx)
+    .filter((l) => l.organizationId !== ctx.organizationId)
+    .flatMap((l) => sessionBucket(l.organizationId).filter((s) => s.loadId === l.id));
+  return reachable.length > 0 ? [...own, ...reachable] : own;
+}
+
 export function sessionForLoadSync(
   ctx: TrackingContext,
   loadId: string,
 ): TrackingSession | undefined {
   if (!mayTrack(ctx)) return undefined;
-  const found = sessionBucket(ctx.organizationId).find((s) => s.loadId === loadId);
+  const found = readableSessions(ctx).find((s) => s.loadId === loadId);
   return found ? reconcile(found) : undefined;
 }
 
@@ -373,7 +399,7 @@ export function sessionByIdSync(
   sessionId: string,
 ): TrackingSession | undefined {
   if (!mayTrack(ctx)) return undefined;
-  const found = sessionBucket(ctx.organizationId).find((s) => s.id === sessionId);
+  const found = readableSessions(ctx).find((s) => s.id === sessionId);
   return found ? reconcile(found) : undefined;
 }
 
@@ -399,18 +425,31 @@ export async function openTrackingSession(
   require(ctx, "tracking:view", "tracking:share");
   if (!mayTrack(ctx)) throw new PermissionDeniedError(["tracking:view"]);
 
-  const existing = sessionBucket(ctx.organizationId).find((s) => s.loadId === input.loadId);
-  if (existing) return reconcile(existing);
-
-  const load = loadInOrg(ctx.organizationId, input.loadId);
+  /*
+   * ★ THE SESSION BELONGS TO THE LOAD, AND THE LOAD BELONGS TO THE CARRIER ★
+   *
+   * A provider working a delegated load must be able to open tracking on it —
+   * that is a core dispatch act — but the session, its recipients and its whole
+   * audit are part of the load's history and stay with the carrier when the
+   * arrangement ends. So reach decides who may open one, and the OWNING
+   * organization is where it is filed.
+   *
+   * Which is exactly why each recipient records who minted its link: the
+   * session's organization keeps the truck forever, so only the issuer's own
+   * relationship can honestly decide when that issuer's link should die.
+   */
+  const load = reachableLoadById(ctx, input.loadId);
   if (!load) throw new PermissionDeniedError(["loads:view"]);
+
+  const existing = sessionBucket(load.organizationId).find((s) => s.loadId === input.loadId);
+  if (existing) return reconcile(existing);
 
   const truckId = load.assignment?.truckId;
   const session: TrackingSession = {
     id: rowId("trs"),
     loadId: load.id,
     loadReference: load.reference,
-    organizationId: ctx.organizationId,
+    organizationId: load.organizationId,
     truckId,
     carrierOrganizationId: load.assignment?.carrierOrganizationId
       ?? (truckId ? truckOperatingCarrier(truckId)?.organizationId : undefined),
@@ -425,7 +464,7 @@ export async function openTrackingSession(
     updates: [],
     audit: [],
   };
-  sessionBucket(ctx.organizationId).push(session);
+  sessionBucket(load.organizationId).push(session);
   persist();
 
   noteOnSession(session, {
@@ -473,6 +512,8 @@ export async function addTrackingRecipient(
   const recipient: TrackingRecipient = {
     id: rowId("trr"),
     sessionId: session.id,
+    // Who minted it, so the link dies with THEIR relationship to the truck.
+    issuedByOrganizationId: ctx.organizationId,
     audience: input.audience,
     partyName: input.partyName.trim(),
     contactName: input.contactName?.trim() || undefined,
@@ -484,7 +525,10 @@ export async function addTrackingRecipient(
   session.recipients.push(recipient);
   persist();
   db().tokens.set(link.token, {
-    organizationId: ctx.organizationId,
+    // The session's organization, not the minter's: `resolvePublicTracking`
+    // looks the session up in this bucket, and a provider-minted link on a
+    // carrier's session lives in the carrier's.
+    organizationId: session.organizationId,
     sessionId: session.id,
     recipientId: recipient.id,
   });
@@ -903,7 +947,10 @@ export function resolvePublicTracking(
     status: v.exceptionStatus
       ? shown.map((u) => ({ kind: u.kind, message: u.message, at: u.createdAt, basis: u.basis }))
       : [],
-    expiresAt: effectiveExpiry(recipient.link, linkContextFor(session, now)),
+    expiresAt: effectiveExpiry(
+      recipient.link,
+      linkContextFor(session, recipient.issuedByOrganizationId ?? session.organizationId, now),
+    ),
     disclosure: PUBLIC_DISCLOSURE,
   };
 

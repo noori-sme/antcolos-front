@@ -290,11 +290,74 @@ export interface TruckDispatchAccess {
   /** The dispatcher's own label for the truck, if they use one. */
   unitLabel?: string;
   status: TruckRelationshipStatus;
+  /** When the grant ROW was made. `effectiveFrom` is when authority begins. */
   startedAt: string;
+  /**
+   * What the carrier granted this for, in the carrier's own words. Required,
+   * so no grant is ever unexplained — the same rule `MaintenanceShare.reason`
+   * and `ComplianceShare.purpose` already keep.
+   */
+  purpose: string;
+  /**
+   * When the authority begins. Equal to `startedAt` for a grant made now, and
+   * kept separate because `startedAt` is when the ROW was made.
+   */
+  effectiveFrom: string;
+  /**
+   * When the authority lapses on its own, if the carrier set an end.
+   *
+   * ★ THERE IS NO SCHEDULER ★
+   * Nothing runs at this instant. Expiry is derived on every read — see
+   * `grantIsLive` — so a lapsed grant refuses from the next call onwards
+   * without anything having fired. That is also why an expired grant's work
+   * receipt carries no status: nobody observed the moment it ended.
+   */
+  effectiveTo?: string;
+  /** The membership that granted it. Ownership of a truck is not this. */
+  grantedByMembershipId: string;
+  grantedByName: string;
   endedAt?: string;
   endReason?: string;
+  endedByMembershipId?: string;
+  endedByName?: string;
+  /**
+   * Set on the OUTGOING grant when a carrier moved this truck to another
+   * dispatch organization, naming the grant that replaced it.
+   *
+   * A transfer is not a revocation followed by an unrelated grant, and the two
+   * must be tellable apart a year later: one is "we stopped using them", the
+   * other is "we moved the work". `ScopedAccessStatus` deliberately gains no
+   * `superseded` member for this — it is shared with trailers and every status
+   * chip in the product, and a new member there would be a much larger change
+   * than the fact warrants.
+   */
+  supersededByGrantId?: string;
+  /** Set on the INCOMING grant, naming the grant it took over from. */
+  transferredFromGrantId?: string;
   initiatedByOrganizationId: string;
   createdAt: string;
+}
+
+/**
+ * Whether a grant actually confers authority at this instant.
+ *
+ * Status alone is not enough: a grant with an `effectiveTo` in the past is
+ * still `active` in the row, because nothing ran to end it. Every reach check
+ * asks THIS rather than reading `status` directly.
+ */
+export function grantIsLive(
+  grant: Pick<TruckDispatchAccess, "status" | "effectiveFrom" | "effectiveTo">,
+  at: string | Date = new Date(),
+): boolean {
+  if (grant.status !== "active") return false;
+  const instant = typeof at === "string" ? Date.parse(at) : at.getTime();
+  if (Number.isNaN(instant)) return false;
+  const from = Date.parse(grant.effectiveFrom);
+  if (!Number.isNaN(from) && instant < from) return false;
+  if (grant.effectiveTo === undefined) return true;
+  const to = Date.parse(grant.effectiveTo);
+  if (Number.isNaN(to)) return false;
+  return instant < to;
 }
 
 /* -------------------------------------------------------------------------- */

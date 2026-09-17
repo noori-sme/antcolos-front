@@ -34,10 +34,30 @@ export interface User {
   // NO permissions. NO role. NO organizationId. NO organization data.
 }
 
-/** Actor attribution snapshot stored on every operational and audit record. */
+/**
+ * Actor attribution snapshot stored on every operational and audit record.
+ *
+ * ★ EVERY FIELD HERE IS ATTRIBUTION. NONE OF IT IS AUTHORITY. ★
+ *
+ * An `ActorRef` says who did something and on whose behalf. It is WRITTEN from
+ * what a service already proved; it is never READ to decide whether something
+ * is allowed. The delegation guard derives the acting and owning organizations
+ * from a live grant and A6's `operatingContextAt`, then stamps them here — so
+ * a caller that forges `actingOrganizationId` changes the label on a refusal
+ * and nothing else.
+ */
 export interface ActorRef {
   userId: string;
   membershipId: string;
   displayNameSnapshot: string;
   source: "web" | "telegram" | "system";
+  /**
+   * The organization the person was acting IN — their own workspace.
+   *
+   * Set when that differs from the organization owning the record, which is
+   * exactly the delegated case: a dispatcher at a provider booking a load for
+   * a carrier. Absent means the actor was working in the owning organization.
+   */
+  actingOrganizationId?: string;
+  actingOrganizationName?: string;
 }

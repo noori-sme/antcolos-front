@@ -17,6 +17,7 @@ export type * from "./access";
 export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";
+export { grantIsLive } from "./truck";
 export type * from "./trailer";
 export type * from "./fuel";
 export type * from "./report";

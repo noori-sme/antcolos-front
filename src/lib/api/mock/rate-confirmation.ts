@@ -4,7 +4,10 @@ import type {
   RateConProgress, RateConWorkflow,
 } from "@/types";
 import { RATECON_FIELD_LABEL } from "@/types";
-import { bookingById, bookingsForWorkspace } from "./booking";
+import {
+  allBookingsForReach, bookingById, bookingsForWorkspace, providerLinkForBooking,
+} from "./booking";
+import { loadReachFor } from "./dispatch-delegation";
 import { carrierViewSync } from "./carrier-registry";
 import { listingById } from "./listing-registry";
 import { mtLoopById } from "./mt-loop";
@@ -56,19 +59,60 @@ const nowIso = () => new Date().toISOString();
 /* State                                                                       */
 /* -------------------------------------------------------------------------- */
 
-const byOrg = new Map<string, RateConWorkflow[]>();
+/**
+ * Rate-confirmation workflows, keyed by the CARRIER whose signature goes on it.
+ *
+ * ★ THE DOCUMENT IS THE CARRIER'S, SO THE WORKFLOW IS TOO ★
+ * A workflow holds the broker's original and the signed copy, and it exists to
+ * produce the carrier's signature. Keeping it in whichever workspace opened the
+ * email left the carrier unable to see a confirmation waiting for it — and
+ * since only a carrier member may finalize (A6 keeps `load.finalized` a
+ * single-organization write), that would be a booking nobody could finish.
+ *
+ * A provider prepares and checks it through a live grant, which is most of the
+ * work. The last act is the carrier's.
+ */
+const byCarrier = new Map<string, RateConWorkflow[]>();
 
 function bucket(organizationId: string): RateConWorkflow[] {
-  let rows = byOrg.get(organizationId);
+  let rows = byCarrier.get(organizationId);
   if (!rows) {
     rows = [];
-    byOrg.set(organizationId, rows);
+    byCarrier.set(organizationId, rows);
   }
   return rows;
 }
 
+/** Every workflow anywhere. Narrowed by `readable` before it leaves. */
+function allWorkflows(): RateConWorkflow[] {
+  return [...byCarrier.values()].flat();
+}
+
+/**
+ * Workflows this workspace may see: its own, plus any reached by a live grant.
+ *
+ * Reach is asked of the load the workflow is about, through the same
+ * `loadReachFor` every other delegated read uses — so it ends the moment the
+ * grant does, and a provider's stale list cannot outlive its authority.
+ */
+function readableWorkflows(ctx: MtLoopContext): RateConWorkflow[] {
+  return allWorkflows().filter((w) => {
+    if (w.organizationId === ctx.organizationId) return true;
+    return loadReachFor(ctx, {
+      organizationId: w.organizationId,
+      pinnedCarrierOrganizationId: w.carrierOrganizationId,
+      assignment: { truckId: truckIdOfWorkflow(w) } as never,
+    }) !== null;
+  });
+}
+
+/** The truck a workflow's booking was on, for the reach check. */
+function truckIdOfWorkflow(w: RateConWorkflow): string | undefined {
+  return allBookingsForReach().find((b) => b.bookingId === w.bookingId)?.truckId;
+}
+
 export function resetRateConfirmations() {
-  byOrg.clear();
+  byCarrier.clear();
   seq = 0;
 }
 
@@ -93,7 +137,7 @@ function maySign(ctx: MtLoopContext): boolean {
 
 export function rateConById(rateConId: string, ctx: MtLoopContext): RateConWorkflow | undefined {
   if (!mayRead(ctx)) return undefined;
-  return bucket(ctx.organizationId).find((w) => w.rateConId === rateConId);
+  return readableWorkflows(ctx).find((w) => w.rateConId === rateConId);
 }
 
 export function rateConForCycle(
@@ -101,12 +145,12 @@ export function rateConForCycle(
   ctx: MtLoopContext,
 ): RateConWorkflow | undefined {
   if (!mayRead(ctx)) return undefined;
-  return bucket(ctx.organizationId).find((w) => w.dispatchCycleId === dispatchCycleId);
+  return readableWorkflows(ctx).find((w) => w.dispatchCycleId === dispatchCycleId);
 }
 
 export function rateConsFor(ctx: MtLoopContext): RateConWorkflow[] {
   if (!mayRead(ctx)) return [];
-  return [...bucket(ctx.organizationId)].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return readableWorkflows(ctx).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -185,11 +229,37 @@ export function matchEmailToBooking(
 }
 
 function hasRateCon(bookingId: string, ctx: MtLoopContext): boolean {
-  return bucket(ctx.organizationId).some((w) => w.bookingId === bookingId && w.status !== "rejected");
+  return readableWorkflows(ctx).some((w) => w.bookingId === bookingId && w.status !== "rejected");
 }
 
+/**
+ * The market listing a booking came from, as seen by the caller.
+ *
+ * Which listing it was is the market activity of whoever WORKED it, and lives
+ * in that workspace. A dispatch provider finds it through its own
+ * `ProviderBookingLink`; a carrier that dispatches its own freight ran the
+ * negotiation itself, so the cycle's own negotiation is the route. Both are the
+ * caller's own records, and a workspace that worked neither gets nothing.
+ */
 function listingOf(booking: BookingRecord, ctx: MtLoopContext) {
-  return listingById(ctx.organizationId, booking.listingId);
+  const listingId = providerLinkForBooking(booking.bookingId, ctx)?.listingId
+    ?? negotiationOf(booking, ctx)?.listingId;
+  return listingId ? listingById(ctx.organizationId, listingId) : undefined;
+}
+
+/**
+ * The negotiation behind a booking, from the caller's own workspace.
+ *
+ * Prefers the provider's own link, then falls back to the booked negotiation
+ * on the cycle — which is what a self-dispatching carrier has and a provider
+ * also has. Never reaches into another workspace's conversations.
+ */
+function negotiationOf(booking: BookingRecord, ctx: MtLoopContext) {
+  const linked = providerLinkForBooking(booking.bookingId, ctx)?.negotiationId;
+  const forCycle = negotiationsForCycle(booking.dispatchCycleId, ctx);
+  return linked
+    ? forCycle.find((n) => n.negotiationId === linked)
+    : forCycle.find((n) => n.status === "booked") ?? forCycle[0];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -249,8 +319,8 @@ export async function receiveRateConfirmation(
   const carrier = carrierViewSync(carrierOrganizationId, truckContextFrom(ctx));
   if (!loop || !listing || !carrier) return { status: "not_found" };
 
-  const negotiation = negotiationsForCycle(booking.dispatchCycleId, ctx)
-    .find((n) => n.negotiationId === booking.negotiationId);
+  // Same rule: the negotiation belongs to whoever ran it.
+  const negotiation = negotiationOf(booking, ctx);
 
   /* ---- What the broker's document says ---------------------------------- */
 
@@ -312,7 +382,17 @@ export async function receiveRateConfirmation(
 
   const workflow: RateConWorkflow = {
     rateConId: rowId("rc"),
-    organizationId: ctx.organizationId,
+    /*
+     * The CARRIER owns the workflow, not whoever opened the broker's email.
+     *
+     * It used to be stamped with `ctx.organizationId` while being filed in the
+     * carrier's bucket, which got the boundary exactly backwards: the carrier
+     * could not see a confirmation waiting for its own signature, and the
+     * provider that prepared it was the one `readableWorkflows` let through on
+     * the owner branch. Who PREPARED it is attribution and lives on the
+     * history entries below.
+     */
+    organizationId: carrierOrganizationId,
     carrierOrganizationId,
     carrierName: carrier.displayName,
     bookingId: booking.bookingId,
@@ -351,7 +431,9 @@ export async function receiveRateConfirmation(
     `${workflow.fields.length} fields read off the page. ${workflow.fields.filter((f) => f.disagrees).length} do not match the booking.`,
   );
 
-  bucket(ctx.organizationId).push(workflow);
+  // Filed with the carrier whose signature it is for, not with whoever opened
+  // the email. See the store note above.
+  bucket(workflow.carrierOrganizationId).push(workflow);
   return { status: "ok", workflow };
 }
 
@@ -601,6 +683,27 @@ export async function confirmAndSign(
 
   const workflow = rateConById(rateConId, ctx);
   if (!workflow) return { status: "not_found" };
+
+  /*
+   * ★ ONLY THE CARRIER SIGNS ★
+   *
+   * This is the act that applies the carrier's signature and publishes
+   * `load.finalized`, and A6's event-scope matrix is explicit about that event:
+   * `crossOrganizationWrite: null`, "no canonical grant lets one organization
+   * finalize another's load". A dispatch provider under a live grant may reach
+   * this workflow — it prepares and checks it, which is most of the work — and
+   * must still be refused here. Guarding the loads service alone would have
+   * left this door open, because signing does not go through it.
+   */
+  if (workflow.carrierOrganizationId !== ctx.organizationId) {
+    return {
+      status: "blocked",
+      reason:
+        `${workflow.carrierName}'s signature goes on this, so ${workflow.carrierName} `
+        + "has to be the one to apply it. Everything up to that point is done.",
+    };
+  }
+
   if (workflow.status === "returned") return { status: "blocked", reason: "It is already signed and returned." };
   if (workflow.status === "rejected") return { status: "blocked", reason: "This one was stopped." };
 

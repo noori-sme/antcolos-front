@@ -1,6 +1,7 @@
 import type {
   ActorRef, Assignment, BookingBlockKind, BookingRecord, ConsentRequirement,
-  Load, LoadDocumentRequirement, Negotiation, Stop,
+  DispatchWorkReceipt, Load, LoadDocumentRequirement, Negotiation,
+  ProviderBookingLink, Stop,
 } from "@/types";
 import { authorityAllowsDispatch } from "@/types";
 import { listingById } from "./listing-registry";
@@ -14,6 +15,9 @@ import { closeReviewsForListing, reviewForMatch } from "./driver-review";
 import { draftsFor, supersedeDraftsForListing } from "./outreach-drafts";
 import { mockStore } from "./store";
 import { createBookedLoad, recordLoadConsent } from "./load-commands";
+import {
+  attributedActor, loadReachFor, requireLoadWriteAuthority,
+} from "./dispatch-delegation";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -56,19 +60,66 @@ const nowIso = () => new Date().toISOString();
 /* State                                                                       */
 /* -------------------------------------------------------------------------- */
 
-const byOrg = new Map<string, BookingRecord[]>();
+/**
+ * Bookings, keyed by the CARRIER that owns the transaction.
+ *
+ * ★ A BOOKING UNDER A CARRIER'S MC IS THE CARRIER'S RECORD ★
+ * It used to be keyed by whoever pressed Book, which put a carrier's rate, its
+ * broker and its driver in a dispatch agency's store and left the carrier
+ * unable to see its own booking at all. The canonical row now lives with the
+ * carrier; a provider reads it through a live grant and keeps nothing but a
+ * bounded receipt afterwards.
+ */
+const byCarrier = new Map<string, BookingRecord[]>();
+
+/**
+ * The provider's own half — its market activity, and a foreign key.
+ *
+ * Not a second booking: no mutable commercial fact is copied here. It survives
+ * revocation because a dispatch organization's own negotiations, matches and
+ * listings are its own.
+ */
+const providerLinks = new Map<string, ProviderBookingLink[]>();
 
 function bucket(organizationId: string): BookingRecord[] {
-  let rows = byOrg.get(organizationId);
+  let rows = byCarrier.get(organizationId);
   if (!rows) {
     rows = [];
-    byOrg.set(organizationId, rows);
+    byCarrier.set(organizationId, rows);
   }
   return rows;
 }
 
+function linkBucket(organizationId: string): ProviderBookingLink[] {
+  let rows = providerLinks.get(organizationId);
+  if (!rows) {
+    rows = [];
+    providerLinks.set(organizationId, rows);
+  }
+  return rows;
+}
+
+/** Every booking anywhere, for the reach-aware readers below. */
+function allBookings(): BookingRecord[] {
+  return [...byCarrier.values()].flat();
+}
+
+/**
+ * The same set, for sibling modules that need to JOIN on a booking to work out
+ * reach — the rate-con workflow needs the truck a booking was on before it can
+ * ask whether a grant covers it.
+ *
+ * Not a read of anybody's records: every caller narrows with `loadReachFor`
+ * immediately, and nothing here reaches a screen. Named so that using it as a
+ * listing would be obviously wrong.
+ */
+export function allBookingsForReach(): readonly BookingRecord[] {
+  return allBookings();
+}
+
 export function resetBookings() {
-  byOrg.clear();
+  byCarrier.clear();
+  providerLinks.clear();
   seq = 0;
 }
 
@@ -80,22 +131,138 @@ function mayBook(ctx: MtLoopContext): boolean {
 /* Reading                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * ★ THE THREE READERS ARE THE CHOKE POINT ★
+ *
+ * Six surfaces read bookings — the Opportunities inbox, rate-con matching,
+ * broker outreach, Needs You, the negotiation panel and reporting. Putting the
+ * rule here rather than in each of them is what makes "after revocation the
+ * provider sees only a receipt" true everywhere at once, instead of true in
+ * the five places somebody remembered.
+ *
+ * A booking is readable when the caller's organization owns it, or when a LIVE
+ * grant from the owning carrier names the caller on the booking's truck. Once
+ * that grant ends, the same call returns the provider's own sealed receipt and
+ * nothing else — never the rate, the broker, the driver or the load id.
+ */
+function readableBooking(
+  booking: BookingRecord,
+  ctx: MtLoopContext,
+): BookingRecord | undefined {
+  if (booking.organizationId === ctx.organizationId) return booking;
+  const reach = loadReachFor(ctx, {
+    organizationId: booking.organizationId,
+    pinnedCarrierOrganizationId: booking.pinnedCarrierOrganizationId,
+    assignment: { truckId: booking.truckId } as Load["assignment"],
+  });
+  return reach === null ? undefined : booking;
+}
+
+/** The bookings this workspace may see in full, right now. */
+function readableBookings(ctx: MtLoopContext): BookingRecord[] {
+  return allBookings().filter((b) => readableBooking(b, ctx) !== undefined);
+}
+
 export function bookingForCycle(
   dispatchCycleId: string,
   ctx: MtLoopContext,
 ): BookingRecord | undefined {
   if (!ctx.permissions.has("loads:view")) return undefined;
-  return bucket(ctx.organizationId).find((b) => b.dispatchCycleId === dispatchCycleId);
+  return readableBookings(ctx).find((b) => b.dispatchCycleId === dispatchCycleId);
 }
 
 export function bookingsForWorkspace(ctx: MtLoopContext): BookingRecord[] {
   if (!ctx.permissions.has("loads:view")) return [];
-  return [...bucket(ctx.organizationId)].sort((a, b) => b.bookedAt.localeCompare(a.bookedAt));
+  return readableBookings(ctx).sort((a, b) => b.bookedAt.localeCompare(a.bookedAt));
 }
 
 export function bookingById(bookingId: string, ctx: MtLoopContext): BookingRecord | undefined {
   if (!ctx.permissions.has("loads:view")) return undefined;
-  return bucket(ctx.organizationId).find((b) => b.bookingId === bookingId);
+  const booking = allBookings().find((b) => b.bookingId === bookingId);
+  return booking ? readableBooking(booking, ctx) : undefined;
+}
+
+/* -------------------------------------------------------------------------- */
+/* The provider's own half                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * This provider's own link for one booking, if it worked it.
+ *
+ * The join the provider-side surfaces use to recover the market ids that are
+ * no longer on the carrier's record. Returns nothing for a workspace that did
+ * not do the work, which is also the honest answer for the carrier itself:
+ * a carrier sees the outcome of work done for its booking, not the provider's
+ * listing and negotiation bookkeeping.
+ */
+export function providerLinkForBooking(
+  bookingId: string,
+  ctx: MtLoopContext,
+): ProviderBookingLink | undefined {
+  return linkBucket(ctx.organizationId).find((l) => l.bookingId === bookingId);
+}
+
+/** This provider's own market links, whatever happened to the grants. */
+export function providerBookingLinks(ctx: MtLoopContext): ProviderBookingLink[] {
+  return [...linkBucket(ctx.organizationId)]
+    .sort((a, b) => b.bookedAt.localeCompare(a.bookedAt));
+}
+
+/**
+ * What a former provider keeps: receipts for work whose access has ended.
+ *
+ * Read off the SEALED receipt rather than recomputed, so nothing a carrier does
+ * afterwards can change what this returns.
+ */
+export function dispatchWorkReceipts(ctx: MtLoopContext): DispatchWorkReceipt[] {
+  return providerBookingLinks(ctx)
+    .map((l) => l.receipt)
+    .filter((r): r is DispatchWorkReceipt => r !== undefined);
+}
+
+/**
+ * Seals the receipt for every booking this provider worked under one carrier.
+ *
+ * Called when a grant is revoked or transferred — a command is running, so the
+ * load's status can honestly be read — and by expiry reconciliation, where
+ * nothing ran and therefore no status is recorded. Written once: a second call
+ * leaves an existing receipt exactly as it was.
+ */
+export function sealDispatchReceipts(input: {
+  providerOrganizationId: string;
+  carrierOrganizationId: string;
+  truckId?: string;
+  basis: DispatchWorkReceipt["basis"];
+  at: string;
+  note: string;
+}): number {
+  let sealed = 0;
+  for (const link of linkBucket(input.providerOrganizationId)) {
+    if (link.receipt) continue;
+    if (link.carrierOrganizationId !== input.carrierOrganizationId) continue;
+    const booking = allBookings().find((b) => b.bookingId === link.bookingId);
+    if (!booking) continue;
+    if (input.truckId && booking.truckId !== input.truckId) continue;
+
+    const load = mockStore.org(booking.organizationId).loads
+      .find((l) => l.id === booking.loadId);
+
+    link.receipt = {
+      basis: input.basis,
+      loadReference: booking.loadReference,
+      bookedAt: booking.bookedAt,
+      accessEndedAt: input.at,
+      // ★ The one line that keeps an expired grant honest. ★
+      // Nothing was running at `effectiveTo`, so nobody observed the load
+      // then. Reading it now and calling that "status at expiry" would be
+      // inventing an observation — and would turn the receipt into a live
+      // window onto the carrier's later work.
+      statusAtAccessEnd: input.basis === "expired_unobserved" ? undefined : load?.status,
+      note: input.note,
+    };
+    sealed += 1;
+  }
+  return sealed;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -288,8 +455,29 @@ export async function bookNegotiation(
     ? "not_required"
     : tc.driverConsentRequired ? "pending" : "accepted";
 
-  const org = mockStore.org(ctx.organizationId);
-  const reference = nextReference(ctx.organizationId);
+  /*
+   * ★ WHOSE TRANSACTION IS THIS? ★
+   *
+   * Asked here, once, before a single record is written, and answered by the
+   * delegation guard rather than by `ctx.organizationId`. A dispatch agency
+   * pressing Book is acting FOR a carrier; the booking, the load, the reference
+   * and every event below belong to that carrier.
+   *
+   * The guard proves four things together — the actor, their own permissions,
+   * a live grant for THIS truck, and the operating carrier from A6's
+   * `operatingContextAt` at this instant — and refuses rather than guessing.
+   * An unresolved operating carrier throws, so no load is created under an
+   * authority the records do not support.
+   */
+  const authority = requireLoadWriteAuthority(ctx, {
+    truckId: loop.truckId,
+    instant: at,
+    requires: ["loads:create"],
+  });
+  const owningOrganizationId = authority.owningOrganizationId;
+
+  const org = mockStore.org(owningOrganizationId);
+  const reference = nextReference(owningOrganizationId);
   const loadId = rowId("ld");
 
   const pickup: Stop = {
@@ -350,8 +538,12 @@ export async function bookNegotiation(
    * negotiation so a retry returns the load it already made.
    */
   const load = createBookedLoad({
-    organizationId: ctx.organizationId,
-    actor,
+    organizationId: owningOrganizationId,
+    pinnedCarrierOrganizationId: authority.pinnedCarrierOrganizationId,
+    operatingLeaseId: authority.operatingLeaseId,
+    dispatchedByOrganizationId:
+      authority.basis === "dispatch_delegation" ? authority.actingOrganizationId : undefined,
+    actor: attributedActor(actor, authority, ctx.organizationName),
     loadId,
     idempotencyKey: `booking:${negotiation.negotiationId}`,
     reference,
@@ -412,13 +604,15 @@ export async function bookNegotiation(
     note: `${reference} booked with ${listing.broker.name} at ${money(agreed)}.`,
   });
 
+  const bookingId = rowId("bk");
   const booking: BookingRecord = {
-    bookingId: rowId("bk"),
-    organizationId: ctx.organizationId,
+    bookingId,
+    // The carrier's transaction, in the carrier's store.
+    organizationId: owningOrganizationId,
     carrierOrganizationId: loop.carrierOrganizationId,
-    negotiationId: negotiation.negotiationId,
-    matchId: negotiation.matchId,
-    listingId: negotiation.listingId,
+    pinnedCarrierOrganizationId: authority.pinnedCarrierOrganizationId,
+    dispatchedByOrganizationId:
+      authority.basis === "dispatch_delegation" ? authority.actingOrganizationId : undefined,
     dispatchCycleId: negotiation.dispatchCycleId,
     loadId,
     loadReference: reference,
@@ -439,11 +633,33 @@ export async function bookNegotiation(
     bookedAt: at,
     bookedByName: ctx.actor.displayNameSnapshot,
     bookedByMembershipId: ctx.membershipId,
-    closedMatchIds: closeout.closedMatchIds,
-    supersededDraftIds: closeout.supersededDraftIds,
   };
   void lostNegotiations;
-  bucket(ctx.organizationId).push(booking);
+  bucket(owningOrganizationId).push(booking);
+
+  /*
+   * The provider's own half, when a provider did the work.
+   *
+   * Which listing it found, which match it worked, which negotiation it ran and
+   * what it stood down are its own market activity and stay its own — they are
+   * not the carrier's commercial record and are not copied into it. The only
+   * thing crossing is `bookingId`, a foreign key that resolves to nothing once
+   * the grant ends.
+   */
+  if (authority.basis === "dispatch_delegation") {
+    linkBucket(ctx.organizationId).push({
+      organizationId: ctx.organizationId,
+      bookingId,
+      carrierOrganizationId: owningOrganizationId,
+      negotiationId: negotiation.negotiationId,
+      matchId: negotiation.matchId,
+      listingId: negotiation.listingId,
+      dispatchCycleId: negotiation.dispatchCycleId,
+      closedMatchIds: closeout.closedMatchIds,
+      supersededDraftIds: closeout.supersededDraftIds,
+      bookedAt: at,
+    });
+  }
 
   return { status: "ok", booking, load };
 }

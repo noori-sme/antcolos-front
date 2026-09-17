@@ -22,9 +22,12 @@ import {
   TERMINATION_STEPS, TERMINATION_STEP_LABEL, activateOperatingLease, approveCarrierRelationship,
   assignDriver, endCarrierRelationship, endDriverAssignment, getTruckProfile,
   outstandingTerminationSteps, recordTerminationStep, releaseOperatingLease,
-  resolveOwnershipClaim, setTruckStatus, terminationComplete,
-  type ClaimDecision, type TerminationStep, type TruckProfileView,
+  grantTruckDispatchAccess, resolveOwnershipClaim, setTruckStatus,
+  terminationComplete,
+  type ClaimDecision, type GrantDispatchAccessInput, type TerminationStep,
+  type TruckProfileView,
 } from "@/lib/api/mock/truck-registry";
+import { revokeDispatchDelegation } from "@/lib/api/mock/dispatch-revocation";
 import { mockListCarrierDrivers } from "@/features/driver/mock-carrier-drivers";
 import { trailerOnTruck } from "@/lib/api/mock/trailer-registry";
 import type { TruckOperatingLease, TruckOperatingStatus, TruckSpecs } from "@/types";
@@ -68,6 +71,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [revealVin, setRevealVin] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!ctx) return;
@@ -389,8 +393,8 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
             </ul>
           </Panel>
 
-          {view.dispatchAccess.length > 0 ? (
-            <Panel title="Dispatch access">
+          <Panel title="Dispatch access">
+            {view.dispatchAccess.length > 0 ? (
               <ul className="space-y-2">
                 {view.dispatchAccess.map((d) => (
                   <li key={d.id} className="rounded-md border border-border bg-surface-sunken px-3.5 py-2.5">
@@ -399,17 +403,69 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
                       <RelationshipStatusChip status={d.status} />
                     </p>
                     <p className="mt-0.5 text-[0.75rem] text-fg-subtle">
-                      Granted by {d.grantedByCarrierName} · started {formatDate(d.startedAt)}
+                      Granted by {d.grantedByCarrierName} · from {formatDate(d.effectiveFrom)}
+                      {d.effectiveTo ? ` until ${formatDate(d.effectiveTo)}` : ""}
                     </p>
+                    {d.purpose ? (
+                      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">{d.purpose}</p>
+                    ) : null}
+                    {d.status === "ended" && d.endReason ? (
+                      <p className="mt-0.5 text-[0.75rem] text-fg-subtle">Ended — {d.endReason}</p>
+                    ) : null}
+                    {d.status === "active" && !readOnly ? (
+                      <Can permission="trucks:relationships:manage">
+                        <EndDispatchAccess
+                          organizationName={d.dispatchOrganizationName}
+                          busy={busy}
+                          onEnd={async (reason) => {
+                            if (!ctx) return;
+                            setBusy(true);
+                            await revokeDispatchDelegation(d.id, reason, ctx).catch(() => undefined);
+                            setBusy(false);
+                            load();
+                          }}
+                        />
+                      </Can>
+                    ) : null}
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
-                A dispatch organization books freight on this truck. It neither owns it nor runs it
-                on its own authority.
+            ) : (
+              <p className="text-[0.8125rem] text-fg-muted">
+                Nobody else dispatches this truck.
               </p>
-            </Panel>
-          ) : null}
+            )}
+            <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
+              A dispatch organization books freight on this truck for you. It neither owns it nor
+              runs it on its own authority, and the loads it books stay yours.
+            </p>
+            {!readOnly && view.accessReason === "operating_carrier" ? (
+              <Can permission="trucks:relationships:manage">
+                <GrantDispatchAccess
+                  busy={busy}
+                  incumbent={view.dispatchAccess.find((d) => d.status === "active")}
+                  onGrant={async (input) => {
+                    if (!ctx) return;
+                    setBusy(true);
+                    try {
+                      await grantTruckDispatchAccess(
+                        { ...input, truckId: view.truck.truckId },
+                        ctx,
+                      );
+                      setDispatchError(null);
+                    } catch (error) {
+                      setDispatchError(
+                        error instanceof Error ? error.message : "That could not be granted.",
+                      );
+                    }
+                    setBusy(false);
+                    load();
+                  }}
+                  error={dispatchError}
+                />
+              </Can>
+            ) : null}
+          </Panel>
 
           {myRelationship?.status === "approved" && !readOnly ? (
             <Can permission="trucks:relationships:manage">
@@ -578,6 +634,190 @@ function ClaimReview({
         </Button>
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => onDecide("reject", note)}>
           Reject
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The carrier lets a dispatch organization work this truck.
+ *
+ * Four questions, in the carrier's language: who, what for, from when, and
+ * until when. "What for" is required because a grant nobody can explain is a
+ * grant nobody can review later — the same rule the maintenance and compliance
+ * shares already keep.
+ *
+ * When somebody already dispatches the truck, the form says so and asks the
+ * carrier to confirm a TRANSFER rather than silently adding a second
+ * arrangement. Two agencies on one truck is how a truck gets double-booked, so
+ * the service refuses it outright unless this box is ticked.
+ */
+function GrantDispatchAccess({
+  busy, incumbent, onGrant, error,
+}: {
+  busy: boolean;
+  incumbent?: { id: string; dispatchOrganizationName: string };
+  onGrant: (input: Omit<GrantDispatchAccessInput, "truckId">) => void;
+  error: string | null;
+}) {
+  const uid = useId();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [orgId, setOrgId] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [until, setUntil] = useState("");
+  const [transfer, setTransfer] = useState(false);
+  const [local, setLocal] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <div className="mt-3">
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+          {incumbent ? "Move dispatch to another company" : "Let a company dispatch this truck"}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-surface-sunken p-4">
+      <p className="text-[0.875rem] font-medium text-fg">
+        {incumbent
+          ? `Move dispatch of this truck away from ${incumbent.dispatchOrganizationName}`
+          : "Let a dispatch company book freight on this truck"}
+      </p>
+      <p className="mt-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+        They will see this truck, its driver and the loads they book on it. The loads, the broker
+        and the paperwork stay yours. You can end this at any time, and their access stops
+        immediately.
+      </p>
+      <div className="mt-3 grid max-w-xl gap-3">
+        <Field label="Dispatch company" htmlFor={`${uid}-name`}>
+          <Input id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field
+          label="Their organization id"
+          htmlFor={`${uid}-org`}
+          hint="Until invitations are wired to this, the id is entered by hand."
+        >
+          <Input id={`${uid}-org`} value={orgId} onChange={(e) => setOrgId(e.target.value)} />
+        </Field>
+        <Field label="What are they doing for you?" htmlFor={`${uid}-purpose`}>
+          <Textarea
+            id={`${uid}-purpose`} rows={2} value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+          />
+        </Field>
+        <Field label="Until (optional)" htmlFor={`${uid}-until`}>
+          <Input
+            id={`${uid}-until`} type="date" value={until}
+            onChange={(e) => setUntil(e.target.value)}
+          />
+        </Field>
+        {incumbent ? (
+          <label className="flex items-start gap-2 text-[0.8125rem] text-fg">
+            <input
+              type="checkbox" className="mt-0.5" checked={transfer}
+              onChange={(e) => setTransfer(e.target.checked)}
+            />
+            <span>
+              End {incumbent.dispatchOrganizationName}&apos;s access and move this truck.
+              Their open cycle keeps its history and moves with it.
+            </span>
+          </label>
+        ) : null}
+      </div>
+      {local ?? error ? (
+        <p role="alert" className="mt-2 text-[0.8125rem] text-st-danger">{local ?? error}</p>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          variant="primary" size="sm" disabled={busy}
+          onClick={() => {
+            if (!name.trim() || !orgId.trim()) {
+              setLocal("Name the company and its organization id."); return;
+            }
+            if (purpose.trim().length < 3) {
+              setLocal("Say what they are doing for you. It is kept on the record."); return;
+            }
+            if (incumbent && !transfer) {
+              setLocal("Somebody already dispatches this truck. Confirm the transfer to move it.");
+              return;
+            }
+            setLocal(null);
+            onGrant({
+              dispatchOrganizationId: orgId.trim(),
+              dispatchOrganizationName: name.trim(),
+              purpose: purpose.trim(),
+              effectiveTo: until ? new Date(until).toISOString() : undefined,
+              transferFromGrantId: incumbent && transfer ? incumbent.id : undefined,
+            });
+            setOpen(false);
+          }}
+        >
+          {incumbent ? "Move dispatch" : "Grant access"}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={busy}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The carrier takes a truck back off a dispatch organization. */
+function EndDispatchAccess({
+  organizationName, busy, onEnd,
+}: {
+  organizationName: string;
+  busy: boolean;
+  onEnd: (reason: string) => void;
+}) {
+  const uid = useId();
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (!confirming) {
+    return (
+      <div className="mt-2">
+        <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+          End this arrangement
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div role="alert" className="mt-2 rounded-md border border-st-warning/40 bg-st-warning-bg/60 p-3">
+      <p className="text-[0.8125rem] font-medium text-fg">
+        End {organizationName}&apos;s dispatch access?
+      </p>
+      <p className="mt-1 text-[0.75rem] leading-relaxed text-fg-muted">
+        They stop seeing this truck, its loads, its paperwork and its tracking links straight away.
+        Your loads, your broker records and the whole history stay with you; they keep a short
+        receipt of the work they finished.
+      </p>
+      <div className="mt-2 max-w-md">
+        <Field label="Reason" htmlFor={`${uid}-dsp-reason`} error={error ?? undefined}>
+          <Textarea
+            id={`${uid}-dsp-reason`} rows={2} value={reason}
+            onChange={(e) => { setReason(e.target.value); setError(null); }}
+          />
+        </Field>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button
+          variant="danger" size="sm" disabled={busy}
+          onClick={() => {
+            if (reason.trim().length < 3) { setError("Give a short reason. It is kept on the record."); return; }
+            onEnd(reason);
+          }}
+        >
+          End access
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setConfirming(false)} disabled={busy}>
+          Cancel
         </Button>
       </div>
     </div>

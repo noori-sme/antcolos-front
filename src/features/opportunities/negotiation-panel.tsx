@@ -517,10 +517,10 @@ function BookedSummary({
         </Badge>
       </p>
       <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+        {/* What was stood down is the dispatch workspace's own market
+            bookkeeping and lives on its `ProviderBookingLink`, not on the
+            carrier's booking. The line below says what the BOOKING says. */}
         {money(booking.agreedRateCents)} with {booking.brokerName}, booked by {booking.bookedByName}.
-        {booking.closedMatchIds.length > 0
-          ? ` ${booking.closedMatchIds.length} other match${booking.closedMatchIds.length === 1 ? "" : "es"} stood down.`
-          : ""}
       </p>
       {booking.consent === "pending" ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
