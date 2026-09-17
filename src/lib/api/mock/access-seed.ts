@@ -127,6 +127,21 @@ export function seedInvitations(): Invitation[] {
       expiresAt: daysFromNow(14), createdAt: daysAgo(1), status: "pending",
     },
     {
+      ...base,
+      // The other half of the migration case: an invitation that CONNECTS an
+      // engagement this carrier already holds, rather than creating one. Its
+      // acceptance writes the person's profile id onto that engagement and
+      // touches nothing else about it — not its state, and above all not the
+      // start date the carrier asserted. See `weng_nl_migrated_driver`.
+      id: "inv_13", token: "INV-MIGRATED", kind: "driver", roleName: "Driver",
+      engagementType: "owner_operator",
+      recipientName: "Sam Murtaza", recipientEmail: "sam@antcolos.com",
+      recipientHasAccount: true,
+      engagementId: "weng_nl_migrated_driver",
+      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      expiresAt: daysFromNow(21), createdAt: daysAgo(2), status: "pending",
+    },
+    {
       id: "inv_8", token: "INV-DISPATCHEMP", kind: "dispatcher", roleName: "Dispatcher",
       organizationId: "org_summit", organizationName: "Summit Dispatch",
       organizationType: "DISPATCH_AGENCY", recipientHasAccount: false,

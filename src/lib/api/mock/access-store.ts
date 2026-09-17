@@ -34,11 +34,13 @@ interface StoreState {
   invitations: Invitation[];
   /** Keyed `${invitationId}:${userId}`. One run per person per invitation. */
   runs: Record<string, AcceptanceRun>;
+  /** Acceptances whose "joined" audit line has already been written. */
+  audited: Set<string>;
   seeded: boolean;
 }
 
 function emptyState(): StoreState {
-  return { invitations: [], runs: {}, seeded: false };
+  return { invitations: [], runs: {}, audited: new Set(), seeded: false };
 }
 
 let state: StoreState = emptyState();
@@ -136,6 +138,26 @@ export function runsForInvitation(invitationId: string): AcceptanceRun[] {
 export function putRun(run: AcceptanceRun): AcceptanceRun {
   state.runs[runKey(run.invitationId, run.userId)] = run;
   return { ...run, steps: run.steps.map((s) => ({ ...s })) };
+}
+
+/**
+ * Claims the right to write the one "joined" audit line for this acceptance.
+ *
+ * Returns true exactly once per `(invitationId, userId)`, and false to every
+ * caller after. Three tabs finishing the same acceptance together all complete
+ * the same run — correctly, because every step resumes — but "Alex accepted
+ * their invitation" happened once and the ledger must say so once.
+ *
+ * Synchronous on purpose: the check and the set are one block with no `await`
+ * between them, so two callers in one tab cannot both win. Two BROWSERS still
+ * can, which is the backend's unique constraint to hold, not this module's to
+ * pretend about.
+ */
+export function claimJoinedAudit(invitationId: string, userId: string): boolean {
+  const key = runKey(invitationId, userId);
+  if (state.audited.has(key)) return false;
+  state.audited.add(key);
+  return true;
 }
 
 /** Runs that started and did not finish. What Needs You is derived from. */

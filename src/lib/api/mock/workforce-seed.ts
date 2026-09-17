@@ -149,6 +149,29 @@ const ROWS: SeedRow[] = [
     managerName: "Tess Ferraro",
     sourceLabel: "Entered by hand; this person has no Antcolos account",
   },
+  {
+    // ★ AN EXISTING DRIVER, NOT YET CONNECTED TO AN ACCOUNT ★
+    //
+    // The migration case. This carrier has said, in its own records, that this
+    // person has driven for them since well before Antcolos existed. There is
+    // no `driverProfileId` because nobody has proved who they are yet: that
+    // happens when they accept an invitation and their own permanent profile
+    // is linked to this engagement.
+    //
+    // The start date below is the one thing that must survive that. It is the
+    // carrier's assertion about 2024; connecting an account is a fact about
+    // today, and overwriting the first with the second is what turns a migrated
+    // workforce into one that looks freshly hired.
+    id: "weng_nl_migrated_driver",
+    organizationId: "org_northline",
+    displayName: "Sam Murtaza",
+    email: "sam@antcolos.com",
+    classification: "owner_operator",
+    state: "active",
+    positionTitle: "Driver",
+    startedDaysAgo: 640,
+    sourceLabel: "From the existing driver relationship with Northline Freight",
+  },
 ];
 
 export function seedWorkforce(): WorkforceEngagement[] {

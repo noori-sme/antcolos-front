@@ -17,7 +17,8 @@ import {
 } from "@/features/driver/mock-driver";
 import { appendAuditEvent } from "./audit";
 import {
-  ensureSeeded, invitationByToken, invitationById, invitationsForOrganization,
+  claimJoinedAudit, ensureSeeded, invitationByToken, invitationById,
+  invitationsForOrganization,
   nextInvitationId, nextInvitationToken, openInvitationFor, putInvitation, putRun,
   runFor, runsForInvitation,
 } from "./access-store";
@@ -148,6 +149,28 @@ interface StepContext {
 }
 
 /**
+ * ███ TEST SEAM — NEVER SET BY THE PRODUCT ███
+ *
+ * Makes one named step fail, so that interruption at each of the five points
+ * can be proved rather than argued about. There is no other way to reach the
+ * "the relationship succeeded and the seat did not" state on demand, and that
+ * is precisely the state worth testing: it is the one where somebody could end
+ * up with access to a workspace they are not connected to.
+ *
+ * Nothing in `src/features` or `src/app` calls this, and a fault is cleared by
+ * resetting it to null — which the test helper does in `beforeEach`.
+ */
+let faultAt: AcceptanceStepKey | null = null;
+
+const FAULT_REASON =
+  "Injected failure (test only). In a real system this is where a network "
+  + "call, a lock or a constraint would have refused.";
+
+export function failAcceptanceStepForTests(key: AcceptanceStepKey | null): void {
+  faultAt = key;
+}
+
+/**
  * Runs every step that is not already done, in an order where each prefix is a
  * safe place to stop.
  *
@@ -165,6 +188,19 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
 
   const steps: AcceptanceStep[] = [];
   const { invitation, userId, input } = ctx;
+  const isDriverInvitation = invitation.kind === "driver";
+
+  /**
+   * A step is BLOCKED when what it depends on has not completed.
+   *
+   * Blocked is not failed and it is emphatically not done: the step was never
+   * attempted, so nothing it would have created exists. That distinction is
+   * what stops a portal seat being handed to somebody whose relationship never
+   * got made — access arriving before the thing it is access to.
+   */
+  const blocked = (key: AcceptanceStepKey, on: string): AcceptanceStep =>
+    step(key, "pending", `Waiting on ${on}.`, undefined,
+      `The ${on} step did not finish, so this one was not attempted.`);
 
   /* ---- 1. The person's own permanent profile --------------------------- */
   let driverProfileId: string | undefined;
@@ -172,9 +208,12 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
   if (keptProfile) {
     steps.push(keptProfile);
     driverProfileId = keptProfile.ref?.id;
-  } else if (invitation.kind !== "driver") {
+  } else if (!isDriverInvitation) {
     steps.push(step("driver_profile", "not_applicable",
       "This invitation is not a driving one, so no driver profile is involved."));
+  } else if (faultAt === "driver_profile") {
+    steps.push(step("driver_profile", "failed", "Your driver profile could not be set up.",
+      undefined, FAULT_REASON));
   } else {
     const existing = profileForUser(userId);
     if (existing) {
@@ -187,21 +226,37 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
         "A driver profile is needed before a carrier can be connected.",
         undefined, "No licence details were supplied."));
     } else {
-      const { profile } = createOrResumeProfile({ userId, ...input.licence, email: currentUser().email });
+      const { profile } = createOrResumeProfile({
+        userId, ...input.licence, email: currentUser().email,
+      });
       driverProfileId = profile.id;
       steps.push(step("driver_profile", "done",
         "Your permanent driver profile was created. It belongs to you and follows you between carriers.",
         { kind: "driver_profile", id: profile.id }));
     }
   }
+  const profileReady = !isDriverInvitation || Boolean(driverProfileId);
 
   /* ---- 2. The relationship. Created as onboarding, with NO start date --- */
+  let relationshipReady = false;
   const keptRelationship = keep("carrier_relationship");
   if (keptRelationship) {
     steps.push(keptRelationship);
+    relationshipReady = keptRelationship.state === "done";
+  } else if (!isDriverInvitation) {
+    // An employee, a dispatcher or a custom role has no driver–carrier
+    // relationship at all. Marking this `pending` for them — as it once did —
+    // left the run permanently unfinishable, so their invitation could never
+    // read as accepted however many times they tried.
+    steps.push(step("carrier_relationship", "not_applicable",
+      "A driver–carrier relationship is a driving arrangement. This invitation is not one."));
+    relationshipReady = true;
   } else if (!driverProfileId) {
-    steps.push(step("carrier_relationship", "pending",
-      "Waiting on your driver profile.", undefined, "The driver profile step did not finish."));
+    steps.push(blocked("carrier_relationship", "driver profile"));
+  } else if (faultAt === "carrier_relationship") {
+    steps.push(step("carrier_relationship", "failed",
+      `Your connection to ${invitation.organizationName} could not be made.`,
+      undefined, FAULT_REASON));
   } else {
     const before = liveRelationshipWith(driverProfileId, invitation.organizationId);
     const relationship = await mockCreateRelationship(driverProfileId, {
@@ -213,6 +268,7 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
       sharedDocumentKeys: input.sharedDocumentKeys,
       invitedAt: invitation.createdAt,
     });
+    relationshipReady = true;
     steps.push(step("carrier_relationship", "done",
       before
         ? `You were already connected to ${invitation.organizationName}. Nothing was duplicated and no date was changed.`
@@ -220,26 +276,42 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
       { kind: "carrier_relationship", id: relationship.id }));
   }
 
-  /* ---- 3. Ordinary document access. Links, never copies ---------------- */
+  /* ---- 3. Ordinary document access ------------------------------------- */
   const keptDocuments = keep("document_access");
   if (keptDocuments) {
     steps.push(keptDocuments);
-  } else if (input.sharedDocumentKeys.length === 0) {
+  } else if (!relationshipReady) {
+    // It used to say "done" here regardless. It could not have been: the links
+    // are added by `mockCreateRelationship`, so a relationship that was never
+    // made shared nothing — and a step reporting access that does not exist is
+    // worse than one reporting none.
+    steps.push(blocked("document_access", "connection to this carrier"));
+  } else if (!isDriverInvitation || input.sharedDocumentKeys.length === 0) {
     steps.push(step("document_access", "done",
       "You shared nothing yet. You can share documents from your own file whenever you choose."));
   } else {
     // Performed by `mockCreateRelationship` above, through the document store's
-    // own `addLink`. Recorded here so the person can see it happened and see
-    // what it did NOT include.
+    // own `addLink`. Recorded here so the person can see what it did, and what
+    // it deliberately did not include.
     steps.push(step("document_access", "done",
       `${invitation.organizationName} can now see ${input.sharedDocumentKeys.length} of your documents. `
       + "Each is the same record you own, linked — not a copy — and their review is theirs, not yours."));
   }
 
-  /* ---- 4. The seat. Last, because it is the recoverable one ------------ */
+  /* ---- 4. The seat. Last, and never ahead of the thing it opens -------- */
   const keptSeat = keep("workspace_membership");
   if (keptSeat) {
     steps.push(keptSeat);
+  } else if (!profileReady || !relationshipReady) {
+    // ★ THE ONE THAT MATTERS MOST ★
+    // A portal seat granted while the relationship behind it does not exist is
+    // access arriving before the thing it is access to. The person could sign
+    // in to a workspace they are not connected to. Blocked, not attempted.
+    steps.push(blocked("workspace_membership",
+      profileReady ? "connection to this carrier" : "driver profile"));
+  } else if (faultAt === "workspace_membership") {
+    steps.push(step("workspace_membership", "failed", "A portal seat could not be created.",
+      undefined, FAULT_REASON));
   } else {
     const organization = MOCK_ORGANIZATIONS.find((o) => o.id === invitation.organizationId);
     if (!organization) {
@@ -258,8 +330,8 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
           status: "active",
           title: invitation.roleName,
           templateIds: [],
-          // The invitation's own snapshot, clamped. Not a template, not an
-          // owner seat, and nothing this module chose.
+          // The invitation's own snapshot, narrowed. Not a template, not an
+          // owner seat, and nothing this module chose for itself.
           grants: driverSeatPermissions(invitation),
           revocations: [],
           scope: OWN_RECORDS_SCOPE,
@@ -285,8 +357,11 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
     steps.push(step("engagement_link", "not_applicable",
       "This carrier had no earlier record of you to connect."));
   } else if (!driverProfileId) {
-    steps.push(step("engagement_link", "pending",
-      "Waiting on your driver profile.", undefined, "The driver profile step did not finish."));
+    steps.push(blocked("engagement_link", "driver profile"));
+  } else if (faultAt === "engagement_link") {
+    steps.push(step("engagement_link", "failed",
+      "The record this carrier had of you could not be connected.",
+      undefined, FAULT_REASON));
   } else {
     const linked = linkDriverProfileToEngagement(
       invitation.engagementId, driverProfileId, invitation.organizationId,
@@ -440,7 +515,8 @@ export const mockAccessService: AccessService = {
     const previous = runFor(invitation.id, userId);
     const run = await runSteps({ invitation, userId, input }, previous);
     if (run.completedAt) {
-      auditJoined(invitation, userId);
+      // One acceptance, one line — however many callers finished the same run.
+      if (claimJoinedAudit(invitation.id, userId)) auditJoined(invitation, userId);
       return { status: "accepted", run };
     }
     return { status: "incomplete", run };
