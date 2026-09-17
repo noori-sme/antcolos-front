@@ -471,14 +471,47 @@ export function addLinks(
    * refusal is passed on: the store is exactly as it was.
    *
    * ███ THIS IS NOT DURABLE ATOMICITY ███
-   * It is one synchronous block in one tab over in-memory arrays, which is why
-   * nothing can observe the half state — not a transaction, not a lock, and no
-   * guarantee at all across two browsers or a restart. What the backend owes
-   * is set out in the PR: the link rows and the consent row in ONE database
-   * transaction, or an outbox with at-least-once delivery keyed on
-   * `(driverProfileId, carrierId, requirementKey)` so a replay is a no-op. A
-   * compensating unlink after the fact is the weaker fallback, and it has to
-   * run before the caller reports success, or the window is back.
+   *
+   * It is one synchronous block in one tab over in-memory arrays. Nothing can
+   * observe the half state because nothing else runs — not a transaction, not a
+   * lock, and no guarantee whatever across two tabs, two browsers or a restart.
+   *
+   * ★ THE INVARIANT A BACKEND MUST HOLD ★
+   *   No acceptance-derived document is readable unless its valid,
+   *   purpose-bound consent is effective at the moment of the read.
+   *
+   * Two mechanisms, and BOTH are required — neither substitutes for the other:
+   *
+   *   WRITE. The link rows and the consent row are one write and belong in one
+   *   transaction. Ordering them does not help: whichever goes first, a crash
+   *   between them leaves the other missing. The transaction must also take the
+   *   consent row's lock before inserting links (`SELECT … FOR UPDATE` on the
+   *   relationship), because the consent set is read-modify-write and two
+   *   concurrent grants would otherwise lose keys. Idempotence comes from a
+   *   unique constraint on `(driver_profile_id, carrier_id, requirement_key)`,
+   *   so a retry writes nothing rather than a duplicate.
+   *
+   *   READ. The read path JOINS a `driver_consent` link to its consent and
+   *   requires it to be effective — it does not trust that the write was
+   *   ordered or that the transaction held. This is what makes the invariant
+   *   survive a partial restore, a replayed message, a migration, or a bug in
+   *   some future write path. It belongs at the lowest layer that cannot be
+   *   bypassed: a view, a row-level security policy, or a repository method no
+   *   endpoint can go around. `consentBacked` in `documents.ts` is that guard
+   *   here, and it ports directly.
+   *
+   * ★ WHAT AN OUTBOX IS AND IS NOT FOR ★
+   * An outbox does NOT make these two writes atomic and does NOT prevent a
+   * temporarily readable, consent-less link: it delivers a message AFTER a
+   * transaction commits. Its place is the downstream effects of a grant that
+   * has already happened — notifying the carrier, refreshing a search index,
+   * forwarding the audit event to an external sink — where at-least-once
+   * delivery plus an idempotency key is exactly right. Using it in place of the
+   * transaction reintroduces the window this method exists to close.
+   *
+   * A compensating unlink is the weakest fallback of the three. It must run
+   * before the caller reports success, and even then it leaves the window open
+   * for as long as it takes to run.
    */
   commitConsent?: () => void,
 ): DocumentRecord[] {

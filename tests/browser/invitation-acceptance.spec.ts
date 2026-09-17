@@ -31,7 +31,7 @@ import { expect, test, type Page } from "@playwright/test";
  * behaviour, useless demonstration. `?fixture=newcomer` is the state every real
  * driver starts in.
  */
-const DRIVER_INVITE = "/invitation/INV-NEWCOMER?fixture=newcomer&signedin=1";
+const DRIVER_INVITE = "/invitation/INV-NEWCOMER?fixture=newcomer";
 
 /** The licence questions a person with no profile answers exactly once. */
 async function fillLicence(page: Page) {
@@ -119,7 +119,7 @@ test.describe("an invitation that is not acceptable", () => {
       ["INV-REVOKED", /was withdrawn/],
       ["INV-EXPIRED", /has expired/],
     ] as const) {
-      await page.goto(`/invitation/${token}?signedin=1`, { waitUntil: "networkidle" });
+      await page.goto(`/invitation/${token}`, { waitUntil: "networkidle" });
       await expect(page.getByRole("heading", { name: heading })).toBeVisible();
       await expect(page.getByRole("button", { name: "Accept invitation" })).toHaveCount(0);
     }
@@ -153,7 +153,7 @@ test.describe("the consent a driver actually gives", () => {
    * half of the plan real. The newcomer has neither, so a plan read there would
    * only ever show what is still awaited.
    */
-  const WITH_PAPERWORK = "/invitation/INV-DRIVER-ACCT?signedin=1";
+  const WITH_PAPERWORK = "/invitation/INV-DRIVER-ACCT";
 
   async function reachTheDecision(page: Page, link = WITH_PAPERWORK) {
     await page.goto(link, { waitUntil: "networkidle" });

@@ -44,7 +44,7 @@ async function fillLicence(page: Page) {
  * rather than a single button.
  */
 async function acceptAsNewDriver(page: Page) {
-  await page.goto("/invitation/INV-NEWCOMER?fixture=newcomer&signedin=1", {
+  await page.goto("/invitation/INV-NEWCOMER?fixture=newcomer", {
     waitUntil: "networkidle",
   });
   await expect(page.getByRole("heading", { name: /You've been invited to/ })).toBeVisible();
@@ -109,7 +109,7 @@ test.describe("accepting an invitation", () => {
     // an agreement excludes only helps while the person can still decide, so
     // the disclosure moved onto the decision itself — and the outcome no longer
     // has one to show, because nothing restricted was ever requested.
-    await page.goto("/invitation/INV-NEWCOMER?fixture=newcomer&signedin=1", {
+    await page.goto("/invitation/INV-NEWCOMER?fixture=newcomer", {
       waitUntil: "networkidle",
     });
     await page.getByRole("button", { name: "Accept invitation" }).click();
@@ -155,7 +155,7 @@ test.describe("accepting an invitation", () => {
   });
 
   test("refuses an invitation that has been withdrawn", async ({ page }) => {
-    await page.goto("/invitation/INV-REVOKED?signedin=1", { waitUntil: "networkidle" });
+    await page.goto("/invitation/INV-REVOKED", { waitUntil: "networkidle" });
     await expect(page.getByRole("heading", { name: /withdrawn/i })).toBeVisible();
     await expect(page.getByRole("button", { name: "Accept invitation" })).toHaveCount(0);
   });
@@ -182,7 +182,7 @@ test.describe("a person who belongs to nothing", () => {
  */
 test.describe("when a seat ends underneath the person", () => {
   async function joinAsOfficeManager(page: Page) {
-    await page.goto("/invitation/INV-NEWEMPLOYEE?fixture=newcomer&signedin=1", {
+    await page.goto("/invitation/INV-NEWEMPLOYEE?fixture=newcomer", {
       waitUntil: "networkidle",
     });
     // Not a driving invitation, so there is nothing to share and no licence to

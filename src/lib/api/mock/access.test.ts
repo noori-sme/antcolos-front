@@ -69,7 +69,20 @@ const OWNER = () => carrierContext([
   "loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view",
 ]);
 
-const RETURNING = { returningFromAuth: true };
+/**
+ * The signed-in session, supplied rather than assumed.
+ *
+ * The service no longer works out who is asking, so every call says. Sam is the
+ * demo account and the person `INV-DRIVER-ACCT` is addressed to.
+ */
+const SAM = {
+  userId: "usr_sam",
+  email: "sam@antcolos.com",
+  displayName: "Sam Murtaza",
+  scenario: "demo" as const,
+};
+
+const RETURNING = SAM;
 
 /** The invitation addressed to the demo account, so acceptance is authorised. */
 const TOKEN = "INV-DRIVER-ACCT";
@@ -238,26 +251,50 @@ describe("document access is bounded by what the driver agreed", () => {
     expect(documentsForSubject("driver", driverProfileSync()!.id).length).toBe(before);
   });
 
-  it("never grants a restricted qualification category", async () => {
+  it("refuses outright when a caller names a restricted qualification category", async () => {
     const result = await mockAccessService.accept(TOKEN, RETURNING, {
-      // Even if a caller asked for them by name.
+      // Asked for by name, which is the case worth being loud about.
       sharedDocumentKeys: [...RESTRICTED_QUALIFICATION_CATEGORIES],
       licence: LICENCE,
     });
+
+    // It used to accept and narrow silently. Narrowing is right when a SCREEN
+    // has assembled a checklist; it is wrong when a caller has named one of
+    // these, because then the honest answer is no rather than four steps
+    // succeeding while a fifth hands over nothing.
+    expect(result.status).toBe("restricted-category");
+    if (result.status === "restricted-category") {
+      expect([...result.categories].sort())
+        .toEqual([...RESTRICTED_QUALIFICATION_CATEGORIES].sort());
+    }
+
+    // And nothing at all happened: no relationship, no seat, no link. The
+    // refusal comes before the first step runs.
+    expect(driverRelationshipsSync()
+      .filter((r) => r.carrierId === NORTHLINE.id && r.status !== "ended")).toHaveLength(0);
+    expect(liveMembershipFor("demo", "usr_sam", NORTHLINE.id)?.id)
+      .toBe("mem_northline_owner");
+  });
+
+  it("still narrows a restricted DOCUMENT TYPE quietly, and says what it withheld", async () => {
+    // The other half of the rule, and deliberately a different shape. A
+    // carrier's checklist legitimately contains restricted rows — an
+    // employment application, a driving record — so a screen submitting the
+    // ordinary decision must not be refused for them. They are dropped and
+    // NAMED, rather than refused or silently missing.
+    const result = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: ["cdl_front", "northline_employment_application"],
+      licence: LICENCE,
+    });
     expect(result.status).toBe("accepted");
+    if (result.status !== "accepted") return;
+
+    const documents = result.run.steps.find((s) => s.key === "document_access")!;
+    expect(documents.withheld?.map((w) => w.key)).toEqual(["northline_employment_application"]);
 
     const relationship = driverRelationshipsSync()
       .find((r) => r.carrierId === NORTHLINE.id && r.status !== "ended")!;
-    // The keys travel no further than the relationship's own consent list, and
-    // no document exists under a restricted category for them to reach: these
-    // categories are refused at the qualification boundary, which acceptance
-    // does not touch at all.
-    for (const category of RESTRICTED_QUALIFICATION_CATEGORIES) {
-      const links = documentsForSubject("driver", relationship.driverProfileId)
-        .flatMap((d) => d.links)
-        .filter((l) => l.requirementKey === category && !l.unlinkedAt);
-      expect(links).toHaveLength(0);
-    }
+    expect(relationship.sharedDocumentKeys).not.toContain("northline_employment_application");
   });
 
   it("creates no qualification record — review and adoption stay separate acts", async () => {

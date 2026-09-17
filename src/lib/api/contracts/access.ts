@@ -125,9 +125,29 @@ export type InvitationLookup =
    */
   | { status: "resume"; invitation: Invitation; signedInAs: string; run: AcceptanceRun };
 
-export interface LookUpOptions {
-  /** True when the person has just come back through Sign Up or Sign In. */
-  returningFromAuth: boolean;
+/**
+ * ★ WHO IS ASKING — SUPPLIED, NEVER ASSUMED ★
+ *
+ * Every read and write below takes this rather than working it out. The
+ * previous shape took `{ returningFromAuth }` from a query string and treated
+ * `?signedin=1` as evidence that the person holding the link WAS the person it
+ * names. That is a query parameter deciding who you are: forwarding an
+ * invitation email would have been a way to hand somebody your seat.
+ *
+ * It comes from the session, at the one place the session exists, and no module
+ * below that boundary reaches for a window to find out.
+ */
+export interface AcceptingIdentity {
+  userId: string;
+  email: string;
+  displayName: string;
+  /**
+   * Which fixture roster this tab runs on.
+   *
+   * A mock-only concern: the membership store keeps one roster per scenario.
+   * Passed in for the same reason as the rest of this.
+   */
+  scenario: "demo" | "newcomer";
 }
 
 /**
@@ -187,7 +207,17 @@ export type AcceptResult =
   /** Some step did not finish. The run is kept and can be resumed. */
   | { status: "incomplete"; run: AcceptanceRun }
   | { status: "not-acceptable"; lookup: InvitationLookup }
-  | { status: "licence-required" };
+  | { status: "licence-required" }
+  /**
+   * A caller named a restricted qualification category.
+   *
+   * Refused outright and FIRST, rather than narrowed quietly: somebody asking
+   * for a drug and alcohol result should be told no, not watch four steps
+   * succeed while a fifth hands over nothing. A carrier that wants one asks for
+   * it under its own purpose-bound basis; saying yes to an invitation is not
+   * that basis.
+   */
+  | { status: "restricted-category"; categories: string[] };
 
 export interface RosterEntry {
   membership: Membership;
@@ -220,9 +250,9 @@ export interface AccessService {
   resend(ctx: ServiceContext, invitationId: string): Promise<Invitation>;
 
   /* ---- acceptance, by the person the invitation names ---- */
-  lookUp(token: string, options: LookUpOptions): Promise<InvitationLookup>;
+  lookUp(token: string, identity: AcceptingIdentity | null): Promise<InvitationLookup>;
   /** What accepting would do. Changes nothing. */
-  preview(token: string, options: LookUpOptions): Promise<AcceptancePreview | null>;
+  preview(token: string, identity: AcceptingIdentity): Promise<AcceptancePreview | null>;
   /**
    * The recipient turning it down.
    *
@@ -231,7 +261,7 @@ export interface AccessService {
    * "they said no". Only the person the invitation names may do it, and it
    * creates nothing.
    */
-  decline(token: string, options: LookUpOptions): Promise<Invitation | null>;
+  decline(token: string, identity: AcceptingIdentity): Promise<Invitation | null>;
 
   /* ---- the roster, from the organization's side ---- */
   /**
@@ -253,5 +283,7 @@ export interface AccessService {
    * second one, so a retry after a partial failure completes what is missing
    * and repeats nothing.
    */
-  accept(token: string, options: LookUpOptions, input: AcceptInput): Promise<AcceptResult>;
+  accept(
+    token: string, identity: AcceptingIdentity, input: AcceptInput,
+  ): Promise<AcceptResult>;
 }

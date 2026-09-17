@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+
 import type { PermissionKey } from "@/types";
 import { MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
 import {
@@ -20,6 +21,20 @@ const leaveOrganization = mockAccessService.leaveOrganization;
 import { resetAccessStore } from "./access-store";
 import { resetWorkforceStore } from "./workforce-store";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
+
+/**
+ * The signed-in session, supplied rather than assumed.
+ *
+ * The service no longer works out who is asking, so every call says. Sam is the
+ * demo account and the person `INV-DRIVER-ACCT` is addressed to.
+ */
+const SAM = {
+  userId: "usr_sam",
+  email: "sam@antcolos.com",
+  displayName: "Sam Murtaza",
+  scenario: "demo" as const,
+};
+
 
 /**
  * ★ THE POLICY THE ACCESS SERVICE ENFORCES, AS OPPOSED TO THE PLUMBING ★
@@ -99,7 +114,7 @@ async function seatFromAcceptance(): Promise<string> {
   resetDriverRegistry({ omitUserIds: ["usr_sam"] });
   resetDriverMock({ withProfile: false });
   const result = await mockAccessService.accept(
-    "INV-DRIVER-ACCT", { returningFromAuth: true },
+    "INV-DRIVER-ACCT", SAM,
     {
       sharedDocumentKeys: [],
       licence: {
@@ -213,7 +228,7 @@ describe("accepting is not blanket access to restricted paperwork", () => {
     const ordinary = ordinaryDocumentKeys(documentRequirements("company_driver", NORTHLINE.id));
 
     const result = await mockAccessService.accept(
-      "INV-DRIVER-ACCT", { returningFromAuth: true },
+      "INV-DRIVER-ACCT", SAM,
       // Passed in DELIBERATELY. The rule is not that the screen does not offer
       // them — it is that the service does not hand them over.
       { sharedDocumentKeys: [...ordinary, ...restricted] },
@@ -237,7 +252,7 @@ describe("accepting is not blanket access to restricted paperwork", () => {
   it("says what was withheld rather than showing a shorter list with no reason", async () => {
     const restricted = RESTRICTED_KEYS();
     const result = await mockAccessService.accept(
-      "INV-DRIVER-ACCT", { returningFromAuth: true },
+      "INV-DRIVER-ACCT", SAM,
       { sharedDocumentKeys: ["cdl_front", ...restricted] },
     );
     if (result.status !== "accepted") throw new Error("expected acceptance");
@@ -341,7 +356,7 @@ describe("ending a seat ends access and nothing else", () => {
 describe("only activation writes a start date", () => {
   it("accepting leaves it absent, and activating writes it as OBSERVED", async () => {
     const accepted = await mockAccessService.accept(
-      "INV-DRIVER-ACCT", { returningFromAuth: true }, { sharedDocumentKeys: [] },
+      "INV-DRIVER-ACCT", SAM, { sharedDocumentKeys: [] },
     );
     expect(accepted.status).toBe("accepted");
 
@@ -424,7 +439,7 @@ describe("what the person reads", () => {
     expect(restricted.map((r) => r.key)).toContain("northline_employment_application");
 
     const result = await mockAccessService.accept(
-      "INV-DRIVER-ACCT", { returningFromAuth: true },
+      "INV-DRIVER-ACCT", SAM,
       { sharedDocumentKeys: restricted.map((r) => r.key) },
     );
     if (result.status !== "accepted") throw new Error("expected acceptance");
@@ -450,14 +465,78 @@ describe("a whole-organization invitation", () => {
     // two ORGANIZATIONS: its own scope, its own end date, its own per-truck
     // delegation. Handing a seat to whoever opened the link would be granting
     // reach nobody agreed to — so this flow refuses instead of improvising.
-    const lookup = await mockAccessService.lookUp("INV-DISPATCHORG", { returningFromAuth: true });
+    const lookup = await mockAccessService.lookUp("INV-DISPATCHORG", SAM);
     expect(lookup.status).toBe("organization-invitation");
 
     const before = rosterOf(NORTHLINE.id).length;
     const result = await mockAccessService.accept(
-      "INV-DISPATCHORG", { returningFromAuth: true }, { sharedDocumentKeys: [] },
+      "INV-DISPATCHORG", SAM, { sharedDocumentKeys: [] },
     );
     expect(result.status).toBe("not-acceptable");
     expect(rosterOf(NORTHLINE.id)).toHaveLength(before);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Who the invitation is for                                                   */
+/* -------------------------------------------------------------------------- */
+
+describe("an invitation is tied to a person, not to whoever holds the link", () => {
+  const ALEX = {
+    userId: "usr_newcomer",
+    email: "alex.rivera@example.com",
+    displayName: "Alex Rivera",
+    scenario: "demo" as const,
+  };
+  const SAM = {
+    userId: "usr_sam",
+    email: "sam@antcolos.com",
+    displayName: "Sam Murtaza",
+    scenario: "demo" as const,
+  };
+
+  it("does not let a forwarded link attach itself to the reader", async () => {
+    /*
+     * ★ THE DEFECT THIS EXISTS TO CATCH ★
+     *
+     * `resolve` used to read `options.returningFromAuth ? invitation.recipientEmail : …`
+     * — "somebody arrived carrying this link, so assume they are the addressee".
+     * A query parameter decided who you were, so `?signedin=1` on a forwarded
+     * invitation attached it to whoever opened it. Identity now comes from the
+     * session and the link carries no authority of its own.
+     */
+    const lookup = await mockAccessService.lookUp("INV-NEWCOMER", SAM);
+    expect(lookup.status).toBe("wrong-recipient");
+
+    const before = rosterOf(NORTHLINE.id).length;
+    const result = await mockAccessService.accept("INV-NEWCOMER", SAM, {
+      sharedDocumentKeys: [],
+    });
+    expect(result.status).toBe("not-acceptable");
+    expect(rosterOf(NORTHLINE.id)).toHaveLength(before);
+
+    // And the person it names still gets through.
+    expect((await mockAccessService.lookUp("INV-NEWCOMER", ALEX)).status).toBe("valid");
+  });
+
+  it("matches on the resolved account rather than only on the address", async () => {
+    // The address was how the invitation found them; the account is who they
+    // are. Somebody who changed their address on the account still holds it.
+    const renamed = { ...ALEX, email: "alex.rivera+work@example.com" };
+    expect((await mockAccessService.lookUp("INV-NEWCOMER", renamed)).status).toBe("valid");
+  });
+
+  it("asks somebody with no account to make one, rather than guessing", async () => {
+    // karin.vogel@example.com has no account, so `recipientUserId` is absent
+    // and there is nobody to compare a session against.
+    expect((await mockAccessService.lookUp("INV-WRONGUSER", SAM)).status).toBe("needs-account");
+    expect((await mockAccessService.lookUp("INV-WRONGUSER", null)).status).toBe("needs-account");
+  });
+
+  it("does not let somebody else decline on their behalf", async () => {
+    expect(await mockAccessService.decline("INV-NEWCOMER", SAM)).toBeNull();
+    const [invitation] = (await mockAccessService.list(context(["invitations:view"])))
+      .filter((i) => i.token === "INV-NEWCOMER");
+    expect(invitation.status).toBe("pending");
   });
 });

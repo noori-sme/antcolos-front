@@ -48,7 +48,20 @@ import { NotFoundError, type ServiceContext } from "../contracts/context";
 
 const NORTHLINE = MOCK_ORGANIZATIONS.find((o) => o.id === "org_northline")!;
 const TOKEN = "INV-DRIVER-ACCT";
-const RETURNING = { returningFromAuth: true };
+/**
+ * The signed-in session, supplied rather than assumed.
+ *
+ * The service no longer works out who is asking, so every call says. Sam is the
+ * demo account and the person `INV-DRIVER-ACCT` is addressed to.
+ */
+const SAM = {
+  userId: "usr_sam",
+  email: "sam@antcolos.com",
+  displayName: "Sam Murtaza",
+  scenario: "demo" as const,
+};
+
+const RETURNING = SAM;
 
 const LICENCE = {
   legalName: "Sam Murtaza",
@@ -281,11 +294,11 @@ describe("a link that is not theirs to use", () => {
     // `recipientHasAccount` is derived from the directory rather than typed
     // into the fixture. A seed can no longer claim an account that does not
     // exist, and the case below covers it.
-    const lookup = await mockAccessService.lookUp("INV-NEWCOMER", { returningFromAuth: false });
+    const lookup = await mockAccessService.lookUp("INV-NEWCOMER", SAM);
     expect(lookup.status).toBe("wrong-recipient");
 
     const result = await mockAccessService.accept(
-      "INV-NEWCOMER", { returningFromAuth: false }, { sharedDocumentKeys: [] },
+      "INV-NEWCOMER", SAM, { sharedDocumentKeys: [] },
     );
     expect(result.status).toBe("not-acceptable");
     // Exactly what they had before: the Owner seat, untouched. Nothing was
@@ -299,7 +312,7 @@ describe("a link that is not theirs to use", () => {
     // karin.vogel@example.com is nobody in particular until she makes an
     // account, so the address is all the invitation can name and there is
     // nothing to compare a signed-in session against.
-    const lookup = await mockAccessService.lookUp("INV-WRONGUSER", { returningFromAuth: false });
+    const lookup = await mockAccessService.lookUp("INV-WRONGUSER", SAM);
     expect(lookup.status).toBe("needs-account");
     if (lookup.status === "needs-account") {
       expect(lookup.invitation.recipientHasAccount).toBe(false);
@@ -307,7 +320,7 @@ describe("a link that is not theirs to use", () => {
     }
 
     const result = await mockAccessService.accept(
-      "INV-WRONGUSER", { returningFromAuth: false }, { sharedDocumentKeys: [] },
+      "INV-WRONGUSER", SAM, { sharedDocumentKeys: [] },
     );
     expect(result.status).toBe("not-acceptable");
     expect(joinedEvents()).toHaveLength(0);
@@ -996,10 +1009,30 @@ describe("interrupted after the links commit and before the consent is recorded"
       const documentId = driverDocumentId(key);
       // Rolled back inside the same commit: the link is not there at all.
       expect(northlineLinks(documentId)).toHaveLength(0);
-      // And not readable by either route.
+
+      /* ---- EVERY read path, not just the two the screen uses ---------- */
+      // The list.
       expect(await carrierCanList(documentId)).toBe(false);
+      // By id. An invisible document answers exactly as an unknown one does,
+      // so the field cannot be used to probe another organization's paperwork.
       await expect(mockDocumentsService.get(CARRIER(), documentId))
         .rejects.toBeInstanceOf(NotFoundError);
+      // The checklist a carrier reads a driver against — the one surface that
+      // asks for documents BY SUBJECT rather than by what it can already see.
+      const checklist = await mockDocumentsService.entityChecklist(
+        CARRIER(), { kind: "driver", id: "dp_sam", label: "Sam Murtaza" },
+        { engagement: "company_driver" },
+      );
+      expect(checklist.items.map((item) => item.document?.documentId).filter(Boolean))
+        .not.toContain(documentId);
+      // The row for it reads "missing", which is the truth: this carrier has
+      // nothing for that requirement.
+      expect(checklist.items.find((item) => item.requirement.key === key)?.status)
+        .toBe("missing");
+      // And no share: a consent-based link is not a share, and the failure
+      // created neither.
+      expect((await mockDocumentsService.listShares(CARRIER()))
+        .map((share) => share.lineageId)).not.toContain(documentId);
       // No history saying a share happened, because none did.
       expect(documentEventsFor(documentId)
         .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id))

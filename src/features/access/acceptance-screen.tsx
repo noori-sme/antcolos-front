@@ -2,8 +2,8 @@
 
 import { Ban, Building2, CircleCheck, Clock, LoaderCircle, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { AuthShell } from "@/features/auth/shell";
 import { FormAlert } from "@/features/auth/form-alert";
@@ -11,7 +11,11 @@ import { PermissionSummary, SensitiveAccessWarning } from "./permission-summary"
 import { QuickOnboarding } from "@/features/driver/quick-onboarding";
 import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import { services } from "@/lib/api";
-import type { AcceptInput, InvitationLookup } from "@/lib/api/contracts/access";
+import type {
+  AcceptInput, AcceptingIdentity, InvitationLookup,
+} from "@/lib/api/contracts/access";
+import { useSession } from "@/lib/session/hooks";
+import { readSessionScenario } from "@/lib/session/scenarios";
 import {
   ACCEPTANCE_LIMITATION, ACCEPTANCE_STEP_LABEL,
   type AcceptanceRun, type Invitation,
@@ -28,8 +32,23 @@ import { cn } from "@/lib/utils";
  */
 export function InvitationAcceptanceScreen({ token }: { token: string }) {
   const router = useRouter();
-  const params = useSearchParams();
-  const returningFromAuth = params.get("signedin") === "1";
+  /**
+   * ★ WHO THIS TAB IS — FROM THE SESSION, NOT FROM THE URL ★
+   *
+   * This screen does not decide it and cannot influence it. The previous
+   * version leaned on `?signedin=1` and let the service treat "somebody arrived
+   * carrying this link" as evidence that they were the person it names. A query
+   * string is not evidence of who somebody is, and an invitation that attached
+   * itself to whoever held the link would make forwarding an email a way to
+   * give away a seat.
+   */
+  const { user } = useSession();
+  const identity = useMemo<AcceptingIdentity>(() => ({
+    userId: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    scenario: readSessionScenario(),
+  }), [user]);
 
   const [state, setState] = useState<InvitationLookup | null>(null);
   const [accepting, setAccepting] = useState(false);
@@ -41,18 +60,18 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    services.access.lookUp(token, { returningFromAuth }).then((result) => {
+    services.access.lookUp(token, identity).then((result) => {
       if (!cancelled) setState(result);
     });
     return () => {
       cancelled = true;
     };
-  }, [token, returningFromAuth]);
+  }, [token, identity]);
 
   async function accept(input: AcceptInput) {
     if (accepting) return;
     setAccepting(true);
-    const result = await services.access.accept(token, { returningFromAuth }, input);
+    const result = await services.access.accept(token, identity, input);
     setAccepting(false);
     if (result.status === "accepted" || result.status === "incomplete") {
       setRun(result.run);
@@ -63,7 +82,7 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
   }
 
   async function decline() {
-    const updated = await services.access.decline(token, { returningFromAuth });
+    const updated = await services.access.decline(token, identity);
     if (!updated) return;
     setCollecting(false);
     setDeclined(updated);

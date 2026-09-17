@@ -36,7 +36,20 @@ import { NotFoundError, type ServiceContext } from "../contracts/context";
 
 const NORTHLINE = MOCK_ORGANIZATIONS.find((o) => o.id === "org_northline")!;
 const TOKEN = "INV-DRIVER-ACCT";
-const RETURNING = { returningFromAuth: true };
+/**
+ * The signed-in session, supplied rather than assumed.
+ *
+ * The service no longer works out who is asking, so every call says. Sam is the
+ * demo account and the person `INV-DRIVER-ACCT` is addressed to.
+ */
+const SAM = {
+  userId: "usr_sam",
+  email: "sam@antcolos.com",
+  displayName: "Sam Murtaza",
+  scenario: "demo" as const,
+};
+
+const RETURNING = SAM;
 
 function context(permissions: PermissionKey[]): ServiceContext {
   return {
@@ -273,7 +286,7 @@ describe("declining", () => {
 
   it("cannot be done by somebody the invitation does not name", async () => {
     // Addressed to Alex; this session is Sam.
-    expect(await mockAccessService.decline("INV-NEWCOMER", { returningFromAuth: false }))
+    expect(await mockAccessService.decline("INV-NEWCOMER", SAM))
       .toBeNull();
     const [invitation] = (await mockAccessService.list(OWNER()))
       .filter((i) => i.token === "INV-NEWCOMER");

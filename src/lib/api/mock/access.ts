@@ -8,13 +8,12 @@ import { OWN_RECORDS_SCOPE } from "@/lib/permissions/scope";
 import { clampToGrantable, ungrantablePermissions } from "@/lib/permissions/grantable";
 import { driverRequirements } from "@/lib/documents/requirements";
 import { restrictedReason } from "@/lib/documents/catalog";
-import { MOCK_ORGANIZATIONS, MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
+import { MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
 import {
   grantMembership, liveMembershipFor, rosterSnapshot, setMembershipStatus,
 } from "@/lib/session/membership-store";
 import { effectivePermissions } from "@/lib/permissions";
 import { MOCK_TEMPLATES } from "@/lib/session/fixtures";
-import { isNewcomerSession } from "@/lib/session/scenarios";
 import {
   createOrResumeProfile, profileForUser, relationshipsForProfile,
 } from "./driver-registry";
@@ -36,7 +35,7 @@ import type { ServiceContext } from "../contracts/context";
 import { PermissionDeniedError } from "../contracts/context";
 import type {
   AcceptInput, AcceptancePreview, AccessService, InvitationDraft,
-  EndSeatResult, InvitationLookup, LookUpOptions, RosterEntry,
+  AcceptingIdentity, EndSeatResult, InvitationLookup, RosterEntry,
 } from "../contracts/access";
 
 /**
@@ -82,10 +81,6 @@ function required(ctx: ServiceContext, ...keys: PermissionKey[]) {
 }
 
 /** The signed-in person. From the session boundary, never a literal. */
-function currentUser() {
-  return isNewcomerSession() ? NEWCOMER_USER : MOCK_USER;
-}
-
 /* -------------------------------------------------------------------------- */
 /* Status, projected                                                           */
 /* -------------------------------------------------------------------------- */
@@ -157,6 +152,8 @@ const step = (
 interface StepContext {
   invitation: Invitation;
   userId: string;
+  /** Supplied by the session. Nothing below this line works out who is asking. */
+  identity: AcceptingIdentity;
   input: AcceptInput;
 }
 
@@ -242,7 +239,7 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
   };
 
   const steps: AcceptanceStep[] = [];
-  const { invitation, userId, input } = ctx;
+  const { invitation, userId, identity, input } = ctx;
   const isDriverInvitation = invitation.kind === "driver";
 
   /**
@@ -282,7 +279,7 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
         undefined, "No licence details were supplied."));
     } else {
       const { profile } = createOrResumeProfile({
-        userId, ...input.licence, email: currentUser().email,
+        userId, ...input.licence, email: identity.email,
       });
       driverProfileId = profile.id;
       steps.push(step("driver_profile", "done",
@@ -507,7 +504,7 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
         "A portal seat could not be created.",
         undefined, `Antcolos has no record of the organization ${invitation.organizationId}.`));
     } else {
-      const scenario = isNewcomerSession() ? "newcomer" : "demo";
+      const scenario = identity.scenario;
       const held = liveMembershipFor(scenario, userId, invitation.organizationId);
       const result = grantMembership({
         scenario,
@@ -570,7 +567,7 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
    * synchronous block with no `await` in it. Two callers in one tab cannot both
    * win. Two BROWSERS still can — see the backend note below.
    */
-  withJoinedAudit(invitation.id, userId, () => auditJoined(invitation, userId));
+  withJoinedAudit(invitation.id, userId, () => auditJoined(invitation, identity));
   run.completedAt = nowIso();
   return putRun(run);
 }
@@ -681,14 +678,14 @@ export const mockAccessService: AccessService = {
    * nothing: no profile, no relationship, no seat, no document link — declining
    * is the one outcome that is supposed to leave the world unchanged.
    */
-  async decline(token, options) {
+  async decline(token, identity) {
     await sleep(LATENCY_MS);
     db();
-    const lookup = resolve(token, options);
+    const lookup = resolve(token, identity);
     if (lookup.status !== "valid" && lookup.status !== "resume") return null;
 
     const updated = putInvitation({ ...lookup.invitation, status: "declined" });
-    appendAuditEvent(declineContext(updated), {
+    appendAuditEvent(declineContext(updated, identity), {
       module: "access",
       action: "access.invitation_declined",
       entity: {
@@ -738,16 +735,16 @@ export const mockAccessService: AccessService = {
     return projected(updated);
   },
 
-  async lookUp(token, options) {
+  async lookUp(token, identity) {
     await sleep(LATENCY_MS);
     db();
-    return resolve(token, options);
+    return resolve(token, identity);
   },
 
-  async preview(token, options) {
+  async preview(token, identity) {
     await sleep(LATENCY_MS);
     db();
-    const lookup = resolve(token, options);
+    const lookup = resolve(token, identity);
     if (lookup.status !== "valid" && lookup.status !== "resume") return null;
     const invitation = lookup.invitation;
     const requirements = invitation.kind === "driver"
@@ -773,22 +770,42 @@ export const mockAccessService: AccessService = {
     return preview;
   },
 
-  async accept(token, options, input: AcceptInput) {
+  async accept(token, identity, input: AcceptInput) {
     await sleep(LATENCY_MS);
     db();
-    const lookup = resolve(token, options);
+    const lookup = resolve(token, identity);
     if (lookup.status !== "valid" && lookup.status !== "resume") {
       return { status: "not-acceptable", lookup };
     }
     const invitation = lookup.invitation;
-    const userId = currentUser().id;
+    const userId = identity.userId;
+
+    /*
+     * ★ ACCEPTANCE IS NOT A BASIS FOR A RESTRICTED CATEGORY ★
+     *
+     * `RESTRICTED_QUALIFICATION_CATEGORIES` is the decision this codebase
+     * already recorded, in the module that owns it — a drug and alcohol result,
+     * a clearinghouse query, a background check, a driving record — and the
+     * reason each fails closed is written beside it. Nothing here re-states
+     * that list or invents a second one.
+     *
+     * Refused explicitly and FIRST. Narrowing it quietly, as the document-type
+     * filter does for a checklist row, is right when a screen has assembled a
+     * list; it is wrong when a caller has NAMED one of these, because then the
+     * honest answer is no rather than four steps succeeding while a fifth hands
+     * over nothing.
+     */
+    const restricted = input.sharedDocumentKeys.filter(
+      (key) => (RESTRICTED_QUALIFICATION_CATEGORIES as readonly string[]).includes(key),
+    );
+    if (restricted.length > 0) return { status: "restricted-category", categories: restricted };
 
     if (invitation.kind === "driver" && !profileForUser(userId) && !input.licence) {
       return { status: "licence-required" };
     }
 
     const previous = runFor(invitation.id, userId);
-    const run = await runSteps({ invitation, userId, input }, previous);
+    const run = await runSteps({ invitation, userId, identity, input }, previous);
     // The ledger line is written inside `runSteps`, in the same synchronous
     // block that sets `completedAt`. Writing it here, after an `await`, is what
     // let three concurrent callers each write one.
@@ -818,7 +835,7 @@ function own(ctx: ServiceContext, invitationId: string): Invitation {
  * incomplete run belonging to somebody else still reads `used`, so a re-sent
  * link cannot be finished by the wrong account.
  */
-function resolve(token: string, options: LookUpOptions): InvitationLookup {
+function resolve(token: string, identity: AcceptingIdentity | null): InvitationLookup {
   const stored = invitationByToken(token);
   if (!stored) return { status: "not-found" };
 
@@ -833,25 +850,38 @@ function resolve(token: string, options: LookUpOptions): InvitationLookup {
     return { status: "organization-invitation", invitation };
   }
 
-  const userId = currentUser().id;
-  const signedInAs = options.returningFromAuth
-    ? invitation.recipientEmail
-    : invitation.recipientHasAccount
-      ? currentUser().email
-      : null;
+  /*
+   * ★ THE LINE THAT TIES AN INVITATION TO A PERSON ★
+   *
+   * This used to read `options.returningFromAuth ? invitation.recipientEmail
+   * : …` — "somebody arrived carrying this link, so assume they are the
+   * addressee". That is a query parameter deciding who you are, and forwarding
+   * an invitation email would have been a way to give somebody else your seat.
+   *
+   * The answer now comes from the session: the account the invitation resolved
+   * to when it was issued, or, for an address nobody had signed up with yet,
+   * the address itself once somebody has. Signing up through the invitation
+   * still works — that is exactly the case where the address now matches — but
+   * it works because the account exists, not because of how they arrived.
+   */
+  if (!identity) return { status: "needs-account", invitation };
+  const addressee = invitation.recipientUserId !== undefined
+    ? invitation.recipientUserId === identity.userId
+    : invitation.recipientEmail.toLowerCase() === identity.email.trim().toLowerCase();
 
-  const mine = runFor(invitation.id, userId);
-  if (mine && !mine.completedAt && signedInAs
-    && signedInAs.toLowerCase() === invitation.recipientEmail.toLowerCase()) {
+  // Nobody has signed up with this address, and the person looking is somebody
+  // else: there is no account for this invitation to attach to yet.
+  const signedInAs = addressee || invitation.recipientHasAccount ? identity.email : null;
+
+  const mine = runFor(invitation.id, identity.userId);
+  if (mine && !mine.completedAt && addressee && signedInAs) {
     return { status: "resume", invitation, signedInAs, run: mine };
   }
 
   if (invitation.status === "accepted") return { status: "used", invitation };
   if (invitation.status === "expired") return { status: "expired", invitation };
   if (signedInAs === null) return { status: "needs-account", invitation };
-  if (signedInAs.toLowerCase() !== invitation.recipientEmail.toLowerCase()) {
-    return { status: "wrong-recipient", invitation, signedInAs };
-  }
+  if (!addressee) return { status: "wrong-recipient", invitation, signedInAs };
   return { status: "valid", invitation, signedInAs };
 }
 
@@ -904,8 +934,9 @@ function audit(
  * needed one to write down a refusal would lose exactly the events somebody
  * came looking for.
  */
-function declineContext(invitation: Invitation): ServiceContext {
-  const user = currentUser();
+function declineContext(
+  invitation: Invitation, identity: AcceptingIdentity,
+): ServiceContext {
   return {
     organizationId: invitation.organizationId,
     organizationName: invitation.organizationName,
@@ -915,16 +946,16 @@ function declineContext(invitation: Invitation): ServiceContext {
     permissions: new Set<PermissionKey>(),
     scope: OWN_RECORDS_SCOPE,
     actor: {
-      userId: user.id,
+      userId: identity.userId,
       membershipId: `inv_${invitation.id}`,
-      displayNameSnapshot: user.displayName,
+      displayNameSnapshot: identity.displayName,
       source: "web",
     },
   };
 }
 
-function auditJoined(invitation: Invitation, userId: string) {
-  const user = currentUser();
+function auditJoined(invitation: Invitation, identity: AcceptingIdentity) {
+  const userId = identity.userId;
   if (faultAtJoinedAudit) {
     throw new Error(
       "Injected ledger failure (test only). In a real system this is where the "
@@ -943,7 +974,7 @@ function auditJoined(invitation: Invitation, userId: string) {
       actor: {
         userId,
         membershipId: `mem_${invitation.id}_${userId}`,
-        displayNameSnapshot: user.displayName,
+        displayNameSnapshot: identity.displayName,
         source: "web",
       },
     }, {
