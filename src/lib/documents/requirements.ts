@@ -5,7 +5,7 @@ import type {
   EngagementType, RequirementSet, RequirementSetId, TrailerDocumentKind,
   TrailerType, TruckDocumentKind, TruckEquipmentType, WorkspaceKind,
 } from "@/types";
-import { documentType } from "./catalog";
+import { documentType, isRestrictedDocumentType } from "./catalog";
 
 /**
  * WHAT EACH WORKSPACE IS ASKED FOR.
@@ -394,4 +394,49 @@ export function requirementByKey(key: string): DocumentRequirement | undefined {
 
 export function requirementLabel(key: string, fallback: string): string {
   return ALL_BY_KEY.get(key)?.label ?? fallback;
+}
+
+/* -------------------------------------------------------------------------- */
+/* What a bulk path may hand over                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ THE ONLY WAY THE ACCEPTANCE PATH MAY WORK OUT WHAT TO SHARE ★
+ *
+ * Splits a checklist into the ordinary paperwork somebody can agree to hand
+ * over in one act, and the restricted paperwork that cannot be included in one
+ * — a social security number, bank details, a state driving record, a
+ * substance-testing record.
+ *
+ * The split is a property of the document TYPE (see `isRestrictedDocumentType`),
+ * so a checklist that grows a new row for a restricted type is handled the day
+ * it is added. Callers take `ordinary`; `restricted` exists so a screen can say
+ * plainly WHAT was withheld and why, rather than silently showing a shorter
+ * list than the checklist it just displayed.
+ */
+export function splitByRestriction(
+  requirements: readonly DocumentRequirement[],
+): { ordinary: DocumentRequirement[]; restricted: DocumentRequirement[] } {
+  const ordinary: DocumentRequirement[] = [];
+  const restricted: DocumentRequirement[] = [];
+  for (const requirement of requirements) {
+    (isRestrictedDocumentType(requirement.typeKey) ? restricted : ordinary).push(requirement);
+  }
+  return { ordinary, restricted };
+}
+
+/**
+ * The requirement keys an acceptance may share: required, ordinary, and nothing
+ * else.
+ *
+ * Optional rows are excluded too. "Optional" means the person may choose to
+ * supply it; a bulk consent that quietly swept optional paperwork in would be
+ * making that choice for them.
+ */
+export function ordinaryDocumentKeys(
+  requirements: readonly DocumentRequirement[],
+): string[] {
+  return splitByRestriction(requirements).ordinary
+    .filter((r) => r.applicability === "required")
+    .map((r) => r.key);
 }

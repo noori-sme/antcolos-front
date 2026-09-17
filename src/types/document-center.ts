@@ -99,6 +99,22 @@ export interface DocumentTypeMeta {
    * every surface that shows one of these must say it is not built yet.
    */
   future?: boolean;
+  /**
+   * ★ NEVER HANDED OVER BECAUSE SOMEBODY JOINED ★
+   *
+   * A restricted type carries a government identifier, bank details, or a
+   * medical or substance-testing record. Access to one is its own decision,
+   * made per document, for a stated reason, by somebody who holds the
+   * permission for it — never a side effect of accepting an invitation,
+   * joining an organization or being handed a role.
+   *
+   * This flag does not by itself stop a document being shared. It stops the
+   * BULK paths — onboarding, acceptance, checklist defaults — from including
+   * one silently, which is where blanket access actually comes from.
+   */
+  restricted?: true;
+  /** Why it is restricted, in the words the person is shown. */
+  restrictedReason?: string;
 }
 
 /* -------------------------------------------------------------------------- */

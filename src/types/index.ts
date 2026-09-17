@@ -57,6 +57,7 @@ export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
 } from "./needs-you";
 export { DRIVER_AVAILABILITY_LABEL } from "./driver-profile";
+export { INVITATION_REFUSAL_REASON } from "./access";
 export {
   SHARE_PURPOSE_LABEL, SHARE_STATE_LABEL, SHARE_REFUSAL_MESSAGE,
 } from "./document-share";

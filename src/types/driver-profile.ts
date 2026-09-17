@@ -50,14 +50,22 @@ export interface CarrierRelationship {
   permissions: PermissionKey[];
   invitedAt: string;
   /**
-   * When the driver accepted. OBSERVED.
+   * When the person opened the invitation and said yes. OBSERVED.
    *
-   * Separate from `startedAt` on purpose, and the separation is the product
-   * rule: saying yes is the person's act, becoming effective is the carrier's.
-   * A relationship with an `acceptedAt` and no `startedAt` is a real, common
-   * and honest state — the driver has agreed and the carrier has not started
-   * them yet — and it is what lets a screen say "accepted on the 4th, not yet
-   * activated" instead of showing a blank nobody can interpret.
+   * ★ ACCEPTING IS NOT STARTING ★
+   * Two different facts, and the product must not collapse them. Saying yes is
+   * the person's act; becoming effective is the carrier's. A driver who accepts
+   * on Tuesday has agreed to work for this carrier and has not yet driven for
+   * it, and in most cases cannot until the paperwork is in.
+   *
+   * A relationship with an `acceptedAt` and no `startedAt` is therefore a real,
+   * common and honest state, and it is what lets a screen say "accepted on the
+   * 4th, not yet activated" instead of showing a blank nobody can interpret.
+   *
+   * The one case where `startedAt` legitimately PRECEDES `acceptedAt` is an
+   * imported relationship: a carrier asserting somebody has driven for them
+   * since March. That is the carrier's claim, carried as such, and accepting an
+   * invitation never converts it into something Antcolos saw.
    */
   acceptedAt?: string;
   /**
@@ -70,6 +78,20 @@ export interface CarrierRelationship {
    * afternoon somebody clicked a link.
    */
   startedAt?: string;
+  /**
+   * WHERE `startedAt` CAME FROM. Absent whenever `startedAt` is.
+   *
+   * `observed` — Antcolos watched it happen: somebody activated the
+   *   relationship here, on this date, and the event is in the ledger.
+   * `carrier_asserted` — the carrier told us, typically on import. It may well
+   *   be true and it is not ours to contradict, but it is a claim rather than
+   *   something we saw, and every surface that shows it says whose claim.
+   *
+   * Nothing promotes `carrier_asserted` to `observed`. Accepting an invitation
+   * certainly does not: the person agreeing to work here today says nothing
+   * about what a spreadsheet claimed about last March.
+   */
+  startedAtBasis?: "observed" | "carrier_asserted";
   status: RelationshipStatus;
   endedAt?: string;
   endReason?: string;
