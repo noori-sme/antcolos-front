@@ -19,7 +19,7 @@ import { MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
 import {
   addSharedDocumentKeys, createOrResumeProfile, createOrResumeRelationship,
   endCarrierRelationship, liveRelationship, profileForUser, relationshipsForProfile,
-  resetDriverRegistry, setCarrierRelationshipStatus,
+  resetDriverRegistry, restoreSharedDocumentKeys, setCarrierRelationshipStatus,
 } from "@/lib/api/mock/driver-registry";
 import { ordinaryDocumentKeys } from "@/lib/documents/requirements";
 import { effectiveStatus } from "@/lib/documents/status";
@@ -588,16 +588,37 @@ export function mockShareDocumentsWithCarrier(
    * refuses one whose consent is not on the live relationship — so even a link
    * left behind by some other half-finished path cannot be read through.
    */
+  /*
+   * The consent write comes with its UNDO.
+   *
+   * The store can put its own records back, and it cannot reach this
+   * relationship — consent lives in the driver registry. So a refusal landing
+   * after the consent write would strand a record claiming documents the
+   * carrier cannot read: not a leak, but a lie, and one nothing would ever
+   * correct because the retry path treats consent as already given.
+   *
+   * The prior list is captured BEFORE anything is written and restored
+   * wholesale rather than by subtracting what this grant added — the driver may
+   * already have agreed to some of these keys, and removing those would revoke
+   * consent this grant never gave.
+   */
+  const priorConsent = [...existing.sharedDocumentKeys];
   let relationship: CarrierRelationship | undefined;
   const added = attachSharedDocuments(
     { ...existing, sharedDocumentKeys: allowed },
-    () => {
-      relationship = addSharedDocumentKeys(profileId, carrierId, allowed);
-      if (!relationship) {
-        throw new Error(
-          `No live relationship between ${profileId} and ${carrierId} to record consent on.`,
-        );
-      }
+    {
+      commit: () => {
+        relationship = addSharedDocumentKeys(profileId, carrierId, allowed);
+        if (!relationship) {
+          throw new Error(
+            `No live relationship between ${profileId} and ${carrierId} to record consent on.`,
+          );
+        }
+      },
+      rollback: () => {
+        restoreSharedDocumentKeys(profileId, carrierId, priorConsent);
+        relationship = undefined;
+      },
     },
   );
   if (!relationship) return undefined;
@@ -760,13 +781,14 @@ function pendingShareLinks(relationship: CarrierRelationship): AddLinkEntry[] {
 
 function attachSharedDocuments(
   relationship: CarrierRelationship,
-  commitConsent?: () => void,
+  consent?: { commit: () => void; rollback: () => void },
 ): number {
   const entries = pendingShareLinks(relationship);
   // All of them or none, AND the consent that makes them readable in the same
-  // commit. A half-applied consent grants access the grant did not finish
-  // giving, and leaves a consent list that disagrees with it.
-  addLinks(entries, commitConsent);
+  // commit — with its undo, because consent lives in another store. A
+  // half-applied consent grants access the grant did not finish giving, and
+  // leaves a consent list that disagrees with it.
+  addLinks(entries, consent);
   return entries.length;
 }
 

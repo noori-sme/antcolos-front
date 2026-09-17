@@ -126,16 +126,37 @@ export type InvitationLookup =
   | { status: "resume"; invitation: Invitation; signedInAs: string; run: AcceptanceRun };
 
 /**
- * ★ WHO IS ASKING — SUPPLIED, NEVER ASSUMED ★
+ * Who is asking — supplied, never worked out.
  *
- * Every read and write below takes this rather than working it out. The
- * previous shape took `{ returningFromAuth }` from a query string and treated
- * `?signedin=1` as evidence that the person holding the link WAS the person it
- * names. That is a query parameter deciding who you are: forwarding an
- * invitation email would have been a way to hand somebody your seat.
+ * ███ IN THIS BUILD IT IS A SIMULATION, NOT AN AUTHENTICATED IDENTITY ███
  *
- * It comes from the session, at the one place the session exists, and no module
- * below that boundary reaches for a window to find out.
+ * Follow it down and it is still a URL:
+ *
+ *   acceptance-screen.tsx  →  useSession().user
+ *   SessionProvider        →  scenario === "newcomer" ? NEWCOMER_USER : MOCK_USER
+ *   readSessionScenario()  →  `?fixture=` on the address bar, or sessionStorage
+ *
+ * So anybody can be anybody by editing the query string, and every check
+ * downstream — the addressee match, a resume that belongs to one person, the
+ * refusal to let somebody decline another's invitation — is a statement about a
+ * value the caller chose. None of it is a security property. What it is worth
+ * is the SHAPE: it pins where identity must come from, so a server has
+ * something exact to implement.
+ *
+ * It is still a real improvement on what it replaced. `{ returningFromAuth }`
+ * meant "somebody arrived carrying this link, so assume they are the
+ * addressee" — one boolean, set from `?signedin=1`, standing in for a person —
+ * and forwarding an invitation email was a way to give away a seat. The
+ * service also reached into `@/lib/session/scenarios` itself, which put a
+ * window read underneath an API-layer module. Identity being an explicit input
+ * is what makes these rules testable at all; it is not what makes them
+ * enforced.
+ *
+ * ★ WHAT THE BACKEND MUST DO INSTEAD ★
+ * On every one of these calls the server DERIVES the acting identity from the
+ * authenticated session it issued and can verify — never from a body field, a
+ * query parameter, a header the client sets, or the invitation token itself.
+ * The token proves which invitation, never who is holding it.
  */
 export interface AcceptingIdentity {
   userId: string;

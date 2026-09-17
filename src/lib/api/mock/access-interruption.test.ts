@@ -7,14 +7,15 @@ import {
   liveMembershipFor, resetRoster, rosterSnapshot, setMembershipStatus,
 } from "@/lib/session/membership-store";
 import {
-  driverProfileSync, driverRelationshipsSync, resetDriverMock,
+  driverProfileSync, driverRelationshipsSync, mockShareDocumentsWithCarrier, resetDriverMock,
 } from "@/features/driver/mock-driver";
 import {
   failConsentWriteForTests, liveRelationship, profileForUser, resetDriverRegistry,
   setSharedDocumentKeysForTests,
 } from "./driver-registry";
 import {
-  addLinks, documentsForSubject, eventsForLineage, failLinkWriteForTests, resetDocumentStore,
+  addLinks, documentsForSubject, eventsForLineage, failAfterConsentForTests,
+  failLinkCommitForTests, failLinkWriteForTests, resetDocumentStore,
 } from "./document-store";
 import { auditLedger, resetAuditLedger } from "./audit-ledger";
 import {
@@ -125,6 +126,8 @@ beforeEach(() => {
   failAcceptanceStepForTests(null);
   failJoinedAuditForTests(false);
   failLinkWriteForTests(null);
+  failLinkCommitForTests(null);
+  failAfterConsentForTests(false);
   failConsentWriteForTests(false);
   resetAccessStore();
   resetRoster();
@@ -1115,4 +1118,122 @@ describe("interrupted after the links commit and before the consent is recorded"
       expect(await carrierCanList(driverDocumentId("northline_handbook"))).toBe(true);
       expect(relationship.sharedDocumentKeys.length).toBeGreaterThan(0);
     });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The grant unwinds across BOTH stores                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ THE WINDOW ROLLING BACK ONE STORE DOES NOT CLOSE ★
+ *
+ * `addLinks` can put its own records back. It cannot reach the consent, which
+ * lives in the driver registry — so a refusal landing AFTER the consent write
+ * left a relationship claiming documents the carrier could not read. Not a
+ * leak: a record that was simply false, and one nothing would ever correct,
+ * because the retry path treats consent as already given and would never
+ * re-add it.
+ *
+ * Two states, and neither is reachable without a seam. A mid-commit failure is
+ * what a database does — row two of three, with row one already in — and this
+ * mock cannot produce it on its own, so the rollback had never been exercised
+ * against a partially written commit at all.
+ */
+describe("a grant that dies with part of itself already written", () => {
+  const AGREED = ["cdl_front", "medical_front"];
+
+  const consentFor = () => liveRelationship(
+    profileForUser("usr_sam")!.id, NORTHLINE.id,
+  )?.sharedDocumentKeys ?? [];
+
+  it("unwinds a mid-commit failure, links and consent alike", async () => {
+    asDriverWithPaperwork();
+    // Refuses the SECOND link during the commit, with the first already in.
+    failLinkCommitForTests("medical_front");
+
+    const result = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+    expect(result.status).toBe("incomplete");
+
+    for (const key of AGREED) {
+      const documentId = driverDocumentId(key);
+      expect(northlineLinks(documentId)).toHaveLength(0);
+      expect(await carrierCanList(documentId)).toBe(false);
+      await expect(mockDocumentsService.get(CARRIER(), documentId))
+        .rejects.toBeInstanceOf(NotFoundError);
+    }
+    expect(consentFor()).toEqual([]);
+    // What the carrier held on its own basis is untouched.
+    expect(await carrierCanList(driverDocumentId("northline_handbook"))).toBe(true);
+  });
+
+  it("unwinds a failure AFTER the consent landed, putting the consent back", async () => {
+    asDriverWithPaperwork();
+    failAfterConsentForTests(true);
+
+    const result = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+    expect(result.status).toBe("incomplete");
+
+    // ★ THE ASSERTION THIS EXISTS FOR ★
+    // The consent write SUCCEEDED and was then put back. Without the undo it
+    // would read as both keys, and the relationship would claim documents that
+    // no longer have a link to read them through.
+    expect(consentFor()).toEqual([]);
+    for (const key of AGREED) {
+      expect(northlineLinks(driverDocumentId(key))).toHaveLength(0);
+      expect(await carrierCanList(driverDocumentId(key))).toBe(false);
+    }
+    expect(joinedEvents()).toHaveLength(0);
+  });
+
+  it("puts back the PRIOR consent, not an empty list", async () => {
+    asDriverWithPaperwork();
+    // A first grant that succeeds, so there is real consent to preserve.
+    await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: ["cdl_front"], licence: LICENCE,
+    });
+    const before = [...consentFor()];
+    expect(before).toEqual(["cdl_front"]);
+
+    // A second grant, widening it, that dies after the consent write.
+    failAfterConsentForTests(true);
+    expect(() => mockShareDocumentsWithCarrier(
+      profileForUser("usr_sam")!.id, NORTHLINE.id, ["medical_front"],
+    )).toThrow(/post-consent/);
+
+    // The driver still consents to exactly what they consented to before. Subtracting the added keys would have been wrong for
+    // a key they had already agreed to; the prior list is restored wholesale.
+    expect(consentFor()).toEqual(before);
+    expect(await carrierCanList(driverDocumentId("cdl_front"))).toBe(true);
+    expect(await carrierCanList(driverDocumentId("medical_front"))).toBe(false);
+  });
+
+  it("completes once on retry, with no duplicate link, history or ledger line", async () => {
+    asDriverWithPaperwork();
+    failAfterConsentForTests(true);
+    await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+
+    failAfterConsentForTests(false);
+    const retry = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+    expect(retry.status).toBe("accepted");
+
+    for (const key of AGREED) {
+      const documentId = driverDocumentId(key);
+      expect(northlineLinks(documentId)).toHaveLength(1);
+      expect(documentEventsFor(documentId)
+        .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id))
+        .toHaveLength(1);
+    }
+    expect([...consentFor()].sort()).toEqual([...AGREED].sort());
+    expect(relationships()).toHaveLength(1);
+    expect(seats()).toHaveLength(1);
+    expect(joinedEvents()).toHaveLength(1);
+  });
 });

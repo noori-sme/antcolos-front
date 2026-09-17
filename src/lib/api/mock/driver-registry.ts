@@ -1006,6 +1006,34 @@ export function addSharedDocumentKeys(
   return { ...engagement };
 }
 
+/**
+ * Puts a relationship's consent list back to exactly what it was.
+ *
+ * ★ THE COMPENSATING HALF OF A CROSS-STORE GRANT ★
+ * Consent lives here; the links live in the document store. That store can undo
+ * its own writes and cannot reach into this registry — so a grant that fails
+ * AFTER the consent write lands would leave this record claiming documents the
+ * carrier cannot read. Not a leak: a record that is simply false, and one
+ * nothing would correct, because the retry path treats consent as already given
+ * and would never re-add it.
+ *
+ * Takes the exact prior list rather than subtracting the keys it added: the
+ * driver may already have agreed to some of them, and removing those would
+ * revoke consent this grant never gave.
+ */
+export function restoreSharedDocumentKeys(
+  driverProfileId: string,
+  carrierId: string,
+  previous: readonly string[],
+): void {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  const engagement = record?.engagements.find(
+    (e) => e.carrierId === carrierId && e.status !== "ended",
+  );
+  if (!engagement) return;
+  engagement.sharedDocumentKeys = [...previous];
+}
+
 /** The one live relationship between this person and this carrier, if any. */
 export function liveRelationship(
   driverProfileId: string, carrierId: string,

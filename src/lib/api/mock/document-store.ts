@@ -433,6 +433,36 @@ export function failLinkWriteForTests(requirementKey: string | null): void {
   linkFaultKey = requirementKey;
 }
 
+/**
+ * Refuses one link DURING the commit, with earlier links already written.
+ *
+ * `failLinkWriteForTests` refuses while PLANNING, so nothing is written and the
+ * commit is never entered. That is the only failure this mock produces on its
+ * own — and it is not the failure a database produces. A real store fails on
+ * row two of three with row one already in. This seam reaches that state, so
+ * the rollback below has something to undo.
+ */
+let commitFaultKey: string | null = null;
+
+export function failLinkCommitForTests(requirementKey: string | null): void {
+  if (!LINK_SEAM_AVAILABLE) return;
+  commitFaultKey = requirementKey;
+}
+
+/**
+ * Refuses AFTER the consent write has landed, inside the same commit.
+ *
+ * The state that proves the CROSS-STORE undo: this store can put its own
+ * records back and cannot reach the driver registry, so without the caller's
+ * rollback the relationship would be left claiming documents nobody can read.
+ */
+let postConsentFault = false;
+
+export function failAfterConsentForTests(on: boolean): void {
+  if (!LINK_SEAM_AVAILABLE) return;
+  postConsentFault = on;
+}
+
 export interface AddLinkEntry {
   documentId: string;
   input: AddLinkInput;
@@ -466,9 +496,11 @@ export function addLinks(
    * exists and the other does not — and if that moment is where a failure
    * lands, the links are real access nobody agreed to complete.
    *
-   * So the caller hands its consent write IN, and it runs inside this commit.
-   * If it refuses, every link this call just wrote is removed before the
-   * refusal is passed on: the store is exactly as it was.
+   * So the caller hands its consent write IN, with its undo, and both run
+   * inside this commit. If anything refuses — a link mid-commit, the consent
+   * write, or anything after it — every link this call wrote is removed AND the
+   * consent is put back before the refusal is passed on. Both stores are
+   * exactly as they were.
    *
    * ███ THIS IS NOT DURABLE ATOMICITY ███
    *
@@ -513,7 +545,21 @@ export function addLinks(
    * before the caller reports success, and even then it leaves the window open
    * for as long as it takes to run.
    */
-  commitConsent?: () => void,
+  consent?: {
+    /** Writes the agreement. Runs inside this commit. */
+    commit: () => void;
+    /**
+     * Puts the agreement back exactly as it was.
+     *
+     * Required alongside `commit`, not optional: consent lives in another
+     * module's records, and restoring THIS store cannot reach it. Without an
+     * undo, a refusal after the consent write lands leaves a relationship
+     * claiming documents the carrier cannot read — not a leak, but a record
+     * that is false and that nothing would ever correct, because the retry path
+     * treats consent as already given.
+     */
+    rollback: () => void;
+  },
 ): DocumentRecord[] {
   const at = iso();
 
@@ -542,34 +588,57 @@ export function addLinks(
     return { existing, input, link };
   });
 
-  // Phase 2 — commit. Nothing in the link writes below can fail.
+  /*
+   * ★ PHASES 2 AND 3 ARE ONE REVERSIBLE BLOCK ★
+   *
+   * Everything below can fail — a link mid-commit, the consent write, or
+   * anything after it — and every one of those failures unwinds to exactly the
+   * state before the call: this store's records and events by reference, and
+   * the caller's consent record through the undo it handed in.
+   */
   const records = state.records;
   const events = state.events;
-  const written = planned.map(({ existing, input, link }) => {
-    const updated = updateDocument(existing.documentId, { links: [...existing.links, link] });
-    recordEvent({
-      lineageId: existing.lineageId, documentId: existing.documentId, at, kind: "linked",
-      summary: `Linked to ${input.subject.label}`,
-      detail: "The same document, linked with explicit permission. No copy was made.",
-      organizationId: input.contextOrganizationId, actorName: input.actorName,
-    });
-    return updated;
-  });
+  let consentCommitted = false;
 
-  // Phase 3 — the consent that makes the links mean something. Still the same
-  // synchronous block, so no read can land between phase 2 and here.
-  if (commitConsent) {
-    try {
-      commitConsent();
-    } catch (error) {
-      // Put the store back. Not "unlink" — these links were never real, and a
-      // tombstoned `unlinkedAt` would leave a history saying a share happened.
-      state.records = records;
-      state.events = events;
-      throw error;
+  try {
+    const written = planned.map(({ existing, input, link }) => {
+      if (commitFaultKey && input.requirementKey === commitFaultKey) {
+        throw new Error(
+          `Injected mid-commit failure for ${input.requirementKey} (test only). In a `
+          + "real system this is a write refusing with earlier rows already in.",
+        );
+      }
+      const updated = updateDocument(existing.documentId, { links: [...existing.links, link] });
+      recordEvent({
+        lineageId: existing.lineageId, documentId: existing.documentId, at, kind: "linked",
+        summary: `Linked to ${input.subject.label}`,
+        detail: "The same document, linked with explicit permission. No copy was made.",
+        organizationId: input.contextOrganizationId, actorName: input.actorName,
+      });
+      return updated;
+    });
+
+    // Phase 3 — the consent that makes the links mean something. Still the same
+    // synchronous block, so no read can land between phase 2 and here.
+    if (consent) {
+      consent.commit();
+      consentCommitted = true;
+      if (postConsentFault) {
+        throw new Error(
+          "Injected post-consent failure (test only). In a real system this is "
+          + "where the grant died with the agreement already recorded.",
+        );
+      }
     }
+    return written;
+  } catch (error) {
+    // Put BOTH stores back. Not "unlink" — these links were never real, and a
+    // tombstoned `unlinkedAt` would leave a history saying a share happened.
+    if (consentCommitted) consent!.rollback();
+    state.records = records;
+    state.events = events;
+    throw error;
   }
-  return written;
 }
 
 export function addLink(documentId: string, input: AddLinkInput): DocumentRecord {

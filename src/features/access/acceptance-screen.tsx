@@ -33,14 +33,18 @@ import { cn } from "@/lib/utils";
 export function InvitationAcceptanceScreen({ token }: { token: string }) {
   const router = useRouter();
   /**
-   * ★ WHO THIS TAB IS — FROM THE SESSION, NOT FROM THE URL ★
+   * Who this tab is.
    *
-   * This screen does not decide it and cannot influence it. The previous
-   * version leaned on `?signedin=1` and let the service treat "somebody arrived
-   * carrying this link" as evidence that they were the person it names. A query
-   * string is not evidence of who somebody is, and an invitation that attached
-   * itself to whoever held the link would make forwarding an email a way to
-   * give away a seat.
+   * The screen does not decide it: it reads `useSession()`, the one place the
+   * signed-in person comes from. That is the shape a real client keeps — the
+   * session decides, the screen relays.
+   *
+   * ███ BUT IN THIS BUILD THE SESSION IS A FIXTURE ███
+   * `useSession()` resolves to MOCK_USER or NEWCOMER_USER according to
+   * `?fixture=`, so this identity is a SIMULATION and anybody can be anybody by
+   * editing the URL. The `?signedin=1` flag it replaced was worse — one boolean
+   * standing in for a person — but neither is authentication. See
+   * `AcceptingIdentity` for what a server must derive instead.
    */
   const { user } = useSession();
   const identity = useMemo<AcceptingIdentity>(() => ({
