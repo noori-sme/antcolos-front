@@ -9,7 +9,10 @@ import {
 import {
   driverProfileSync, driverRelationshipsSync, resetDriverMock,
 } from "@/features/driver/mock-driver";
-import { profileForUser, resetDriverRegistry } from "./driver-registry";
+import {
+  failConsentWriteForTests, liveRelationship, profileForUser, resetDriverRegistry,
+  setSharedDocumentKeysForTests,
+} from "./driver-registry";
 import {
   addLinks, documentsForSubject, eventsForLineage, failLinkWriteForTests, resetDocumentStore,
 } from "./document-store";
@@ -109,6 +112,7 @@ beforeEach(() => {
   failAcceptanceStepForTests(null);
   failJoinedAuditForTests(false);
   failLinkWriteForTests(null);
+  failConsentWriteForTests(false);
   resetAccessStore();
   resetRoster();
   resetDocumentStore();
@@ -950,4 +954,132 @@ describe("interrupted between the first document and the second", () => {
     expect(before(first.documentId)).toBe(counts[0]);
     expect(before(second.documentId)).toBe(counts[1]);
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Links committed, consent not                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ THE SHARPEST WINDOW IN THE WHOLE FLOW ★
+ *
+ * Links are what a carrier reads through; the consent record on the
+ * relationship is what says they may. They are two records in two modules, so
+ * written apart there is always a moment where the links exist and the
+ * agreement does not — and a failure landing THERE leaves real, readable access
+ * behind a sharing decision that was never completed, with the invitation still
+ * pending and the run still unfinished.
+ *
+ * The seam refuses the consent write with every link already committed, which
+ * is that moment exactly.
+ */
+describe("interrupted after the links commit and before the consent is recorded", () => {
+  const AGREED = ["cdl_front", "medical_front"];
+
+  it("leaves no document readable, and no link behind", async () => {
+    asDriverWithPaperwork();
+    failConsentWriteForTests(true);
+
+    const result = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+    expect(result.status).toBe("incomplete");
+    if (result.status !== "incomplete") return;
+
+    const steps = new Map(result.run.steps.map((s) => [s.key, s]));
+    // The prerequisites really did succeed — this is the middle of the grant.
+    expect(steps.get("carrier_relationship")!.state).toBe("done");
+    expect(steps.get("document_access")!.state).toBe("failed");
+    expect(steps.get("document_access")!.failureReason).toMatch(/consent/i);
+
+    for (const key of AGREED) {
+      const documentId = driverDocumentId(key);
+      // Rolled back inside the same commit: the link is not there at all.
+      expect(northlineLinks(documentId)).toHaveLength(0);
+      // And not readable by either route.
+      expect(await carrierCanList(documentId)).toBe(false);
+      await expect(mockDocumentsService.get(CARRIER(), documentId))
+        .rejects.toBeInstanceOf(NotFoundError);
+      // No history saying a share happened, because none did.
+      expect(documentEventsFor(documentId)
+        .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id))
+        .toHaveLength(0);
+    }
+
+    // The relationship stands and promises nothing.
+    expect(relationships()).toHaveLength(1);
+    expect(relationships()[0].sharedDocumentKeys).toEqual([]);
+
+    // What Northline already held on its OWN basis is untouched. The handbook
+    // it issued this driver is not the driver's consent to withdraw, and a
+    // failure in their sharing decision must not reach it.
+    const handbook = driverDocumentId("northline_handbook");
+    expect(northlineLinks(handbook)).toHaveLength(1);
+    expect(await carrierCanList(handbook)).toBe(true);
+    expect((await mockDocumentsService.get(CARRIER(), handbook)).document.documentId)
+      .toBe(handbook);
+
+    // Nothing after it ran, and the invitation is still theirs to finish.
+    expect(liveMembershipFor("demo", "usr_sam", NORTHLINE.id)).toBeUndefined();
+    expect(joinedEvents()).toHaveLength(0);
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(1);
+    const [invitation] = (await mockAccessService.list(OWNER()))
+      .filter((i) => i.token === TOKEN);
+    expect(invitation.status).toBe("pending");
+  });
+
+  it("finishes once on retry, with no duplicate link, history or ledger line", async () => {
+    asDriverWithPaperwork();
+    failConsentWriteForTests(true);
+    await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+
+    failConsentWriteForTests(false);
+    const retry = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+    expect(retry.status).toBe("accepted");
+
+    for (const key of AGREED) {
+      const documentId = driverDocumentId(key);
+      expect(northlineLinks(documentId)).toHaveLength(1);
+      expect(documentEventsFor(documentId)
+        .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id))
+        .toHaveLength(1);
+      expect(await carrierCanList(documentId)).toBe(true);
+    }
+    expect(relationships()).toHaveLength(1);
+    expect([...relationships()[0].sharedDocumentKeys].sort()).toEqual([...AGREED].sort());
+    expect(seats()).toHaveLength(1);
+    expect(joinedEvents()).toHaveLength(1);
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(0);
+  });
+
+  it("refuses to read a consent-based link whose consent is not on the relationship",
+    async () => {
+      // Belt to the braces above. Even if a link survived — a future path, a
+      // partial import, a backend whose transaction did not hold — it is not
+      // access: the consent record is the authority and the read checks it.
+      asDriverWithPaperwork();
+      await mockAccessService.accept(TOKEN, RETURNING, {
+        sharedDocumentKeys: AGREED, licence: LICENCE,
+      });
+      const documentId = driverDocumentId("cdl_front");
+      expect(await carrierCanList(documentId)).toBe(true);
+
+      // Take the consent away underneath the link, leaving the link in place.
+      const profileId = profileForUser("usr_sam")!.id;
+      const relationship = liveRelationship(profileId, NORTHLINE.id)!;
+      setSharedDocumentKeysForTests(profileId, NORTHLINE.id, []);
+      expect(northlineLinks(documentId)).toHaveLength(1);
+
+      expect(await carrierCanList(documentId)).toBe(false);
+      await expect(mockDocumentsService.get(CARRIER(), documentId))
+        .rejects.toBeInstanceOf(NotFoundError);
+
+      // And the carrier's own handbook, which rests on no consent, is untouched.
+      expect(await carrierCanList(driverDocumentId("northline_handbook"))).toBe(true);
+      expect(relationship.sharedDocumentKeys.length).toBeGreaterThan(0);
+    });
 });

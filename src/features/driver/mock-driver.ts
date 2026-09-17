@@ -10,7 +10,10 @@ import type {
   EngagementType,
   RelationshipStatus,
 } from "@/types";
-import { driverRequirements, requirementByKey } from "@/lib/documents/requirements";
+import {
+  driverRequirements, requirementByKey, splitByRestriction,
+} from "@/lib/documents/requirements";
+import { restrictedReason } from "@/lib/documents/catalog";
 import { isNewcomerSession } from "@/lib/session/scenarios";
 import { MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
 import {
@@ -570,13 +573,33 @@ export function mockShareDocumentsWithCarrier(
   // category is never handed over as part of joining — see `ordinaryKeysAmong`.
   const allowed = ordinaryKeysAmong(requirementKeys, existing.engagementType, carrierId);
 
-  // ★ LINKS FIRST, CONSENT SECOND, AND NEITHER HALF-DONE ★
-  // The links are what the carrier actually reads through, so they are the part
-  // that can refuse; a throw here leaves the relationship exactly as it was.
-  // Recording consent first would leave a relationship promising documents that
-  // were never shared — the record saying one thing and the access another.
-  const added = attachSharedDocuments({ ...existing, sharedDocumentKeys: allowed });
-  const relationship = addSharedDocumentKeys(profileId, carrierId, allowed);
+  /*
+   * ★ THE LINKS AND THE CONSENT ARE ONE GRANT ★
+   *
+   * They used to be two statements, links first and consent second. Either
+   * order leaves a moment where one exists without the other, and a failure
+   * landing in that moment left real, readable links behind a sharing decision
+   * that was never completed — the invitation still pending, the run still
+   * unfinished, and the carrier already reading.
+   *
+   * So the consent write is handed INTO the store's commit and runs inside it.
+   * If it refuses, the links this call wrote are gone before the refusal comes
+   * back. Belt and braces, every link is marked `driver_consent`, and a read
+   * refuses one whose consent is not on the live relationship — so even a link
+   * left behind by some other half-finished path cannot be read through.
+   */
+  let relationship: CarrierRelationship | undefined;
+  const added = attachSharedDocuments(
+    { ...existing, sharedDocumentKeys: allowed },
+    () => {
+      relationship = addSharedDocumentKeys(profileId, carrierId, allowed);
+      if (!relationship) {
+        throw new Error(
+          `No live relationship between ${profileId} and ${carrierId} to record consent on.`,
+        );
+      }
+    },
+  );
   if (!relationship) return undefined;
   return { relationship, added };
 }
@@ -626,6 +649,69 @@ export async function mockCreateRelationship(
   return result.relationship;
 }
 
+/**
+ * ★ EXACTLY WHAT ONE ACCEPTANCE COVERS, BEFORE ANYBODY AGREES TO IT ★
+ *
+ * Accepting a carrier's invitation is ONE decision about the ordinary,
+ * purpose-bound paperwork that relationship needs — not a row of switches. But
+ * "one decision" only works if the person can see what it actually covers, and
+ * the honest answer has three parts:
+ *
+ *   covered   the documents they already hold, named with the VERSION this
+ *             agreement applies to. Not "your documents" in the abstract.
+ *   awaiting  required paperwork they have not uploaded yet. The carrier does
+ *             NOT receive these — there is nothing to receive — and saying so
+ *             is the difference between an honest summary and a lie that the
+ *             carrier got something. The existing Needs You path raises each
+ *             one as a missing document; this only refuses to pretend.
+ *   withheld  restricted records. Never part of this decision at all, named so
+ *             the shorter list has a reason.
+ *
+ * Later versions are covered by the same agreement: replacing a document keeps
+ * the carrier's link and resets their review, so they see the new file and look
+ * at it again. That is the canonical sharing rule and this does not invent a
+ * second one.
+ */
+export interface DriverSharingPlan {
+  covered: Array<{ key: string; label: string; version: number; uploadedAt: string }>;
+  awaiting: Array<{ key: string; label: string }>;
+  withheld: Array<{ key: string; label: string; reason?: string }>;
+}
+
+export function driverSharingPlan(
+  engagementType: EngagementType,
+  carrierId: string,
+): DriverSharingPlan {
+  ensureSeeded();
+  const profileId = ownProfile()?.id ?? DRIVER_PROFILE_ID;
+  const checklist = documentRequirements(engagementType, carrierId);
+  const { ordinary, restricted } = splitByRestriction(checklist);
+
+  const plan: DriverSharingPlan = { covered: [], awaiting: [], withheld: [] };
+  for (const requirement of ordinary) {
+    if (requirement.applicability !== "required") continue;
+    const document = documentInSlot("driver", profileId, requirement.key);
+    if (document) {
+      plan.covered.push({
+        key: requirement.key,
+        label: requirement.label,
+        version: document.version,
+        uploadedAt: document.createdAt,
+      });
+    } else {
+      plan.awaiting.push({ key: requirement.key, label: requirement.label });
+    }
+  }
+  for (const requirement of restricted) {
+    plan.withheld.push({
+      key: requirement.key,
+      label: requirement.label,
+      reason: restrictedReason(requirement.typeKey),
+    });
+  }
+  return plan;
+}
+
 /** The subset of the requested keys that a bulk consent may actually carry. */
 function ordinaryKeysAmong(
   requested: readonly string[],
@@ -663,17 +749,24 @@ function pendingShareLinks(relationship: CarrierRelationship): AddLinkEntry[] {
         contextOrganizationId: relationship.carrierId,
         contextOrganizationName: relationship.carrierName,
         actorName: ownProfile()?.legalName ?? "Driver",
+        // The only reason this carrier holds it is that the driver said so, so
+        // the consent record governs whether it may ever be read.
+        basis: "driver_consent",
       },
     });
   }
   return entries;
 }
 
-function attachSharedDocuments(relationship: CarrierRelationship): number {
+function attachSharedDocuments(
+  relationship: CarrierRelationship,
+  commitConsent?: () => void,
+): number {
   const entries = pendingShareLinks(relationship);
-  // All of them or none. A half-applied consent grants access the grant did
-  // not finish giving, and leaves a consent list that disagrees with it.
-  addLinks(entries);
+  // All of them or none, AND the consent that makes them readable in the same
+  // commit. A half-applied consent grants access the grant did not finish
+  // giving, and leaves a consent list that disagrees with it.
+  addLinks(entries, commitConsent);
   return entries.length;
 }
 

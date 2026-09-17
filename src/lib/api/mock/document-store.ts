@@ -406,6 +406,8 @@ export interface AddLinkInput {
   contextOrganizationId: string;
   contextOrganizationName: string;
   actorName: string;
+  /** See `DocumentLink.basis`. Absent means the link stands on its own. */
+  basis?: DocumentLink["basis"];
 }
 
 /**
@@ -454,7 +456,32 @@ export interface AddLinkEntry {
  *
  * Idempotence stays the caller's: this writes what it is given.
  */
-export function addLinks(entries: readonly AddLinkEntry[]): DocumentRecord[] {
+export function addLinks(
+  entries: readonly AddLinkEntry[],
+  /**
+   * ★ THE CONSENT WRITE, INSIDE THE SAME COMMIT ★
+   *
+   * Links are what a carrier reads through; the consent record is what says
+   * they may. Written apart, in either order, there is a moment where one
+   * exists and the other does not — and if that moment is where a failure
+   * lands, the links are real access nobody agreed to complete.
+   *
+   * So the caller hands its consent write IN, and it runs inside this commit.
+   * If it refuses, every link this call just wrote is removed before the
+   * refusal is passed on: the store is exactly as it was.
+   *
+   * ███ THIS IS NOT DURABLE ATOMICITY ███
+   * It is one synchronous block in one tab over in-memory arrays, which is why
+   * nothing can observe the half state — not a transaction, not a lock, and no
+   * guarantee at all across two browsers or a restart. What the backend owes
+   * is set out in the PR: the link rows and the consent row in ONE database
+   * transaction, or an outbox with at-least-once delivery keyed on
+   * `(driverProfileId, carrierId, requirementKey)` so a replay is a no-op. A
+   * compensating unlink after the fact is the weaker fallback, and it has to
+   * run before the caller reports success, or the window is back.
+   */
+  commitConsent?: () => void,
+): DocumentRecord[] {
   const at = iso();
 
   // Phase 1 — resolve and build. Any refusal happens HERE, before any write.
@@ -474,6 +501,7 @@ export function addLinks(entries: readonly AddLinkEntry[]): DocumentRecord[] {
       primary: false,
       contextOrganizationId: input.contextOrganizationId,
       contextOrganizationName: input.contextOrganizationName,
+      basis: input.basis,
       // A second context has not reviewed it, whatever the first context decided.
       review: { state: "pending" },
       linkedAt: at,
@@ -481,8 +509,10 @@ export function addLinks(entries: readonly AddLinkEntry[]): DocumentRecord[] {
     return { existing, input, link };
   });
 
-  // Phase 2 — commit. Nothing below can fail.
-  return planned.map(({ existing, input, link }) => {
+  // Phase 2 — commit. Nothing in the link writes below can fail.
+  const records = state.records;
+  const events = state.events;
+  const written = planned.map(({ existing, input, link }) => {
     const updated = updateDocument(existing.documentId, { links: [...existing.links, link] });
     recordEvent({
       lineageId: existing.lineageId, documentId: existing.documentId, at, kind: "linked",
@@ -492,6 +522,21 @@ export function addLinks(entries: readonly AddLinkEntry[]): DocumentRecord[] {
     });
     return updated;
   });
+
+  // Phase 3 — the consent that makes the links mean something. Still the same
+  // synchronous block, so no read can land between phase 2 and here.
+  if (commitConsent) {
+    try {
+      commitConsent();
+    } catch (error) {
+      // Put the store back. Not "unlink" — these links were never real, and a
+      // tombstoned `unlinkedAt` would leave a history saying a share happened.
+      state.records = records;
+      state.events = events;
+      throw error;
+    }
+  }
+  return written;
 }
 
 export function addLink(documentId: string, input: AddLinkInput): DocumentRecord {
@@ -505,6 +550,7 @@ export function addLink(documentId: string, input: AddLinkInput): DocumentRecord
     primary: false,
     contextOrganizationId: input.contextOrganizationId,
     contextOrganizationName: input.contextOrganizationName,
+    basis: input.basis,
     // A second context has not reviewed it, whatever the first context decided.
     review: { state: "pending" },
     linkedAt: at,

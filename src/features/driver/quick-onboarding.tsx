@@ -18,8 +18,9 @@ import {
 } from "./identity";
 import { DriverIdentityFields } from "./identity-fields";
 import {
-  documentRequirements,
+  driverSharingPlan,
   mockGetDriverProfile,
+  type DriverSharingPlan,
 } from "./mock-driver";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ type Stage = "details" | "review";
 export function QuickOnboarding({
   invitation,
   onConfirm,
+  onDecline,
   failureNote,
 }: {
   invitation: Invitation;
@@ -55,6 +57,8 @@ export function QuickOnboarding({
   }) => Promise<void>;
   /** Shown when a previous attempt did not finish. */
   failureNote?: string;
+  /** Turning it down. Creates nothing; see `AccessService.decline`. */
+  onDecline: () => void;
 }) {
   const [stage, setStage] = useState<Stage>("details");
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
@@ -83,7 +87,25 @@ export function QuickOnboarding({
   }, []);
 
   const engagement = invitation.engagementType ?? "company_driver";
-  const requirements = documentRequirements(engagement, invitation.organizationId);
+  /**
+   * ★ ONE DECISION, AND IT SAYS WHAT IT COVERS ★
+   *
+   * Not a row of switches. Accepting a carrier's invitation is a single
+   * agreement to the ordinary, purpose-bound paperwork that relationship needs,
+   * because that is what the relationship IS — a driver who could decline the
+   * medical card and still be put on a truck is not a decision the product
+   * should offer, and a screen of toggles turns an understandable act into
+   * eleven small ones nobody reads.
+   *
+   * What makes one consent honest rather than a blank cheque is the plan below:
+   * the documents it covers, at the version it covers them, the required ones
+   * not uploaded yet that the carrier is therefore NOT receiving, and the
+   * restricted records that are not part of this at all.
+   *
+   * Choosing document by document still exists — it is the driver's own sharing
+   * flow, used before any employment, and untouched by this.
+   */
+  const plan: DriverSharingPlan = driverSharingPlan(engagement, invitation.organizationId);
 
   const errors = submitted
     ? driverIdentityErrors(identity)
@@ -117,10 +139,15 @@ export function QuickOnboarding({
         cdlState: shown.cdlState,
         cdlExpiresAt: shown.cdlExpiresAt,
       },
-      // Only what they just agreed to hand over. Their decision, passed
-      // explicitly, never derived from the carrier's requirement list.
-      sharedDocumentKeys: requirements
-        .filter((r) => r.applicability === "required").map((r) => r.key),
+      // The one agreement they just made, as keys. Every ordinary required
+      // row — including the ones they have not uploaded yet, so that this
+      // covers the document the moment it arrives rather than needing a second
+      // decision later. The service narrows it again on the way through, so a
+      // restricted category cannot ride along whatever is passed here.
+      sharedDocumentKeys: [
+        ...plan.covered.map((d) => d.key),
+        ...plan.awaiting.map((d) => d.key),
+      ],
     });
     setSaving(false);
   }
@@ -191,11 +218,7 @@ export function QuickOnboarding({
             <PermissionSummary permissions={invitation.permissions} />
           </div>
 
-          <FormAlert tone="info" role="none" title={`What ${invitation.organizationName} will see`}>
-            Your legal name, licence number, issuing state and expiry date, plus the documents you
-            upload for them. They do not get your other carriers&apos; records, and they stop
-            receiving updates if you end the relationship.
-          </FormAlert>
+          <SharingPlan plan={plan} carrier={invitation.organizationName} />
 
           <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5">
             <input
@@ -205,7 +228,8 @@ export function QuickOnboarding({
               className="mt-0.5 size-4 shrink-0 accent-primary"
             />
             <span className="text-[0.8125rem] leading-relaxed text-fg">
-              I agree to share this information with {invitation.organizationName}.
+              I agree to work with {invitation.organizationName} and to give them the paperwork
+              above for that purpose.
             </span>
           </label>
 
@@ -219,6 +243,22 @@ export function QuickOnboarding({
           >
             {saving ? "Setting up…" : "Confirm and join"}
           </Button>
+
+          {/*
+            * Declining is a real answer, so it is a real button.
+            * An agreement somebody cannot refuse is not one.
+            */}
+          <Button
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            disabled={saving}
+            onClick={onDecline}
+            data-testid="decline-invitation"
+          >
+            No thanks — decline this invitation
+          </Button>
+
           {!existing ? (
             <button
               type="button"
@@ -245,5 +285,91 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
       <dt className="text-[0.75rem] text-fg-muted">{label}</dt>
       <dd className={cn("text-[0.8125rem] font-medium text-fg", mono && "font-mono")}>{value}</dd>
     </div>
+  );
+}
+
+/**
+ * What the one agreement covers, said plainly and in three parts.
+ *
+ * Read-only on purpose: these are not switches. Turning each row into a control
+ * would make accepting a carrier's invitation eleven decisions instead of one,
+ * and would offer a driver the chance to decline the medical card while still
+ * being put on a truck — which is not a real choice, only a confusing one.
+ */
+function SharingPlan({ plan, carrier }: { plan: DriverSharingPlan; carrier: string }) {
+  return (
+    <section className="space-y-3" data-testid="sharing-plan">
+      <h2 className="text-[0.875rem] font-semibold text-fg">
+        What {carrier} will be able to see
+      </h2>
+
+      {plan.covered.length > 0 ? (
+        <ul className="space-y-1.5" data-testid="plan-covered">
+          {plan.covered.map((document) => (
+            <li
+              key={document.key}
+              className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-lg border border-st-success/35 bg-st-success-bg/30 px-3.5 py-2.5"
+            >
+              <span className="text-[0.8125rem] font-medium text-fg">{document.label}</span>
+              {/* The VERSION this agreement applies to, not "your documents". */}
+              <span className="text-[0.75rem] text-fg-muted">
+                version {document.version}, uploaded {formatDate(document.uploadedAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {plan.awaiting.length > 0 ? (
+        <div
+          data-testid="plan-awaiting"
+          className="rounded-lg border border-border bg-surface-sunken px-3.5 py-3"
+        >
+          <p className="text-[0.8125rem] font-medium text-fg">
+            You have not uploaded these yet
+          </p>
+          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+            {carrier} receives nothing for them today, because there is nothing to receive. They
+            will appear on your documents page as things to do, and this agreement covers each one
+            the moment you upload it.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {plan.awaiting.map((document) => (
+              <li key={document.key} className="text-[0.75rem] text-fg-muted">
+                {document.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {plan.withheld.length > 0 ? (
+        <div
+          data-testid="plan-withheld"
+          className="rounded-lg border border-border bg-surface-sunken px-3.5 py-3"
+        >
+          <p className="text-[0.8125rem] font-medium text-fg">Not part of this</p>
+          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+            Joining does not hand these over. {carrier} asks for each one separately, for a reason
+            they write down, and you answer it on its own.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {plan.withheld.map((document) => (
+              <li key={document.key} className="text-[0.75rem] leading-relaxed text-fg-muted">
+                <span className="font-medium text-fg">{document.label}</span>
+                {document.reason ? ` — ${document.reason}` : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <p className="text-[0.75rem] leading-relaxed text-fg-subtle">
+        If you replace one of these later, {carrier} sees the new version and reviews it again —
+        that is the same rule everywhere in Antcolos. They never see a document you have not
+        shared, they do not get your other carriers&apos; records, and they stop receiving updates
+        if the relationship ends.
+      </p>
+    </section>
   );
 }

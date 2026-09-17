@@ -104,12 +104,30 @@ test.describe("accepting an invitation", () => {
     await expect(page.getByTestId("no-start-date")).toContainText("Not recorded yet");
   });
 
-  test("names the restricted paperwork it did not hand over", async ({ page }) => {
-    await acceptAsNewDriver(page);
-    const withheld = page.getByTestId("withheld-documents");
+  test("names the restricted paperwork it does not hand over, BEFORE agreeing", async ({ page }) => {
+    // It used to check this on the outcome screen, after the fact. Saying what
+    // an agreement excludes only helps while the person can still decide, so
+    // the disclosure moved onto the decision itself — and the outcome no longer
+    // has one to show, because nothing restricted was ever requested.
+    await page.goto("/invitation/INV-NEWCOMER?fixture=newcomer&signedin=1", {
+      waitUntil: "networkidle",
+    });
+    await page.getByRole("button", { name: "Accept invitation" }).click();
+    const licence = page.getByLabel("Driver license / CDL number");
+    await expect(licence.or(page.getByTestId("sharing-plan")).first()).toBeVisible({
+      timeout: 20_000,
+    });
+    if (await licence.isVisible()) {
+      await fillLicence(page);
+      await page.getByRole("button", { name: "Continue" }).click();
+    }
+
+    const withheld = page.getByTestId("plan-withheld");
     await expect(withheld).toBeVisible();
     await expect(withheld).toContainText("DOT employment application");
     await expect(withheld).toContainText("Motor vehicle record");
+    // Still on the decision — nothing has been agreed to or created.
+    await expect(page.getByRole("button", { name: /Confirm and join/ })).toBeVisible();
   });
 
   test("grants nothing beyond the driver seat", async ({ page }) => {

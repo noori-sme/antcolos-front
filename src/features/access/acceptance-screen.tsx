@@ -36,6 +36,8 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
   /** What actually happened, step by step. Never a bare "done". */
   const [run, setRun] = useState<AcceptanceRun | null>(null);
   const [collecting, setCollecting] = useState(false);
+  /** Set when the person turned it down. Nothing was created. */
+  const [declined, setDeclined] = useState<Invitation | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +60,31 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
       return;
     }
     if (result.status === "not-acceptable") setState(result.lookup);
+  }
+
+  async function decline() {
+    const updated = await services.access.decline(token, { returningFromAuth });
+    if (!updated) return;
+    setCollecting(false);
+    setDeclined(updated);
+  }
+
+  if (declined) {
+    return (
+      <AuthShell title="You declined this invitation" footer={<SignInLink />}>
+        <div className="space-y-4">
+          <FormAlert tone="info" title={`Nothing was shared with ${declined.organizationName}.`}>
+            No profile, no relationship, no documents and no access. Declining is the one answer
+            that leaves everything exactly as it was.
+          </FormAlert>
+          <p className="text-[0.8125rem] leading-relaxed text-fg-muted">
+            {declined.organizationName} can see that you declined rather than that the link
+            expired, so they know not to send it again. If you change your mind, ask them for a
+            new invitation.
+          </p>
+        </div>
+      </AuthShell>
+    );
   }
 
   if (state === null) {
@@ -96,6 +123,7 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
           licence: decisions.licence,
           sharedDocumentKeys: decisions.sharedDocumentKeys,
         })}
+        onDecline={() => void decline()}
         failureNote={state.status === "resume"
           ? "You started this before and something did not finish. Carrying on will complete what is missing."
           : undefined}
@@ -131,7 +159,8 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
     );
   }
 
-  if (state.status === "expired" || state.status === "revoked" || state.status === "used") {
+  if (state.status === "expired" || state.status === "revoked" || state.status === "used"
+    || state.status === "declined") {
     const copy = {
       expired: {
         title: "This invitation has expired",
@@ -153,6 +182,13 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
         body: "If that was you, sign in with the account you created. If it was not, contact the organization straight away.",
         tone: "warning" as const,
         icon: CircleCheck,
+      },
+      declined: {
+        title: "You declined this invitation",
+        alert: `Nothing was shared with ${invitation.organizationName}.`,
+        body: "No profile, no relationship, no documents and no access. If you have changed your mind, ask them for a new invitation.",
+        tone: "info" as const,
+        icon: Ban,
       },
     }[state.status];
 
@@ -318,6 +354,25 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
             {accepting ? "Accepting…" : isOrgInvite ? "Accept and connect" : "Accept invitation"}
           </Button>
         )}
+
+        {/*
+          * Turning it down is an answer, so it is offered here as well as on
+          * the driver's consent screen. An agreement nobody can refuse is not
+          * one, and a link whose only exits are "accept" or "close the tab"
+          * leaves the sender re-sending it forever.
+          */}
+        {!isOrgInvite ? (
+          <Button
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            onClick={() => void decline()}
+            disabled={accepting}
+            data-testid="decline-invitation"
+          >
+            No thanks — decline this invitation
+          </Button>
+        ) : null}
       </div>
     </AuthShell>
   );

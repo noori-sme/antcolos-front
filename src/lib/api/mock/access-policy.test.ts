@@ -13,7 +13,10 @@ import {
 import { documentsForSubject, resetDocumentStore } from "./document-store";
 import { auditLedger, resetAuditLedger } from "./audit-ledger";
 import * as access from "./access";
-import { endSeat, leaveOrganization, mockAccessService, rosterOf } from "./access";
+import { mockAccessService, rosterOf } from "./access";
+
+const endSeat = mockAccessService.endSeat;
+const leaveOrganization = mockAccessService.leaveOrganization;
 import { resetAccessStore } from "./access-store";
 import { resetWorkforceStore } from "./workforce-store";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";

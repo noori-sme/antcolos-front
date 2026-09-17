@@ -23,6 +23,9 @@ const STATUS_STYLE: Record<InvitationStatus, { label: string; className: string 
   accepted: { label: "Accepted", className: "bg-st-success-bg text-st-success" },
   expired: { label: "Expired", className: "bg-st-neutral-bg text-st-neutral" },
   revoked: { label: "Revoked", className: "bg-st-danger-bg text-st-danger" },
+  // Not the same as revoked, and shown differently on purpose: the carrier
+  // withdrew one of those, and the person said no to this one.
+  declined: { label: "Declined", className: "bg-st-warning-bg text-st-warning" },
 };
 
 const FILTERS: Array<{ value: InvitationStatus | "all"; label: string }> = [
@@ -31,6 +34,7 @@ const FILTERS: Array<{ value: InvitationStatus | "all"; label: string }> = [
   { value: "accepted", label: "Accepted" },
   { value: "expired", label: "Expired" },
   { value: "revoked", label: "Revoked" },
+  { value: "declined", label: "Declined" },
 ];
 
 function formatDate(iso: string): string {

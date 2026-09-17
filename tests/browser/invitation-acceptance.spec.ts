@@ -141,3 +141,78 @@ test.describe("an invitation that is not acceptable", () => {
     await expect(page.getByRole("button", { name: "Accept invitation" })).toHaveCount(0);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* One decision, and what it says it covers                                    */
+/* -------------------------------------------------------------------------- */
+
+test.describe("the consent a driver actually gives", () => {
+  /**
+   * `INV-DRIVER-ACCT` is addressed to the demo account, who already has a
+   * driver profile AND documents on file — which is what makes the "covered"
+   * half of the plan real. The newcomer has neither, so a plan read there would
+   * only ever show what is still awaited.
+   */
+  const WITH_PAPERWORK = "/invitation/INV-DRIVER-ACCT?signedin=1";
+
+  async function reachTheDecision(page: Page, link = WITH_PAPERWORK) {
+    await page.goto(link, { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Accept invitation" }).click();
+    const licence = page.getByLabel("Driver license / CDL number");
+    const consent = page.getByRole("checkbox");
+    await expect(licence.or(consent).first()).toBeVisible({ timeout: 20_000 });
+    if (await licence.isVisible()) await fillLicence(page);
+    await expect(page.getByTestId("sharing-plan")).toBeVisible();
+  }
+
+  test("is ONE decision, not a switch per document", async ({ page }) => {
+    await reachTheDecision(page);
+
+    // Exactly one control to agree with, and the plan itself is read-only. A
+    // toggle per row would turn accepting a carrier's invitation into eleven
+    // decisions and offer a driver the chance to decline their medical card
+    // while still being put on a truck.
+    await expect(page.getByRole("checkbox")).toHaveCount(1);
+    const plan = page.getByTestId("sharing-plan");
+    await expect(plan.getByRole("checkbox")).toHaveCount(0);
+    await expect(plan.getByRole("switch")).toHaveCount(0);
+    await expect(plan.getByRole("button")).toHaveCount(0);
+  });
+
+  test("names the version of each document it covers", async ({ page }) => {
+    await reachTheDecision(page);
+    const covered = page.getByTestId("plan-covered");
+    await expect(covered).toBeVisible();
+    // Not "your documents" in the abstract: this version, uploaded this day.
+    await expect(covered.locator("li").first()).toContainText(/version \d+, uploaded/);
+  });
+
+  test("says which restricted records are not part of it, and why", async ({ page }) => {
+    await reachTheDecision(page);
+    const withheld = page.getByTestId("plan-withheld");
+    await expect(withheld).toBeVisible();
+    await expect(withheld).toContainText("DOT employment application");
+    await expect(withheld).toContainText("Motor vehicle record");
+    // The reason, in the words the person reads — never a raw key.
+    await expect(withheld).toContainText(/social security number|driving history/i);
+    await expect(withheld).not.toContainText("northline_");
+  });
+
+  test("states how a later version is handled", async ({ page }) => {
+    await reachTheDecision(page);
+    await expect(page.getByTestId("sharing-plan"))
+      .toContainText(/replace one of these later.*sees the new version and reviews it again/i);
+  });
+
+  test("can be declined, and declining creates nothing", async ({ page }) => {
+    await page.goto(WITH_PAPERWORK, { waitUntil: "networkidle" });
+    await page.getByTestId("decline-invitation").click();
+
+    await expect(page.getByRole("heading", { name: /You declined this invitation/ }))
+      .toBeVisible();
+    await expect(page.getByText(/No profile, no relationship, no documents and no access/))
+      .toBeVisible();
+    // No way on from here, because nothing was created to go to.
+    await expect(page.getByRole("button", { name: /Go to my/ })).toHaveCount(0);
+  });
+});

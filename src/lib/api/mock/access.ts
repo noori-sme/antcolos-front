@@ -16,10 +16,10 @@ import { effectivePermissions } from "@/lib/permissions";
 import { MOCK_TEMPLATES } from "@/lib/session/fixtures";
 import { isNewcomerSession } from "@/lib/session/scenarios";
 import {
-  createOrResumeProfile, profileForUser,
+  createOrResumeProfile, profileForUser, relationshipsForProfile,
 } from "./driver-registry";
 import {
-  documentRequirements, liveRelationshipWith, mockCreateRelationship,
+  documentRequirements, driverSharingPlan, liveRelationshipWith, mockCreateRelationship,
   mockShareDocumentsWithCarrier,
 } from "@/features/driver/mock-driver";
 import { appendAuditEvent } from "./audit";
@@ -36,7 +36,7 @@ import type { ServiceContext } from "../contracts/context";
 import { PermissionDeniedError } from "../contracts/context";
 import type {
   AcceptInput, AcceptancePreview, AccessService, InvitationDraft,
-  InvitationLookup, LookUpOptions,
+  EndSeatResult, InvitationLookup, LookUpOptions, RosterEntry,
 } from "../contracts/access";
 
 /**
@@ -98,7 +98,9 @@ function currentUser() {
  * the invitation `pending`, which is what keeps the door open for its owner.
  */
 function projected(invitation: Invitation): Invitation {
-  if (invitation.status === "revoked") return invitation;
+  // Both are decisions somebody MADE, so neither is re-derived from a clock or
+  // from a run. `declined` is the recipient's; `revoked` is the sender's.
+  if (invitation.status === "revoked" || invitation.status === "declined") return invitation;
 
   const completed = runsForInvitation(invitation.id).find((r) => r.completedAt);
   if (completed) {
@@ -410,11 +412,32 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
       + "access to that kind is asked for separately, per document, for a stated reason: "
       + `${withheld.map((w) => w.label).join(", ")}.`;
 
+    /*
+     * ★ COUNT WHAT THEY CAN ACTUALLY READ, NOT WHAT WAS AGREED ★
+     *
+     * The consent list and the documents that exist are different things. This
+     * used to report `sharedDocumentKeys.length`, which counts the agreement —
+     * so a driver who had uploaded nothing was told the carrier "can now see 5
+     * of your documents", and the carrier had received none of them. What is
+     * still owed is named instead, and the existing Needs You path raises each
+     * missing document in its own right.
+     */
+    const after = driverSharingPlan(
+      invitation.engagementType ?? "company_driver", invitation.organizationId,
+    );
+    const covered = after.covered.length;
+    const awaitingNote = after.awaiting.length === 0 ? "" : ` You have not uploaded `
+      + `${after.awaiting.map((a) => a.label).join(", ")} yet, so there is nothing for them to `
+      + "see there until you do — this agreement covers it the moment you upload it.";
+
     steps.push(shared && !refusal
       ? step("document_access", "done",
-        `${invitation.organizationName} can now see ${shared.relationship.sharedDocumentKeys.length} `
-        + "of your documents. Each is the same record you own, linked — not a copy — and their "
-        + "review is theirs, not yours." + withheldNote,
+        covered === 0
+          ? `Nothing to share with ${invitation.organizationName} yet.${awaitingNote}`
+          : `${invitation.organizationName} can now see ${covered} `
+            + `${covered === 1 ? "document" : "documents"} you already hold. Each is the same `
+            + "record you own, linked — not a copy — and their review is theirs, not yours."
+            + awaitingNote + withheldNote,
         undefined, undefined, withheld.length > 0 ? withheld : undefined)
       : step("document_access", "failed",
         `The documents you chose could not be shared with ${invitation.organizationName}. `
@@ -650,6 +673,37 @@ export const mockAccessService: AccessService = {
     return projected(invitation);
   },
 
+  /**
+   * The recipient saying no.
+   *
+   * Only the person it names may do it, resolved exactly as acceptance is, so
+   * somebody else cannot decline an invitation on their behalf. It creates
+   * nothing: no profile, no relationship, no seat, no document link — declining
+   * is the one outcome that is supposed to leave the world unchanged.
+   */
+  async decline(token, options) {
+    await sleep(LATENCY_MS);
+    db();
+    const lookup = resolve(token, options);
+    if (lookup.status !== "valid" && lookup.status !== "resume") return null;
+
+    const updated = putInvitation({ ...lookup.invitation, status: "declined" });
+    appendAuditEvent(declineContext(updated), {
+      module: "access",
+      action: "access.invitation_declined",
+      entity: {
+        kind: "invitation", id: updated.id,
+        label: `${updated.recipientName} · ${updated.roleName}`,
+      },
+      summary: `${updated.recipientName} declined their invitation`,
+    });
+    return { ...updated };
+  },
+
+  roster: rosterImpl,
+  endSeat: endSeatImpl,
+  leaveOrganization: leaveOrganizationImpl,
+
   async revoke(ctx, invitationId) {
     await sleep(LATENCY_MS);
     required(ctx, "invitations:revoke");
@@ -704,6 +758,13 @@ export const mockAccessService: AccessService = {
       invitation,
       permissions: driverSeatPermissions(invitation),
       sharedDocumentKeys: requirements.map((r) => r.key),
+      // What the one decision actually covers, itemised. Null for an
+      // invitation that is not a driving one — there is nothing to share.
+      plan: invitation.kind === "driver"
+        ? driverSharingPlan(
+          invitation.engagementType ?? "company_driver", invitation.organizationId,
+        )
+        : null,
       withheldCategories: withheldCategoryLabels(),
       connectsExistingEngagement: Boolean(invitation.engagementId),
       assertedStartDate: undefined,
@@ -763,6 +824,7 @@ function resolve(token: string, options: LookUpOptions): InvitationLookup {
 
   const invitation = projected(stored);
   if (invitation.status === "revoked") return { status: "revoked", invitation };
+  if (invitation.status === "declined") return { status: "declined", invitation };
 
   // Connecting an ORGANIZATION is not this flow's to do. Refused before
   // anything else looks at it, so no part of the acceptance sequence can run
@@ -833,6 +895,34 @@ function audit(
  * nothing to show for it. A throw here is caught by nobody and leaves the run
  * unfinished on purpose; that is the recoverable state.
  */
+/**
+ * The context a recipient's own act is recorded under.
+ *
+ * They hold no seat in this organization — that is the point of declining — so
+ * the context carries no permissions and no scope beyond their own records.
+ * `appendAuditEvent` requires no permission by design, because a ledger that
+ * needed one to write down a refusal would lose exactly the events somebody
+ * came looking for.
+ */
+function declineContext(invitation: Invitation): ServiceContext {
+  const user = currentUser();
+  return {
+    organizationId: invitation.organizationId,
+    organizationName: invitation.organizationName,
+    workspaceKind: invitation.organizationType === "CARRIER"
+      ? "carrier_organization" : "dispatch_organization",
+    membershipId: `inv_${invitation.id}`,
+    permissions: new Set<PermissionKey>(),
+    scope: OWN_RECORDS_SCOPE,
+    actor: {
+      userId: user.id,
+      membershipId: `inv_${invitation.id}`,
+      displayNameSnapshot: user.displayName,
+      source: "web",
+    },
+  };
+}
+
 function auditJoined(invitation: Invitation, userId: string) {
   const user = currentUser();
   if (faultAtJoinedAudit) {
@@ -910,22 +1000,35 @@ function scenarioOf(seat: Membership): "demo" | "newcomer" {
 }
 
 /** The person behind a seat. A lookup by id, never a search. */
-export function accountOfSeat(userId: string): User | undefined {
+function accountOfSeat(userId: string): User | undefined {
   return accountById(userId);
 }
 
-export function permissionsOfSeat(
+function permissionsOfSeat(
   membership: Membership,
   organization: Organization,
 ): ReadonlySet<PermissionKey> {
   return effectivePermissions(membership, organization, MOCK_TEMPLATES);
 }
 
-export type EndSeatResult =
-  | { status: "ended"; membership: Membership }
-  /** Already gone, or never here. Both are "nothing left to do". */
-  | { status: "already_ended" }
-  | { status: "refused"; refusal: "not_permitted" | "last_owner"; message: string };
+async function rosterImpl(ctx: ServiceContext): Promise<RosterEntry[]> {
+  await sleep(LATENCY_MS);
+  required(ctx, "members:view");
+  const organization = MOCK_ORGANIZATIONS.find((o) => o.id === ctx.organizationId);
+  return rosterOf(ctx.organizationId).map((membership) => ({
+    membership,
+    account: accountOfSeat(membership.userId),
+    // Derived here, through the system that already exists. No screen computes
+    // a permission, and no second answer to "what may this seat do" is made.
+    permissions: organization
+      ? [...permissionsOfSeat(membership, organization)]
+      : [],
+    relationships: membership.driverProfileId
+      ? relationshipsForProfile(membership.driverProfileId)
+        .filter((r) => r.carrierId === ctx.organizationId && r.status !== "ended")
+      : [],
+  }));
+}
 
 /**
  * Ends somebody's seat in this organization.
@@ -939,7 +1042,7 @@ export type EndSeatResult =
  * Refuses to remove the last owner: a workspace nobody can administer is not a
  * state this product will create on somebody's behalf.
  */
-export async function endSeat(
+async function endSeatImpl(
   ctx: ServiceContext,
   membershipId: string,
   reason: string,
@@ -985,7 +1088,7 @@ export async function endSeat(
 }
 
 /** The same act, done to yourself. No permission is needed to stop working somewhere. */
-export async function leaveOrganization(
+async function leaveOrganizationImpl(
   ctx: ServiceContext,
   reason = "Left the organization.",
 ): Promise<EndSeatResult> {

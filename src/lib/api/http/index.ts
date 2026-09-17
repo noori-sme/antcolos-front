@@ -321,5 +321,9 @@ export const httpServices: AntcolosServices = {
     lookUp: notImplemented("access.lookUp"),
     preview: notImplemented("access.preview"),
     accept: notImplemented("access.accept"),
+    decline: notImplemented("access.decline"),
+    roster: notImplemented("access.roster"),
+    endSeat: notImplemented("access.endSeat"),
+    leaveOrganization: notImplemented("access.leaveOrganization"),
   },
 };

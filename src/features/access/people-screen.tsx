@@ -1,7 +1,7 @@
 "use client";
 
 import { ShieldCheck, UserMinus, UserRound } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/data/states";
@@ -9,10 +9,8 @@ import { FormAlert } from "@/features/auth/form-alert";
 import { useActiveMembership } from "@/lib/session/hooks";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { subscribeRoster } from "@/lib/session/membership-store";
-import {
-  accountOfSeat, endSeat, leaveOrganization, permissionsOfSeat, rosterOf,
-} from "@/lib/api/mock/access";
-import { relationshipsForProfile } from "@/lib/api/mock/driver-registry";
+import { services } from "@/lib/api";
+import type { RosterEntry } from "@/lib/api/contracts/access";
 import { permissionMeta } from "@/lib/permissions";
 import { ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import type { CarrierRelationship, Membership } from "@/types";
@@ -45,12 +43,17 @@ export function PeopleScreen() {
    * only to make that re-read happen; the answer always comes from the store.
    */
   const [tick, setTick] = useState(0);
+  const [people, setPeople] = useState<RosterEntry[]>([]);
   useEffect(() => subscribeRoster(() => setTick((t) => t + 1)), []);
-  const people = useMemo(
-    () => (organization ? rosterOf(organization.id) : []),
+  useEffect(() => {
+    if (!ctx) return;
+    let cancelled = false;
+    void services.access.roster(ctx).then((rows) => {
+      if (!cancelled) setPeople(rows);
+    });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [organization, tick],
-  );
+  }, [ctx?.organizationId, ctx?.membershipId, tick]);
 
   const remove = useCallback(async (membership: Membership) => {
     if (!ctx || busyId) return;
@@ -60,8 +63,8 @@ export function PeopleScreen() {
     // another person needs `members:suspend`; putting your own seat down needs
     // nothing, because a workspace you cannot leave is not one you agreed to.
     const result = membership.id === ctx.membershipId
-      ? await leaveOrganization(ctx)
-      : await endSeat(ctx, membership.id, "Removed from the People screen.");
+      ? await services.access.leaveOrganization(ctx)
+      : await services.access.endSeat(ctx, membership.id, "Removed from the People screen.");
     setBusyId(null);
     if (result.status === "refused") setRefusal(result.message);
   }, [ctx, busyId]);
@@ -86,14 +89,13 @@ export function PeopleScreen() {
         />
       ) : (
         <ul className="space-y-3" data-testid="people-list">
-          {people.map((m) => (
+          {people.map((entry) => (
             <PersonRow
-              key={m.id}
-              membership={m}
-              organizationId={organization.id}
-              isSelf={m.id === ctx?.membershipId}
-              busy={busyId === m.id}
-              onRemove={() => remove(m)}
+              key={entry.membership.id}
+              entry={entry}
+              isSelf={entry.membership.id === ctx?.membershipId}
+              busy={busyId === entry.membership.id}
+              onRemove={() => remove(entry.membership)}
             />
           ))}
         </ul>
@@ -110,23 +112,17 @@ export function PeopleScreen() {
 }
 
 function PersonRow({
-  membership, organizationId, isSelf, busy, onRemove,
+  entry, isSelf, busy, onRemove,
 }: {
-  membership: Membership;
-  organizationId: string;
+  entry: RosterEntry;
   isSelf: boolean;
   busy: boolean;
   onRemove: () => void;
 }) {
-  const { organization } = useActiveMembership();
-  const account = accountOfSeat(membership.userId);
-  const permissions = organization
-    ? [...permissionsOfSeat(membership, organization)]
-    : [];
-  const engagement = membership.driverProfileId
-    ? relationshipsForProfile(membership.driverProfileId)
-      .find((r) => r.carrierId === organizationId && r.status !== "ended")
-    : undefined;
+  // Everything here comes from the service. This row derives nothing: not the
+  // permissions, not the person, not the relationship.
+  const { membership, account, permissions } = entry;
+  const engagement = entry.relationships[0];
 
   return (
     <li

@@ -28,6 +28,7 @@ import {
   revokeShare as revokeInStore, shareDocument, snapshotsForLineage, updateDocument,
 } from "./document-store";
 import { seedOrganizationDocuments } from "./organization-documents";
+import { liveRelationship } from "./driver-registry";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -84,9 +85,38 @@ function liveLinks(record: DocumentRecord): DocumentLink[] {
   return record.links.filter((l) => !l.unlinkedAt);
 }
 
+/**
+ * ★ A CONSENT-BASED LINK IS ONLY AS GOOD AS ITS CONSENT ★
+ *
+ * A link marked `driver_consent` exists for exactly one reason: the driver
+ * agreed to share that requirement with that organization. The agreement lives
+ * on the relationship, and this checks it on every read rather than trusting
+ * that the two writes finished together.
+ *
+ * It closes a window no write order can: links and consent are two records in
+ * two modules, so between them there is always a moment where one exists
+ * alone. Writing them in one commit (see `addLinks`) means nothing can observe
+ * that moment in this mock; checking here means that even if something did —
+ * a future path, a partial import, a backend whose transaction did not hold —
+ * the link is not access.
+ *
+ * Only `driver_consent` links are governed. A carrier's own handbook issued TO
+ * a driver stands on its own basis and is not the driver's to withdraw.
+ */
+function consentBacked(link: DocumentLink): boolean {
+  if (link.basis !== "driver_consent") return true;
+  if (link.subject.kind !== "driver" || !link.contextOrganizationId) return false;
+  const relationship = liveRelationship(link.subject.id, link.contextOrganizationId);
+  if (!relationship) return false;
+  return link.requirementKey !== undefined
+    && relationship.sharedDocumentKeys.includes(link.requirementKey);
+}
+
 /** The link through which this organization holds the document, if any. */
 function ownLink(record: DocumentRecord, organizationId: string): DocumentLink | undefined {
-  return liveLinks(record).find((l) => l.contextOrganizationId === organizationId);
+  return liveLinks(record)
+    .filter(consentBacked)
+    .find((l) => l.contextOrganizationId === organizationId);
 }
 
 function activeShare(record: DocumentRecord, organizationId: string): DocumentShare | undefined {

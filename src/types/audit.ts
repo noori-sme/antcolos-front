@@ -111,6 +111,7 @@ export type AuditAction =
   | "access.role_changed"
   | "access.member_invited"
   | "access.member_joined"
+  | "access.invitation_declined"
   | "access.member_suspended"
   | "access.member_reinstated"
   | "access.scope_changed"

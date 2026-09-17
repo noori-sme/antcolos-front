@@ -1,6 +1,8 @@
 import type {
-  AcceptanceRun, EngagementType, Invitation, InvitationKind, PermissionKey,
+  AcceptanceRun, CarrierRelationship, EngagementType, Invitation, InvitationKind,
+  Membership, PermissionKey, User,
 } from "@/types";
+import type { DriverSharingPlan } from "@/features/driver/mock-driver";
 import type { ServiceContext } from "./context";
 
 /**
@@ -94,6 +96,8 @@ export interface InvitationDraft {
 export type InvitationLookup =
   | { status: "not-found" }
   | { status: "revoked"; invitation: Invitation }
+  /** The recipient already turned it down. Not the same as the sender revoking. */
+  | { status: "declined"; invitation: Invitation }
   | { status: "expired"; invitation: Invitation }
   /** Already finished, by this person or another. Nothing left to do. */
   | { status: "used"; invitation: Invitation }
@@ -139,6 +143,17 @@ export interface AcceptancePreview {
   permissions: PermissionKey[];
   /** Document requirement keys that would become visible to the carrier. */
   sharedDocumentKeys: string[];
+  /**
+   * What this ONE decision actually covers, itemised — which documents the
+   * person already holds and at which version, which required ones they have
+   * not uploaded (and which the carrier therefore does NOT receive), and which
+   * restricted records are not part of it at all.
+   *
+   * Shown BEFORE anybody agrees. A single consent is only one decision if the
+   * person can see its extent; without this it is a blank cheque with a tidy
+   * sentence on it.
+   */
+  plan: DriverSharingPlan | null;
   /** Restricted categories, listed so the screen can say they are NOT included. */
   withheldCategories: string[];
   /** True when this connects an engagement the carrier already recorded. */
@@ -174,6 +189,22 @@ export type AcceptResult =
   | { status: "not-acceptable"; lookup: InvitationLookup }
   | { status: "licence-required" };
 
+export interface RosterEntry {
+  membership: Membership;
+  /** The person behind the seat, when Antcolos knows them. A lookup, never a search. */
+  account?: User;
+  /** Derived through `effectivePermissions`. No screen computes a permission. */
+  permissions: PermissionKey[];
+  /** Their live driving relationships with this organization, if any. */
+  relationships: CarrierRelationship[];
+}
+
+export type EndSeatResult =
+  | { status: "ended"; membership: Membership }
+  /** Already gone, or never here. Both are "nothing left to do". */
+  | { status: "already_ended" }
+  | { status: "refused"; refusal: "not_permitted" | "last_owner"; message: string };
+
 export interface AccessService {
   /* ---- management, by the organization that sent them ---- */
   list(ctx: ServiceContext): Promise<Invitation[]>;
@@ -192,6 +223,29 @@ export interface AccessService {
   lookUp(token: string, options: LookUpOptions): Promise<InvitationLookup>;
   /** What accepting would do. Changes nothing. */
   preview(token: string, options: LookUpOptions): Promise<AcceptancePreview | null>;
+  /**
+   * The recipient turning it down.
+   *
+   * Their refusal, which is not the sender's `revoke`: the record has to say
+   * which of the two happened, or a carrier cannot tell "we withdrew it" from
+   * "they said no". Only the person the invitation names may do it, and it
+   * creates nothing.
+   */
+  decline(token: string, options: LookUpOptions): Promise<Invitation | null>;
+
+  /* ---- the roster, from the organization's side ---- */
+  /**
+   * Who is actually in this organization, with what each seat carries.
+   *
+   * On the SERVICE rather than exported from a mock module, because a screen
+   * reaching into `@/lib/api/mock/*` is the thing the contracts layer exists to
+   * prevent: it binds the page to the mock and skips the `ServiceContext` every
+   * other read goes through.
+   */
+  roster(ctx: ServiceContext): Promise<RosterEntry[]>;
+  endSeat(ctx: ServiceContext, membershipId: string, reason: string): Promise<EndSeatResult>;
+  /** The same act, done to yourself. No permission is needed to stop working somewhere. */
+  leaveOrganization(ctx: ServiceContext, reason?: string): Promise<EndSeatResult>;
   /**
    * Accepts, one canonical record at a time.
    *

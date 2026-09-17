@@ -950,11 +950,51 @@ export function setCarrierRelationshipStatus(
  * Returns undefined when there is no live relationship, because consent with
  * nothing to consent to is not something this module will invent.
  */
+/**
+ * ███ TEST SEAM — NEVER SET BY THE PRODUCT ███
+ *
+ * Refuses the consent write, so a sharing grant can be made to fail at the one
+ * point that matters most: AFTER every link has been committed and BEFORE the
+ * agreement that makes them readable exists. Inert wherever a window exists,
+ * for the same reasons and with the same honest limits as the other seams.
+ */
+const CONSENT_SEAM_AVAILABLE = typeof window === "undefined";
+let consentFault = false;
+
+export function failConsentWriteForTests(on: boolean): void {
+  if (!CONSENT_SEAM_AVAILABLE) return;
+  consentFault = on;
+}
+
+/**
+ * Test hook: withdraw consent underneath a link that already exists.
+ *
+ * There is no product path that leaves a `driver_consent` link with no consent
+ * behind it — that is the property the read check defends — so the only way to
+ * prove the check works is to construct the state directly.
+ */
+export function setSharedDocumentKeysForTests(
+  driverProfileId: string, carrierId: string, keys: readonly string[],
+): void {
+  if (!CONSENT_SEAM_AVAILABLE) return;
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  const engagement = record?.engagements.find(
+    (e) => e.carrierId === carrierId && e.status !== "ended",
+  );
+  if (engagement) engagement.sharedDocumentKeys = [...keys];
+}
+
 export function addSharedDocumentKeys(
   driverProfileId: string,
   carrierId: string,
   requirementKeys: readonly string[],
 ): CarrierRelationship | undefined {
+  if (consentFault) {
+    throw new Error(
+      "Injected consent failure (test only). In a real system this is where the "
+      + "agreement record would have refused, with every link already written.",
+    );
+  }
   const record = db().find((d) => d.profile.id === driverProfileId);
   const engagement = record?.engagements.find(
     (e) => e.carrierId === carrierId && e.status !== "ended",

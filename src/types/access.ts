@@ -14,7 +14,20 @@ export type InvitationKind =
   | "dispatcher"
   | "custom";
 
-export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
+export type InvitationStatus =
+  | "pending"
+  | "accepted"
+  | "expired"
+  /** The SENDER withdrew it. */
+  | "revoked"
+  /**
+   * The RECIPIENT turned it down.
+   *
+   * Deliberately not the same state as `revoked`. A carrier that cannot tell
+   * "we withdrew this" from "they said no" will re-send the second kind
+   * forever, and the person who already declined gets the same link again.
+   */
+  | "declined";
 
 /**
  * Why an invitation could not be resolved or accepted.
