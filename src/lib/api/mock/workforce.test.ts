@@ -19,6 +19,8 @@ import {
 import { auditLedger } from "./audit-ledger";
 import { memberIn } from "./membership-directory";
 import { workforceNeedsYouItems } from "./workforce-needs-you";
+import { mockComplianceService as compliance } from "./compliance";
+import { mockEndCarrierRelationship } from "@/features/driver/mock-carrier-drivers";
 
 /* -------------------------------------------------------------------------- */
 /* Contexts                                                                    */
@@ -628,5 +630,105 @@ describe("the workforce store holds nothing another module owns", () => {
     expect(Array.isArray(allQualificationRecords())).toBe(true);
     void sharesForLineage;
     void qualification;
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The Driver ⇄ Compliance boundary                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ ONE DRIVER RECORD, READ BY EVERY MODULE THAT NEEDS IT ★
+ *
+ * Safety & Compliance used to derive its driver subjects from a second roster
+ * held in the driver feature, while HR offboarding ended the relationship in
+ * the canonical registry. Two consequences, both live in the product and both
+ * caught by an audit rather than by a test:
+ *
+ *   1. A driver could be offboarded through HR and their compliance
+ *      requirements would never freeze — records about somebody who had left
+ *      stayed live and actionable, and no `ComplianceSnapshot` was taken.
+ *   2. A driver the canonical registry knew about but the other roster did not
+ *      sat permanently at "Safety & Compliance has not built this driver's
+ *      requirements yet" on their onboarding checklist.
+ *
+ * The fix was not to keep two rosters in step. Compliance now derives from the
+ * canonical registry, and the feature roster's own ending command delegates to
+ * the canonical one. These tests hold both halves.
+ */
+describe("ending an engagement reaches Safety & Compliance", () => {
+  it("freezes the driver's compliance requirements and snapshots them", async () => {
+    const ctx = northline();
+    const safety = ctxFor("org_northline", {
+      permissions: ["compliance:view", "compliance:manage", "drivers:view", "workforce:view", "workforce:end"],
+    });
+
+    const before = await compliance.list(safety, { subjectId: "dp_dmitri" });
+    expect(before.length).toBeGreaterThan(0);
+    expect(before.every((r) => r.frozenAt === undefined)).toBe(true);
+
+    await workforce.offboard(ctx, DMITRI, {
+      reason: "Left the carrier.",
+      confirmedSteps: ["end_carrier_relationship"],
+    });
+
+    // Nothing live is left about somebody who has gone.
+    expect(await compliance.list(safety, { subjectId: "dp_dmitri" })).toHaveLength(0);
+
+    // And nothing was deleted: every record is frozen and explained.
+    const history = await compliance.list(safety, {
+      subjectId: "dp_dmitri", includeFrozen: true, includeNotApplicable: true,
+    });
+    expect(history.length).toBeGreaterThanOrEqual(before.length);
+    expect(history.every((r) => Boolean(r.frozenAt))).toBe(true);
+
+    const snapshots = await compliance.snapshots(safety, "dp_dmitri");
+    expect(snapshots.length).toBeGreaterThan(0);
+    expect(snapshots[0].entries.length).toBeGreaterThan(0);
+  });
+
+  it("does not freeze anybody else's records", async () => {
+    const ctx = northline();
+    const safety = ctxFor("org_northline", {
+      permissions: ["compliance:view", "drivers:view"],
+    });
+    await workforce.offboard(ctx, DMITRI, {
+      reason: "Left.",
+      confirmedSteps: ["end_carrier_relationship"],
+    });
+    const amir = await compliance.list(safety, { subjectId: "dp_amir" });
+    expect(amir.length).toBeGreaterThan(0);
+    expect(amir.every((r) => r.frozenAt === undefined)).toBe(true);
+  });
+
+  it("builds requirements for every canonical driver, including the owner-operator", async () => {
+    // Marcus existed in the canonical registry and not in the roster Compliance
+    // used to read, so his checklist row said "not built yet" forever.
+    const safety = ctxFor("org_northline", {
+      permissions: ["compliance:view", "drivers:view"],
+    });
+    const marcus = await compliance.list(safety, { subjectId: "dp_marcus" });
+    expect(marcus.length).toBeGreaterThan(0);
+  });
+
+  it("stops the onboarding checklist reporting a canonical driver as unknown to Safety", async () => {
+    const ctx = northline();
+    const checklist = await workforce.onboardingChecklist(ctx, "weng_nl_marcus");
+    const step = checklist.steps.find((s) => s.key === "compliance.driver_qualification")!;
+    expect(step.status).not.toBe("not_applicable");
+    expect(step.detail).not.toContain("has not built this driver's requirements yet");
+  });
+
+  it("makes the carrier driver screen's ending command go through the canonical record", async () => {
+    const safety = ctxFor("org_northline", {
+      permissions: ["compliance:view", "drivers:view"],
+    });
+    expect((await compliance.list(safety, { subjectId: "dp_marisol" })).length).toBeGreaterThan(0);
+
+    // The screens' own command. It delegates rather than ending a second copy.
+    await mockEndCarrierRelationship("cd_2", "Moved to another carrier.");
+
+    expect(carrierRelationshipUnscoped("dp_marisol", "org_northline")?.status).toBe("ended");
+    expect(await compliance.list(safety, { subjectId: "dp_marisol" })).toHaveLength(0);
   });
 });

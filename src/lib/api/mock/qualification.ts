@@ -1,5 +1,6 @@
 import {
-  QUALIFICATION_CATEGORY_LABEL, RETENTION_POLICY_NOT_CONFIGURED,
+  QUALIFICATION_CATEGORY_LABEL, RESTRICTED_CATEGORY_REASON,
+  RETENTION_MAPPING_UNVERIFIED, isRestrictedQualificationCategory,
   type AuditAction, type DocumentRecord, type DocumentTypeKey,
   type DriverVisibleAdoption, type PermissionKey,
   type QualificationEvidenceRef, type QualificationFilters,
@@ -78,6 +79,32 @@ function required(ctx: ServiceContext, ...keys: PermissionKey[]) {
   if (missing.length > 0) throw new PermissionDeniedError(missing);
 }
 
+/**
+ * ★ THE BACKEND GATE ON DISPOSAL ★
+ *
+ * Disposal cannot be enabled by supplying a retention date alone. Three things
+ * have to exist first, and none of them does here:
+ *
+ *   1. A VERIFIED mapping from record category to retention rule.
+ *   2. A backend policy supplying the applicable period.
+ *   3. ENFORCED legal holds — a real hold that blocks disposal while a claim,
+ *      an investigation or litigation is open.
+ *
+ * (3) is the one most easily forgotten, because the field already exists:
+ * `QualificationRetention.legalHold` is typed, is read by `isUnderRetention`,
+ * and is `false` on every record because nothing in this build can ever set it.
+ * A backend that shipped retention dates without hold enforcement would turn a
+ * correct refusal into a disposal of evidence somebody was obliged to keep.
+ *
+ * So the gate is stated here, next to the refusal it explains, and the refusal
+ * itself is unconditional in this build.
+ */
+export const DISPOSAL_BACKEND_GATE =
+  "Disposal stays refused until the backend supplies a verified retention mapping, "
+  + "an applicable period, AND enforced legal holds. The hold field in this build is "
+  + "inert — nothing can set it — so a retention date alone would allow the disposal "
+  + "of a record a claim or an investigation required to be kept.";
+
 /** Refusing to discharge an obligation that has not ended. */
 export class RetentionActiveError extends Error {
   constructor(readonly until?: string) {
@@ -85,7 +112,7 @@ export class RetentionActiveError extends Error {
       until
         ? `This record is under a retention obligation until ${until.slice(0, 10)} and cannot be disposed of.`
         : "This record is still under a retention obligation and cannot be disposed of. "
-          + RETENTION_POLICY_NOT_CONFIGURED,
+          + RETENTION_MAPPING_UNVERIFIED + " " + DISPOSAL_BACKEND_GATE,
     );
     this.name = "RetentionActiveError";
   }
@@ -100,6 +127,24 @@ export class ReviewRequiredError extends Error {
       + "qualification file must never be able to say.",
     );
     this.name = "ReviewRequiredError";
+  }
+}
+
+/**
+ * Refusing a category whose access rules nobody has designed yet.
+ *
+ * Not a permission error, and deliberately not phrased as one: no permission
+ * grants this, and holding every key — as an active Owner does — does not
+ * either. The category itself is out of scope for this foundation.
+ */
+export class RestrictedQualificationCategoryError extends Error {
+  constructor(readonly category: QualificationRecordCategory) {
+    super(
+      `Antcolos will not hold a ${QUALIFICATION_CATEGORY_LABEL[category].toLowerCase()} in this build. `
+      + (RESTRICTED_CATEGORY_REASON[category] ?? "")
+      + " No permission changes this: the restriction is on the record category, not on the reader.",
+    );
+    this.name = "RestrictedQualificationCategoryError";
   }
 }
 
@@ -216,8 +261,11 @@ function disposalRefusalFor(
   if (isUnderRetention(record.retention)) {
     return record.retention.retainUntil
       ? `Retention runs to ${record.retention.retainUntil.slice(0, 10)}.`
-      : RETENTION_POLICY_NOT_CONFIGURED;
+      : RETENTION_MAPPING_UNVERIFIED;
   }
+  // Reached only if a backend supplied a date. Legal holds are not enforced in
+  // this build, so a date alone is not enough to let a record go.
+  if (!record.retention.legalHold) return DISPOSAL_BACKEND_GATE;
   return undefined;
 }
 
@@ -240,6 +288,22 @@ function project(ctx: ServiceContext, record: QualificationRecord): Qualificatio
 }
 
 /**
+ * ★ THE ONE READ GATE ★
+ *
+ * Every path that returns a qualification record to anybody goes through this.
+ * It is checked BEFORE permissions and independently of them, because the
+ * restriction is a property of the record category rather than of the reader —
+ * an Owner holds every permission and still does not get past it.
+ *
+ * A write path may legitimately touch a restricted record: moving one into
+ * retention when a relationship ends keeps the record correct and discloses
+ * nothing. Those paths say so at the call site.
+ */
+function readable(record: QualificationRecord): boolean {
+  return !isRestrictedQualificationCategory(record.category);
+}
+
+/**
  * One record, or the same answer an invented id gets.
  *
  * Another carrier's adoption is not "forbidden" — a carrier may not learn that
@@ -251,6 +315,10 @@ function project(ctx: ServiceContext, record: QualificationRecord): Qualificatio
 function own(ctx: ServiceContext, recordId: string): QualificationRecord {
   const record = recordById(recordId);
   if (!record) throw new NotFoundError(`Qualification record ${recordId}`);
+  // A restricted category answers exactly as an unknown id does. Telling the
+  // caller "it exists but you may not see it" is itself a disclosure about a
+  // record whose access rules nobody has settled.
+  if (!readable(record)) throw new NotFoundError(`Qualification record ${recordId}`);
   if (record.organizationId !== ctx.organizationId) {
     recordCrossOrganizationAttempt(ctx, {
       entity: { kind: "qualification_record", id: recordId, label: "Qualification record" },
@@ -314,6 +382,12 @@ const SELF_EVIDENT_SOURCES: QualificationSourceKind[] = [
 
 export function adoptSync(ctx: ServiceContext, input: AdoptDocumentInput): QualificationRecord {
   required(ctx, "qualification:view", "compliance:manage");
+
+  // Refused before anything is created. A record nobody may read is worse than
+  // no record: it would exist, be invisible, and still be undisposable.
+  if (isRestrictedQualificationCategory(input.category)) {
+    throw new RestrictedQualificationCategoryError(input.category);
+  }
 
   const document = documentById(input.documentId);
   if (!document) throw new NotFoundError(`Document ${input.documentId}`);
@@ -430,6 +504,9 @@ export function applyRelationshipEndToQualificationFile(
   at: string = nowIso(),
 ): number {
   let changed = 0;
+  // Deliberately NOT filtered by `readable`: this is a write, and it discloses
+  // nothing. A restricted record still has to move into retention when the
+  // relationship ends, or it would sit reading "active evidence" forever.
   for (const record of recordsForDriver(driverProfileId)) {
     // Narrowed to the acting organization on the line after the cross-
     // organization read, exactly as that store's comment requires.
@@ -460,6 +537,8 @@ export function applyRelationshipEndToQualificationFile(
 /** Records whose pinned version the driver has since replaced. */
 export function recordsWithNewerVersion(organizationId: string): QualificationRecord[] {
   return recordsForOrganization(organizationId).filter((r) => {
+    // Never raise work about a record nobody may open.
+    if (!readable(r)) return false;
     if (r.supersededByRecordId) return false;
     if (r.retention.state === "disposed") return false;
     if (r.origin !== "driver_provided") return false;
@@ -515,6 +594,7 @@ export const mockQualificationService: QualificationService = {
     required(ctx, "qualification:view");
     return recordsForOrganization(ctx.organizationId)
       .filter((r) => {
+        if (!readable(r)) return false;
         if (!filters.includeDisposed && r.retention.state === "disposed") return false;
         if (filters.driverProfileId && r.driverProfileId !== filters.driverProfileId) return false;
         if (filters.engagementId && r.engagementId !== filters.engagementId) return false;
@@ -539,6 +619,7 @@ export const mockQualificationService: QualificationService = {
     if (!document) throw new NotFoundError(`Document ${documentId}`);
     const already = adoptionOfVersion(ctx.organizationId, documentId);
     const previous = adoptionsOfLineage(ctx.organizationId, document.lineageId)
+      .filter(readable)
       .find((r) => !r.supersededByRecordId && r.retention.state !== "disposed");
 
     return {
@@ -549,14 +630,14 @@ export const mockQualificationService: QualificationService = {
       alreadyAdopted: already !== undefined,
       supersedesRecordId: previous?.id,
       supersedesVersion: previous?.evidence.documentVersion,
-      retentionSummary: RETENTION_POLICY_NOT_CONFIGURED,
+      retentionSummary: RETENTION_MAPPING_UNVERIFIED,
       consequences: [
         "This creates a record belonging to THIS carrier, pinned to this exact version. No copy of the file is made and the driver keeps their document.",
         // Said plainly, because "adopt into the qualification file" sounds
         // exactly like taking a copy, and this build does not take one.
         "What is kept is a record of WHICH version you relied on — its identity, its version number, its file name, its state and your review. Antcolos does not store any file in this build, so this is not evidence custody: retaining the document itself needs the backend's durable storage.",
         "If the driver later withdraws the share, or the relationship ends, this record is kept: a carrier's qualification history is not the driver's to erase.",
-        "The record stays under a retention obligation. This build cannot compute when that obligation ends, so disposal is refused until a backend policy supplies the applicable period.",
+        "The record stays under a retention obligation. Antcolos has not verified which retention rule applies to this record category, so it states no period and refuses disposal until a backend policy supplies a verified one.",
         "Adopting is not verifying. It records that this carrier reviewed this version — not that any authority confirmed it.",
       ],
     };
@@ -570,6 +651,10 @@ export const mockQualificationService: QualificationService = {
   async recordCarrierEvidence(ctx, input: RecordCarrierEvidenceInput) {
     await wait();
     required(ctx, "qualification:view", "compliance:manage", "documents:upload");
+
+    if (isRestrictedQualificationCategory(input.category)) {
+      throw new RestrictedQualificationCategoryError(input.category);
+    }
 
     // Carrier-originated evidence is by definition not the driver's upload.
     if (input.source === "driver_self_provided") {
@@ -626,41 +711,40 @@ export const mockQualificationService: QualificationService = {
     return RETENTION_POLICIES;
   },
 
-  async authorizeDisposal(ctx, recordId, input: DisposalInput) {
+  async authorizeDisposal(ctx, recordId, _input: DisposalInput) {
     await wait();
+    // `_input` is unused on purpose: the reason a person gives is recorded only
+    // when a disposal actually happens, and none can in this build.
+    void _input;
     required(ctx, "qualification:view", "qualification:dispose");
     const record = own(ctx, recordId);
 
-    if (isUnderRetention(record.retention)) {
-      throw new RetentionActiveError(record.retention.retainUntil);
-    }
-    // Idempotent: a retry after a disposal that already went through returns
-    // the record rather than appending a second disposal to its history.
+    // Already gone. Idempotent rather than an error: a retry after a disposal
+    // that went through is not a second disposal.
     if (record.retention.state === "disposed") return project(ctx, record);
 
-    const at = nowIso();
-    const disposed = amendRecord(recordId, {
-      retention: {
-        ...record.retention,
-        state: "disposed",
-        stateReason: input.reason,
-        disposedAt: at,
-        disposedByMembershipId: ctx.membershipId,
-        disposedByName: ctx.actor.displayNameSnapshot,
-        disposalNote: input.reason,
-      },
-    }, {
-      kind: "disposed",
-      summary: "Disposal authorised and recorded",
-      // Deliberately non-sensitive: that it happened, who decided, when and
-      // why. Never a copy of what was disposed of.
-      detail: input.reason,
-      actorMembershipId: ctx.membershipId,
-      actorName: ctx.actor.displayNameSnapshot,
-    });
-    audit(ctx, "compliance.qualification_disposed", disposed,
-      `Qualification record disposed: ${input.reason}`, "qualification.disposed");
-    return project(ctx, disposed);
+    // ★ DISPOSAL IS REFUSED IN THIS BUILD, UNCONDITIONALLY ★
+    //
+    // Two independent reasons, and BOTH have to be answered by the backend
+    // before this command can ever succeed:
+    //
+    //   • No verified mapping and no policy, so nothing can establish that an
+    //     obligation has ended. `isUnderRetention` is true for every record.
+    //   • No enforced legal holds. `legalHold` is inert here, so even a record
+    //     past a supplied date might be one a claim or an investigation
+    //     requires to be kept, and nothing in this build could tell.
+    //
+    // There is deliberately NO rule about who adopted the record: a mandatory
+    // second pair of hands would leave a solo Carrier Owner permanently unable
+    // to discharge an obligation that had genuinely ended. What refuses here is
+    // the missing policy and the missing hold, never the identity of the caller.
+    //
+    // The write path below is kept, and kept correct, so that enabling disposal
+    // is a matter of the backend answering both — not of writing it then.
+    // The write path is NOT kept here. Dead code waiting for a policy is code
+    // nobody maintains and everybody trusts; when the backend answers both
+    // questions, disposal is written against what it actually supplies.
+    throw new RetentionActiveError(record.retention.retainUntil);
   },
 
   async adoptionsForDriver(ctx, driverProfileId): Promise<DriverVisibleAdoption[]> {
@@ -670,11 +754,12 @@ export const mockQualificationService: QualificationService = {
     // driver. Anybody else gets their own organization's records only, gated on
     // `qualification:view` like every other carrier-side read.
     if (ctx.driverProfileId === driverProfileId) {
-      return recordsForDriver(driverProfileId).map(toDriverVisible);
+      return recordsForDriver(driverProfileId).filter(readable).map(toDriverVisible);
     }
     required(ctx, "qualification:view");
     return recordsForDriver(driverProfileId)
       .filter((r) => r.organizationId === ctx.organizationId)
+      .filter(readable)
       .map(toDriverVisible);
   },
 };

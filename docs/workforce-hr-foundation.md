@@ -64,6 +64,17 @@ Raman, who works at Northline and has no Antcolos account at all, and Paige
 Ellery, who holds a seat and has no engagement. Both cases are asserted in
 `workforce.test.ts`.
 
+**Safety & Compliance derives from the canonical driver registry.** It used to
+read a second roster held in the driver feature, so a relationship ended through
+HR offboarding never froze the driver's compliance requirements and never
+produced a `ComplianceSnapshot` — records about somebody who had left stayed
+live. A driver the canonical registry knew about but the other roster did not
+sat permanently at *"requirements not built"*. The fix was not to keep two
+rosters in step: `compliance-sources` now derives from
+`carrierDriverRelationshipsUnscoped`, and the feature roster's own ending
+command delegates to the driver module's canonical `endCarrierRelationship`.
+One ending, reflected wherever it is read.
+
 **Onboarding is derived, never stored.** Every checklist row asks the module
 that owns the fact at the moment somebody looks. A stored HR checklist would be
 a second opinion about facts five other modules already own — and a second

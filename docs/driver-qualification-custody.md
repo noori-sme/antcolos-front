@@ -1,10 +1,18 @@
 # Driver document custody, qualification files and retention
 
+> **Scope and status.** Nothing in this document is legal advice, and Antcolos
+> does not claim compliance with any regulation. Antcolos has **not verified**
+> which regulation or retention schedule governs any record category here; that
+> verification is outstanding and is listed under *Decisions requiring
+> compliance counsel* below. What this document describes is a data-ownership
+> boundary and the behaviour built on it, not a compliance product.
+
 ## The problem
 
-A motor carrier that hires a driver must keep a record of the evidence it relied
-on. Antcolos already answered three questions about a driver's licence, and
-answered them well — and could not answer the fourth.
+A carrier that relies on a document when deciding whether to engage a driver
+has a business reason to record what it actually relied on. Antcolos already
+answered three questions about a driver's licence, and answered them well — and
+could not answer the fourth.
 
 | Question | Owner | |
 |---|---|---|
@@ -107,42 +115,102 @@ silent downgrade is how a file ends up saying something nobody chose. No
 integration in this build performs an official MVR pull, Clearinghouse query,
 background check or medical-source verification, and nothing claims one.
 
-## Retention: basis first, no invented dates
+## Retention: nothing is asserted, and it fails closed
 
-**This build stores and shows the retention BASIS. It never computes a date.**
+**This build asserts no retention basis, no period and no date for any record
+category.**
 
-The applicable period depends on the exact record category, the jurisdiction and
-the current text of the regulation, and none of that is knowable in a browser. A
-date rendered by a frontend looks exactly as authoritative as one a compliance
-team signed off. So where a date would go, the product says:
+Which rule governs a driving licence, a medical certificate, a motor vehicle
+record or a drug and alcohol test result depends on the applicable regulation,
+the exact record category and the jurisdiction. **Antcolos has not verified any
+of those mappings against official regulatory text.** So it states none of them.
+Where a basis or a date would go, the product says:
 
-> Policy not configured in the frontend mock. The applicable retention period is
-> record-specific and jurisdiction-specific, and is supplied by the backend
-> compliance policy — not by this build.
+> Retention policy not configured. Antcolos has not verified which regulation
+> and retention schedule apply to this record category, so it states neither a
+> basis nor an end date. A backend compliance policy supplies both.
 
-Three bases, record-specific — not one three-year clock for everything:
+An earlier revision of this milestone cited a regulation and assigned each
+category a retention basis. Both were written from memory and neither was
+checked against a primary source. Deleting the citation while leaving *"kept for
+a period from the date it was received"* on screen would have been the same
+claim with the footnote removed — so the assignments were removed too.
 
-| Basis | Clock starts |
+`QualificationRetentionBasis` survives as a **vocabulary** so a backend has
+names to use. Nothing in this build assigns one: every row in
+`RETENTION_POLICIES` carries `mappingVerified: false` and no `basis`, and every
+record's `retention.basis` is absent.
+
+What the module still records are **observed facts**, which need no regulatory
+claim: when a record was received, when the working relationship ended, and when
+one adoption superseded another. `relationshipEndedAt` is such a fact — it is
+not the start of a period this build claims to know.
+
+The consequences are deliberate and they fail closed:
+
+- With no verified mapping and no backend policy, `retainUntil` is never set.
+- So nothing ever reaches `eligible_for_disposal`.
+- So **disposal is always refused**. A record whose obligation nobody can
+  compute is a record still under obligation.
+
+## Categories this foundation will not hold
+
+Some qualification records carry access rules of their own — who may see a drug
+and alcohol testing record, or a driving record obtained for an investigation,
+is governed by rules separate from ordinary document access. **Antcolos has not
+verified any of those rules**, and this milestone does not build the purpose-
+and category-specific access model they would need.
+
+So these categories **fail closed**:
+
+| Category | Why |
 |---|---|
-| `engagement_plus_period` | when the working relationship ends |
-| `fixed_period_from_receipt` | when the carrier received it |
-| `superseded_plus_period` | when a newer record replaced it |
+| `drug_alcohol_test_result` | testing records carry their own confidentiality and disclosure rules |
+| `clearinghouse_query` | part of a testing programme; same unverified rules |
+| `background_check` | governed by rules outside transport regulation as well as within it |
+| `motor_vehicle_record` | a driving record obtained for an investigation may carry access restrictions separate from ordinary document access |
+| `annual_mvr_review` | built on a driving record; inherits the same restrictions |
 
-`RETENTION_POLICIES` in `src/lib/qualification/retention.ts` maps each category
-to a basis and a rationale, and carries **no period field at all**. That file is
-the seam a backend replaces with a real, jurisdiction-aware, versioned policy.
+They cannot be adopted, they are not returned by any read, they are not shown to
+the driver, and they raise nothing in Needs You.
 
-The consequences are deliberate and they fail safe:
+**This is deliberately not a permission.** An active Owner receives every
+permission automatically, and *"nobody may read this yet"* is not something an
+Owner should be able to hold. The check is on the **record category**, on every
+path, whoever is asking — `isRestrictedQualificationCategory`, enforced in
+`readable()` before any permission is considered.
 
-- With no policy configured, nothing ever reaches `eligible_for_disposal`.
-- So **disposal is refused**: a record whose obligation nobody can compute is a
-  record still under obligation.
+One write path deliberately still reaches restricted records: moving one into
+retention when a relationship ends. That discloses nothing, and without it a
+restricted record would read as *active evidence* forever after the driver had
+gone.
+
+Lifting a category out of this set needs the access rule designed **and** the
+regulatory mapping verified first.
 
 ### Disposal
 
+**Disposal is refused unconditionally in this build**, for two independent
+reasons that must *both* be answered by the backend:
+
+1. **No verified mapping and no policy** — nothing can establish that an
+   obligation has ended.
+2. **No enforced legal holds** — `QualificationRetention.legalHold` is typed,
+   is read by `isUnderRetention`, and is `false` on every record because
+   nothing in this build can set it. A backend that shipped retention dates
+   *without* hold enforcement would turn a correct refusal into the disposal of
+   evidence a claim or an investigation required to be kept.
+
+**(2) is a mandatory gate, not a nice-to-have.** It is the one most easily
+missed, because the field already exists and looks implemented.
+
+The write path is not kept as dead code behind the refusal: when the backend
+answers both questions, disposal is written against what it actually supplies.
+
 `qualification:dispose` is a narrow permission, separate from
 `qualification:view` because discharging an obligation is a different act from
-reading the file. There is **no** mandatory two-person rule: a solo Carrier
+reading the file, and both are **carrier-only** via the permission catalog's
+existing `orgTypes`. There is **no** mandatory two-person rule: a solo Carrier
 Owner is one person, and a rule requiring a second pair of hands would leave
 them permanently unable to discharge an obligation that has ended. A
 configurable two-person disposal policy for larger organizations is a possible

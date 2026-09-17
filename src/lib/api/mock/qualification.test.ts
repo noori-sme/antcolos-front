@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PermissionKey } from "@/types";
-import { RETENTION_POLICY_NOT_CONFIGURED } from "@/types";
+import {
+  RESTRICTED_QUALIFICATION_CATEGORIES, RETENTION_MAPPING_UNVERIFIED,
+} from "@/types";
 import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
 } from "../contracts/context";
 import { resetAllMocks } from "./registry";
 import {
-  RetentionActiveError, ReviewRequiredError, UnsupportedVerificationClaimError,
+  RestrictedQualificationCategoryError, RetentionActiveError, ReviewRequiredError,
+  UnsupportedVerificationClaimError,
   applyRelationshipEndToQualificationFile, mockQualificationService as qualification,
   recordsWithNewerVersion,
 } from "./qualification";
@@ -380,7 +383,8 @@ describe("revocation stops access and erases nothing", () => {
     expect(moved).toBe(1);
     const reread = await qualification.get(northline(), adopted.record.id);
     expect(reread.retentionState).toBe("relationship_ended_retained");
-    expect(reread.record.retention.clockStartedAt).toBeTruthy();
+    // An observed fact about the relationship, not a clock this build claims.
+    expect(reread.record.retention.relationshipEndedAt).toBeTruthy();
     // The document itself is untouched.
     expect(documentById(licence.documentId)).toBeDefined();
   });
@@ -413,33 +417,43 @@ describe("retention states a basis and never invents a date", () => {
     });
   }
 
-  it("records the basis and no period", async () => {
+  it("asserts NO retention basis, because none has been verified", async () => {
     const view = await adopted();
-    expect(view.record.retention.basis).toBe("engagement_plus_period");
+    // The mapping from a record category to a retention rule is a regulatory
+    // question this build has not answered, so it answers nothing.
+    expect(view.record.retention.basis).toBeUndefined();
     expect(view.record.retention.retainUntil).toBeUndefined();
     expect(view.record.retention.policyKey).toBe("ret_commercial_licence");
   });
 
-  it("says the policy is not configured rather than showing a date", async () => {
+  it("says the mapping is unverified rather than showing a basis or a date", async () => {
     const view = await adopted();
-    expect(view.retentionExplanation).toContain(RETENTION_POLICY_NOT_CONFIGURED);
+    expect(view.retentionExplanation).toContain(RETENTION_MAPPING_UNVERIFIED);
     const preview = await qualification.previewAdoption(northline(), view.record.evidence.documentId);
-    expect(preview.retentionSummary).toBe(RETENTION_POLICY_NOT_CONFIGURED);
+    expect(preview.retentionSummary).toBe(RETENTION_MAPPING_UNVERIFIED);
   });
 
-  it("publishes the policy rows as bases, with no periods on them", async () => {
+  it("names no regulation anywhere a person can read", async () => {
+    const view = await adopted();
+    const preview = await qualification.previewAdoption(northline(), view.record.evidence.documentId);
+    const shown = [view.retentionExplanation, preview.retentionSummary, ...preview.consequences]
+      .join(" ");
+    // An unverified citation is worse than none: it reads as authority.
+    expect(shown).not.toMatch(/391\.|382\.|CFR|FMCSA/);
+  });
+
+  it("publishes every policy row as an UNVERIFIED mapping, with no basis", async () => {
     const policies = await qualification.retentionPolicies(northline());
     expect(policies.length).toBeGreaterThan(5);
     for (const policy of policies) {
-      expect(policy.basis).toBeTruthy();
+      expect(policy.mappingVerified).toBe(false);
+      expect(policy.basis).toBeUndefined();
       expect(Object.keys(policy)).not.toContain("periodMonths");
+      expect(Object.keys(policy)).not.toContain("rationale");
     }
-    // Record-specific, not one clock for everything.
-    const bases = new Set(policies.map((p) => p.basis));
-    expect(bases.size).toBeGreaterThan(1);
   });
 
-  it("refuses disposal while the obligation stands, which with no policy is always", async () => {
+  it("refuses disposal while the obligation stands, which with no verified mapping is always", async () => {
     const view = await adopted();
     const disposer = ctxFor("org_northline", {
       permissions: [...SAFETY, "qualification:dispose"],
@@ -458,29 +472,152 @@ describe("retention states a basis and never invents a date", () => {
       .rejects.toThrow(PermissionDeniedError);
   });
 
-  it("lets the adopter dispose once an obligation has actually ended", async () => {
+  it("refuses disposal even past a supplied date, because legal holds are not enforced", async () => {
     const view = await adopted();
-    // A backend policy is what supplies an end date. Simulating one here is the
-    // point: the rule is "an obligation that stands refuses", NOT "whoever
-    // adopted it can never dispose of it" — a solo owner has nobody else.
+    // Simulate what a backend policy would supply: an end date in the past.
     const record = allQualificationRecords().find((r) => r.id === view.record.id)!;
     record.retention.retainUntil = new Date(Date.now() - 86_400_000).toISOString();
 
-    const soloOwner = ctxFor("org_northline", {
+    const disposer = ctxFor("org_northline", {
       permissions: [...SAFETY, "qualification:dispose"],
-      // The SAME membership that adopted it.
+      membershipId: "mem_northline_owner",
+      name: "Dana Whitfield",
+    });
+    // A date alone is not enough. Without an enforced legal hold this build
+    // cannot know whether a claim or an investigation requires the record.
+    await expect(qualification.authorizeDisposal(disposer, view.record.id, {
+      reason: "Retention period ended.",
+    })).rejects.toThrow(RetentionActiveError);
+    expect((await qualification.get(northline(), view.record.id)).retentionState)
+      .not.toBe("disposed");
+  });
+
+  it("refuses for the reason of the missing gate, never because of who adopted it", async () => {
+    const view = await adopted();
+    // The SAME membership that adopted it, holding the disposal key. There is
+    // deliberately no adopter-cannot-dispose rule: it would leave a solo
+    // Carrier Owner permanently unable to discharge an ended obligation.
+    const sameHands = ctxFor("org_northline", {
+      permissions: [...SAFETY, "qualification:dispose"],
       membershipId: "mem_northline_safety",
     });
-    const disposed = await qualification.authorizeDisposal(soloOwner, view.record.id, {
-      reason: "Retention period ended.",
+    const blocked = (await qualification.get(sameHands, view.record.id)).disposalBlockedReason ?? "";
+    expect(blocked).not.toMatch(/you adopted|somebody else/i);
+    expect(blocked).toMatch(/not configured|not verified/i);
+  });
+
+  it("states the backend gate on the record a screen renders", async () => {
+    const view = await adopted();
+    const disposer = ctxFor("org_northline", {
+      permissions: [...SAFETY, "qualification:dispose"],
+      membershipId: "mem_northline_owner",
     });
-    expect(disposed.retentionState).toBe("disposed");
-    expect(disposed.record.retention.disposedByName).toBe("Tess Ferraro");
-    // Audit records it.
-    expect(auditLedger.all("org_northline")
-      .some((e) => e.action === "compliance.qualification_disposed")).toBe(true);
-    // And the history survives the disposal — the record is not deleted.
-    expect(disposed.record.history.some((h) => h.kind === "adopted")).toBe(true);
+    const seen = await qualification.get(disposer, view.record.id);
+    expect(seen.canAuthorizeDisposal).toBe(false);
+    expect(seen.disposalBlockedReason).toBeTruthy();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Sensitive categories fail closed                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ A RESTRICTION ON THE RECORD, NOT ON THE READER ★
+ *
+ * Some categories carry access rules of their own that this build has not
+ * verified and does not model. They fail closed — and deliberately not through
+ * a permission, because an active Owner receives every permission automatically
+ * and "nobody may read this yet" is not a thing an Owner should be able to
+ * hold. The check is on the category, on every path, whoever is asking.
+ */
+describe("categories whose access rules are unsettled are refused outright", () => {
+  const OWNER_EVERYTHING = ctxFor("org_northline", {
+    permissions: [...SAFETY, "qualification:dispose"],
+    membershipId: "mem_northline_owner",
+    name: "Dana Whitfield",
+  });
+
+  it("names the restricted set, and includes drug and alcohol records", () => {
+    expect(RESTRICTED_QUALIFICATION_CATEGORIES).toContain("drug_alcohol_test_result");
+    expect(RESTRICTED_QUALIFICATION_CATEGORIES).toContain("clearinghouse_query");
+    expect(RESTRICTED_QUALIFICATION_CATEGORIES).toContain("background_check");
+    // Driving records: access restrictions unverified, so held back too.
+    expect(RESTRICTED_QUALIFICATION_CATEGORIES).toContain("motor_vehicle_record");
+    expect(RESTRICTED_QUALIFICATION_CATEGORIES).toContain("annual_mvr_review");
+  });
+
+  it("refuses to adopt one, for an Owner holding every permission", async () => {
+    const licence = seedDriverLicence();
+    reviewAs(licence.documentId, "org_northline", "Tess Ferraro");
+    await expect(qualification.adopt(OWNER_EVERYTHING, {
+      documentId: licence.documentId,
+      driverProfileId: DRIVER,
+      category: "drug_alcohol_test_result",
+      purpose: "driver_qualification_file",
+    })).rejects.toThrow(RestrictedQualificationCategoryError);
+    // Nothing was created: an unreadable record is worse than no record.
+    expect(allQualificationRecords()).toHaveLength(0);
+  });
+
+  it("says the restriction is not about the reader", async () => {
+    const licence = seedDriverLicence();
+    reviewAs(licence.documentId, "org_northline", "Tess Ferraro");
+    await expect(qualification.adopt(OWNER_EVERYTHING, {
+      documentId: licence.documentId, driverProfileId: DRIVER,
+      category: "background_check", purpose: "driver_qualification_file",
+    })).rejects.toThrow(/not on the reader/);
+  });
+
+  it("refuses to record carrier evidence in a restricted category", async () => {
+    await expect(qualification.recordCarrierEvidence(OWNER_EVERYTHING, {
+      driverProfileId: DRIVER,
+      category: "clearinghouse_query",
+      purpose: "driver_qualification_file",
+      file: { name: "query.pdf", type: "application/pdf", size: 900 },
+      source: "carrier_generated",
+    })).rejects.toThrow(RestrictedQualificationCategoryError);
+    // And no document was created in the Document Center either.
+    expect(allDocuments().every((d) => d.typeKey !== "mvr")).toBe(true);
+  });
+
+  it("hides a restricted record from every read path if one exists", async () => {
+    // Force one into the store directly — the service will not create it — and
+    // prove no read returns it, for the Owner.
+    const licence = seedDriverLicence();
+    reviewAs(licence.documentId, "org_northline", "Tess Ferraro");
+    const legitimate = await qualification.adopt(northline(), {
+      documentId: licence.documentId, driverProfileId: DRIVER,
+      category: "commercial_licence", purpose: "driver_qualification_file",
+    });
+    const planted = allQualificationRecords().find((r) => r.id === legitimate.record.id)!;
+    planted.category = "drug_alcohol_test_result";
+
+    expect(await qualification.list(OWNER_EVERYTHING, {})).toHaveLength(0);
+    await expect(qualification.get(OWNER_EVERYTHING, planted.id)).rejects.toThrow(NotFoundError);
+    expect(recordsWithNewerVersion("org_northline")).toHaveLength(0);
+
+    // And the driver is not told it exists either.
+    const asDriver = ctxFor("org_cascade", {
+      permissions: [], membershipId: "mem_driver", driverProfileId: DRIVER,
+    });
+    expect(await qualification.adoptionsForDriver(asDriver, DRIVER)).toHaveLength(0);
+  });
+
+  it("still moves a restricted record into retention when the relationship ends", async () => {
+    // A write that discloses nothing. Without it a restricted record would sit
+    // reading "active evidence" forever after the driver had gone.
+    const licence = seedDriverLicence();
+    reviewAs(licence.documentId, "org_northline", "Tess Ferraro");
+    const legitimate = await qualification.adopt(northline(), {
+      documentId: licence.documentId, driverProfileId: DRIVER,
+      category: "commercial_licence", purpose: "driver_qualification_file",
+    });
+    const planted = allQualificationRecords().find((r) => r.id === legitimate.record.id)!;
+    planted.category = "drug_alcohol_test_result";
+
+    expect(applyRelationshipEndToQualificationFile(northline(), DRIVER)).toBe(1);
+    expect(allQualificationRecords()[0].retention.state).toBe("relationship_ended_retained");
   });
 });
 
@@ -490,11 +627,14 @@ describe("retention states a basis and never invents a date", () => {
 
 describe("source and verification are never collapsed", () => {
   it("keeps a driver-uploaded document self-provided after a carrier review", async () => {
+    // A driver-supplied driving record was the archetype for this rule; that
+    // category is now restricted outright, so the same point is made on a
+    // licence — the rule is about source and verification, not about MVRs.
     const licence = seedDriverLicence();
     reviewAs(licence.documentId, "org_northline", "Tess Ferraro");
     const view = await qualification.adopt(northline(), {
       documentId: licence.documentId, driverProfileId: DRIVER,
-      category: "motor_vehicle_record", purpose: "driver_qualification_file",
+      category: "commercial_licence", purpose: "driver_qualification_file",
     });
     expect(view.record.source).toBe("driver_self_provided");
     // Reviewed, not verified. The two are different fields and stay different.
@@ -508,7 +648,7 @@ describe("source and verification are never collapsed", () => {
     reviewAs(licence.documentId, "org_northline", "Tess Ferraro");
     await expect(qualification.adopt(northline(), {
       documentId: licence.documentId, driverProfileId: DRIVER,
-      category: "motor_vehicle_record", purpose: "driver_qualification_file",
+      category: "commercial_licence", purpose: "driver_qualification_file",
       source: "received_from_licensing_authority",
     })).rejects.toThrow(UnsupportedVerificationClaimError);
   });

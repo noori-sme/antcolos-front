@@ -1,79 +1,70 @@
 import {
-  RETENTION_POLICY_NOT_CONFIGURED, RETENTION_PROTECTED_STATES,
+  RETENTION_MAPPING_UNVERIFIED, RETENTION_PROTECTED_STATES,
   type QualificationRecord, type QualificationRecordCategory,
-  type QualificationRetention, type QualificationRetentionBasis,
-  type QualificationRetentionState, type RetentionPolicy,
+  type QualificationRetention, type QualificationRetentionState,
+  type RetentionPolicy,
 } from "@/types";
 
 /**
- * ★ RETENTION, BASIS FIRST ★
+ * ★ RETENTION, AS FAR AS THIS BUILD HONESTLY KNOWS IT ★
  *
- * 49 CFR §391.51 requires a motor carrier to keep a driver qualification file
- * for each driver it employs, and the rule is NOT one clock: some records are
- * kept while the driver is employed plus a further period, others run from the
- * date they were made, and a superseded record has its own schedule. That SHAPE
- * is a real modelling decision and it is what this file encodes.
+ * Which retention rule governs a driving licence, a medical certificate, a
+ * motor vehicle record or a drug and alcohol test result is a question about
+ * the applicable regulation, the exact record category and the jurisdiction.
  *
- * ███ WHAT THIS FILE DELIBERATELY DOES NOT CONTAIN ███
- * A number. Not one period, not one date, not one "three years".
+ * ███ ANTCOLOS HAS NOT VERIFIED ANY OF THOSE MAPPINGS ███
+ * So this file asserts none of them. Every category below carries
+ * `mappingVerified: false` and NO basis. There is no period, no date, and no
+ * statement about when a clock starts or stops.
  *
- * The applicable period depends on the exact record category, the jurisdiction
- * and the current text of the regulation, and none of that is knowable in a
- * browser. A retention date rendered by a frontend looks exactly as
- * authoritative as one a compliance team signed off, and a carrier that acted
- * on a number this build invented would have been misled by us. So the basis is
- * declared, the date is left to the backend policy, and where a date would go
- * the product says `RETENTION_POLICY_NOT_CONFIGURED` out loud.
+ * An earlier version of this file cited a regulation and assigned each category
+ * a retention basis. Both were written from memory and neither was checked
+ * against the official regulatory text. Removing the citation while leaving
+ * "kept for a period from the date it was received" on screen would have been
+ * the same claim with the footnote taken off, so the assignments are gone too.
  *
- * The consequences are deliberate and they fail safe:
- *   • With no policy configured, nothing ever becomes `eligible_for_disposal`.
- *   • So disposal is refused, because a record whose obligation nobody can
- *     compute is a record still under obligation.
+ * What the module still does, and can defend:
  *
- * Nothing here is legal advice, and this build is not a compliant DQ-file
- * system.
+ *   • It records OBSERVED FACTS — when a record was received, when a
+ *     relationship ended, when one adoption superseded another.
+ *   • It keeps every retained record, and refuses to destroy one.
+ *   • It fails CLOSED: with no verified mapping and no backend policy, nothing
+ *     ever becomes eligible for disposal and disposal is always refused.
+ *
+ * Turning any of that into a date is the backend's, and only after the mapping
+ * has been verified and legal holds are actually enforced. Nothing here is
+ * legal advice and this build is not a compliant qualification-file system.
  */
 
 export type { RetentionPolicy };
 
-const P = (
-  category: QualificationRecordCategory,
-  basis: QualificationRetentionBasis,
-  rationale: string,
-): RetentionPolicy => ({ key: `ret_${category}`, category, basis, rationale });
-
 /**
- * The basis for each category. No periods — see the header.
+ * The categories, and what is known about each. Which is, deliberately, only
+ * that the mapping has not been verified.
  *
- * Exhaustive over `QualificationRecordCategory` by the lookup below falling
- * back to `other`, which is itself a declared row rather than an invented one.
+ * The rows exist so a backend policy has a stable key to attach a verified
+ * mapping to — not so this build can imply one it has not done.
  */
-export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
-  P("commercial_licence", "engagement_plus_period",
-    "Part of the qualification file: kept while the driver works here, then for a further period the policy sets."),
-  P("medical_certificate", "engagement_plus_period",
-    "The medical certification record belongs to the qualification file and is kept beyond the last day worked."),
-  P("motor_vehicle_record", "fixed_period_from_receipt",
-    "A driving record is evidence of what was checked on a date, so its period runs from the date it was received."),
-  P("annual_mvr_review", "fixed_period_from_receipt",
-    "The annual review is a dated act; each year's review is kept from the date it was made."),
-  P("employment_application", "engagement_plus_period",
-    "The application is a qualification-file record and is kept beyond the last day worked."),
-  P("road_test_certificate", "engagement_plus_period",
-    "The road test, or the accepted equivalent, is a qualification-file record."),
-  P("drug_alcohol_test_result", "fixed_period_from_receipt",
-    "Testing programme records have their own schedule, separate from the general qualification-file one."),
-  P("clearinghouse_query", "fixed_period_from_receipt",
-    "A query record proves a check was made on a date."),
-  P("background_check", "fixed_period_from_receipt",
-    "Evidence of a check made on a date, kept from that date."),
-  P("handbook_acknowledgement", "engagement_plus_period",
-    "An acknowledgement is about the period the person worked here."),
-  P("carrier_qualification_decision", "engagement_plus_period",
-    "The carrier's own decision is the record it will be asked to produce."),
-  P("other", "engagement_plus_period",
-    "No specific basis is recorded for this category. The backend policy decides."),
-];
+export const RETENTION_POLICIES: readonly RetentionPolicy[] = ([
+  "commercial_licence",
+  "medical_certificate",
+  "motor_vehicle_record",
+  "annual_mvr_review",
+  "employment_application",
+  "road_test_certificate",
+  "drug_alcohol_test_result",
+  "clearinghouse_query",
+  "background_check",
+  "handbook_acknowledgement",
+  "carrier_qualification_decision",
+  "other",
+] as const).map((category): RetentionPolicy => ({
+  key: `ret_${category}`,
+  category,
+  // Absent, on purpose. See the header.
+  basis: undefined,
+  mappingVerified: false,
+}));
 
 const BY_CATEGORY = new Map(RETENTION_POLICIES.map((p) => [p.category, p]));
 
@@ -84,20 +75,18 @@ export function retentionPolicyFor(category: QualificationRecordCategory): Reten
 /**
  * The retention block for a newly adopted record.
  *
- * A `fixed_period_from_receipt` record's clock STARTS at receipt — that much is
- * knowable — but it has no `retainUntil`, because how long it runs is not.
- * An `engagement_plus_period` record has not even started.
+ * No basis, no clock, no end date — only the policy key the record maps to and
+ * the state it is in. `receivedAt` already lives on the record itself, so the
+ * one fact a backend needs to start a receipt-based clock is not lost.
  */
 export function initialRetention(
   category: QualificationRecordCategory,
   receivedAt: string,
 ): QualificationRetention {
-  const policy = retentionPolicyFor(category);
+  void receivedAt;
   return {
-    policyKey: policy.key,
-    basis: policy.basis,
-    clockStartedAt: policy.basis === "fixed_period_from_receipt" ? receivedAt : undefined,
-    // Never computed here. Only a backend policy sets this.
+    policyKey: retentionPolicyFor(category).key,
+    basis: undefined,
     retainUntil: undefined,
     state: "active",
     legalHold: false,
@@ -105,14 +94,12 @@ export function initialRetention(
 }
 
 /**
- * Starts the clock that could not start earlier.
+ * Records that the working relationship ended.
  *
- * Called when the working relationship ends, which is the event
- * `engagement_plus_period` has been waiting for. It DELETES NOTHING: every
- * record stays with its pinned evidence, and what changes is that the
- * obligation now has a start it could not have while the person was working.
- * A `fixed_period_from_receipt` clock is NOT restarted — that record's period
- * has been running since the day it arrived.
+ * It DELETES NOTHING and starts nothing: the date below is an observed fact
+ * about the relationship, not the beginning of a period this build claims to
+ * know. What changes is the state, so the record reads as retained-after-
+ * departure rather than as live evidence.
  */
 export function retentionOnRelationshipEnd(
   retention: QualificationRetention,
@@ -121,12 +108,10 @@ export function retentionOnRelationshipEnd(
   return {
     ...retention,
     state: "relationship_ended_retained",
-    clockStartedAt: retention.basis === "engagement_plus_period"
-      ? endedAt
-      : retention.clockStartedAt,
+    relationshipEndedAt: endedAt,
     stateReason:
       "The working relationship ended. The record is kept; ordinary operational "
-      + "access to it has ended and only an authorized holder may read it.",
+      + "access to it has ended.",
   };
 }
 
@@ -135,22 +120,19 @@ export function retentionOnSuperseded(
   retention: QualificationRetention,
   supersededAt: string,
 ): QualificationRetention {
+  void supersededAt;
   return {
     ...retention,
     state: "superseded_retained",
-    clockStartedAt: retention.basis === "superseded_plus_period"
-      ? supersededAt
-      : retention.clockStartedAt,
     stateReason: "A newer version was adopted. This record shows what was relied on before.",
   };
 }
 
 /**
- * The state with whatever clock exists applied.
+ * The state, with whatever clock exists applied.
  *
- * `eligible_for_disposal` is reachable ONLY through a backend-supplied
- * `retainUntil`. With none — which is every record in this build — the record
- * stays retained, and that is the safe direction to fail in.
+ * `eligible_for_disposal` is unreachable in this build: it needs a
+ * backend-supplied `retainUntil`, which nothing here ever sets.
  */
 export function effectiveRetentionState(
   retention: QualificationRetention,
@@ -176,28 +158,28 @@ export function isUnderRetention(
 /**
  * Why this record is kept, and the honest answer about until when.
  *
- * The basis is stated as a fact; the date is stated as missing. Both halves
- * matter: the basis is what this build genuinely knows, and the missing date is
- * what it genuinely does not.
+ * States the observed facts — what happened and when — and then says plainly
+ * that the applicable schedule is not configured. It never names a regulation
+ * and never implies a period.
  */
 export function retentionExplanation(
-  record: Pick<QualificationRecord, "retention" | "category">,
+  record: Pick<QualificationRecord, "retention" | "category" | "receivedAt">,
   at: Date = new Date(),
 ): string {
   const { retention } = record;
-  const policy = retentionPolicyFor(record.category);
   const state = effectiveRetentionState(retention, at);
 
   if (state === "disposed") {
     return `Disposed on ${retention.disposedAt?.slice(0, 10)}. The disposal is recorded; the record's content is not.`;
   }
-  const started = retention.clockStartedAt
-    ? `The period has been running since ${retention.clockStartedAt.slice(0, 10)}.`
-    : retention.basis === "engagement_plus_period"
-      ? "The period has not started: it runs from the day the working relationship ends."
-      : "The period has not started.";
-  const until = retention.retainUntil
-    ? `It runs to ${retention.retainUntil.slice(0, 10)}.`
-    : RETENTION_POLICY_NOT_CONFIGURED;
-  return `${policy.rationale} ${started} ${until}`;
+
+  const facts = [`Received ${record.receivedAt.slice(0, 10)}.`];
+  if (retention.relationshipEndedAt) {
+    facts.push(`The working relationship ended ${retention.relationshipEndedAt.slice(0, 10)}.`);
+  }
+  if (retention.retainUntil) {
+    facts.push(`A policy has set retention to ${retention.retainUntil.slice(0, 10)}.`);
+    return facts.join(" ");
+  }
+  return `${facts.join(" ")} ${RETENTION_MAPPING_UNVERIFIED}`;
 }

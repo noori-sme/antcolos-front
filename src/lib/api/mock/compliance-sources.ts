@@ -1,9 +1,7 @@
 import {
-  CARRIER_DRIVERS_ORGANIZATION_ID, carrierDriversSync, type CarrierDriver,
-} from "@/features/driver/mock-carrier-drivers";
-import {
   driverDocumentsSync, driverProfileSync, driverRelationshipsSync,
 } from "@/features/driver/mock-driver";
+import { requirementLabel } from "@/lib/documents/requirements";
 import { MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
 import type {
   ComplianceEvidenceRef, ComplianceEvidenceState, ComplianceRequirementKey,
@@ -13,6 +11,9 @@ import type {
 } from "@/types";
 import { ORG_DOCUMENT_IDS } from "./seed";
 import { mockStore } from "./store";
+import {
+  carrierDriverRelationshipsUnscoped, type CarrierDriverRelationshipRow,
+} from "./driver-registry";
 import {
   truckDocumentRowsUnscoped, truckOwnerName, truckRecord, truckRelationshipsFor,
 } from "./truck-registry";
@@ -317,8 +318,19 @@ const DRIVER_DOCUMENT_KEYS: Record<string, ComplianceRequirementKey> = {
 
 const DRIVER_RELATIONSHIP_LIVE = new Set(["invited", "onboarding", "active", "suspended"]);
 
+/**
+ * One driver relationship, as Safety & Compliance reads it.
+ *
+ * The row comes from the CANONICAL driver registry, so a relationship ended
+ * through the driver module — by HR offboarding, or by anything else — arrives
+ * here as `live: false` on the next read and the requirements freeze and
+ * snapshot themselves. It used to come from a second roster in the driver
+ * feature, which is why an ended relationship could leave live compliance
+ * records behind and a driver the registry knew about could sit forever at
+ * "requirements not built".
+ */
 function driverSubjectFromRelationship(
-  driver: CarrierDriver,
+  driver: CarrierDriverRelationshipRow,
   org: Organization,
 ): ComplianceSubjectSeed {
   const authority = operatingAuthorityFor(org);
@@ -342,8 +354,10 @@ function driverSubjectFromRelationship(
         evidence: {
           system: "driver_document",
           id: `${driver.id}:${shared.key}`,
-          label: shared.label,
-          href: `/people/drivers/${driver.id}`,
+          // The label comes from the requirement catalog rather than from a
+          // snapshot carried on the row: one source for what a slot is called.
+          label: requirementLabel(shared.key, shared.key),
+          href: `/people/drivers/${driver.driverProfileId}`,
           state: fromDriverDocumentStatus(shared.status),
           fileName: shared.fileName,
           expiresAt: expiresAt || undefined,
@@ -375,7 +389,7 @@ function driverSubjectFromRelationship(
       label: driver.name,
       detail:
         driver.engagementType === "owner_operator" ? "Owner-operator" : "Company driver",
-      href: `/people/drivers/${driver.id}`,
+      href: `/people/drivers/${driver.driverProfileId}`,
     },
     context: {
       kind: "driver",
@@ -400,7 +414,7 @@ function driverSubjectFromRelationship(
         kind: "driver",
         displayName: driver.name,
         driverProfileId: driver.driverProfileId,
-        href: `/people/drivers/${driver.id}`,
+        href: `/people/drivers/${driver.driverProfileId}`,
       },
       membership: {
         kind: "membership",
@@ -799,10 +813,11 @@ export function subjectSeeds(organizationId: string): ComplianceSubjectSeed[] {
   const carrier = carrierSubject(organizationId);
   if (carrier) seeds.push(carrier);
 
-  if (organizationId === CARRIER_DRIVERS_ORGANIZATION_ID) {
-    for (const driver of carrierDriversSync()) {
-      seeds.push(driverSubjectFromRelationship(driver, org));
-    }
+  // Every carrier the registry knows drivers for, rather than one hard-coded
+  // organization: the canonical registry answers for all of them, and a carrier
+  // that gains its first driver should not need an entry added here.
+  for (const driver of carrierDriverRelationshipsUnscoped(organizationId)) {
+    seeds.push(driverSubjectFromRelationship(driver, org));
   }
   const own = ownDriverSubject(org);
   if (own) seeds.push(own);

@@ -1,5 +1,6 @@
 import {
   CONTRACT_IN_FORCE_STATUSES, CONTRACT_TERMINAL_STATUSES, MOCK_ACTIVATION_LIMITATION,
+  isRestrictedQualificationCategory,
   type OnboardingChecklist, type OnboardingStep, type OnboardingStepStatus,
   type WorkforceEngagement,
 } from "@/types";
@@ -305,7 +306,11 @@ function qualificationStep(engagement: WorkforceEngagement): StepSeed {
       // cross-organization read requires.
       const mine = recordsForDriver(engagement.driverProfileId).filter(
         (r) => r.organizationId === engagement.organizationId
-          && r.retention.state !== "disposed" && !r.supersededByRecordId,
+          && r.retention.state !== "disposed" && !r.supersededByRecordId
+          // Restricted categories cannot be adopted and are not readable, so a
+          // checklist that counted them would be describing something nobody
+          // in the workspace can go and look at.
+          && !isRestrictedQualificationCategory(r.category),
       );
       const href = `/workforce/${engagement.id}`;
       if (mine.length === 0) {

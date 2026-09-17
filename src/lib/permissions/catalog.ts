@@ -200,8 +200,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "workforce:view", label: "View the workforce", description: "See who works with this organization, on what basis, from when and in what status. Not their permissions, and not their pay.", group: "workforce" },
   { key: "workforce:manage", label: "Manage engagements", description: "Take somebody forward, record their classification, position and manager, and activate or suspend an engagement. This never changes anybody's permissions.", group: "workforce", sensitive: true },
   { key: "workforce:end", label: "End engagements", description: "End somebody's working relationship and work through the offboarding steps. Access is revoked by the access system, not here.", group: "workforce", sensitive: true },
-  { key: "qualification:view", label: "View the qualification file", description: "See the exact document versions this carrier received, reviewed and relied on — including records it keeps after the relationship ends.", group: "compliance", sensitive: true },
-  { key: "qualification:dispose", label: "Authorise disposal of retained records", description: "Decide that a qualification record whose retention obligation has ended may be disposed of. A record still under retention can never be disposed of, whoever holds this.", group: "compliance", sensitive: true },
+  // Carrier-only, through the catalog's existing `orgTypes`: a qualification
+  // file is a motor carrier's record about its own drivers, and a dispatch
+  // workspace has no such file to hold.
+  { key: "qualification:view", label: "View the qualification file", description: "See the exact document versions this carrier received, reviewed and relied on — including records it keeps after the relationship ends.", group: "compliance", sensitive: true, orgTypes: ["CARRIER"] },
+  { key: "qualification:dispose", label: "Authorise disposal of retained records", description: "Decide that a qualification record whose retention obligation has ended may be disposed of. A record still under retention can never be disposed of, whoever holds this.", group: "compliance", sensitive: true, orgTypes: ["CARRIER"] },
 
   // ---- Organization members ----------------------------------------------
   { key: "members:view", label: "View members", description: "See everyone who belongs to this organization.", group: "members" },

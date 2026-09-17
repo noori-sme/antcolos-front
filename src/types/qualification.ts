@@ -99,6 +99,53 @@ export const QUALIFICATION_CATEGORY_LABEL: Record<QualificationRecordCategory, s
  */
 export type QualificationEvidenceOrigin = "driver_provided" | "carrier_originated";
 
+/**
+ * ★ CATEGORIES THIS FOUNDATION WILL NOT HANDLE ★
+ *
+ * Some qualification records carry access rules of their own — who may see a
+ * drug and alcohol testing record, or a driving record obtained for an
+ * investigation, is governed by rules separate from ordinary document access.
+ * **Antcolos has not verified any of those rules**, and this milestone does not
+ * build the purpose- and category-specific access model they would need.
+ *
+ * So these categories FAIL CLOSED: they cannot be adopted, they are not
+ * returned by any read, and they are not shown to the driver or raised in Needs
+ * You. That is deliberately not a permission — a permission would be granted to
+ * Owners automatically, and "nobody may read this yet" is not something an
+ * Owner should be able to hold. It is a property of the category, checked on
+ * every path regardless of who is asking.
+ *
+ * Lifting a category out of this set is a product decision that needs the
+ * access rule designed and the regulatory mapping verified first.
+ */
+export const RESTRICTED_QUALIFICATION_CATEGORIES: readonly QualificationRecordCategory[] = [
+  "drug_alcohol_test_result",
+  "clearinghouse_query",
+  "background_check",
+  "motor_vehicle_record",
+  "annual_mvr_review",
+];
+
+/** Why each restricted category is held back, for the message a person sees. */
+export const RESTRICTED_CATEGORY_REASON: Partial<Record<QualificationRecordCategory, string>> = {
+  drug_alcohol_test_result:
+    "Testing records carry their own confidentiality and disclosure rules. Antcolos has not verified them and does not yet model purpose-specific access, so it will not hold one.",
+  clearinghouse_query:
+    "A query record is part of a testing programme and carries the same unverified access rules.",
+  background_check:
+    "A background check is governed by rules outside transport regulation as well as within it, and neither has been verified here.",
+  motor_vehicle_record:
+    "A driving record obtained for an investigation may carry access restrictions separate from ordinary document access. Antcolos has not verified which apply.",
+  annual_mvr_review:
+    "The annual review is built on a driving record and inherits the same unverified access restrictions.",
+};
+
+export function isRestrictedQualificationCategory(
+  category: QualificationRecordCategory,
+): boolean {
+  return RESTRICTED_QUALIFICATION_CATEGORIES.includes(category);
+}
+
 export const QUALIFICATION_ORIGIN_LABEL: Record<QualificationEvidenceOrigin, string> = {
   driver_provided: "Provided by the driver",
   carrier_originated: "Obtained by the carrier",
@@ -235,15 +282,19 @@ export interface QualificationReviewSnapshot {
 /* -------------------------------------------------------------------------- */
 
 /**
- * What would start the clock, if a policy said how long it ran.
+ * The SHAPE a retention obligation can take. A vocabulary, not a claim.
  *
- * ★ THE BASIS IS THE PRODUCT DECISION; THE PERIOD IS NOT OURS TO INVENT ★
- * A frontend mock cannot know the applicable retention period. It depends on
- * the exact record category, the jurisdiction and the current text of the
- * regulation, and a number rendered by a browser looks exactly as authoritative
- * as one a compliance team signed off. So this build stores and shows the
- * BASIS — the shape of the obligation, which is a real modelling decision — and
- * shows no date at all until a backend policy supplies one.
+ * ★ NOTHING IN THIS BUILD ASSIGNS ONE TO A RECORD CATEGORY ★
+ * Which shape applies to a driving licence, a medical certificate or a drug and
+ * alcohol test result is a question about the applicable regulation, the record
+ * category and the jurisdiction. This build has not verified any of those
+ * mappings against the official regulatory text, so it asserts none of them:
+ * `QualificationRetention.basis` is absent on every record, and the policy
+ * table carries `mappingVerified: false` for every category.
+ *
+ * Deleting a citation while leaving "kept for a period from receipt" on screen
+ * would be the same claim with the footnote removed. So the claim is gone too,
+ * and what is shown instead is that the mapping is not configured.
  */
 export type QualificationRetentionBasis =
   /** Kept while the person works here, then for a period the policy sets. */
@@ -260,23 +311,26 @@ export const RETENTION_BASIS_LABEL: Record<QualificationRetentionBasis, string> 
 };
 
 /**
- * Said out loud wherever a retention date would otherwise go.
+ * Shown wherever a retention basis or date would otherwise go.
  *
- * Not a placeholder to be styled away: it is the honest answer, and the only
- * thing that makes the basis above safe to show.
+ * Not a placeholder to be styled away: it is the honest answer, and it is what
+ * makes the rest of this module safe to show. Antcolos has not verified which
+ * regulation governs which record category, so it says so rather than guessing
+ * and leaves both the mapping and the period to a backend policy.
  */
-export const RETENTION_POLICY_NOT_CONFIGURED =
-  "Policy not configured in the frontend mock. The applicable retention period "
-  + "is record-specific and jurisdiction-specific, and is supplied by the backend "
-  + "compliance policy — not by this build.";
+export const RETENTION_MAPPING_UNVERIFIED =
+  "Retention policy not configured. Antcolos has not verified which regulation and "
+  + "retention schedule apply to this record category, so it states neither a basis "
+  + "nor an end date. A backend compliance policy supplies both.";
 
+/**
 /**
  * Where a retained record is in its life.
  *
- * `eligible_for_disposal` is reachable ONLY when a backend policy has supplied
- * a `retainUntil` and the clock has passed it. With no policy configured a
- * record stays in one of the three retained states, and disposal is refused —
- * which is the safe direction to fail in.
+ * `eligible_for_disposal` is unreachable in this build. It requires a verified
+ * category mapping AND a backend-supplied `retainUntil` AND enforced legal
+ * holds, and none of the three exists here — so a record stays in one of the
+ * three retained states and disposal is refused. That is the safe direction.
  */
 export type QualificationRetentionState =
   | "active"
@@ -299,37 +353,48 @@ export const RETENTION_PROTECTED_STATES: readonly QualificationRetentionState[] 
 ];
 
 /**
- * One row of the retention schedule, as a BASIS.
+ * One row of the retention schedule: a category, and what is known about it.
  *
- * Notice there is no period field. That is the point of decision 4: this build
- * declares the shape of each category's obligation and leaves the number to the
- * backend. A row's `policyKey` is what a backend policy is looked up by.
+ * Notice there is no period AND no asserted basis. `mappingVerified` is false
+ * on every row in this build, and `basis` is absent — the row exists so that a
+ * backend policy has a key to attach a verified mapping to, not so that this
+ * build can imply one.
  */
 export interface RetentionPolicy {
   key: string;
   category: QualificationRecordCategory;
-  basis: QualificationRetentionBasis;
-  /** Why the basis is what it is, in the words a safety manager would use. */
-  rationale: string;
+  /** Absent until the category → regulation mapping has been verified. */
+  basis?: QualificationRetentionBasis;
+  /**
+   * False everywhere in this build. True only when a verified mapping supplies
+   * the basis above, at which point a period may also be supplied.
+   */
+  mappingVerified: boolean;
 }
 
 export interface QualificationRetention {
-  /** The policy row this came from, so the reason can be shown, not guessed. */
+  /** The policy row this maps to. Its basis is unverified in this build. */
   policyKey: string;
-  basis: QualificationRetentionBasis;
   /**
-   * When the obligation started running, once something started it.
-   *
-   * Absent under `engagement_plus_period` while the person still works here —
-   * the clock has not started, and that is a real answer rather than a gap.
+   * ABSENT in this build, on every record. See `QualificationRetentionBasis`:
+   * which shape applies to which category is not a question this build has
+   * answered, so it asserts nothing.
    */
-  clockStartedAt?: IsoDateTime;
+  basis?: QualificationRetentionBasis;
+  /**
+   * When the working relationship ended, where it has.
+   *
+   * An OBSERVED FACT, not a clock: it records something that happened, and
+   * says nothing about when any obligation starts or ends. A backend with a
+   * verified mapping is what turns it into a date.
+   */
+  relationshipEndedAt?: IsoDateTime;
   /**
    * The end of the obligation. ONLY ever set by a backend policy.
    *
    * This build never computes one. Absent means "not configured", which is why
-   * `RETENTION_POLICY_NOT_CONFIGURED` is shown in its place and why disposal
-   * is refused rather than allowed by default.
+   * `RETENTION_MAPPING_UNVERIFIED` is shown in its place and why disposal is
+   * refused rather than allowed by default.
    */
   retainUntil?: IsoDateTime;
   /** The stored base state. The effective state is computed on read. */

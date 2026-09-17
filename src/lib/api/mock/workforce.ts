@@ -2,6 +2,7 @@ import {
   WORKFORCE_CLASSIFICATION_LABEL, WORKFORCE_STATE_LABEL,
   type ActorRef, type AuditAction, type OffboardingResult,
   type OffboardingResultStep, type OnboardingChecklist, type PermissionKey,
+  isRestrictedQualificationCategory,
   type WorkforceEngagement, type WorkforceEngagementState,
   type WorkforceEngagementView, type WorkforceEventKind, type WorkforceFilters,
   type WorkforceLink, type WorkforceSummary,
@@ -262,8 +263,11 @@ function linksFor(engagement: WorkforceEngagement): WorkforceLink[] {
     });
     links.push({ kind: "compliance", label: "Safety & Compliance", href: "/compliance" });
     links.push({ kind: "documents", label: "Documents", href: "/documents" });
+    // Restricted categories are not counted: the page must not advertise the
+    // existence of a record nobody may open.
     const qual = recordsForDriver(engagement.driverProfileId)
-      .filter((r) => r.organizationId === engagement.organizationId).length;
+      .filter((r) => r.organizationId === engagement.organizationId)
+      .filter((r) => !isRestrictedQualificationCategory(r.category)).length;
     links.push({
       kind: "qualification_file",
       label: `Qualification file (${qual})`,

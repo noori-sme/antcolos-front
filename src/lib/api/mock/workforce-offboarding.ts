@@ -1,5 +1,5 @@
 import {
-  OFFBOARDING_STEP_LABEL,
+  OFFBOARDING_STEP_LABEL, isRestrictedQualificationCategory,
   type OffboardingImpact, type OffboardingPlan, type OffboardingResultStep,
   type OffboardingStepKey, type WorkforceEngagement,
 } from "@/types";
@@ -151,10 +151,14 @@ export function buildOffboardingPlan(
     defaultSelected: Boolean(engagement.driverProfileId),
   });
 
+  // Counted for the preview only among records somebody in this workspace
+  // could actually open. A restricted record is still moved into retention by
+  // the step below — it is just not advertised here.
   const retained = engagement.driverProfileId
     ? recordsForDriver(engagement.driverProfileId)
       .filter((r) => r.organizationId === engagement.organizationId
-        && r.retention.state !== "disposed")
+        && r.retention.state !== "disposed"
+        && !isRestrictedQualificationCategory(r.category))
     : [];
 
   impacts.push({

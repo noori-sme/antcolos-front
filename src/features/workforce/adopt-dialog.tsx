@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { FormAlert } from "@/features/auth/form-alert";
 import {
-  QUALIFICATION_CATEGORY_LABEL, type QualificationRecordCategory,
+  QUALIFICATION_CATEGORY_LABEL, isRestrictedQualificationCategory,
+  type QualificationRecordCategory,
 } from "@/types";
 import { useAdoptDocument, useAdoptionPreview } from "./hooks";
 
@@ -26,7 +27,15 @@ import { useAdoptDocument, useAdoptionPreview } from "./hooks";
  *     takes none — so the confirmation says so rather than letting the name do
  *     the talking.
  */
-const CATEGORIES: QualificationRecordCategory[] = [
+/**
+ * What this build will hold.
+ *
+ * Filtered through the same restriction the service enforces rather than
+ * hand-listed, so a category can never be offered here that `adopt` would
+ * refuse — and so lifting one out of the restricted set needs no change to
+ * this screen.
+ */
+const CATEGORIES: QualificationRecordCategory[] = ([
   "commercial_licence",
   "medical_certificate",
   "motor_vehicle_record",
@@ -34,7 +43,7 @@ const CATEGORIES: QualificationRecordCategory[] = [
   "road_test_certificate",
   "handbook_acknowledgement",
   "other",
-];
+] as QualificationRecordCategory[]).filter((c) => !isRestrictedQualificationCategory(c));
 
 export function AdoptDialog({
   documentId,

@@ -244,6 +244,25 @@ function buildFixtures(): DriverRecord[] {
       },
     },
     {
+      // ★ INVITED, AND HOLDING NOTHING ★
+      //
+      // The case that proves a compliance REQUIREMENT is not a document: Ray
+      // has been invited, has shared nothing, and every obligation about him
+      // exists anyway. He lived only in the driver feature's screen roster
+      // until Safety & Compliance started deriving from this registry; a
+      // scenario the product depends on has to exist in the canonical record,
+      // not beside it.
+      profile: profile("dp_ray", "Ray Bell", "B3310027745", "IL",
+        { phone: "+1 (312) 555-0190", email: "ray.bell@example.com", cdlDays: 450 }),
+      availability: { status: "inactive", homeTerminal: "Chicago, IL" },
+      preferences: {},
+      engagements: [{
+        ...engagement("dp_ray", "org_northline", "Northline Freight", "company_driver", "invited", 3, []),
+        startedAt: undefined,
+      }],
+      documents: {},
+    },
+    {
       profile: profile("dp_kelsey", "Kelsey Nguyen", "N5590028841", "IL",
         { phone: "+1 (312) 555-0186", cdlDays: 380, medicalDays: 150 }),
       availability: { status: "inactive", homeTerminal: "Chicago, IL" },
@@ -469,6 +488,88 @@ export function carrierRelationshipUnscoped(
 export function driverProfileUnscoped(driverProfileId: string): DriverProfile | undefined {
   const record = db().find((d) => d.profile.id === driverProfileId);
   return record ? { ...record.profile } : undefined;
+}
+
+/**
+ * One carrier's driver relationships, as the modules downstream of the registry
+ * need them. NO access check: the caller scopes by the organization it passes.
+ *
+ * ★ WHY THIS EXISTS ★
+ * Safety & Compliance has to know which drivers a carrier owes records about,
+ * and whether each relationship is still live — that is what decides when a
+ * requirement freezes and a snapshot is taken. It used to read a SECOND driver
+ * roster held in the driver feature, which meant a relationship ended here was
+ * invisible there: a driver could leave and their compliance records would
+ * never freeze, while a driver present here and absent there sat permanently at
+ * "requirements not built".
+ *
+ * The fix is not to keep two rosters in step. It is for the one that is
+ * canonical to be the one compliance derives from, which is this function.
+ * Nothing is copied: every field below is read from the registry's own records
+ * at the moment it is asked for.
+ */
+export interface CarrierDriverRelationshipRow {
+  /** The relationship id. A driver may hold one per carrier. */
+  id: string;
+  driverProfileId: string;
+  name: string;
+  email: string;
+  engagementType: EngagementType;
+  status: RelationshipStatus;
+  cdlNumber: string;
+  cdlState: string;
+  cdlExpiresAt: string;
+  medicalExpiresAt?: string;
+  startedAt?: string;
+  endedAt?: string;
+  endReason?: string;
+  /** Only the keys the driver agreed to share with THIS carrier. */
+  sharedDocuments: Array<{
+    key: string;
+    status: DriverDocument["status"];
+    fileName?: string;
+    sharedAt: string;
+    expiresAt?: string;
+  }>;
+}
+
+export function carrierDriverRelationshipsUnscoped(
+  organizationId: string,
+): CarrierDriverRelationshipRow[] {
+  const out: CarrierDriverRelationshipRow[] = [];
+  for (const record of db()) {
+    for (const engagement of record.engagements) {
+      if (engagement.carrierId !== organizationId) continue;
+      const held = record.documents[organizationId] ?? [];
+      out.push({
+        id: engagement.id,
+        driverProfileId: record.profile.id,
+        name: record.profile.legalName,
+        email: record.profile.email,
+        engagementType: engagement.engagementType,
+        status: engagement.status,
+        cdlNumber: record.profile.cdlNumber,
+        cdlState: record.profile.cdlState,
+        cdlExpiresAt: record.profile.cdlExpiresAt,
+        medicalExpiresAt: record.profile.medicalCardExpiresAt,
+        startedAt: engagement.startedAt,
+        endedAt: engagement.endedAt,
+        endReason: engagement.endReason,
+        // Rule 2 of this registry, applied here too: only what the driver
+        // agreed to share with this carrier travels.
+        sharedDocuments: held
+          .filter((d) => engagement.sharedDocumentKeys.includes(d.requirementKey))
+          .map((d) => ({
+            key: d.requirementKey,
+            status: d.status,
+            fileName: d.fileName,
+            sharedAt: d.submittedAt ?? d.updatedAt ?? engagement.invitedAt,
+            expiresAt: d.expiresAt,
+          })),
+      });
+    }
+  }
+  return out;
 }
 
 /**
