@@ -166,13 +166,17 @@ So these categories **fail closed**:
 | Category | Why |
 |---|---|
 | `drug_alcohol_test_result` | testing records carry their own confidentiality and disclosure rules |
-| `clearinghouse_query` | part of a testing programme; same unverified rules |
+| `clearinghouse_query` | part of a testing programme; its own rules are unverified |
 | `background_check` | governed by rules outside transport regulation as well as within it |
 | `motor_vehicle_record` | a driving record obtained for an investigation may carry access restrictions separate from ordinary document access |
-| `annual_mvr_review` | built on a driving record; inherits the same restrictions |
+| `annual_mvr_review` | its own record with its own unverified rules; not assumed to match any driving record it cites |
 
 They cannot be adopted, they are not returned by any read, they are not shown to
 the driver, and they raise nothing in Needs You.
+
+Each row stands on its own. The table is not a claim that one rule governs
+several categories, and nothing here should be read as saying that a single
+regulation imposes the same access rule on every kind of driving record.
 
 **This is deliberately not a permission.** An active Owner receives every
 permission automatically, and *"nobody may read this yet"* is not something an

@@ -131,13 +131,13 @@ export const RESTRICTED_CATEGORY_REASON: Partial<Record<QualificationRecordCateg
   drug_alcohol_test_result:
     "Testing records carry their own confidentiality and disclosure rules. Antcolos has not verified them and does not yet model purpose-specific access, so it will not hold one.",
   clearinghouse_query:
-    "A query record is part of a testing programme and carries the same unverified access rules.",
+    "A query record belongs to a testing programme. Antcolos has not verified which confidentiality or disclosure rules apply to this record on its own.",
   background_check:
     "A background check is governed by rules outside transport regulation as well as within it, and neither has been verified here.",
   motor_vehicle_record:
-    "A driving record obtained for an investigation may carry access restrictions separate from ordinary document access. Antcolos has not verified which apply.",
+    "A driving record obtained for an investigation may carry access restrictions separate from ordinary document access. Antcolos has not verified which apply to it.",
   annual_mvr_review:
-    "The annual review is built on a driving record and inherits the same unverified access restrictions.",
+    "The annual review is its own record with its own access rules, which Antcolos has not verified. They are not assumed to match those of any driving record it cites.",
 };
 
 export function isRestrictedQualificationCategory(
