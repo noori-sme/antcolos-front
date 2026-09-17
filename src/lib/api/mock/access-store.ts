@@ -141,23 +141,40 @@ export function putRun(run: AcceptanceRun): AcceptanceRun {
 }
 
 /**
- * Claims the right to write the one "joined" audit line for this acceptance.
+ * Runs `write` at most once per `(invitationId, userId)` — and latches it only
+ * when `write` returns.
  *
- * Returns true exactly once per `(invitationId, userId)`, and false to every
- * caller after. Three tabs finishing the same acceptance together all complete
- * the same run — correctly, because every step resumes — but "Alex accepted
- * their invitation" happened once and the ledger must say so once.
+ * Two rules at once, and the order is the whole point:
  *
- * Synchronous on purpose: the check and the set are one block with no `await`
- * between them, so two callers in one tab cannot both win. Two BROWSERS still
- * can, which is the backend's unique constraint to hold, not this module's to
- * pretend about.
+ *   NO DUPLICATE. Three tabs finishing the same acceptance all complete the
+ *   same run, correctly, because every step resumes. But "Alex accepted their
+ *   invitation" happened once and the ledger must say so once.
+ *
+ *   NO LOSS. The earlier version CLAIMED first and wrote second. A write that
+ *   threw left the claim spent and the line unwritten, and since a completed
+ *   run reads as `used` rather than `resume`, nothing could ever write it. That
+ *   is a completed acceptance with no evidence it happened — the exact thing an
+ *   access ledger exists to make impossible.
+ *
+ * Synchronous on purpose: the check, the write and the latch are one block with
+ * no `await` between them, so two callers in one tab cannot both win and a
+ * thrown write cannot be observed half-done. Two BROWSERS still can, which is
+ * the backend's unique constraint to hold, not this module's to pretend about.
+ *
+ * A throw propagates. The caller must not mark the run complete.
  */
-export function claimJoinedAudit(invitationId: string, userId: string): boolean {
+export function withJoinedAudit(
+  invitationId: string, userId: string, write: () => void,
+): void {
   const key = runKey(invitationId, userId);
-  if (state.audited.has(key)) return false;
+  if (state.audited.has(key)) return;
+  write();
   state.audited.add(key);
-  return true;
+}
+
+/** Test hook: has the one joined line been written for this acceptance? */
+export function joinedAuditWritten(invitationId: string, userId: string): boolean {
+  return state.audited.has(runKey(invitationId, userId));
 }
 
 /** Runs that started and did not finish. What Needs You is derived from. */

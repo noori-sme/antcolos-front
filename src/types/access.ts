@@ -81,8 +81,10 @@ export interface Invitation {
 /**
  * What accepting an invitation actually does, one canonical record at a time.
  *
- * Four different things, owned by four different modules, and the whole point
- * of listing them separately is that NONE of them implies another:
+ * Five different things, owned by five different modules, and the whole point
+ * of listing them separately is that NONE of them implies another. **They are
+ * written in this order, and the order is load-bearing** — the seat is last
+ * because everything before it is a record and the seat is the key to the door:
  *
  *   driver_profile        the person's own permanent profile. Theirs, not this
  *                         carrier's, and resumed rather than remade.
@@ -91,19 +93,21 @@ export interface Invitation {
  *                         with NO start date.
  *   document_access       ordinary documents the relationship needs, and only
  *                         the ones the driver agreed to share. Never a
- *                         restricted qualification category.
- *   workspace_membership  the smallest seat that lets them open their portal.
- *                         Never general organization permissions.
+ *                         restricted qualification category. This step GRANTS
+ *                         the access it reports — the links are written here.
  *   engagement_link       when the carrier already recorded them in Workforce,
  *                         their profile id is written onto that engagement. The
  *                         engagement's own dates are untouched.
+ *   workspace_membership  the smallest seat that lets them open their portal.
+ *                         Never general organization permissions. LAST, so a
+ *                         seat never exists behind an unfinished acceptance.
  */
 export type AcceptanceStepKey =
   | "driver_profile"
   | "carrier_relationship"
   | "document_access"
-  | "workspace_membership"
-  | "engagement_link";
+  | "engagement_link"
+  | "workspace_membership";
 
 export const ACCEPTANCE_STEP_LABEL: Record<AcceptanceStepKey, string> = {
   driver_profile: "Your driver profile",

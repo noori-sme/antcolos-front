@@ -1,5 +1,5 @@
 import {
-  ACCEPTANCE_LIMITATION, RESTRICTED_QUALIFICATION_CATEGORIES,
+  ACCEPTANCE_LIMITATION, ACCEPTANCE_STEP_LABEL, RESTRICTED_QUALIFICATION_CATEGORIES,
   QUALIFICATION_CATEGORY_LABEL, acceptanceComplete,
   type AcceptanceRun, type AcceptanceStep, type AcceptanceStepKey,
   type Invitation, type PermissionKey,
@@ -13,14 +13,14 @@ import {
   createOrResumeProfile, profileForUser,
 } from "./driver-registry";
 import {
-  liveRelationshipWith, mockCreateRelationship,
+  liveRelationshipWith, mockCreateRelationship, mockShareDocumentsWithCarrier,
 } from "@/features/driver/mock-driver";
 import { appendAuditEvent } from "./audit";
 import {
-  claimJoinedAudit, ensureSeeded, invitationByToken, invitationById,
+  ensureSeeded, invitationByToken, invitationById,
   invitationsForOrganization,
   nextInvitationId, nextInvitationToken, openInvitationFor, putInvitation, putRun,
-  runFor, runsForInvitation,
+  runFor, runsForInvitation, withJoinedAudit,
 } from "./access-store";
 import { seedInvitations } from "./access-seed";
 import { linkDriverProfileToEngagement } from "./workforce";
@@ -161,23 +161,66 @@ interface StepContext {
  * resetting it to null — which the test helper does in `beforeEach`.
  */
 let faultAt: AcceptanceStepKey | null = null;
+let faultAtJoinedAudit = false;
 
 const FAULT_REASON =
   "Injected failure (test only). In a real system this is where a network "
   + "call, a lock or a constraint would have refused.";
 
+/**
+ * Inert anywhere a browser exists.
+ *
+ * `window` is undefined in the two test runners (both configured
+ * `environment: "node"`) and defined in every browser, including a devtools
+ * console on a production build. So this seam cannot be armed from a page even
+ * by somebody who found the symbol and called it.
+ *
+ * That is defence in depth and NOT a security property, and it would be
+ * dishonest to present it as one: the entire mock runs in the browser, so
+ * anybody able to call this could equally call `grantMembership` directly. The
+ * reason a fault seam is not an escalation here is that there is no backend
+ * behind any of it. The gate exists so the seam cannot be armed by accident —
+ * by a stray import, a story, or a copied line — in the one place a real
+ * person's session runs.
+ */
+const SEAM_AVAILABLE = typeof window === "undefined";
+
 export function failAcceptanceStepForTests(key: AcceptanceStepKey | null): void {
+  if (!SEAM_AVAILABLE) return;
   faultAt = key;
+}
+
+/**
+ * The narrow window in step 6: the run is finished and the ledger refuses.
+ *
+ * Separate from the step seam because writing the audit line is not one of the
+ * five steps — it is what makes the run count as complete.
+ */
+export function failJoinedAuditForTests(on: boolean): void {
+  if (!SEAM_AVAILABLE) return;
+  faultAtJoinedAudit = on;
 }
 
 /**
  * Runs every step that is not already done, in an order where each prefix is a
  * safe place to stop.
  *
- * The seat is LAST on purpose. Stopping after the relationship leaves somebody
- * with an agreed relationship and no portal — visible, recoverable, and fixed
- * by accepting again. The reverse order would leave a seat with nothing behind
- * it, which looks finished and is not.
+ * ★ THE ACTUAL ORDER, WHICH IS THE ORDER IN THIS FUNCTION ★
+ *   1  driver_profile        the person's own permanent profile
+ *   2  carrier_relationship  the connection, as `onboarding`, with no start date
+ *   3  document_access       the links the carrier reads through
+ *   4  engagement_link       the carrier's existing record of this person
+ *   5  workspace_membership  the seat
+ *
+ * The seat is last, and this comment used to say so while the code ran it
+ * fourth. Everything before it is a record; the seat is the key to the door.
+ * Stopping anywhere before the end therefore leaves somebody with records and
+ * no portal — visible, recoverable, fixed by accepting again — and never a
+ * portal with nothing behind it, which looks finished and is not.
+ *
+ * Completion is step 6, unnumbered because it creates no record of its own: the
+ * ledger line. It is written BEFORE `completedAt` is set, so an acceptance can
+ * never read as complete with nothing in the ledger to say it happened.
  */
 async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<AcceptanceRun> {
   const done = new Map((previous?.steps ?? []).map((s) => [s.key, s]));
@@ -235,7 +278,6 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
         { kind: "driver_profile", id: profile.id }));
     }
   }
-  const profileReady = !isDriverInvitation || Boolean(driverProfileId);
 
   /* ---- 2. The relationship. Created as onboarding, with NO start date --- */
   let relationshipReady = false;
@@ -265,7 +307,12 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
       engagementType: invitation.engagementType ?? "company_driver",
       roleName: invitation.roleName,
       permissions: invitation.permissions,
-      sharedDocumentKeys: input.sharedDocumentKeys,
+      // Deliberately empty. The consent the person gave is applied by the
+      // document step below, which is the step that reports it. Passing the
+      // keys here would attach the links inside this call, and the step named
+      // "the documents you agreed to share" would be narrating somebody else's
+      // write — done before it ran, and impossible to interrupt.
+      sharedDocumentKeys: [],
       invitedAt: invitation.createdAt,
     });
     relationshipReady = true;
@@ -276,39 +323,95 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
       { kind: "carrier_relationship", id: relationship.id }));
   }
 
-  /* ---- 3. Ordinary document access ------------------------------------- */
+  /* ---- 3. Ordinary document access. THIS step grants it ---------------- */
   const keptDocuments = keep("document_access");
   if (keptDocuments) {
     steps.push(keptDocuments);
   } else if (!relationshipReady) {
-    // It used to say "done" here regardless. It could not have been: the links
-    // are added by `mockCreateRelationship`, so a relationship that was never
-    // made shared nothing — and a step reporting access that does not exist is
-    // worse than one reporting none.
+    // It used to say "done" here regardless, which it could not have been: a
+    // relationship that was never made shared nothing. A step reporting access
+    // that does not exist is worse than one reporting none.
     steps.push(blocked("document_access", "connection to this carrier"));
   } else if (!isDriverInvitation || input.sharedDocumentKeys.length === 0) {
     steps.push(step("document_access", "done",
       "You shared nothing yet. You can share documents from your own file whenever you choose."));
+  } else if (faultAt === "document_access") {
+    steps.push(step("document_access", "failed",
+      `The documents you chose could not be shared with ${invitation.organizationName}.`,
+      undefined, FAULT_REASON));
+  } else if (!driverProfileId) {
+    steps.push(blocked("document_access", "driver profile"));
   } else {
-    // Performed by `mockCreateRelationship` above, through the document store's
-    // own `addLink`. Recorded here so the person can see what it did, and what
-    // it deliberately did not include.
-    steps.push(step("document_access", "done",
-      `${invitation.organizationName} can now see ${input.sharedDocumentKeys.length} of your documents. `
-      + "Each is the same record you own, linked — not a copy — and their review is theirs, not yours."));
+    // ★ THE WRITE HAPPENS HERE ★
+    // Through the driver module's own command, which goes on to the document
+    // store's `addLink`. It used to happen inside `mockCreateRelationship`, so
+    // this step wrote nothing and could not fail — which meant the one property
+    // worth proving, that a carrier cannot read a document until the basis for
+    // it exists, had no failure state to prove it against.
+    const shared = mockShareDocumentsWithCarrier(
+      driverProfileId, invitation.organizationId, input.sharedDocumentKeys,
+    );
+    steps.push(shared
+      ? step("document_access", "done",
+        `${invitation.organizationName} can now see ${shared.relationship.sharedDocumentKeys.length} `
+        + "of your documents. Each is the same record you own, linked — not a copy — and their "
+        + "review is theirs, not yours.")
+      : step("document_access", "failed",
+        `The documents you chose could not be shared with ${invitation.organizationName}.`,
+        undefined, "There is no live relationship with this carrier to share them under."));
   }
 
-  /* ---- 4. The seat. Last, and never ahead of the thing it opens -------- */
+  /* ---- 4. The carrier's existing record of this person ----------------- */
+  const keptLink = keep("engagement_link");
+  if (keptLink) {
+    steps.push(keptLink);
+  } else if (!invitation.engagementId) {
+    steps.push(step("engagement_link", "not_applicable",
+      "This carrier had no earlier record of you to connect."));
+  } else if (!driverProfileId) {
+    steps.push(blocked("engagement_link", "driver profile"));
+  } else if (faultAt === "engagement_link") {
+    steps.push(step("engagement_link", "failed",
+      "The record this carrier had of you could not be connected.",
+      undefined, FAULT_REASON));
+  } else {
+    const linked = linkDriverProfileToEngagement(
+      invitation.engagementId, driverProfileId, invitation.organizationId,
+    );
+    steps.push(linked
+      ? step("engagement_link", "done",
+        "The record this carrier already had of you is now connected to your profile. "
+        + "Their start date is theirs and was not changed.",
+        { kind: "workforce_engagement", id: invitation.engagementId })
+      : step("engagement_link", "failed",
+        "The record this carrier had of you could not be connected.",
+        undefined, "No matching engagement was found in this organization."));
+  }
+
+  /* ---- 5. The seat. GENUINELY last, and never ahead of what it opens --- */
   const keptSeat = keep("workspace_membership");
+
+  /**
+   * ★ THE SEAT WAITS ON EVERY STEP, NOT ON A LIST OF THEM ★
+   *
+   * Not "the relationship and the engagement" — ANY step before this one that
+   * is not done and not inapplicable. Naming prerequisites individually is how
+   * this went wrong twice already: the seat was granted with no relationship,
+   * and then, once that was fixed by naming the relationship, it was still
+   * granted when the document step failed and when the engagement link failed,
+   * because neither was on the list. A seat is the key to the door and every
+   * record before it is what the door opens onto, so the rule is the general
+   * one and a new step added above is covered by it automatically.
+   */
+  const blocker = steps.find((x) => x.state !== "done" && x.state !== "not_applicable");
+
   if (keptSeat) {
     steps.push(keptSeat);
-  } else if (!profileReady || !relationshipReady) {
-    // ★ THE ONE THAT MATTERS MOST ★
-    // A portal seat granted while the relationship behind it does not exist is
-    // access arriving before the thing it is access to. The person could sign
-    // in to a workspace they are not connected to. Blocked, not attempted.
-    steps.push(blocked("workspace_membership",
-      profileReady ? "connection to this carrier" : "driver profile"));
+  } else if (blocker) {
+    // Blocked, not attempted: nothing it would have created exists. The person
+    // holds records and no portal — visible, recoverable, and honest — rather
+    // than a portal standing on a record that was never made.
+    steps.push(blocked("workspace_membership", ACCEPTANCE_STEP_LABEL[blocker.key].toLowerCase()));
   } else if (faultAt === "workspace_membership") {
     steps.push(step("workspace_membership", "failed", "A portal seat could not be created.",
       undefined, FAULT_REASON));
@@ -349,40 +452,41 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
     }
   }
 
-  /* ---- 5. The carrier's existing record of this person ----------------- */
-  const keptLink = keep("engagement_link");
-  if (keptLink) {
-    steps.push(keptLink);
-  } else if (!invitation.engagementId) {
-    steps.push(step("engagement_link", "not_applicable",
-      "This carrier had no earlier record of you to connect."));
-  } else if (!driverProfileId) {
-    steps.push(blocked("engagement_link", "driver profile"));
-  } else if (faultAt === "engagement_link") {
-    steps.push(step("engagement_link", "failed",
-      "The record this carrier had of you could not be connected.",
-      undefined, FAULT_REASON));
-  } else {
-    const linked = linkDriverProfileToEngagement(
-      invitation.engagementId, driverProfileId, invitation.organizationId,
-    );
-    steps.push(linked
-      ? step("engagement_link", "done",
-        "The record this carrier already had of you is now connected to your profile. "
-        + "Their start date is theirs and was not changed.",
-        { kind: "workforce_engagement", id: invitation.engagementId })
-      : step("engagement_link", "failed",
-        "The record this carrier had of you could not be connected.",
-        undefined, "No matching engagement was found in this organization."));
-  }
-
   const run: AcceptanceRun = {
     invitationId: invitation.id,
     userId,
     acceptedAt: previous?.acceptedAt ?? nowIso(),
     steps,
   };
-  if (acceptanceComplete(run)) run.completedAt = nowIso();
+
+  if (!acceptanceComplete(run)) return putRun(run);
+
+  // Progress is banked BEFORE the ledger is asked, so a refusal below costs the
+  // completion and not the four records already made.
+  putRun(run);
+
+  /**
+   * ★ THE LEDGER LINE IS PART OF FINISHING, NOT A FOOTNOTE TO IT ★
+   *
+   * `completedAt` is set only after the line is in the ledger. The two used to
+   * be the other way around and one of them swallowed its own exception, so a
+   * ledger that refused produced a COMPLETED acceptance with no record that
+   * anybody had joined — and, because a completed run reads as `used` rather
+   * than `resume`, the person could never accept again to put it right. The
+   * missing line was unrecoverable and nothing anywhere said it was missing.
+   *
+   * Now a refusal leaves the run incomplete: the same person resolves to
+   * `resume`, Needs You raises it, and retrying writes the line and finishes.
+   * The cost is honest and stated in the PR — an unavailable ledger blocks the
+   * last inch of acceptance rather than quietly losing the evidence of it.
+   *
+   * Exactly-once and no-loss at the same time, because `withJoinedAudit` latches
+   * only after the write returns, and the check, the write and the latch are one
+   * synchronous block with no `await` in it. Two callers in one tab cannot both
+   * win. Two BROWSERS still can — see the backend note below.
+   */
+  withJoinedAudit(invitation.id, userId, () => auditJoined(invitation, userId));
+  run.completedAt = nowIso();
   return putRun(run);
 }
 
@@ -514,12 +618,10 @@ export const mockAccessService: AccessService = {
 
     const previous = runFor(invitation.id, userId);
     const run = await runSteps({ invitation, userId, input }, previous);
-    if (run.completedAt) {
-      // One acceptance, one line — however many callers finished the same run.
-      if (claimJoinedAudit(invitation.id, userId)) auditJoined(invitation, userId);
-      return { status: "accepted", run };
-    }
-    return { status: "incomplete", run };
+    // The ledger line is written inside `runSteps`, in the same synchronous
+    // block that sets `completedAt`. Writing it here, after an `await`, is what
+    // let three concurrent callers each write one.
+    return run.completedAt ? { status: "accepted", run } : { status: "incomplete", run };
   },
 };
 
@@ -605,9 +707,24 @@ function audit(
  * that organization until this very sequence gives them one, which is why the
  * context is assembled here rather than taken from a caller.
  */
+/**
+ * The one ledger line for one acceptance.
+ *
+ * It does NOT swallow its own exception any more. It used to, with the run
+ * already marked complete — so the single most audit-worthy moment in this
+ * module, somebody gaining access to a workspace, could go unrecorded with
+ * nothing to show for it. A throw here is caught by nobody and leaves the run
+ * unfinished on purpose; that is the recoverable state.
+ */
 function auditJoined(invitation: Invitation, userId: string) {
   const user = currentUser();
-  try {
+  if (faultAtJoinedAudit) {
+    throw new Error(
+      "Injected ledger failure (test only). In a real system this is where the "
+      + "audit write would have refused.",
+    );
+  }
+  {
     appendAuditEvent({
       organizationId: invitation.organizationId,
       organizationName: invitation.organizationName,
@@ -634,7 +751,5 @@ function auditJoined(invitation: Invitation, userId: string) {
       // The observed moment, and only ever this. Not a relationship start date.
       summary: `${invitation.recipientName} accepted their invitation`,
     });
-  } catch {
-    // As above.
   }
 }

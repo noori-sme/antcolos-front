@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AcceptanceStepKey, PermissionKey } from "@/types";
 import { MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
@@ -10,11 +12,14 @@ import {
 import { profileForUser, resetDriverRegistry } from "./driver-registry";
 import { documentsForSubject, resetDocumentStore } from "./document-store";
 import { auditLedger, resetAuditLedger } from "./audit-ledger";
-import { failAcceptanceStepForTests, mockAccessService } from "./access";
-import { resetAccessStore } from "./access-store";
+import {
+  failAcceptanceStepForTests, failJoinedAuditForTests, mockAccessService,
+} from "./access";
+import { joinedAuditWritten, resetAccessStore } from "./access-store";
+import { mockDocumentsService } from "./documents";
 import { resetWorkforceStore } from "./workforce-store";
 import { accessNeedsYouItems } from "./access-needs-you";
-import type { ServiceContext } from "../contracts/context";
+import { NotFoundError, type ServiceContext } from "../contracts/context";
 
 /**
  * ★ INTERRUPTED HALFWAY, AND PICKED BACK UP ★
@@ -100,6 +105,7 @@ const relationships = () => driverRelationshipsSync()
 
 beforeEach(() => {
   failAcceptanceStepForTests(null);
+  failJoinedAuditForTests(false);
   resetAccessStore();
   resetRoster();
   resetDocumentStore();
@@ -385,5 +391,361 @@ describe("an existing worker connecting their account", () => {
     expect(again.status).toBe("not-acceptable");
     expect(engagementById("weng_nl_migrated_driver")!.history
       .filter((h) => h.kind === "driver_profile_linked")).toHaveLength(linkedOnce);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The step that grants document access                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ THE PERSON WHO ALREADY HAS PAPERWORK ★
+ *
+ * `asNewPerson` deletes the demo profile, and with it every document that
+ * hangs off it — so a sharing test run that way links nothing and passes
+ * whatever the code does. This one keeps the profile and its documents and only
+ * takes away the Northline seat, which is the real shape of the case: somebody
+ * Antcolos already knows, with a file of their own, joining a new carrier.
+ */
+function asDriverWithPaperwork() {
+  setMembershipStatus("demo", "mem_northline_owner", "left");
+}
+
+/** Northline reading its own Document Center. */
+const CARRIER = () => context(["documents:view"]);
+
+const SHARED = ["cdl_front", "medical_front"];
+
+const carrierCanList = async (documentId: string) =>
+  (await mockDocumentsService.list(CARRIER())).some((v) => v.document.documentId === documentId);
+
+const driverDocumentId = (requirementKey: string) =>
+  documentsForSubject("driver", "dp_sam")
+    .find((d) => d.links.some((l) => l.requirementKey === requirementKey))!.documentId;
+
+const northlineLinks = (documentId: string) =>
+  documentsForSubject("driver", "dp_sam")
+    .find((d) => d.documentId === documentId)!.links
+    .filter((l) => !l.unlinkedAt && l.contextOrganizationId === NORTHLINE.id);
+
+describe("interrupted while granting document access", () => {
+  it("leaves the relationship standing and not one document readable", async () => {
+    asDriverWithPaperwork();
+    failAcceptanceStepForTests("document_access");
+
+    const result = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: SHARED, licence: LICENCE,
+    });
+    expect(result.status).toBe("incomplete");
+    if (result.status !== "incomplete") return;
+
+    const state = new Map(result.run.steps.map((s) => [s.key, s.state]));
+
+    // Its prerequisites DID succeed. This is the interesting middle of the
+    // sequence, not a failure cascading from the top.
+    expect(state.get("driver_profile")).toBe("done");
+    expect(state.get("carrier_relationship")).toBe("done");
+    expect(state.get("document_access")).toBe("failed");
+    // And everything after it was never attempted.
+    expect(state.get("engagement_link")).not.toBe("done");
+    expect(state.get("workspace_membership")).toBe("pending");
+
+    /* ---- the actual partial records ---------------------------------- */
+
+    // The relationship exists — and carries NO consent, because recording the
+    // consent is the step that failed. A relationship listing documents it
+    // never shared would be the paper version of the same lie.
+    const [relationship] = relationships();
+    expect(relationship).toBeDefined();
+    expect(relationship.sharedDocumentKeys).toEqual([]);
+    expect(relationship.status).toBe("onboarding");
+    expect(relationship.startedAt).toBeUndefined();
+
+    /* ---- what the carrier can read, both ways ------------------------ */
+
+    for (const key of SHARED) {
+      const documentId = driverDocumentId(key);
+      // No link was written, so there is no basis.
+      expect(northlineLinks(documentId)).toHaveLength(0);
+      // Not in the list.
+      expect(await carrierCanList(documentId)).toBe(false);
+      // And not by id either. A document id is not a way round the list: an
+      // invisible document answers exactly as an unknown one does, so the
+      // field cannot be used to probe another organization's paperwork.
+      await expect(mockDocumentsService.get(CARRIER(), documentId))
+        .rejects.toBeInstanceOf(NotFoundError);
+    }
+
+    // The driver still owns them. Nothing was taken away by the failure.
+    expect(documentsForSubject("driver", "dp_sam").length).toBeGreaterThan(0);
+
+    // What Northline already held on its own basis is untouched — the handbook
+    // it issued this driver. The failure withholds what acceptance would have
+    // granted; it does not revoke what was already theirs.
+    const handbook = driverDocumentId("northline_handbook");
+    expect(await carrierCanList(handbook)).toBe(true);
+
+    expect(joinedEvents()).toHaveLength(0);
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(1);
+  });
+
+  it("grants exactly the agreed documents on retry, once, and nothing else", async () => {
+    asDriverWithPaperwork();
+    failAcceptanceStepForTests("document_access");
+    await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: SHARED, licence: LICENCE,
+    });
+
+    failAcceptanceStepForTests(null);
+    const second = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: SHARED, licence: LICENCE,
+    });
+    expect(second.status).toBe("accepted");
+
+    for (const key of SHARED) {
+      const documentId = driverDocumentId(key);
+      // ONE link, not one per attempt.
+      expect(northlineLinks(documentId)).toHaveLength(1);
+      expect(await carrierCanList(documentId)).toBe(true);
+      const detail = await mockDocumentsService.get(CARRIER(), documentId);
+      expect(detail.document.documentId).toBe(documentId);
+    }
+
+    // A document they did NOT agree to share stays unreadable. The retry
+    // finishes what was agreed, and does not widen it.
+    const notAgreed = driverDocumentId("cdl_back");
+    expect(northlineLinks(notAgreed)).toHaveLength(0);
+    expect(await carrierCanList(notAgreed)).toBe(false);
+
+    // One relationship, carrying the consent exactly once each.
+    expect(relationships()).toHaveLength(1);
+    expect([...relationships()[0].sharedDocumentKeys].sort()).toEqual([...SHARED].sort());
+
+    expect(joinedEvents()).toHaveLength(1);
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(0);
+
+    // A third acceptance is refused outright, so nothing can accumulate.
+    const third = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: SHARED, licence: LICENCE,
+    });
+    expect(third.status).toBe("not-acceptable");
+    for (const key of SHARED) expect(northlineLinks(driverDocumentId(key))).toHaveLength(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The seat is last, and the order is the code's, not the comment's            */
+/* -------------------------------------------------------------------------- */
+
+describe("the order acceptance actually runs in", () => {
+  it("ends with the seat, after every record it is access to", async () => {
+    asNewPerson();
+    const result = await acceptMigrated();
+    expect(result.status).toBe("accepted");
+    if (result.status !== "accepted") return;
+
+    // Read off the run itself rather than the file. The seat used to run
+    // fourth while a comment two lines above it said it ran last.
+    expect(result.run.steps.map((s) => s.key)).toEqual([
+      "driver_profile",
+      "carrier_relationship",
+      "document_access",
+      "engagement_link",
+      "workspace_membership",
+    ]);
+  });
+});
+
+describe("interrupted while linking the carrier's existing record", () => {
+  it("does not hand out a seat behind an unfinished acceptance", async () => {
+    asNewPerson();
+    const { engagementById } = await import("./workforce-store");
+    const { mockWorkforceService } = await import("./workforce");
+    await mockWorkforceService.list(context(["workforce:view"]));
+
+    failAcceptanceStepForTests("engagement_link");
+    const result = await acceptMigrated();
+    expect(result.status).toBe("incomplete");
+    if (result.status !== "incomplete") return;
+
+    const state = new Map(result.run.steps.map((s) => [s.key, s.state]));
+    expect(state.get("engagement_link")).toBe("failed");
+
+    // ★ THE ASSERTION THIS WHOLE REORDER EXISTS FOR ★
+    // The seat was not attempted, so there is no Membership of any kind — not
+    // an inactive one, not a pending one, none.
+    expect(state.get("workspace_membership")).toBe("pending");
+    expect(liveMembershipFor("demo", "usr_sam", NORTHLINE.id)).toBeUndefined();
+    expect(seats()).toHaveLength(0);
+
+    // No seat was ADDED either. The only Northline row this account has is the
+    // Owner seat it already left, and a seat somebody left is history, not
+    // access — `SessionProvider` filters to `active` before it offers a
+    // workspace, so there is nothing here to sign in with and no context to
+    // read carrier data through.
+    const rows = rosterSnapshot("demo").memberships
+      .filter((m) => m.userId === "usr_sam" && m.organizationId === NORTHLINE.id);
+    expect(rows.map((m) => m.id)).toEqual(["mem_northline_owner"]);
+    expect(rows.every((m) => m.status !== "active")).toBe(true);
+
+    // The steps BEFORE it did their work and are visibly theirs.
+    expect(state.get("carrier_relationship")).toBe("done");
+    expect(relationships()).toHaveLength(1);
+
+    // The carrier's own record is untouched, and the acceptance is not silent.
+    expect(engagementById("weng_nl_migrated_driver")!.driverProfileId).toBeUndefined();
+    expect(joinedEvents()).toHaveLength(0);
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(1);
+  });
+
+  it("completes the link, the seat, the status and the ledger exactly once", async () => {
+    asNewPerson();
+    const { engagementById } = await import("./workforce-store");
+    const { mockWorkforceService } = await import("./workforce");
+    await mockWorkforceService.list(context(["workforce:view"]));
+
+    failAcceptanceStepForTests("engagement_link");
+    await acceptMigrated();
+    failAcceptanceStepForTests(null);
+    const second = await acceptMigrated();
+    expect(second.status).toBe("accepted");
+
+    const engagement = engagementById("weng_nl_migrated_driver")!;
+    expect(engagement.driverProfileId).toBe(profileForUser("usr_sam")!.id);
+    expect(engagement.history.filter((h) => h.kind === "driver_profile_linked")).toHaveLength(1);
+
+    expect(seats()).toHaveLength(1);
+    expect(relationships()).toHaveLength(1);
+    expect(joinedEvents()).toHaveLength(1);
+
+    const [invitation] = (await mockAccessService.list(OWNER()))
+      .filter((i) => i.token === MIGRATED);
+    expect(invitation.status).toBe("accepted");
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The ledger line, which is what makes a run complete                         */
+/* -------------------------------------------------------------------------- */
+
+describe("the ledger refuses after every record is made", () => {
+  it("does not let the acceptance read as finished with nothing to say it happened",
+    async () => {
+      asNewPerson();
+      failJoinedAuditForTests(true);
+
+      // The throw is deliberate and uncaught. Swallowing it is what produced a
+      // completed acceptance with no ledger line and no way back.
+      await expect(accept()).rejects.toThrow(/ledger/i);
+
+      // Every record was made — the five steps all ran.
+      expect(relationships()).toHaveLength(1);
+      expect(seats()).toHaveLength(1);
+      expect(profileForUser("usr_sam")).toBeDefined();
+
+      // And the acceptance is NOT finished, because nothing recorded it.
+      expect(joinedEvents()).toHaveLength(0);
+      expect(joinedAuditWritten("inv_driver_acct", "usr_sam")).toBe(false);
+
+      const [invitation] = (await mockAccessService.list(OWNER()))
+        .filter((i) => i.token === TOKEN);
+      expect(invitation.status).toBe("pending");
+
+      // So the same person can still pick it up, rather than being told
+      // somebody has already accepted this.
+      const lookup = await mockAccessService.lookUp(TOKEN, RETURNING);
+      expect(lookup.status).toBe("resume");
+
+      // An unfinished run with no failed step is the one nobody would go
+      // looking for. It is raised, and it says what is actually missing.
+      const items = accessNeedsYouItems(OWNER());
+      expect(items).toHaveLength(1);
+      expect(items[0].title).toMatch(/without a record of joining/);
+    });
+
+  it("writes the line once on retry, and adds no second record of anything",
+    async () => {
+      asNewPerson();
+      failJoinedAuditForTests(true);
+      await expect(accept()).rejects.toThrow();
+
+      failJoinedAuditForTests(false);
+      const retry = await accept();
+      expect(retry.status).toBe("accepted");
+
+      // The missing line is now written — exactly one — and nothing the first
+      // attempt already made was made again.
+      expect(joinedEvents()).toHaveLength(1);
+      expect(relationships()).toHaveLength(1);
+      expect(seats()).toHaveLength(1);
+      expect(accessNeedsYouItems(OWNER())).toHaveLength(0);
+
+      // And the consent moment is still the first attempt's.
+      expect(retry.status === "accepted" && retry.run.completedAt).toBeTruthy();
+    });
+
+  it("cannot be made to write a second line by failing the ledger afterwards",
+    async () => {
+      asNewPerson();
+      const first = await accept();
+      expect(first.status).toBe("accepted");
+      expect(joinedEvents()).toHaveLength(1);
+
+      // Arm the fault and accept again. The latch is spent, so the write is
+      // never attempted — a completed acceptance cannot be audited twice, and
+      // cannot be made to throw on a path it no longer takes.
+      failJoinedAuditForTests(true);
+      const again = await accept();
+      expect(again.status).toBe("not-acceptable");
+      expect(joinedEvents()).toHaveLength(1);
+    });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The seam itself                                                             */
+/* -------------------------------------------------------------------------- */
+
+describe("the fault seam is reachable from tests and nowhere else", () => {
+  const SEAMS = ["failAcceptanceStepForTests", "failJoinedAuditForTests"];
+
+  it("is not offered by the AccessService contract", () => {
+    const contract = readFileSync(
+      join(process.cwd(), "src/lib/api/contracts/access.ts"), "utf8",
+    );
+    for (const seam of SEAMS) expect(contract).not.toContain(seam);
+  });
+
+  it("is imported by no module a page can reach", () => {
+    // Every source file except the tests. A screen, a route, a hook or a
+    // registry entry that imported either seam would show up here — which is
+    // the only way the product could arm one, since nothing attaches them to
+    // `window` and no request carries a step name.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) { walk(full); continue; }
+        if (!/\.tsx?$/.test(entry.name) || entry.name.includes(".test.")) continue;
+        const text = readFileSync(full, "utf8");
+        if (full.endsWith("mock/access.ts")) continue;
+        if (SEAMS.some((seam) => text.includes(seam))) offenders.push(full);
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("is declared inert wherever a window exists", () => {
+    // Belt to the braces above: even called, it does nothing in a browser.
+    // Not a security property — the whole mock runs in the browser, so anybody
+    // able to call this could call the stores directly. It stops the seam being
+    // armed by accident in the one place a real person's session runs.
+    const source = readFileSync(join(process.cwd(), "src/lib/api/mock/access.ts"), "utf8");
+    expect(source).toContain('const SEAM_AVAILABLE = typeof window === "undefined"');
+    for (const seam of SEAMS) {
+      const body = source.slice(source.indexOf(`export function ${seam}`));
+      expect(body.slice(0, 200)).toContain("if (!SEAM_AVAILABLE) return;");
+    }
   });
 });

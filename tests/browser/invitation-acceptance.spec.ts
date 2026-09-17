@@ -71,10 +71,11 @@ test.describe("a driver accepting an invitation", () => {
     const steps = page.getByTestId("acceptance-steps");
     await expect(steps).toBeVisible();
 
-    // Each of the four things acceptance creates is reported separately,
+    // Each of the five things acceptance creates is reported separately,
     // because none of them implies another.
     for (const key of [
-      "driver_profile", "carrier_relationship", "document_access", "workspace_membership",
+      "driver_profile", "carrier_relationship", "document_access",
+      "engagement_link", "workspace_membership",
     ]) {
       await expect(steps.locator(`[data-step="${key}"]`)).toHaveAttribute(
         "data-state", /done|not_applicable/,

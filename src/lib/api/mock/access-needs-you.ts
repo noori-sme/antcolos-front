@@ -44,9 +44,19 @@ export function accessNeedsYouItems(ctx: ServiceContext): NeedsYouItem[] {
     if (!invitation || invitation.organizationId !== ctx.organizationId) continue;
 
     const outstanding = acceptanceOutstanding(run);
-    if (outstanding.length === 0) continue;
 
-    const names = outstanding.map((s) => ACCEPTANCE_STEP_LABEL[s.key]).join(", ");
+    // Every step done and the run STILL not complete means the last thing
+    // acceptance owes — the ledger line saying somebody joined — did not get
+    // written, so `completedAt` was deliberately withheld. Nothing is missing
+    // from the person's side and everything is missing from the record's, which
+    // is precisely the state nobody would go looking for. Skipping it here (as
+    // an earlier version did, by checking only `outstanding.length`) made the
+    // one unfinished acceptance with no visible symptom the one nobody saw.
+    const ledgerOnly = outstanding.length === 0;
+
+    const names = ledgerOnly
+      ? "the record of them joining"
+      : outstanding.map((s) => ACCEPTANCE_STEP_LABEL[s.key]).join(", ");
     const reasons = outstanding
       .map((s) => s.failureReason)
       .filter((r): r is string => Boolean(r));
@@ -58,10 +68,15 @@ export function accessNeedsYouItems(ctx: ServiceContext): NeedsYouItem[] {
       // Loud on purpose. The person thinks they have joined.
       severity: "high",
       status: "open",
-      title: `${invitation.recipientName} is only part-connected`,
-      reason:
-        `They accepted their invitation, and ${outstanding.length} of the records that `
-        + `creates did not finish: ${names}. They may believe they have joined.`,
+      title: ledgerOnly
+        ? `${invitation.recipientName} joined without a record of joining`
+        : `${invitation.recipientName} is only part-connected`,
+      reason: ledgerOnly
+        ? "They accepted their invitation and every record it creates was made, but "
+          + `${names} was not written, so the acceptance is not finished. Nothing they `
+          + "hold is wrong; nothing says how they came to hold it."
+        : `They accepted their invitation, and ${outstanding.length} of the records that `
+          + `creates did not finish: ${names}. They may believe they have joined.`,
       detail: reasons.length > 0
         ? reasons.join(" ")
         : "Accepting again finishes what is missing and repeats nothing.",

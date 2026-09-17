@@ -543,6 +543,51 @@ export function liveRelationshipWith(
   return found ? { ...found } : undefined;
 }
 
+/**
+ * ★ CONSENT RECORDED IS NOT ACCESS GRANTED ★
+ *
+ * Applies a driver's sharing consent to the documents they already hold: the
+ * carrier gets its own LINK to each shared one, carrying its own review. Not a
+ * copy, not a re-upload, not a change of owner.
+ *
+ * This exists as a separate command because the acceptance sequence needs the
+ * granting of document access to be a step that can fail ON ITS OWN. While the
+ * links were attached inside `mockCreateRelationship`, the acceptance step
+ * called "the documents you agreed to share" wrote nothing at all — it reported
+ * on work another step had done, which means it could never fail, could never
+ * be interrupted, and could never be tested for the thing that matters: that a
+ * carrier cannot read a document before the access basis for it exists.
+ *
+ * Idempotent twice over: the consent list is a set union, and a requirement
+ * already linked to this carrier is skipped. Retrying adds nothing.
+ *
+ * Returns the number of links it ADDED, so a caller can tell "granted three"
+ * from "there were already three".
+ */
+export function mockShareDocumentsWithCarrier(
+  profileId: string,
+  carrierId: string,
+  requirementKeys: readonly string[],
+): { relationship: CarrierRelationship; added: number } | undefined {
+  ensureSeeded();
+  const existing = RELATIONSHIPS.find(
+    (r) => r.driverProfileId === profileId
+      && r.carrierId === carrierId
+      && r.status !== "ended",
+  );
+  // No live relationship means no basis to share under. The caller decides what
+  // that is — here it is simply not something this command will invent.
+  if (!existing) return undefined;
+
+  const merged: CarrierRelationship = {
+    ...existing,
+    sharedDocumentKeys: [...new Set([...existing.sharedDocumentKeys, ...requirementKeys])],
+  };
+  RELATIONSHIPS = RELATIONSHIPS.map((r) => (r.id === merged.id ? merged : r));
+  const added = attachSharedDocuments(merged);
+  return { relationship: { ...merged }, added };
+}
+
 export async function mockCreateRelationship(
   profileId: string,
   input: NewRelationshipInput,
@@ -594,8 +639,9 @@ export async function mockCreateRelationship(
   return { ...relationship };
 }
 
-function attachSharedDocuments(relationship: CarrierRelationship) {
+function attachSharedDocuments(relationship: CarrierRelationship): number {
   const profileId = ownProfile()?.id ?? DRIVER_PROFILE_ID;
+  let added = 0;
   for (const requirementKey of relationship.sharedDocumentKeys) {
     const existing = documentInSlot("driver", profileId, requirementKey);
     if (!existing) continue;
@@ -603,6 +649,7 @@ function attachSharedDocuments(relationship: CarrierRelationship) {
       (l) => !l.unlinkedAt && l.contextOrganizationId === relationship.carrierId,
     );
     if (alreadyLinked) continue;
+    added += 1;
     addLink(existing.documentId, {
       subject: driverSubject(ownProfile()),
       requirementKey,
@@ -611,6 +658,7 @@ function attachSharedDocuments(relationship: CarrierRelationship) {
       actorName: ownProfile()?.legalName ?? "Driver",
     });
   }
+  return added;
 }
 
 /**
