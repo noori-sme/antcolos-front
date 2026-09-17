@@ -26,10 +26,11 @@ import {
 import { invitationPresets, type InvitationPreset } from "./presets";
 import {
   invitationLink,
-  mockCreateInvitation,
   mockCreateRole,
   mockListRoles,
 } from "./mock-access";
+import { services } from "@/lib/api";
+import { useServiceContext } from "@/lib/api/use-service-context";
 import { validateEmail } from "@/features/auth/rules";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
@@ -73,6 +74,7 @@ function sameSet(a: readonly PermissionKey[], b: ReadonlySet<PermissionKey>): bo
 export function InviteFlow() {
   const router = useRouter();
   const { membership, organization } = useActiveMembership();
+  const ctx = useServiceContext();
   const myPermissions = usePermissions();
 
   const [stage, setStage] = useState<Stage>("type");
@@ -185,10 +187,8 @@ export function InviteFlow() {
       customRoleId = created.id;
     }
 
-    const invitation = await mockCreateInvitation({
-      organizationId: organization.id,
-      organizationName: organization.displayName,
-      organizationType: orgType,
+    if (!ctx) return;
+    const invitation = await services.access.create(ctx, {
       kind: preset.kind,
       roleName: effectiveRoleName || preset.label,
       customRoleId,

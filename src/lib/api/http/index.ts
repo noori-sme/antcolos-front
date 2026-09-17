@@ -313,4 +313,13 @@ export const httpServices: AntcolosServices = {
     authorizeDisposal: notImplemented("qualification.authorizeDisposal"),
     adoptionsForDriver: notImplemented("qualification.adoptionsForDriver"),
   },
+  access: {
+    list: notImplemented("access.list"),
+    create: notImplemented("access.create"),
+    revoke: notImplemented("access.revoke"),
+    resend: notImplemented("access.resend"),
+    lookUp: notImplemented("access.lookUp"),
+    preview: notImplemented("access.preview"),
+    accept: notImplemented("access.accept"),
+  },
 };

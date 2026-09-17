@@ -14,6 +14,10 @@ export type * from "./fleet";
 export type * from "./fleet-operations";
 export type * from "./needs-you";
 export type * from "./access";
+export {
+  ACCEPTANCE_STEP_LABEL, ACCEPTANCE_LIMITATION,
+  acceptanceComplete, acceptanceOutstanding,
+} from "./access";
 export type * from "./driver-profile";
 export type * from "./asset";
 export type * from "./truck";

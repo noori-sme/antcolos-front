@@ -1,14 +1,10 @@
 "use client";
 
-import type {
-  CustomRole,
-  EngagementType,
-  Invitation,
-  InvitationKind,
-  InvitationStatus,
-  OrganizationType,
-  PermissionKey,
-} from "@/types";
+import type { CustomRole, Invitation, PermissionKey } from "@/types";
+import {
+  ensureSeeded, invitationsForOrganization, resetAccessStore,
+} from "@/lib/api/mock/access-store";
+import { seedInvitations } from "@/lib/api/mock/access-seed";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -114,115 +110,16 @@ function seedRoles(): CustomRole[] {
 /* Invitations                                                                 */
 /* -------------------------------------------------------------------------- */
 
-function seedInvitations(): Invitation[] {
-  const base = {
-    organizationId: "org_northline",
-    organizationName: "Northline Freight",
-    organizationType: "CARRIER" as OrganizationType,
-    recipientHasAccount: false,
-  };
-  return [
-    {
-      ...base,
-      id: "inv_1", token: "INV-DRIVER", kind: "driver", roleName: "Driver",
-      engagementType: "company_driver",
-      recipientName: "Yusuf Demir", recipientEmail: "yusuf.demir@example.com",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
-      expiresAt: daysFromNow(6), createdAt: daysAgo(1), status: "pending",
-    },
-    {
-      ...base,
-      id: "inv_2", token: "INV-EMPLOYEE", kind: "employee", roleName: "Employee",
-      recipientName: "Bea Lindgren", recipientEmail: "sam@antcolos.com",
-      recipientHasAccount: true,
-      permissions: ["loads:view", "drivers:view", "trucks:view", "trailers:view", "customers:view", "documents:view", "documents:upload", "compliance:view"],
-      expiresAt: daysFromNow(9), createdAt: daysAgo(2), status: "pending",
-    },
-    {
-      ...base,
-      id: "inv_3", token: "INV-DISPATCHORG", kind: "dispatch_org", roleName: "Dispatch organization",
-      recipientName: "Meridian Dispatch", recipientEmail: "admin@meridiandispatch.example",
-      scopedToCarrierName: "Northline Freight",
-      permissions: ["loads:view", "loads:create", "loads:edit", "loads:status:update", "dispatch:view", "loads:assign", "drivers:view", "trucks:view", "trailers:view", "customers:view", "documents:view", "documents:upload"],
-      expiresAt: daysFromNow(13), createdAt: daysAgo(3), status: "pending",
-    },
-    {
-      ...base,
-      id: "inv_4", token: "INV-CUSTOM", kind: "custom", roleName: "Night dispatcher",
-      customRoleId: "role_nl_night",
-      recipientName: "Priya Raman", recipientEmail: "priya@example.com",
-      permissions: ["loads:view", "loads:edit", "loads:status:update", "dispatch:view", "loads:assign", "drivers:view", "trucks:view", "trailers:view", "documents:view", "documents:upload"],
-      expiresAt: daysFromNow(4), createdAt: daysAgo(1), status: "pending",
-    },
-    {
-      ...base,
-      id: "inv_5", token: "INV-ACCEPTED", kind: "driver", roleName: "Driver",
-      recipientName: "Tomas Reyes", recipientEmail: "tomas@example.com",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
-      expiresAt: null, createdAt: daysAgo(22), status: "accepted",
-    },
-    {
-      ...base,
-      id: "inv_6", token: "INV-EXPIRED", kind: "employee", roleName: "Employee",
-      recipientName: "Karl Mensah", recipientEmail: "karl@example.com",
-      permissions: ["loads:view", "documents:view"],
-      expiresAt: daysAgo(4), createdAt: daysAgo(20), status: "expired",
-    },
-    {
-      ...base,
-      id: "inv_7", token: "INV-REVOKED", kind: "custom", roleName: "Billing clerk",
-      customRoleId: "role_nl_billing",
-      recipientName: "Dana Wells", recipientEmail: "dana@example.com",
-      permissions: ["loads:view", "customers:view", "invoices:view", "invoices:create", "rates:view"],
-      expiresAt: daysFromNow(2), createdAt: daysAgo(6), status: "revoked",
-    },
-    {
-      ...base,
-      id: "inv_10", token: "INV-OWNEROP", kind: "driver", roleName: "Driver",
-      engagementType: "owner_operator",
-      recipientName: "Marcus Hale", recipientEmail: "marcus.hale@example.com",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
-      expiresAt: daysFromNow(11), createdAt: daysAgo(1), status: "pending",
-    },
-    {
-      ...base,
-      id: "inv_11", token: "INV-DRIVER-ACCT", kind: "driver", roleName: "Driver",
-      engagementType: "company_driver",
-      recipientName: "Sam Murtaza", recipientEmail: "sam@antcolos.com",
-      recipientHasAccount: true,
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
-      expiresAt: daysFromNow(12), createdAt: daysAgo(1), status: "pending",
-    },
-    {
-      ...base,
-      id: "inv_9", token: "INV-WRONGUSER", kind: "employee", roleName: "Employee",
-      recipientName: "Karin Vogel", recipientEmail: "karin.vogel@example.com",
-      recipientHasAccount: true,
-      permissions: ["loads:view", "documents:view", "customers:view"],
-      expiresAt: daysFromNow(8), createdAt: daysAgo(1), status: "pending",
-    },
-    {
-      id: "inv_8", token: "INV-DISPATCHEMP", kind: "dispatcher", roleName: "Dispatcher",
-      organizationId: "org_summit", organizationName: "Summit Dispatch",
-      organizationType: "DISPATCH_AGENCY", recipientHasAccount: false,
-      recipientName: "Owen Pratt", recipientEmail: "owen@example.com",
-      permissions: ["loads:view", "loads:create", "loads:edit", "loads:status:update", "dispatch:view", "loads:assign", "drivers:view", "trucks:view", "trailers:view", "customers:view", "documents:view", "documents:upload", "compliance:view"],
-      expiresAt: daysFromNow(10), createdAt: daysAgo(1), status: "pending",
-    },
-  ];
-}
-
 /* -------------------------------------------------------------------------- */
 /* The in-memory store                                                         */
 /* -------------------------------------------------------------------------- */
 
 let ROLES: CustomRole[] = seedRoles();
-let INVITATIONS: Invitation[] = seedInvitations();
 
 /** Test hook. Never called by the UI. */
 export function resetAccessMock() {
   ROLES = seedRoles();
-  INVITATIONS = seedInvitations();
+  resetAccessStore();
   sequence = 0;
 }
 
@@ -321,138 +218,22 @@ export async function mockDeleteRole(id: string): Promise<DeleteRoleResult> {
 
 /* ---- invitations --------------------------------------------------------- */
 
+/**
+ * Invitations this organization has sent.
+ *
+ * A READ, delegated to the one store the Access service owns. It is kept only
+ * because two existing-behaviour suites read invitations through it; everything
+ * that CHANGES an invitation now goes through `services.access`, which is the
+ * whole point of PR-2. There is no second list here any more.
+ */
 export async function mockListInvitations(organizationId: string): Promise<Invitation[]> {
   await sleep(300);
-  return INVITATIONS.filter((i) => i.organizationId === organizationId).map((i) => ({ ...i }));
-}
-
-export interface InvitationDraft {
-  organizationId: string;
-  organizationName: string;
-  organizationType: OrganizationType;
-  kind: InvitationKind;
-  roleName: string;
-  customRoleId?: string;
-  engagementType?: EngagementType;
-  recipientName: string;
-  recipientEmail: string;
-  permissions: PermissionKey[];
-  scopedToCarrierName?: string;
-  expiresAt: string | null;
-}
-
-export async function mockCreateInvitation(draft: InvitationDraft): Promise<Invitation> {
-  await sleep(LATENCY_MS);
-  const invitation: Invitation = {
-    ...draft,
-    id: nextId("inv"),
-    token: `INV-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-    recipientName: draft.recipientName.trim(),
-    recipientEmail: draft.recipientEmail.trim().toLowerCase(),
-    permissions: [...draft.permissions],
-    createdAt: iso(now()),
-    status: "pending",
-    recipientHasAccount: false,
-  };
-  INVITATIONS = [invitation, ...INVITATIONS];
-  return { ...invitation };
-}
-
-async function setStatus(id: string, status: InvitationStatus): Promise<Invitation> {
-  await sleep(LATENCY_MS);
-  const index = INVITATIONS.findIndex((i) => i.id === id);
-  if (index < 0) throw new Error(`No such invitation: ${id}`);
-  const updated = { ...INVITATIONS[index], status };
-  INVITATIONS = INVITATIONS.map((i) => (i.id === id ? updated : i));
-  return { ...updated };
-}
-
-export function mockRevokeInvitation(id: string): Promise<Invitation> {
-  return setStatus(id, "revoked");
-}
-
-/** Resending pushes the expiry out and puts an expired invitation back in play. */
-export async function mockResendInvitation(id: string): Promise<Invitation> {
-  await sleep(LATENCY_MS);
-  const index = INVITATIONS.findIndex((i) => i.id === id);
-  if (index < 0) throw new Error(`No such invitation: ${id}`);
-  const updated: Invitation = {
-    ...INVITATIONS[index],
-    status: "pending",
-    expiresAt: daysFromNow(7),
-    createdAt: iso(now()),
-  };
-  INVITATIONS = INVITATIONS.map((i) => (i.id === id ? updated : i));
-  return { ...updated };
+  ensureSeeded(seedInvitations);
+  return invitationsForOrganization(organizationId);
 }
 
 /** The URL that goes in the email. Absolute so it can be pasted anywhere. */
 export function invitationLink(token: string): string {
   const origin = typeof window === "undefined" ? "https://app.antcolos.com" : window.location.origin;
   return `${origin}/invitation/${token}`;
-}
-
-/* ---- acceptance ---------------------------------------------------------- */
-
-/** The address the demo is signed in as. Drives the wrong-recipient state. */
-export const DEMO_SIGNED_IN_EMAIL = "sam@antcolos.com";
-
-export type InvitationLookup =
-  | { status: "valid"; invitation: Invitation; signedInAs: string }
-  | { status: "needs-account"; invitation: Invitation }
-  | { status: "expired"; invitation: Invitation }
-  | { status: "revoked"; invitation: Invitation }
-  | { status: "used"; invitation: Invitation }
-  | { status: "wrong-recipient"; invitation: Invitation; signedInAs: string }
-  | { status: "not-found" };
-
-/**
- * Resolves an invitation link.
- *
- * Who is signed in decides two of the states, so the mock works it out here
- * rather than making every caller model an account system:
- *
- *   - `returningFromAuth` means the person has just come back through Sign Up
- *     or Sign In carrying this invitation, so they are, by construction, the
- *     recipient. This is what proves the invitation survived the detour.
- *   - otherwise a recipient with an account is treated as already signed in as
- *     the demo user, which is what makes the wrong-recipient case reachable:
- *     an invitation addressed to one mailbox, opened by somebody else, must
- *     never quietly attach itself to the wrong account.
- *   - a recipient with no account is nobody yet, so the link asks them to make
- *     one first.
- */
-export async function mockLookUpTeamInvitation(
-  token: string,
-  options: { returningFromAuth: boolean },
-): Promise<InvitationLookup> {
-  await sleep(LATENCY_MS);
-  const invitation = INVITATIONS.find(
-    (i) => i.token.toUpperCase() === token.trim().toUpperCase(),
-  );
-  if (!invitation) return { status: "not-found" };
-
-  if (invitation.status === "revoked") return { status: "revoked", invitation };
-  if (invitation.status === "accepted") return { status: "used", invitation };
-
-  const expired =
-    invitation.status === "expired" ||
-    (invitation.expiresAt !== null && new Date(invitation.expiresAt) < now());
-  if (expired) return { status: "expired", invitation };
-
-  const signedInAs = options.returningFromAuth
-    ? invitation.recipientEmail
-    : invitation.recipientHasAccount
-      ? DEMO_SIGNED_IN_EMAIL
-      : null;
-
-  if (signedInAs === null) return { status: "needs-account", invitation };
-  if (signedInAs.toLowerCase() !== invitation.recipientEmail.toLowerCase()) {
-    return { status: "wrong-recipient", invitation, signedInAs };
-  }
-  return { status: "valid", invitation, signedInAs };
-}
-
-export async function mockAcceptTeamInvitation(id: string): Promise<Invitation> {
-  return setStatus(id, "accepted");
 }

@@ -1,7 +1,5 @@
 "use client";
 
-import { CircleCheck, ShieldCheck } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AuthShell } from "@/features/auth/shell";
@@ -21,13 +19,11 @@ import {
 import { DriverIdentityFields } from "./identity-fields";
 import {
   documentRequirements,
-  mockCreateOrGetDriverProfile,
-  mockCreateRelationship,
   mockGetDriverProfile,
 } from "./mock-driver";
 import { cn } from "@/lib/utils";
 
-type Stage = "details" | "review" | "done";
+type Stage = "details" | "review";
 
 /**
  * Quick onboarding — the least we can ask and still have a driver profile.
@@ -36,8 +32,30 @@ type Stage = "details" | "review" | "done";
  * driver who already has one and accepts a second carrier's invitation is never
  * asked for their licence again. They go straight to deciding what to share.
  */
-export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
-  const router = useRouter();
+export function QuickOnboarding({
+  invitation,
+  onConfirm,
+  failureNote,
+}: {
+  invitation: Invitation;
+  /**
+   * Hands the person's decisions back. This screen COLLECTS; it no longer
+   * creates anything.
+   *
+   * It used to make the driver profile and the carrier relationship itself,
+   * from a feature, straight into two module stores. Acceptance now goes
+   * through the Access service so that all five records it touches are made by
+   * the modules that own them, in an order that can be resumed. What is left
+   * here is the only part that was ever this screen's: asking the person what
+   * they are willing to share.
+   */
+  onConfirm: (input: {
+    licence?: { legalName: string; cdlNumber: string; cdlState: string; cdlExpiresAt: string };
+    sharedDocumentKeys: string[];
+  }) => Promise<void>;
+  /** Shown when a previous attempt did not finish. */
+  failureNote?: string;
+}) {
   const [stage, setStage] = useState<Stage>("details");
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
@@ -90,23 +108,21 @@ export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
   async function confirm() {
     if (saving || !consented) return;
     setSaving(true);
-    const profile = await mockCreateOrGetDriverProfile({
-      legalName: shown.legalName,
-      cdlNumber: shown.cdlNumber,
-      cdlState: shown.cdlState,
-      cdlExpiresAt: shown.cdlExpiresAt,
-    });
-    await mockCreateRelationship(profile.id, {
-      carrierId: invitation.organizationId,
-      carrierName: invitation.organizationName,
-      engagementType: engagement,
-      roleName: invitation.roleName,
-      permissions: invitation.permissions,
-      // Only what the driver just agreed to hand over.
-      sharedDocumentKeys: requirements.filter((r) => r.applicability === "required").map((r) => r.key),
+    await onConfirm({
+      // Absent when they already have a profile: a driver who has one is never
+      // asked for their licence again, and the service resumes it.
+      licence: existing ? undefined : {
+        legalName: shown.legalName,
+        cdlNumber: shown.cdlNumber,
+        cdlState: shown.cdlState,
+        cdlExpiresAt: shown.cdlExpiresAt,
+      },
+      // Only what they just agreed to hand over. Their decision, passed
+      // explicitly, never derived from the carrier's requirement list.
+      sharedDocumentKeys: requirements
+        .filter((r) => r.applicability === "required").map((r) => r.key),
     });
     setSaving(false);
-    setStage("done");
   }
 
   if (!checked) return null;
@@ -123,10 +139,6 @@ export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
         ? "You already have an Antcolos driver profile. Here is exactly what this carrier will see."
         : "Confirm your details and what you are sharing before we set things up.",
     },
-    done: {
-      title: `You're set up with ${invitation.organizationName}`,
-      description: "Your driver profile is created and the carrier has what you agreed to share.",
-    },
   };
 
   return (
@@ -135,6 +147,12 @@ export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
       description={heading[stage].description}
       headingRef={headingRef}
     >
+      {failureNote ? (
+        <FormAlert tone="warning" role="none" title="Picking up where you left off">
+          {failureNote}
+        </FormAlert>
+      ) : null}
+
       {stage === "details" ? (
         <form
           noValidate
@@ -217,36 +235,6 @@ export function QuickOnboarding({ invitation }: { invitation: Invitation }) {
         </div>
       ) : null}
 
-      {stage === "done" ? (
-        <div className="space-y-5">
-          <div className="flex items-start gap-3 rounded-lg border border-st-success/35 bg-st-success-bg/50 px-4 py-3.5">
-            <CircleCheck className="mt-px size-5 shrink-0 text-st-success" aria-hidden />
-            <div className="min-w-0 text-[0.8125rem]">
-              <p className="font-medium text-fg">
-                {ENGAGEMENT_LABEL[engagement]} with {invitation.organizationName}.
-              </p>
-              <p className="mt-0.5 text-fg-muted">
-                Next: upload the documents they need. You can start driving while you do it.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2.5 rounded-md border border-border bg-surface-sunken px-3.5 py-3">
-            <ShieldCheck className="mt-px size-4 shrink-0 text-fg-subtle" aria-hidden />
-            <p className="text-[0.75rem] leading-relaxed text-fg-muted">
-              This profile is yours. If you ever leave this carrier, your account and profile stay
-              with you — only their access ends.
-            </p>
-          </div>
-          <Button
-            variant="primary"
-            size="lg"
-            className="w-full"
-            onClick={() => router.push("/driver/documents")}
-          >
-            Go to my documents
-          </Button>
-        </div>
-      ) : null}
     </AuthShell>
   );
 }

@@ -170,6 +170,14 @@ export type NeedsYouCategory =
   /** The driver replaced a version this carrier adopted and relies on. */
   | "qualification_replacement_available"
 
+  /* ---- Access. Derived from acceptance runs that did not finish. ---- */
+  /**
+   * Somebody accepted an invitation and one of the records it creates did not
+   * finish. They are part-connected: visible, recoverable, and stuck until
+   * either they accept again or somebody here notices.
+   */
+  | "invitation_acceptance_incomplete"
+
   /* ---- Audit & Risk. Derived from open risk cases, never seeded. ---- */
   /** A high-severity risk case somebody has been made responsible for. */
   | "risk_case_assigned"
@@ -226,6 +234,8 @@ export type NeedsYouEntityKind =
   | "risk_case"
   /** One person's working relationship with one organization. */
   | "workforce_engagement"
+  /** One invitation to one person. Never the seat it would create. */
+  | "invitation"
   /** One carrier's pinned custody record of one document version. */
   | "qualification_record"
   /** One ELD or telematics device. Never the truck it happens to be on. */
@@ -293,6 +303,10 @@ export type NeedsYouActionKind =
   | "satisfy_requirement"
   /** Work through the closeout steps of a termination. */
   | "complete_termination"
+
+  /* ---- Access ---- */
+  /** Look at an acceptance that did not finish, and at what is missing. */
+  | "review_acceptance"
 
   /* ---- Workforce & HR ---- */
   /** Decide whether to take a prospective person forward. Never automatic. */
@@ -410,6 +424,7 @@ export const SEVERITY_LABEL: Record<NeedsYouSeverity, string> = {
 };
 
 export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
+  invitation_acceptance_incomplete: "Acceptance did not finish",
   rate_con_verification: "Rate con to verify",
   unassigned_load: "Unassigned load",
   missing_equipment: "Missing equipment",

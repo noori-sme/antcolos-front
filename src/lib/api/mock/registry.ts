@@ -46,6 +46,7 @@ import { resetTrailerRegistry } from "./trailer-registry";
 import { resetTruckRegistry } from "./truck-registry";
 import { resetQualificationStore } from "./qualification-store";
 import { resetWorkforceStore } from "./workforce-store";
+import { resetAccessStore } from "./access-store";
 import { resetIntegrationMocks } from "@/lib/integrations/mock/adapters";
 import { resetMockSequence } from "@/lib/integrations/mock/support";
 import { resetPropagationBus } from "@/lib/propagation";
@@ -116,6 +117,7 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // roster would name people who are not there. It holds no document, no
   // permission and no contract term — only references to those.
   { id: "workforce", holds: "Workforce engagements, their history, waivers and unfinished offboarding", module: "workforce-store.ts", reset: resetWorkforceStore },
+  { id: "access", holds: "Invitations, and each person's attempt to accept one", module: "access-store.ts", reset: resetAccessStore },
   // AFTER the document store, whose versions its records pin. It holds no file
   // and no second document identity — only pinned references into that store.
   { id: "qualification", holds: "Carrier qualification-file custody and retention records", module: "qualification-store.ts", reset: resetQualificationStore },

@@ -499,6 +499,48 @@ export interface NewRelationshipInput {
   roleName: string;
   permissions: CarrierRelationship["permissions"];
   sharedDocumentKeys: string[];
+  /** When the carrier asked. Defaults to now for a relationship made by hand. */
+  invitedAt?: string;
+  /**
+   * A start date the CARRIER asserted, for an existing worker being connected.
+   *
+   * Passed through untouched and never invented. Absent for somebody genuinely
+   * new, whose relationship has no start date until it is activated.
+   */
+  assertedStartDate?: string;
+}
+
+/**
+ * ★ CREATE OR RESUME, AND NEVER A START DATE ★
+ *
+ * Two things changed here and both are product rules rather than tidying.
+ *
+ * It RESUMES. Keyed on the live `(driverProfileId, carrierId)` pair, so a
+ * driver who accepts twice — a re-sent link, a double submit, a retry after
+ * something later in the sequence failed — ends up with ONE relationship. The
+ * previous version created unconditionally, which meant an invitation resent
+ * after acceptance produced a second relationship with the same carrier and no
+ * way to tell which was real.
+ *
+ * It does NOT set `startedAt`. Accepting an invitation is the person saying
+ * yes; it is not the carrier saying they may work, and it is not the day the
+ * relationship became effective. `startedAt` is set by the authorized
+ * activation step, or carried from a carrier's asserted historical date when an
+ * existing worker is migrated — and stamping today's date here would overwrite
+ * that assertion with the afternoon somebody clicked a link, which is exactly
+ * how a migrated workforce comes to look freshly hired. What acceptance records
+ * instead is `acceptedAt`: observed, true, and a different fact.
+ */
+export function liveRelationshipWith(
+  profileId: string, carrierId: string,
+): CarrierRelationship | undefined {
+  ensureSeeded();
+  const found = RELATIONSHIPS.find(
+    (r) => r.driverProfileId === profileId
+      && r.carrierId === carrierId
+      && r.status !== "ended",
+  );
+  return found ? { ...found } : undefined;
 }
 
 export async function mockCreateRelationship(
@@ -507,12 +549,37 @@ export async function mockCreateRelationship(
 ): Promise<CarrierRelationship> {
   ensureSeeded();
   await sleep(LATENCY_MS);
+
+  const existing = RELATIONSHIPS.find(
+    (r) => r.driverProfileId === profileId
+      && r.carrierId === input.carrierId
+      && r.status !== "ended",
+  );
+  if (existing) {
+    // Resumed. `invitedAt`, `acceptedAt` and `startedAt` are left exactly as
+    // they were: a second yes does not restart anything. Only the consent list
+    // grows, because a driver may agree to share more than they did first time.
+    const merged: CarrierRelationship = {
+      ...existing,
+      status: existing.status === "invited" ? "onboarding" : existing.status,
+      acceptedAt: existing.acceptedAt ?? iso(now()),
+      sharedDocumentKeys: [
+        ...new Set([...existing.sharedDocumentKeys, ...input.sharedDocumentKeys]),
+      ],
+    };
+    RELATIONSHIPS = RELATIONSHIPS.map((r) => (r.id === merged.id ? merged : r));
+    attachSharedDocuments(merged);
+    return { ...merged };
+  }
+
   const relationship: CarrierRelationship = {
     id: nextId("rel"),
     driverProfileId: profileId,
     ...input,
-    invitedAt: iso(now()),
-    startedAt: iso(now()),
+    invitedAt: input.invitedAt ?? iso(now()),
+    acceptedAt: iso(now()),
+    // Deliberately absent. See the note above.
+    startedAt: input.assertedStartDate,
     status: "onboarding",
     sharedDocumentKeys: [...input.sharedDocumentKeys],
   };

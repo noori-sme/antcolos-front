@@ -41,6 +41,7 @@ import {
   isRiskNeedsYouId, riskNeedsYouItems, RISK_ITEM_IS_DERIVED_MESSAGE,
 } from "./risk-needs-you";
 import { isWorkforceNeedsYouId, workforceNeedsYouItems } from "./workforce-needs-you";
+import { accessNeedsYouItems, isAccessNeedsYouId } from "./access-needs-you";
 
 const LATENCY_MS = 180;
 const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
@@ -116,6 +117,9 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // engagement nobody has to act on produces nothing, and a retained
     // qualification record produces nothing at all.
     ...workforceNeedsYouItems(ctx),
+    // An acceptance that did not finish. Derived from the run itself, so it
+    // stops existing the moment the person accepts again and it completes.
+    ...accessNeedsYouItems(ctx),
     // Derived above, so the document rows it seeds are already in place.
     ...compliance,
   ];
@@ -166,6 +170,12 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // qualification record, so without this a driver membership would silently
   // lose nothing it should have had — but a manager membership would too.
   if (isWorkforceNeedsYouId(item.id)) return true;
+
+  // Access items are gated at the source on `invitations:view` and scoped to
+  // the caller's own organization there. The entity-kind narrowing below has no
+  // case for an invitation, so without this a manager would silently lose the
+  // one item that says somebody is half-joined.
+  if (isAccessNeedsYouId(item.id)) return true;
 
   // Record scope: a driver sees only items about their own loads and record.
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {

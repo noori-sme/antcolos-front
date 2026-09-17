@@ -15,12 +15,14 @@ export type * from "./agreements";
 export type * from "./audit";
 export type * from "./risk";
 export type * from "./responsibility";
+export type * from "./access";
 export type * from "./workforce";
 export type * from "./qualification";
 
 
 
 
+import type { AccessService } from "./access";
 import type { AuditService } from "./audit";
 import type { RiskService } from "./risk";
 import type { ComplianceService } from "./compliance";
@@ -98,6 +100,8 @@ export interface AntcolosServices {
    * records above could not: on what basis, in what capacity, from what date
    * and in what status does this person work with this organization.
    */
+  /** Invitations, and what accepting one actually does. */
+  access: AccessService;
   workforce: WorkforceService;
   /**
    * The driver qualification file: a carrier's custody of the exact document

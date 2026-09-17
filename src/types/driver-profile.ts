@@ -49,6 +49,26 @@ export interface CarrierRelationship {
   roleName: string;
   permissions: PermissionKey[];
   invitedAt: string;
+  /**
+   * When the driver accepted. OBSERVED.
+   *
+   * Separate from `startedAt` on purpose, and the separation is the product
+   * rule: saying yes is the person's act, becoming effective is the carrier's.
+   * A relationship with an `acceptedAt` and no `startedAt` is a real, common
+   * and honest state — the driver has agreed and the carrier has not started
+   * them yet — and it is what lets a screen say "accepted on the 4th, not yet
+   * activated" instead of showing a blank nobody can interpret.
+   */
+  acceptedAt?: string;
+  /**
+   * When the working relationship became effective.
+   *
+   * Set ONLY by the authorized activation step, or carried from a carrier's
+   * asserted historical date when an existing worker is migrated. Accepting an
+   * invitation never sets it: acceptance is not clearance to work, and stamping
+   * today here would overwrite a migrated driver's real start date with the
+   * afternoon somebody clicked a link.
+   */
   startedAt?: string;
   status: RelationshipStatus;
   endedAt?: string;

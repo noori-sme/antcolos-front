@@ -176,7 +176,7 @@ test("accepting a carrier invitation attaches to the driver's existing profile",
 
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Confirm and join" }).click();
-  await expect(page.getByRole("heading", { name: /^You.re set up with/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^You.ve joined/ })).toBeVisible();
 
   // Straight on to the documents — a client-side move, so the profile the flow
   // just used is still the live one.

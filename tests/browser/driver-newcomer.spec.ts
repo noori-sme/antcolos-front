@@ -202,7 +202,7 @@ test("a carrier invitation still onboards a driver who has nothing", async ({ pa
   await expect(page.getByRole("heading", { name: "Check this is right" })).toBeVisible();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Confirm and join" }).click();
-  await expect(page.getByRole("heading", { name: /^You.re set up with/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^You.ve joined/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Go to my documents" }).click();
   await expect(page).toHaveURL(/\/driver\/documents$/);
