@@ -183,6 +183,33 @@ export function grantMembership(input: GrantMembershipInput): GrantMembershipRes
   return { status: "granted", membership };
 }
 
+/**
+ * Changes a seat's status, the way access ending or being suspended would.
+ *
+ * No product code calls this. It exists because "a seat ends while somebody is
+ * working in it" is the case that decides whether the session keeps handing out
+ * permissions for a workspace the person no longer belongs to, and that case
+ * has to be reachable before it can be tested. The real command — who may end
+ * a seat, and what else ends with it — is the Access service's, and PR-2's.
+ */
+export function setMembershipStatus(
+  scenario: SessionScenario,
+  membershipId: string,
+  status: Membership["status"],
+): void {
+  const current = snapshots[scenario];
+  if (!current.memberships.some((m) => m.id === membershipId)) return;
+  snapshots = {
+    ...snapshots,
+    [scenario]: {
+      ...current,
+      memberships: current.memberships.map((m) =>
+        m.id === membershipId ? { ...m, status } : m),
+    },
+  };
+  notify();
+}
+
 /** Test hook. Never called by the UI. */
 export function resetRoster() {
   snapshots = freshSnapshots();

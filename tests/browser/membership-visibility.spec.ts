@@ -26,7 +26,10 @@ import { expect, test, type Page } from "@playwright/test";
 const NEW_CARRIER = "Harbor Line Carriers";
 
 interface FixtureWindow {
-  __antcolosFixtures?: { grantMembership: (input: unknown) => void };
+  __antcolosFixtures?: {
+    grantMembership: (input: unknown) => void;
+    setMembershipStatus: (scenario: string, membershipId: string, status: string) => void;
+  };
 }
 
 /** The seat a driver gets: their own loads, their own paperwork, their own pay. */
@@ -161,5 +164,100 @@ test.describe("a person who belongs to nothing", () => {
   test("is still sent to onboarding rather than an invented workspace", async ({ page }) => {
     await page.goto("/home?fixture=newcomer", { waitUntil: "networkidle" });
     await expect(page).toHaveURL(/\/onboarding(\?.*)?$/);
+  });
+});
+
+/**
+ * ★ THE RISK THIS CHANGE CREATES, AND HAS TO CLOSE ★
+ *
+ * While the roster was frozen, a seat could not end underneath somebody. Now it
+ * can, and the thing that must not happen is that they carry on in a workspace
+ * they no longer belong to — with its permissions, and with its answers on
+ * screen — because the session went on resolving them onto a seat that had
+ * ended.
+ *
+ * Both tests below fail on `main` and on this branch without the "usable seats
+ * only" rule. They are claims about what a person sees after the roster moves,
+ * which is why they are here and not in the service suite.
+ *
+ * What is NOT re-proved here: that one organization's cached answers can be
+ * served under another. They cannot, and not because of anything in this PR —
+ * every query key is namespaced by organization id (`orgKey`), so the two never
+ * share a cache entry in the first place.
+ */
+test.describe("when a seat ends underneath the person", () => {
+  test("stops being their workspace instead of leaving stale permissions", async ({ page }) => {
+    await page.goto("/home", { waitUntil: "networkidle" });
+
+    // Working in Northline, where this person is the Owner.
+    await openOrgSwitcher(page);
+    await expect(
+      page.getByRole("menuitem", { name: /Northline Freight/ }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // Their access to it ends while the tab is open.
+    await page.evaluate(() => {
+      const fixtures = (window as unknown as FixtureWindow).__antcolosFixtures;
+      if (!fixtures) throw new Error("The development fixture bridge is not mounted.");
+      fixtures.setMembershipStatus("demo", "mem_northline_owner", "left");
+    });
+
+    // The switcher has always refused to LIST a seat that is not active, so
+    // that on its own proves nothing. What is new is that the session refuses
+    // to keep WORKING in one. The trigger names the workspace the person is
+    // currently in, and it must no longer be the one they have left — before
+    // this, they stayed in it, with an Owner's permissions, in a workspace the
+    // very same menu declined to offer them.
+    const currentWorkspace = page.getByRole("button", { name: "Switch organization" }).first();
+    await expect(currentWorkspace).not.toContainText("Northline Freight");
+    await expect(currentWorkspace).toContainText(/\S/);
+
+    await openOrgSwitcher(page);
+    await expect(page.getByRole("menuitem", { name: /Northline Freight/ })).toHaveCount(0);
+  });
+
+  test("re-scopes what they are looking at to the workspace they end up in", async ({ page }) => {
+    await page.goto("/needs-you", { waitUntil: "networkidle" });
+    const queue = page.getByRole("list", { name: "Needs You queue" });
+    await expect(queue).toBeVisible();
+    const northlineRows = await queue.getByRole("button").count();
+
+    // Give them a seat somewhere with no data at all, then end the seat they
+    // are working in. Nobody pressed "switch": the roster moved them.
+    await page.evaluate(() => {
+      const fixtures = (window as unknown as FixtureWindow).__antcolosFixtures;
+      if (!fixtures) throw new Error("The development fixture bridge is not mounted.");
+      fixtures.grantMembership({
+        scenario: "demo",
+        membership: {
+          id: "mem_empty_org", userId: "usr_sam", organizationId: "org_harborline",
+          status: "active", title: "Employee",
+          templateIds: ["tpl_org_harborline_employee"], grants: [], revocations: [],
+          scope: { loads: "all", financials: "all" }, isOwner: false,
+          joinedAt: "2026-09-17T00:00:00.000Z",
+        },
+        organization: {
+          id: "org_harborline", type: "CARRIER", legalName: "Harbor Line Carriers LLC",
+          displayName: "Harbor Line Carriers", dotNumber: "4410023",
+          timeZone: "America/Chicago", createdAt: "2026-09-17T00:00:00.000Z",
+        },
+      });
+      for (const id of [
+        "mem_northline_owner", "mem_meridian_dispatcher", "mem_summit_owner",
+        "mem_baxter_owner", "mem_solo_dispatcher", "mem_cascade_driver",
+        "mem_stonebridge_driver",
+      ]) fixtures.setMembershipStatus("demo", id, "left");
+    });
+
+    // Harbor Line has no loads, no trucks and no queue. The person must end up
+    // looking at that emptiness — not still at Northline's queue, which is what
+    // happens when an ended seat goes on being the active one.
+    expect(northlineRows).toBeGreaterThan(0);
+    await expect(async () => {
+      const rows = await page.getByRole("list", { name: "Needs You queue" })
+        .getByRole("button").count();
+      expect(rows).toBe(0);
+    }).toPass({ timeout: 20_000 });
   });
 });

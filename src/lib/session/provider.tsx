@@ -92,23 +92,36 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [switchedTo, setSwitchedTo] = useState<string | null>(null);
 
   /**
-   * Which seat is active, resolved against the roster the person ACTUALLY has.
+   * Which seat is active, resolved against the roster the person ACTUALLY holds.
    *
-   * The last arm is new and it matters. The fixture default is a Northline
-   * membership, which a person who has just been granted their first seat does
-   * not hold — so falling back to it left them with no active membership, no
-   * organization and no permissions while holding a perfectly good seat. Now an
-   * unresolvable default falls through to the first seat they do hold, and only
-   * somebody holding nothing ends up with nothing.
+   * Two things here are load-bearing now that the roster can change while the
+   * tab is open.
+   *
+   * It resolves against USABLE seats only. A suspended or ended membership is
+   * not a seat somebody is working from — the organization switcher has always
+   * said so by listing only active ones — and before this it could still be the
+   * active membership, quietly producing a full permission set for a workspace
+   * the switcher refused to offer. While the roster was frozen that could never
+   * happen; it can now, so it is ruled out here rather than left to each screen.
+   *
+   * And the last arm matters: the fixture default is a Northline membership,
+   * which a person granted their first seat does not hold, so falling back to
+   * it left them with no organization and no permissions while holding a
+   * perfectly good seat. Only somebody holding nothing ends up with nothing.
    */
+  const usable = useMemo(
+    () => memberships.filter((m) => m.status === "active"),
+    [memberships],
+  );
+
   const held = (candidate: string | null): string | null =>
-    candidate && memberships.some((m) => m.id === candidate) ? candidate : null;
+    candidate && usable.some((m) => m.id === candidate) ? candidate : null;
 
   const activeMembershipId =
     held(switchedTo)
     ?? held(storedMembershipId)
     ?? held(MOCK_SESSION.activeMembershipId)
-    ?? memberships[0]?.id
+    ?? usable[0]?.id
     ?? null;
   const [density, setDensityState] = useState<DensityPreference>(
     MOCK_USER.preferences.density,
@@ -123,8 +136,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // organization and no permissions. Every screen already treats that as a
   // possible answer; nothing here invents a workspace to avoid it.
   const activeMembership = useMemo(
-    () => memberships.find((m) => m.id === activeMembershipId) ?? null,
-    [memberships, activeMembershipId],
+    () => usable.find((m) => m.id === activeMembershipId) ?? null,
+    [usable, activeMembershipId],
   );
 
   const activeOrganization = useMemo(
