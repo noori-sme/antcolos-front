@@ -382,7 +382,17 @@ export async function receiveRateConfirmation(
 
   const workflow: RateConWorkflow = {
     rateConId: rowId("rc"),
-    organizationId: ctx.organizationId,
+    /*
+     * The CARRIER owns the workflow, not whoever opened the broker's email.
+     *
+     * It used to be stamped with `ctx.organizationId` while being filed in the
+     * carrier's bucket, which got the boundary exactly backwards: the carrier
+     * could not see a confirmation waiting for its own signature, and the
+     * provider that prepared it was the one `readableWorkflows` let through on
+     * the owner branch. Who PREPARED it is attribution and lives on the
+     * history entries below.
+     */
+    organizationId: carrierOrganizationId,
     carrierOrganizationId,
     carrierName: carrier.displayName,
     bookingId: booking.bookingId,
@@ -673,6 +683,27 @@ export async function confirmAndSign(
 
   const workflow = rateConById(rateConId, ctx);
   if (!workflow) return { status: "not_found" };
+
+  /*
+   * ★ ONLY THE CARRIER SIGNS ★
+   *
+   * This is the act that applies the carrier's signature and publishes
+   * `load.finalized`, and A6's event-scope matrix is explicit about that event:
+   * `crossOrganizationWrite: null`, "no canonical grant lets one organization
+   * finalize another's load". A dispatch provider under a live grant may reach
+   * this workflow — it prepares and checks it, which is most of the work — and
+   * must still be refused here. Guarding the loads service alone would have
+   * left this door open, because signing does not go through it.
+   */
+  if (workflow.carrierOrganizationId !== ctx.organizationId) {
+    return {
+      status: "blocked",
+      reason:
+        `${workflow.carrierName}'s signature goes on this, so ${workflow.carrierName} `
+        + "has to be the one to apply it. Everything up to that point is done.",
+    };
+  }
+
   if (workflow.status === "returned") return { status: "blocked", reason: "It is already signed and returned." };
   if (workflow.status === "rejected") return { status: "blocked", reason: "This one was stopped." };
 

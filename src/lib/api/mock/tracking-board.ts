@@ -24,6 +24,7 @@ import {
   type TrackingContext,
 } from "./tracking-registry";
 import { mockStore } from "./store";
+import { reachableLoadById } from "./dispatch-delegation";
 import type { ServiceContext } from "../contracts/context";
 import { nowIso } from "./time";
 
@@ -587,12 +588,9 @@ export function loadTrackingSync(
   loadId: string,
 ): LoadTrackingView | undefined {
   if (!mayTrack(ctx)) return undefined;
-  let load: Load | undefined;
-  try {
-    load = mockStore.org(ctx.organizationId).loads.find((l) => l.id === loadId);
-  } catch {
-    return undefined;
-  }
+  // Through reach: a provider tracking a load it booked for a carrier is
+  // reading the carrier's canonical load, and that is the point of the grant.
+  const load: Load | undefined = reachableLoadById(ctx, loadId);
   if (!load) return undefined;
 
   const built = buildRow(ctx, load, new Date());

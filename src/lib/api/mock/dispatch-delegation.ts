@@ -2,8 +2,10 @@ import type {
   ActorRef, IsoDateTime, Load, PermissionKey, TruckDispatchAccess,
 } from "@/types";
 import { PermissionDeniedError, NotFoundError, type ServiceContext } from "../contracts/context";
+import { mockStore } from "./store";
 import {
-  liveDispatchGrantFor, operatingContextAt, truckContextFrom,
+  liveDispatchGrantFor, liveDispatchGrantsHeldBy, operatingContextAt,
+  truckContextFrom,
 } from "./truck-registry";
 
 /**
@@ -204,7 +206,7 @@ export function requireLoadWriteAuthority(
  * fresh derivation, for the reason above.
  */
 export function loadReachFor(
-  ctx: ServiceContext,
+  ctx: { organizationId: string },
   load: Pick<Load, "organizationId" | "pinnedCarrierOrganizationId" | "assignment">,
 ): LoadAuthorityBasis | null {
   if (load.organizationId === ctx.organizationId) return "own_carrier";
@@ -220,10 +222,58 @@ export function loadReachFor(
 
 /** Convenience for the many call sites that only need a yes or no. */
 export function mayReachLoad(
-  ctx: ServiceContext,
+  ctx: { organizationId: string },
   load: Pick<Load, "organizationId" | "pinnedCarrierOrganizationId" | "assignment">,
 ): boolean {
   return loadReachFor(ctx, load) !== null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Finding a load at all                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every load this workspace may reach: its own, plus any a live grant covers.
+ *
+ * ★ WHY THIS IS SHARED RATHER THAN WRITTEN PER MODULE ★
+ * Once a delegated load lives in the CARRIER's store, `mockStore.org(ctx
+ * .organizationId).loads` stops being "the loads I can see" and becomes "the
+ * loads I own". Every module that kept the old shape silently lost the
+ * delegated ones — and silence is the problem: the MT Loop did not merely fail
+ * to show the booked load, it concluded the load had come OFF the truck,
+ * recorded that on the cycle and put the truck back out as available. A rule
+ * this easy to get subtly wrong belongs in one place.
+ *
+ * Note this returns what is REACHABLE, not what is permitted: callers still
+ * apply their own permission and record-scope narrowing, exactly as before.
+ */
+export function loadsReachableBy(ctx: { organizationId: string }): Load[] {
+  const own = mockStore.maybeOrg(ctx.organizationId)?.loads ?? [];
+
+  const carriers = new Set(
+    liveDispatchGrantsHeldBy(ctx.organizationId)
+      .map((g) => g.grantedByCarrierOrganizationId),
+  );
+  if (carriers.size === 0) return [...own];
+
+  const out = [...own];
+  for (const carrierId of carriers) {
+    if (carrierId === ctx.organizationId) continue;
+    // A carrier can grant dispatch access and hold no loads at all; that is an
+    // empty list rather than a fault, which is what `maybeOrg` is for.
+    for (const load of mockStore.maybeOrg(carrierId)?.loads ?? []) {
+      if (loadReachFor(ctx, load) !== null) out.push(load);
+    }
+  }
+  return out;
+}
+
+/** One reachable load by id, or nothing. Never throws for a foreign id. */
+export function reachableLoadById(
+  ctx: { organizationId: string },
+  loadId: string,
+): Load | undefined {
+  return loadsReachableBy(ctx).find((l) => l.id === loadId);
 }
 
 /* -------------------------------------------------------------------------- */

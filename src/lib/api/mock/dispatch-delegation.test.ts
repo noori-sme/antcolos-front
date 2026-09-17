@@ -15,6 +15,8 @@ import {
 import { TruckPermissionError } from "@/lib/api/mock/truck-registry";
 import { seedOrganizationDocuments } from "@/lib/api/mock/organization-documents";
 import { grantIsLive } from "@/types";
+import { operatingContextAt } from "@/lib/api/mock/truck-registry";
+import { allShares } from "@/lib/api/mock/document-store";
 import { contextFor, BAXTER_OWNER, MERIDIAN_OWNER } from "../../../../tests/responsibility/harness";
 
 /**
@@ -530,5 +532,103 @@ describe("a booking made for a carrier is the carrier's", () => {
     });
     expect(authority.basis).toBe("own_carrier");
     expect(authority.owningOrganizationId).toBe(CARRIER);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+
+describe("ownership of the equipment is not authority over the freight", () => {
+  /**
+   * `T.nl118` is owned by a PERSON — Marcus Hale, an owner-operator — and runs
+   * under Northline's MC on a `leased_owner_operator` relationship. It is the
+   * case the whole pinning rule exists for: the truck is his, the authority is
+   * theirs, and a load booked on it is the carrier's transaction.
+   */
+  const OWNER_OPERATOR_TRUCK = "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1005";
+
+  it("pins a personally owned truck to the MC it runs under, not to its owner", () => {
+    const resolved = pinnedCarrierAt(OWNER_OPERATOR_TRUCK, new Date().toISOString());
+    expect(resolved.organizationId).toBe("org_northline");
+  });
+
+  it("never resolves through the ownership branch for a person-owned truck", () => {
+    // `resolveOperatingContextAt` only consults ownership to identify a
+    // `carrier_owned` relationship, and that branch requires an ORGANIZATION
+    // owner. A person's truck can therefore never resolve that way — it is
+    // proved by the lease or by a sole approved relationship or not at all.
+    const ctx = operatingContextAt(OWNER_OPERATOR_TRUCK, new Date().toISOString());
+    expect(ctx.resolved).toBe(true);
+    if (ctx.resolved) expect(ctx.basis).not.toBe("carrier_owned");
+  });
+
+  it("gives the owner's organization no write authority over the carrier's load", () => {
+    // Halberd Leasing owns equipment in these fixtures and operates nothing.
+    // It holds no grant and no relationship, so it is refused — ownership
+    // contributes nothing to any of the four questions.
+    const halberd = { ...contextFor(BAXTER_OWNER), organizationId: "org_halberd" };
+    expect(() => requireLoadWriteAuthority(halberd, {
+      truckId: OWNER_OPERATOR_TRUCK,
+      instant: new Date().toISOString(),
+      requires: ["loads:create"],
+    })).toThrow(/not found/i);
+  });
+
+  it("does not hand the carrier's broker relationship to the truck's owner", () => {
+    // A load pinned to the carrier is unreachable from any organization that
+    // merely owns the equipment, so nothing on it — broker, rate, documents —
+    // travels with the truck.
+    const reach = loadReachFor({ organizationId: "org_halberd" }, {
+      organizationId: "org_northline",
+      pinnedCarrierOrganizationId: "org_northline",
+      assignment: { truckId: OWNER_OPERATOR_TRUCK } as never,
+    });
+    expect(reach).toBeNull();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe("one grant ending is not every grant ending", () => {
+  it("leaves reach intact on trucks still covered by a live grant", async () => {
+    const mine = dispatchGrantsByCarrier(CARRIER)
+      .filter((g) => g.dispatchOrganizationId === PROVIDER);
+    expect(mine.length).toBeGreaterThan(1);
+
+    const [ended, survivor] = mine;
+    await revokeDispatchDelegation(ended.id, "One truck back.", carrierCtx());
+
+    // The revoked truck is gone...
+    expect(liveDispatchGrantFor(ended.truckId, PROVIDER)).toBeUndefined();
+    // ...and the other is untouched.
+    expect(liveDispatchGrantFor(survivor.truckId, PROVIDER)?.id).toBe(survivor.id);
+    expect(loadReachFor(contextFor(MERIDIAN_OWNER), {
+      organizationId: CARRIER,
+      pinnedCarrierOrganizationId: CARRIER,
+      assignment: { truckId: survivor.truckId } as never,
+    })).toBe("dispatch_delegation");
+  });
+
+  it("does not let a surviving document share restore operational reach", async () => {
+    // End every grant, but leave a share standing on another basis.
+    for (const grant of dispatchGrantsByCarrier(CARRIER)) {
+      if (grant.dispatchOrganizationId !== PROVIDER) continue;
+      await revokeDispatchDelegation(grant.id, "Back in house.", carrierCtx());
+    }
+    const otherBasis = allShares().filter(
+      (s) => !s.revokedAt
+        && s.sharedWithOrganizationId === PROVIDER
+        && s.basis.kind !== "dispatch_access",
+    );
+    // Whether or not one happens to exist in the fixture, the rule is the same:
+    // a document share is not operational reach, and never restores it.
+    for (const truckId of dispatchGrantsByCarrier(CARRIER).map((g) => g.truckId)) {
+      expect(loadReachFor(contextFor(MERIDIAN_OWNER), {
+        organizationId: CARRIER,
+        pinnedCarrierOrganizationId: CARRIER,
+        assignment: { truckId } as never,
+      })).toBeNull();
+    }
+    expect(otherBasis.every((s) => s.basis.kind !== "dispatch_access")).toBe(true);
   });
 });

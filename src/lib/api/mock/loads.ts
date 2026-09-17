@@ -14,9 +14,8 @@ import {
 } from "./load-commands";
 import { mockStore } from "./store";
 import {
-  attributedActor, loadReachFor, requireLoadWriteAuthority,
+  attributedActor, loadsReachableBy, requireLoadWriteAuthority,
 } from "./dispatch-delegation";
-import { liveDispatchGrantsHeldBy } from "./truck-registry";
 
 const LATENCY_MS = 160;
 const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
@@ -53,23 +52,8 @@ export function redactFinancials(ctx: ServiceContext, load: Load): Load {
  */
 function scopedLoads(ctx: ServiceContext): Load[] {
   if (!ctx.permissions.has("loads:view")) throw new PermissionDeniedError(["loads:view"]);
-  const own = mockStore.org(ctx.organizationId).loads;
-
-  // Only look outside when this workspace actually holds a grant from someone.
-  const delegated: Load[] = [];
-  const carriers = new Set(
-    liveDispatchGrantsHeldBy(ctx.organizationId)
-      .map((g) => g.grantedByCarrierOrganizationId),
-  );
-  for (const carrierId of carriers) {
-    // A carrier that has granted dispatch access but holds no seeded loads is
-    // an empty list, not a fault — see `maybeOrg`.
-    for (const load of mockStore.maybeOrg(carrierId)?.loads ?? []) {
-      if (loadReachFor(ctx, load) !== null) delegated.push(load);
-    }
-  }
-
-  const all = delegated.length > 0 ? [...own, ...delegated] : own;
+  // Own plus delegated, through the one shared sweep every module now uses.
+  const all = loadsReachableBy(ctx);
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {
     return all.filter((l) => l.assignment?.driverId === ctx.driverProfileId);
   }
