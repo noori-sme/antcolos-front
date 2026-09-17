@@ -938,6 +938,45 @@ export function setCarrierRelationshipStatus(
   return { ...engagement };
 }
 
+/**
+ * Records more sharing consent on a live relationship.
+ *
+ * A SET UNION, so re-running it adds nothing: a driver may agree to share more
+ * than they did the first time, and never un-shares by accident. It records the
+ * consent only — the links the carrier actually reads through are the document
+ * store's, and the caller writes those FIRST, so a relationship never promises
+ * paperwork that was not handed over.
+ *
+ * Returns undefined when there is no live relationship, because consent with
+ * nothing to consent to is not something this module will invent.
+ */
+export function addSharedDocumentKeys(
+  driverProfileId: string,
+  carrierId: string,
+  requirementKeys: readonly string[],
+): CarrierRelationship | undefined {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  const engagement = record?.engagements.find(
+    (e) => e.carrierId === carrierId && e.status !== "ended",
+  );
+  if (!engagement) return undefined;
+  engagement.sharedDocumentKeys = [
+    ...new Set([...engagement.sharedDocumentKeys, ...requirementKeys]),
+  ];
+  return { ...engagement };
+}
+
+/** The one live relationship between this person and this carrier, if any. */
+export function liveRelationship(
+  driverProfileId: string, carrierId: string,
+): CarrierRelationship | undefined {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  const found = record?.engagements.find(
+    (e) => e.carrierId === carrierId && e.status !== "ended",
+  );
+  return found ? { ...found } : undefined;
+}
+
 /** Every engagement this person holds, live or ended. Their own view. */
 export function relationshipsForProfile(driverProfileId: string): CarrierRelationship[] {
   const record = db().find((d) => d.profile.id === driverProfileId);

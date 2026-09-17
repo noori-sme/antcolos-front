@@ -1,4 +1,5 @@
-import type { AcceptanceRun, Invitation } from "@/types";
+import type { AcceptanceRun, Invitation, User } from "@/types";
+import { MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -60,11 +61,54 @@ export function nextInvitationToken(): string {
   return `INV-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
-/** Seeded on first read rather than on import, so a reset genuinely resets. */
+/**
+ * Seeded on first read rather than on import, so a reset genuinely resets.
+ *
+ * `recipientHasAccount` and `recipientUserId` are DERIVED here rather than
+ * typed in the fixtures, so a seed cannot claim an account that does not exist.
+ * That is the same rule issuing follows, applied to the fixtures so they cannot
+ * drift away from it.
+ */
 export function ensureSeeded(seed: () => Invitation[]) {
   if (state.seeded) return;
   state.seeded = true;
-  state.invitations = seed();
+  state.invitations = seed().map((invitation) => {
+    const account = accountForEmail(invitation.recipientEmail);
+    return {
+      ...invitation,
+      recipientHasAccount: account !== undefined,
+      recipientUserId: account?.id,
+    };
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* The account directory                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Who has an Antcolos account, for the one question an invitation asks:
+ * "does this address already belong to somebody?"
+ *
+ * ★ THIS IS A LOOKUP, NEVER A SEARCH ★
+ * It answers only for an address somebody already typed as a recipient, and it
+ * returns nothing the sender did not already know — a carrier inviting
+ * `sam@antcolos.com` learns that the invitation will not need a sign-up step,
+ * not that Sam exists. There is deliberately no "find people" function: a
+ * carrier that could enumerate accounts could ask Antcolos who its
+ * competitor's drivers are.
+ */
+const ACCOUNTS: readonly User[] = [MOCK_USER, NEWCOMER_USER];
+
+/** The account behind a seat, for showing a person's name on a roster. */
+export function accountById(userId: string): User | undefined {
+  return ACCOUNTS.find((u) => u.id === userId);
+}
+
+export function accountForEmail(email: string): User | undefined {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return ACCOUNTS.find((u) => u.email.toLowerCase() === normalized);
 }
 
 /* -------------------------------------------------------------------------- */

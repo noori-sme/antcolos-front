@@ -35,12 +35,32 @@ async function fillLicence(page: Page) {
   await page.getByLabel("License expiration date").fill(expiry);
 }
 
+/**
+ * The whole arc, pressed rather than simulated.
+ *
+ * `INV-NEWCOMER` is the seeded invitation addressed to Alex Rivera. The flow
+ * asks for the licence once, then for the sharing decision, then joins — the
+ * driver CHOOSES what to hand over, which is why there is a consent step here
+ * rather than a single button.
+ */
 async function acceptAsNewDriver(page: Page) {
-  await page.goto("/invitation/INV-NEWDRIVER?fixture=newcomer", { waitUntil: "networkidle" });
+  await page.goto("/invitation/INV-NEWCOMER?fixture=newcomer&signedin=1", {
+    waitUntil: "networkidle",
+  });
   await expect(page.getByRole("heading", { name: /You've been invited to/ })).toBeVisible();
-  await fillLicence(page);
-  await page.getByTestId("accept-invitation").click();
-  await expect(page.getByTestId("acceptance-confirmed")).toBeVisible();
+  await page.getByRole("button", { name: "Accept invitation" }).click();
+
+  const licence = page.getByLabel("Driver license / CDL number");
+  const consent = page.getByRole("checkbox");
+  await expect(licence.or(consent).first()).toBeVisible({ timeout: 20_000 });
+  if (await licence.isVisible()) {
+    await fillLicence(page);
+    await page.getByRole("button", { name: "Continue" }).click();
+  }
+  await expect(consent).toBeVisible();
+  await consent.check();
+  await page.getByRole("button", { name: /Confirm and join/ }).click();
+  await expect(page.getByTestId("acceptance-confirmed")).toBeVisible({ timeout: 20_000 });
 }
 
 /**
@@ -64,7 +84,7 @@ test.describe("accepting an invitation", () => {
 
     // Client-side navigation only. The seat has to survive it, because nothing
     // re-fetches the document.
-    await page.getByRole("button", { name: "Go to Antcolos" }).click();
+    await page.getByRole("button", { name: "Go to my driver portal" }).click();
 
     // Home recomputed from the new seat and sent them to their portal, because
     // the seat carries a driver profile. That whole chain — service, store,
@@ -94,7 +114,7 @@ test.describe("accepting an invitation", () => {
 
   test("grants nothing beyond the driver seat", async ({ page }) => {
     await acceptAsNewDriver(page);
-    await page.getByRole("button", { name: "Go to Antcolos" }).click();
+    await page.getByRole("button", { name: "Go to my driver portal" }).click();
     await expect(page).toHaveURL(/\/driver\/home(\?.*)?$/);
 
     // A driver seat is narrow by design, and the permission system that already
@@ -109,17 +129,17 @@ test.describe("accepting an invitation", () => {
 
   test("refuses somebody the invitation was not addressed to", async ({ page }) => {
     // Signed in as Sam, opening the link that names Alex.
-    await page.goto("/invitation/INV-NEWDRIVER", { waitUntil: "networkidle" });
+    await page.goto("/invitation/INV-NEWCOMER", { waitUntil: "networkidle" });
     await expect(
       page.getByRole("heading", { name: /isn't for this account/ }),
     ).toBeVisible();
-    await expect(page.getByTestId("accept-invitation")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Accept invitation" })).toHaveCount(0);
   });
 
   test("refuses an invitation that has been withdrawn", async ({ page }) => {
-    await page.goto("/invitation/INV-REVOKED", { waitUntil: "networkidle" });
+    await page.goto("/invitation/INV-REVOKED?signedin=1", { waitUntil: "networkidle" });
     await expect(page.getByRole("heading", { name: /withdrawn/i })).toBeVisible();
-    await expect(page.getByTestId("accept-invitation")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Accept invitation" })).toHaveCount(0);
   });
 });
 
@@ -144,9 +164,13 @@ test.describe("a person who belongs to nothing", () => {
  */
 test.describe("when a seat ends underneath the person", () => {
   async function joinAsOfficeManager(page: Page) {
-    await page.goto("/invitation/INV-NEWEMPLOYEE?fixture=newcomer", { waitUntil: "networkidle" });
-    await page.getByTestId("accept-invitation").click();
-    await expect(page.getByTestId("acceptance-confirmed")).toBeVisible();
+    await page.goto("/invitation/INV-NEWEMPLOYEE?fixture=newcomer&signedin=1", {
+      waitUntil: "networkidle",
+    });
+    // Not a driving invitation, so there is nothing to share and no licence to
+    // give: one press and they are in.
+    await page.getByRole("button", { name: "Accept invitation" }).click();
+    await expect(page.getByTestId("acceptance-confirmed")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Go to Antcolos" }).click();
     await expect(page).toHaveURL(/\/home(\?.*)?$/);
   }

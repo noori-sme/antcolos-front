@@ -47,7 +47,6 @@ import { resetTrailerRegistry } from "./trailer-registry";
 import { resetTruckRegistry } from "./truck-registry";
 import { resetQualificationStore } from "./qualification-store";
 import { resetWorkforceStore } from "./workforce-store";
-import { resetAccessStore } from "./access-store";
 import { resetIntegrationMocks } from "@/lib/integrations/mock/adapters";
 import { resetMockSequence } from "@/lib/integrations/mock/support";
 import { resetPropagationBus } from "@/lib/propagation";
@@ -118,13 +117,12 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // invitation would offer access into an organization whose roster had already
   // been rebuilt. It holds no membership and no profile of its own: the seats
   // are the membership store's and the people are the driver registry's.
-  { id: "access", holds: "Invitations, their state and who they were addressed to", module: "access-store.ts", reset: resetAccessStore },
+  { id: "access", holds: "Invitations, their state, and each person's attempt to accept one", module: "access-store.ts", reset: resetAccessStore },
   // AFTER the driver registry and the membership directory, because the
   // engagement fixtures point at both by id and a seed built over a stale
   // roster would name people who are not there. It holds no document, no
   // permission and no contract term — only references to those.
   { id: "workforce", holds: "Workforce engagements, their history, waivers and unfinished offboarding", module: "workforce-store.ts", reset: resetWorkforceStore },
-  { id: "access", holds: "Invitations, and each person's attempt to accept one", module: "access-store.ts", reset: resetAccessStore },
   // AFTER the document store, whose versions its records pin. It holds no file
   // and no second document identity — only pinned references into that store.
   { id: "qualification", holds: "Carrier qualification-file custody and retention records", module: "qualification-store.ts", reset: resetQualificationStore },

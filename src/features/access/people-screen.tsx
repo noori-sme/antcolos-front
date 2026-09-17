@@ -11,7 +11,7 @@ import { useServiceContext } from "@/lib/api/use-service-context";
 import { subscribeRoster } from "@/lib/session/membership-store";
 import {
   accountOfSeat, endSeat, leaveOrganization, permissionsOfSeat, rosterOf,
-} from "@/lib/api/mock/access-service";
+} from "@/lib/api/mock/access";
 import { relationshipsForProfile } from "@/lib/api/mock/driver-registry";
 import { permissionMeta } from "@/lib/permissions";
 import { ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";

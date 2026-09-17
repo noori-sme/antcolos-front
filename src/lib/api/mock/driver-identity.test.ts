@@ -186,14 +186,22 @@ describe("the carrier side cannot reach a person it has no relationship with", (
     // Antcolos, and a carrier that could create a profile could make a second
     // one for somebody who already had it.
     //
-    // PR-2 added `createOrResumeRelationship`, which matches the same prefix
-    // and is deliberately allowed here: it creates a RELATIONSHIP, it requires
-    // an existing `driverProfileId`, and it creates no person. The guarantee
-    // this test exists for is unchanged, so it is now asserted twice — once as
-    // the exact surface, and once as the thing the surface is a proxy for.
+    // PR-2 added two more functions matching the same prefixes, and both are
+    // deliberately allowed. `createOrResumeRelationship` creates a
+    // RELATIONSHIP: it requires an existing `driverProfileId` and creates no
+    // person. `addSharedDocumentKeys` records consent on a relationship that
+    // already exists, and creates neither. Neither takes a licence, a name or
+    // an address, so neither is a way to reach a person the carrier has no
+    // relationship with.
+    //
+    // The guarantee this test exists for is unchanged, so it is asserted twice
+    // — once as the exact surface, and once as the thing the surface is a
+    // proxy for.
     const writers = Object.keys(registry).filter((key) =>
       /^(create|register|add|upsert|find|search|lookUp|lookup)/.test(key));
-    expect(writers).toEqual(["createOrResumeProfile", "createOrResumeRelationship"]);
+    expect(writers).toEqual([
+      "createOrResumeProfile", "createOrResumeRelationship", "addSharedDocumentKeys",
+    ]);
 
     // Exactly ONE function creates a person, and nothing anywhere on this
     // module's surface is addressed by a licence.

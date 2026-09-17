@@ -221,6 +221,15 @@ export interface AcceptanceStep {
   ref?: { kind: string; id: string };
   /** Set on `failed`. Plain language, never a stack trace. */
   failureReason?: string;
+  /**
+   * Paperwork this step deliberately did NOT hand over, and why.
+   *
+   * Only `document_access` sets it. A shorter list than the one somebody just
+   * ticked, with no explanation, is how people conclude the product lost their
+   * documents — so what was withheld is carried rather than dropped, and the
+   * screen names it.
+   */
+  withheld?: Array<{ key: string; label: string; reason?: string }>;
 }
 
 /**

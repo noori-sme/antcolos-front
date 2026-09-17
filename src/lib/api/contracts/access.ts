@@ -99,6 +99,17 @@ export type InvitationLookup =
   | { status: "used"; invitation: Invitation }
   /** The recipient has no account yet. They make one and come back. */
   | { status: "needs-account"; invitation: Invitation }
+  /**
+   * An invitation that would connect a whole ORGANIZATION, not a person.
+   *
+   * Refused outright rather than accepted as something adjacent. A dispatch
+   * agency working a carrier's freight is an arrangement between two
+   * organizations with its own scope, its own end date and its own per-truck
+   * delegation — not a seat handed to whoever opened the link. Quietly
+   * granting the nearest thing this flow knows how to grant would be granting
+   * reach nobody agreed to.
+   */
+  | { status: "organization-invitation"; invitation: Invitation }
   /** Signed in as somebody else. Never quietly attaches to the wrong account. */
   | { status: "wrong-recipient"; invitation: Invitation; signedInAs: string }
   | { status: "valid"; invitation: Invitation; signedInAs: string }

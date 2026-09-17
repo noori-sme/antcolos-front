@@ -126,9 +126,18 @@ test.describe("an invitation that is not acceptable", () => {
   });
 
   test("refuses to attach to the wrong account", async ({ page }) => {
-    await page.goto("/invitation/INV-WRONGUSER", { waitUntil: "networkidle" });
+    // `INV-NEWCOMER` names Alex Rivera, who has an account. This tab is signed
+    // in as Sam. (It used to use `INV-WRONGUSER`, addressed to somebody with no
+    // account at all — that link now correctly asks them to sign up first,
+    // because there is nobody to compare a session against until they do.)
+    await page.goto("/invitation/INV-NEWCOMER", { waitUntil: "networkidle" });
     await expect(
       page.getByRole("heading", { name: /isn't for this account/ }),
     ).toBeVisible();
+  });
+
+  test("sends somebody with no account to sign up before naming whose it is", async ({ page }) => {
+    await page.goto("/invitation/INV-WRONGUSER", { waitUntil: "networkidle" });
+    await expect(page.getByRole("button", { name: "Accept invitation" })).toHaveCount(0);
   });
 });

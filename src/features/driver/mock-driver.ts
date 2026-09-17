@@ -14,15 +14,17 @@ import { driverRequirements, requirementByKey } from "@/lib/documents/requiremen
 import { isNewcomerSession } from "@/lib/session/scenarios";
 import { MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
 import {
-  createOrResumeProfile, createOrResumeRelationship, endCarrierRelationship,
-  profileForUser, relationshipsForProfile, resetDriverRegistry,
-  setCarrierRelationshipStatus,
+  addSharedDocumentKeys, createOrResumeProfile, createOrResumeRelationship,
+  endCarrierRelationship, liveRelationship, profileForUser, relationshipsForProfile,
+  resetDriverRegistry, setCarrierRelationshipStatus,
 } from "@/lib/api/mock/driver-registry";
 import { ordinaryDocumentKeys } from "@/lib/documents/requirements";
 import { effectiveStatus } from "@/lib/documents/status";
 import {
-  addLink, clearDocumentsForSubjectKind, createDocument, documentInSlot, documentsForSubject,
+  addLink, addLinks, clearDocumentsForSubjectKind, createDocument, documentInSlot,
+  documentsForSubject,
   endRelationshipDocuments, recordEvent, replaceDocument, slotKey, updateDocument,
+  type AddLinkEntry,
 } from "@/lib/api/mock/document-store";
 
 /**
@@ -529,12 +531,7 @@ export function liveRelationshipWith(
   profileId: string, carrierId: string,
 ): CarrierRelationship | undefined {
   ensureSeeded();
-  const found = RELATIONSHIPS.find(
-    (r) => r.driverProfileId === profileId
-      && r.carrierId === carrierId
-      && r.status !== "ended",
-  );
-  return found ? { ...found } : undefined;
+  return liveRelationship(profileId, carrierId);
 }
 
 /**
@@ -564,22 +561,24 @@ export function mockShareDocumentsWithCarrier(
   requirementKeys: readonly string[],
 ): { relationship: CarrierRelationship; added: number } | undefined {
   ensureSeeded();
-  const existing = RELATIONSHIPS.find(
-    (r) => r.driverProfileId === profileId
-      && r.carrierId === carrierId
-      && r.status !== "ended",
-  );
+  const existing = liveRelationship(profileId, carrierId);
   // No live relationship means no basis to share under. The caller decides what
   // that is — here it is simply not something this command will invent.
   if (!existing) return undefined;
 
-  const merged: CarrierRelationship = {
-    ...existing,
-    sharedDocumentKeys: [...new Set([...existing.sharedDocumentKeys, ...requirementKeys])],
-  };
-  RELATIONSHIPS = RELATIONSHIPS.map((r) => (r.id === merged.id ? merged : r));
-  const added = attachSharedDocuments(merged);
-  return { relationship: { ...merged }, added };
+  // Narrowed before anything is written. Whatever a caller passes, a restricted
+  // category is never handed over as part of joining — see `ordinaryKeysAmong`.
+  const allowed = ordinaryKeysAmong(requirementKeys, existing.engagementType, carrierId);
+
+  // ★ LINKS FIRST, CONSENT SECOND, AND NEITHER HALF-DONE ★
+  // The links are what the carrier actually reads through, so they are the part
+  // that can refuse; a throw here leaves the relationship exactly as it was.
+  // Recording consent first would leave a relationship promising documents that
+  // were never shared — the record saying one thing and the access another.
+  const added = attachSharedDocuments({ ...existing, sharedDocumentKeys: allowed });
+  const relationship = addSharedDocumentKeys(profileId, carrierId, allowed);
+  if (!relationship) return undefined;
+  return { relationship, added };
 }
 
 /**
@@ -639,9 +638,16 @@ function ordinaryKeysAmong(
   return requested.filter((key) => ordinary.has(key));
 }
 
-function attachSharedDocuments(relationship: CarrierRelationship): number {
+/**
+ * Every document this consent still owes the carrier, as one batch.
+ *
+ * Already-linked requirements are skipped here, which is where idempotence
+ * belongs: the store writes what it is handed, and deciding that a requirement
+ * is already shared is the driver module's business, not the store's.
+ */
+function pendingShareLinks(relationship: CarrierRelationship): AddLinkEntry[] {
   const profileId = ownProfile()?.id ?? DRIVER_PROFILE_ID;
-  let added = 0;
+  const entries: AddLinkEntry[] = [];
   for (const requirementKey of relationship.sharedDocumentKeys) {
     const existing = documentInSlot("driver", profileId, requirementKey);
     if (!existing) continue;
@@ -649,16 +655,26 @@ function attachSharedDocuments(relationship: CarrierRelationship): number {
       (l) => !l.unlinkedAt && l.contextOrganizationId === relationship.carrierId,
     );
     if (alreadyLinked) continue;
-    added += 1;
-    addLink(existing.documentId, {
-      subject: driverSubject(ownProfile()),
-      requirementKey,
-      contextOrganizationId: relationship.carrierId,
-      contextOrganizationName: relationship.carrierName,
-      actorName: ownProfile()?.legalName ?? "Driver",
+    entries.push({
+      documentId: existing.documentId,
+      input: {
+        subject: driverSubject(ownProfile()),
+        requirementKey,
+        contextOrganizationId: relationship.carrierId,
+        contextOrganizationName: relationship.carrierName,
+        actorName: ownProfile()?.legalName ?? "Driver",
+      },
     });
   }
-  return added;
+  return entries;
+}
+
+function attachSharedDocuments(relationship: CarrierRelationship): number {
+  const entries = pendingShareLinks(relationship);
+  // All of them or none. A half-applied consent grants access the grant did
+  // not finish giving, and leaves a consent list that disagrees with it.
+  addLinks(entries);
+  return entries.length;
 }
 
 /**

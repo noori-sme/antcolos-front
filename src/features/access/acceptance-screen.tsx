@@ -165,6 +165,26 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
     );
   }
 
+  if (state.status === "organization-invitation") {
+    return (
+      <AuthShell title="This invitation is for a whole organization" footer={<SignInLink />}>
+        <div className="space-y-4">
+          <FormAlert tone="warning" title="This link connects two companies, not a person.">
+            {invitation.organizationName} invited{" "}
+            <strong className="font-medium text-fg">{invitation.recipientName}</strong> as an
+            organization — a dispatch arrangement with its own scope, its own end date and its own
+            per-truck permissions.
+          </FormAlert>
+          <p className="text-[0.8125rem] leading-relaxed text-fg-muted">
+            Antcolos will not turn that into a seat for whoever opened the link, because a seat is
+            not what was agreed. Contact {invitation.organizationName} and set the arrangement up
+            from your own workspace.
+          </p>
+        </div>
+      </AuthShell>
+    );
+  }
+
   if (state.status === "wrong-recipient") {
     return (
       <AuthShell title="This invitation isn't for this account" footer={<SignInLink />}>
@@ -394,8 +414,27 @@ function AcceptanceOutcome({
         ? `Invitation accepted on ${accepted}. ${invitation.organizationName} has not activated your relationship yet — until they do, you are connected but not yet working under their authority.`
         : "Some of what accepting creates did not finish. Nothing was lost, and carrying on completes what is missing."}
     >
-      <div className="space-y-4">
+      <div className="space-y-4" data-testid={finished ? "acceptance-confirmed" : undefined}>
         <StepList run={run} />
+
+        {finished ? (
+          <>
+            {/*
+              * ★ AN ABSENT START DATE, SAID OUT LOUD ★
+              * `startedAt` is deliberately not set by accepting, so the screen
+              * states it rather than showing an empty field somebody would
+              * read as a bug — or worse, as today's date.
+              */}
+            <p
+              data-testid="no-start-date"
+              className="rounded-lg border border-border bg-surface-sunken px-3.5 py-3 text-[0.8125rem] leading-relaxed text-fg-muted"
+            >
+              <span className="font-semibold text-fg">Your start date: </span>
+              Not recorded yet. {invitation.organizationName} sets it when they activate you.
+            </p>
+            <WithheldDocuments run={run} />
+          </>
+        ) : null}
 
         {finished ? (
           /**
@@ -435,5 +474,45 @@ function AcceptanceOutcome({
         </p>
       </div>
     </AuthShell>
+  );
+}
+
+/**
+ * What acceptance deliberately did NOT hand over.
+ *
+ * Restricted paperwork — a social security number, bank details, a state
+ * driving record, a substance-testing record — is never shared as a side
+ * effect of joining. Access to one of those is its own decision, per document,
+ * for a stated reason, by somebody who holds the permission for it.
+ *
+ * Shown rather than silently omitted: a list shorter than the one somebody
+ * just ticked, with no explanation, is how people conclude the product lost
+ * their documents.
+ */
+function WithheldDocuments({ run }: { run: AcceptanceRun }) {
+  const withheld = run.steps.find((s) => s.key === "document_access")?.withheld;
+  if (!withheld || withheld.length === 0) return null;
+
+  return (
+    <section
+      data-testid="withheld-documents"
+      className="rounded-lg border border-border bg-surface-sunken px-3.5 py-3"
+    >
+      <h2 className="text-[0.8125rem] font-semibold text-fg">
+        Not shared with them
+      </h2>
+      <p className="mt-1 text-[0.75rem] leading-relaxed text-fg-muted">
+        Joining does not hand these over. They are asked for separately, one at a
+        time, for a reason somebody writes down.
+      </p>
+      <ul className="mt-2 space-y-1.5">
+        {withheld.map((document) => (
+          <li key={document.key} className="text-[0.75rem] leading-relaxed text-fg-muted">
+            <span className="font-medium text-fg">{document.label}</span>
+            {document.reason ? ` — ${document.reason}` : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -415,6 +415,85 @@ export interface AddLinkInput {
  * one record, two typed links, each with its own review state and its own
  * governing organization. Never a second copy of the file.
  */
+/**
+ * ███ TEST SEAM — NEVER SET BY THE PRODUCT ███
+ *
+ * Refuses the link for one requirement key, so a sharing grant can be made to
+ * fail PART WAY THROUGH rather than before it starts. Inert wherever a window
+ * exists, for the same reasons set out on the access module's seam, and for the
+ * same honest reason it is not a security property.
+ */
+const LINK_SEAM_AVAILABLE = typeof window === "undefined";
+let linkFaultKey: string | null = null;
+
+export function failLinkWriteForTests(requirementKey: string | null): void {
+  if (!LINK_SEAM_AVAILABLE) return;
+  linkFaultKey = requirementKey;
+}
+
+export interface AddLinkEntry {
+  documentId: string;
+  input: AddLinkInput;
+}
+
+/**
+ * ★ SEVERAL LINKS, OR NONE ★
+ *
+ * A carrier reads a driver's document through a LINK, so each link written is
+ * access granted the instant it lands. Adding them one at a time means a
+ * failure on the second leaves the first readable — access granted by a grant
+ * that failed, and a consent record that disagrees with what is actually
+ * shared. Nobody asked for half of it.
+ *
+ * So this resolves and builds EVERY link first, writing nothing, and commits
+ * only once it knows all of them can be made. The commit loop cannot throw: the
+ * documents are already resolved and the links already built. In this mock that
+ * is genuinely atomic, because it is one synchronous block with no `await` in
+ * it — and in a backend it is one transaction, which is the point of putting
+ * the guarantee at the store rather than in whoever is calling it.
+ *
+ * Idempotence stays the caller's: this writes what it is given.
+ */
+export function addLinks(entries: readonly AddLinkEntry[]): DocumentRecord[] {
+  const at = iso();
+
+  // Phase 1 — resolve and build. Any refusal happens HERE, before any write.
+  const planned = entries.map(({ documentId, input }) => {
+    const existing = documentById(documentId);
+    if (!existing) throw new Error(`No such document: ${documentId}`);
+    if (linkFaultKey && input.requirementKey === linkFaultKey) {
+      throw new Error(
+        `Injected link failure for ${input.requirementKey} (test only). In a real `
+        + "system this is where the write would have refused.",
+      );
+    }
+    const link: DocumentLink = {
+      id: rowId("dlk"),
+      subject: input.subject,
+      requirementKey: input.requirementKey,
+      primary: false,
+      contextOrganizationId: input.contextOrganizationId,
+      contextOrganizationName: input.contextOrganizationName,
+      // A second context has not reviewed it, whatever the first context decided.
+      review: { state: "pending" },
+      linkedAt: at,
+    };
+    return { existing, input, link };
+  });
+
+  // Phase 2 — commit. Nothing below can fail.
+  return planned.map(({ existing, input, link }) => {
+    const updated = updateDocument(existing.documentId, { links: [...existing.links, link] });
+    recordEvent({
+      lineageId: existing.lineageId, documentId: existing.documentId, at, kind: "linked",
+      summary: `Linked to ${input.subject.label}`,
+      detail: "The same document, linked with explicit permission. No copy was made.",
+      organizationId: input.contextOrganizationId, actorName: input.actorName,
+    });
+    return updated;
+  });
+}
+
 export function addLink(documentId: string, input: AddLinkInput): DocumentRecord {
   const existing = documentById(documentId);
   if (!existing) throw new Error(`No such document: ${documentId}`);

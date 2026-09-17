@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
+import { WalkthroughPanel } from "./walkthrough-panel";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
@@ -103,6 +104,8 @@ export function InvitationsScreen() {
           </Button>
         }
       />
+
+      <WalkthroughPanel />
 
       {actionError ? (
         <div

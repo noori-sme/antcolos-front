@@ -2,22 +2,29 @@ import {
   ACCEPTANCE_LIMITATION, ACCEPTANCE_STEP_LABEL, RESTRICTED_QUALIFICATION_CATEGORIES,
   QUALIFICATION_CATEGORY_LABEL, acceptanceComplete,
   type AcceptanceRun, type AcceptanceStep, type AcceptanceStepKey,
-  type Invitation, type PermissionKey,
+  type Invitation, type Membership, type Organization, type PermissionKey, type User,
 } from "@/types";
 import { OWN_RECORDS_SCOPE } from "@/lib/permissions/scope";
+import { clampToGrantable, ungrantablePermissions } from "@/lib/permissions/grantable";
 import { driverRequirements } from "@/lib/documents/requirements";
+import { restrictedReason } from "@/lib/documents/catalog";
 import { MOCK_ORGANIZATIONS, MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
-import { grantMembership, liveMembershipFor } from "@/lib/session/membership-store";
+import {
+  grantMembership, liveMembershipFor, rosterSnapshot, setMembershipStatus,
+} from "@/lib/session/membership-store";
+import { effectivePermissions } from "@/lib/permissions";
+import { MOCK_TEMPLATES } from "@/lib/session/fixtures";
 import { isNewcomerSession } from "@/lib/session/scenarios";
 import {
   createOrResumeProfile, profileForUser,
 } from "./driver-registry";
 import {
-  liveRelationshipWith, mockCreateRelationship, mockShareDocumentsWithCarrier,
+  documentRequirements, liveRelationshipWith, mockCreateRelationship,
+  mockShareDocumentsWithCarrier,
 } from "@/features/driver/mock-driver";
 import { appendAuditEvent } from "./audit";
 import {
-  ensureSeeded, invitationByToken, invitationById,
+  accountById, accountForEmail, ensureSeeded, invitationByToken, invitationById,
   invitationsForOrganization,
   nextInvitationId, nextInvitationToken, openInvitationFor, putInvitation, putRun,
   runFor, runsForInvitation, withJoinedAudit,
@@ -61,6 +68,8 @@ import type {
  */
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const LATENCY_MS = 260;
 
 function db(): void {
@@ -140,7 +149,8 @@ const step = (
   detail: string,
   ref?: AcceptanceStep["ref"],
   failureReason?: string,
-): AcceptanceStep => ({ key, state, detail, ref, failureReason });
+  withheld?: AcceptanceStep["withheld"],
+): AcceptanceStep => ({ key, state, detail, ref, failureReason, withheld });
 
 interface StepContext {
   invitation: Invitation;
@@ -348,17 +358,69 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
     // this step wrote nothing and could not fail — which meant the one property
     // worth proving, that a carrier cannot read a document until the basis for
     // it exists, had no failure state to prove it against.
-    const shared = mockShareDocumentsWithCarrier(
-      driverProfileId, invitation.organizationId, input.sharedDocumentKeys,
+    // The command grants all the agreed links or none of them, and throws if
+    // the store refuses. Caught HERE so a refusal becomes a failed step with a
+    // reason rather than an exception out of an acceptance — and because the
+    // step after this one reads the step list to decide whether to run.
+    let shared: ReturnType<typeof mockShareDocumentsWithCarrier> | undefined;
+    let refusal: string | undefined;
+    try {
+      shared = mockShareDocumentsWithCarrier(
+        driverProfileId, invitation.organizationId, input.sharedDocumentKeys,
+      );
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error);
+    }
+    /*
+     * ★ SAY WHAT WAS HELD BACK, AND WHY ★
+     *
+     * The command narrows whatever it is handed to ORDINARY paperwork, so a
+     * restricted category — a social security number, bank details, a state
+     * driving record, a substance-testing record — never travels because
+     * somebody joined. Silently sharing a shorter list than the one the person
+     * just ticked is how people conclude the product lost their paperwork, so
+     * the step names the difference.
+     */
+    const withheldKeys = shared
+      ? input.sharedDocumentKeys.filter(
+        (k) => !shared!.relationship.sharedDocumentKeys.includes(k))
+      : [];
+    /*
+     * Labelled from the CHECKLIST, never from a global lookup.
+     *
+     * A carrier's own extra rows exist only on its checklist, so a global
+     * lookup resolves the standard requirements and hands back a raw key —
+     * `northline_employment_application` — for exactly the carrier-specific
+     * ones. Nobody should ever be shown an internal key, least of all in the
+     * sentence explaining what was withheld from them.
+     */
+    const checklist = documentRequirements(
+      invitation.engagementType ?? "company_driver", invitation.organizationId,
     );
-    steps.push(shared
+    const withheld = withheldKeys.map((key) => {
+      const requirement = checklist.find((r) => r.key === key);
+      return {
+        key,
+        label: requirement?.label ?? key,
+        reason: requirement ? restrictedReason(requirement.typeKey) : undefined,
+      };
+    });
+    const withheldNote = withheld.length === 0 ? "" : ` ${withheld.length} `
+      + `${withheld.length === 1 ? "document was" : "documents were"} NOT shared, because `
+      + "access to that kind is asked for separately, per document, for a stated reason: "
+      + `${withheld.map((w) => w.label).join(", ")}.`;
+
+    steps.push(shared && !refusal
       ? step("document_access", "done",
         `${invitation.organizationName} can now see ${shared.relationship.sharedDocumentKeys.length} `
         + "of your documents. Each is the same record you own, linked — not a copy — and their "
-        + "review is theirs, not yours.")
+        + "review is theirs, not yours." + withheldNote,
+        undefined, undefined, withheld.length > 0 ? withheld : undefined)
       : step("document_access", "failed",
-        `The documents you chose could not be shared with ${invitation.organizationName}.`,
-        undefined, "There is no live relationship with this carrier to share them under."));
+        `The documents you chose could not be shared with ${invitation.organizationName}. `
+        + "None of them was shared — not some of them.",
+        undefined, refusal
+          ?? "There is no live relationship with this carrier to share them under."));
   }
 
   /* ---- 4. The carrier's existing record of this person ----------------- */
@@ -508,12 +570,48 @@ export const mockAccessService: AccessService = {
     db();
 
     const email = draft.recipientEmail.trim().toLowerCase();
+    if (!EMAIL.test(email)) throw new Error("That is not an email address.");
+
+    // The engagement type decides a driver's paperwork and their pay, so it is
+    // the carrier's to state and cannot be left for the driver to pick later.
+    if (draft.kind === "driver" && !draft.engagementType) {
+      throw new Error(
+        "Say whether this driver is a company driver or an owner-operator. It decides "
+        + "their paperwork and their pay, so the driver cannot choose it.",
+      );
+    }
+
+    /*
+     * ★ NOBODY HANDS OUT ACCESS THEY DO NOT HOLD ★
+     *
+     * Checked HERE rather than trusted from the picker, because the picker is a
+     * convenience and this is the boundary. The refused keys are named: "some
+     * of this is not yours to give" is unactionable. `clampToGrantable` runs
+     * below as well — belt and braces — so a later caller that skipped this
+     * check still cannot widen anything.
+     *
+     * The refusal is recorded. A refused attempt to hand out `permissions:manage`
+     * is worth more six months later than the invitations that succeeded.
+     */
+    const ungrantable = ungrantablePermissions(draft.permissions, ctx.permissions);
+    if (ungrantable.length > 0) {
+      appendAuditEvent(ctx, {
+        module: "access",
+        action: "access.permission_denied",
+        outcome: "denied",
+        entity: { kind: "invitation", id: "new", label: email },
+        summary: `Refused to invite ${email} with access the sender does not hold.`,
+        permissionContext: { required: [...draft.permissions], missing: ungrantable },
+      });
+      throw new PermissionDeniedError(ungrantable);
+    }
     // The frontend stand-in for a unique constraint. Two open invitations to
     // one person is two working links, and whichever is accepted second is how
     // a duplicate relationship gets made.
     const open = openInvitationFor(ctx.organizationId, email);
     if (open) return projected(open);
 
+    const recipientAccount = accountForEmail(email);
     const invitation: Invitation = {
       id: nextInvitationId(),
       token: nextInvitationToken(),
@@ -526,13 +624,25 @@ export const mockAccessService: AccessService = {
       engagementType: draft.engagementType,
       recipientName: draft.recipientName.trim(),
       recipientEmail: email,
-      permissions: [...draft.permissions],
+      permissions: clampToGrantable(
+        draft.permissions,
+        ctx.permissions,
+        ctx.workspaceKind === "carrier_organization" ? "CARRIER" : "DISPATCH_AGENCY",
+      ),
       scopedToCarrierName: draft.scopedToCarrierName,
       engagementId: draft.engagementId,
       expiresAt: draft.expiresAt,
       createdAt: nowIso(),
       status: "pending",
-      recipientHasAccount: false,
+      // DERIVED from the directory, never asserted by the sender: a carrier
+      // that could type "this person is already on Antcolos" could use the
+      // invitation form to find out who is.
+      recipientHasAccount: recipientAccount !== undefined,
+      recipientUserId: recipientAccount?.id,
+      // An invitation is issued from INSIDE an organization, by a seat that
+      // held the permission — never by a User in the abstract.
+      invitedByMembershipId: ctx.membershipId,
+      invitedByName: ctx.actor.displayNameSnapshot,
     };
     putInvitation(invitation);
     audit(ctx, "access.member_invited", invitation,
@@ -654,6 +764,13 @@ function resolve(token: string, options: LookUpOptions): InvitationLookup {
   const invitation = projected(stored);
   if (invitation.status === "revoked") return { status: "revoked", invitation };
 
+  // Connecting an ORGANIZATION is not this flow's to do. Refused before
+  // anything else looks at it, so no part of the acceptance sequence can run
+  // and grant the nearest thing it knows how to grant.
+  if (invitation.kind === "dispatch_org") {
+    return { status: "organization-invitation", invitation };
+  }
+
   const userId = currentUser().id;
   const signedInAs = options.returningFromAuth
     ? invitation.recipientEmail
@@ -752,4 +869,145 @@ function auditJoined(invitation: Invitation, userId: string) {
       summary: `${invitation.recipientName} accepted their invitation`,
     });
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* The roster, and taking a seat away                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ AN ACCESS FLOW THAT CAN ONLY ADD IS NOT REVIEWABLE ★
+ *
+ * "Acceptance produced a real seat" and "the seat is exactly what the
+ * invitation said" are claims you can only check from the OTHER side — the
+ * organization's roster, not the joiner's screen. And "removing access removes
+ * access and nothing else" cannot be checked at all without somewhere to
+ * remove it.
+ *
+ * Read through the membership store's own accessor, so this module keeps no
+ * copy of the roster and cannot drift from it. A seat somebody LEFT is history
+ * rather than access, and is not listed.
+ */
+export function rosterOf(organizationId: string): Membership[] {
+  const seen = new Set<string>();
+  const out: Membership[] = [];
+  for (const scenario of ["demo", "newcomer"] as const) {
+    for (const m of rosterSnapshot(scenario).memberships) {
+      if (m.organizationId !== organizationId) continue;
+      if (m.status === "left") continue;
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+/** Which scenario roster a seat lives in. */
+function scenarioOf(seat: Membership): "demo" | "newcomer" {
+  return rosterSnapshot("newcomer").memberships.some((m) => m.id === seat.id)
+    ? "newcomer" : "demo";
+}
+
+/** The person behind a seat. A lookup by id, never a search. */
+export function accountOfSeat(userId: string): User | undefined {
+  return accountById(userId);
+}
+
+export function permissionsOfSeat(
+  membership: Membership,
+  organization: Organization,
+): ReadonlySet<PermissionKey> {
+  return effectivePermissions(membership, organization, MOCK_TEMPLATES);
+}
+
+export type EndSeatResult =
+  | { status: "ended"; membership: Membership }
+  /** Already gone, or never here. Both are "nothing left to do". */
+  | { status: "already_ended" }
+  | { status: "refused"; refusal: "not_permitted" | "last_owner"; message: string };
+
+/**
+ * Ends somebody's seat in this organization.
+ *
+ * ★ AND NOTHING ELSE ★
+ * The seat goes to `left`. The person's DriverProfile, their documents, their
+ * seats in other organizations and their relationship history all stay exactly
+ * as they were — they are theirs, not this carrier's, and an organization
+ * removing somebody must not be able to reach into a life it does not own.
+ *
+ * Refuses to remove the last owner: a workspace nobody can administer is not a
+ * state this product will create on somebody's behalf.
+ */
+export async function endSeat(
+  ctx: ServiceContext,
+  membershipId: string,
+  reason: string,
+): Promise<EndSeatResult> {
+  await sleep(LATENCY_MS);
+  if (!ctx.permissions.has("members:suspend")) {
+    // Recorded. A refused attempt to remove somebody is worth reading later.
+    appendAuditEvent(ctx, {
+      module: "access",
+      action: "access.permission_denied",
+      outcome: "denied",
+      entity: { kind: "membership", id: membershipId, label: membershipId },
+      summary: "Refused to end a seat: no permission to remove members.",
+      permissionContext: { required: ["members:suspend"], missing: ["members:suspend"] },
+    });
+    return {
+      status: "refused", refusal: "not_permitted",
+      message: "You do not have permission to remove people from this organization.",
+    };
+  }
+
+  const roster = rosterOf(ctx.organizationId);
+  const seat = roster.find((m) => m.id === membershipId);
+  if (!seat) return { status: "already_ended" };
+  if (seat.isOwner && roster.filter((m) => m.isOwner).length === 1) {
+    return {
+      status: "refused", refusal: "last_owner",
+      message: "This is the only owner. Make somebody else an owner first.",
+    };
+  }
+
+  setMembershipStatus(scenarioOf(seat), membershipId, "left");
+  appendAuditEvent(ctx, {
+    module: "access",
+    action: "access.permission_revoked",
+    sourceAction: "access.seat_ended",
+    entity: { kind: "membership", id: seat.id, label: seat.title ?? seat.userId },
+    relatedEntities: [{ kind: "user", id: seat.userId, label: seat.userId }],
+    summary: `Ended access for ${seat.title ?? seat.userId}. ${reason}`,
+    changes: [{ field: "status", before: seat.status, after: "left" }],
+  });
+  return { status: "ended", membership: { ...seat, status: "left" } };
+}
+
+/** The same act, done to yourself. No permission is needed to stop working somewhere. */
+export async function leaveOrganization(
+  ctx: ServiceContext,
+  reason = "Left the organization.",
+): Promise<EndSeatResult> {
+  await sleep(LATENCY_MS);
+  const roster = rosterOf(ctx.organizationId);
+  const seat = roster.find((m) => m.id === ctx.membershipId);
+  if (!seat) return { status: "already_ended" };
+  if (seat.isOwner && roster.filter((m) => m.isOwner).length === 1) {
+    return {
+      status: "refused", refusal: "last_owner",
+      message: "You are the only owner. Make somebody else an owner before you leave.",
+    };
+  }
+
+  setMembershipStatus(scenarioOf(seat), seat.id, "left");
+  appendAuditEvent(ctx, {
+    module: "access",
+    action: "access.permission_revoked",
+    sourceAction: "access.seat_left",
+    entity: { kind: "membership", id: seat.id, label: ctx.actor.displayNameSnapshot },
+    summary: `${ctx.actor.displayNameSnapshot} left ${ctx.organizationName}. ${reason}`,
+    changes: [{ field: "status", before: seat.status, after: "left" }],
+  });
+  return { status: "ended", membership: { ...seat, status: "left" } };
 }

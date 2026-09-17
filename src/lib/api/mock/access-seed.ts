@@ -30,6 +30,11 @@ export function seedInvitations(): Invitation[] {
     organizationName: "Northline Freight",
     organizationType: "CARRIER" as OrganizationType,
     recipientHasAccount: false,
+    // An invitation is issued from inside an organization, by a SEAT that held
+    // `invitations:create` — never by a User in the abstract. The name is
+    // snapshotted so the record still reads after the sender is renamed.
+    invitedByMembershipId: "mem_northline_owner",
+    invitedByName: "Sam Murtaza",
   };
   return [
     {
@@ -142,9 +147,29 @@ export function seedInvitations(): Invitation[] {
       expiresAt: daysFromNow(21), createdAt: daysAgo(2), status: "pending",
     },
     {
+      ...base,
+      /*
+       * An invitation that carries `members:view` and `members:suspend`.
+       *
+       * It is what makes the People screen reachable and ending a seat
+       * something a person can press, so the browser suite can prove the whole
+       * arc — join, look at the roster, put the seat down — without a single
+       * test-only affordance. An office manager is exactly who holds those two
+       * in real life.
+       */
+      id: "inv_14", token: "INV-NEWEMPLOYEE", kind: "employee", roleName: "Office manager",
+      recipientName: "Alex Rivera", recipientEmail: "alex.rivera@example.com",
+      permissions: [
+        "loads:view", "drivers:view", "trucks:view", "documents:view",
+        "members:view", "members:suspend", "invitations:view",
+      ],
+      expiresAt: daysFromNow(14), createdAt: daysAgo(1), status: "pending",
+    },
+    {
       id: "inv_8", token: "INV-DISPATCHEMP", kind: "dispatcher", roleName: "Dispatcher",
       organizationId: "org_summit", organizationName: "Summit Dispatch",
       organizationType: "DISPATCH_AGENCY", recipientHasAccount: false,
+      invitedByMembershipId: "mem_summit_owner", invitedByName: "Dana Whitfield",
       recipientName: "Owen Pratt", recipientEmail: "owen@example.com",
       permissions: ["loads:view", "loads:create", "loads:edit", "loads:status:update", "dispatch:view", "loads:assign", "drivers:view", "trucks:view", "trailers:view", "customers:view", "documents:view", "documents:upload", "compliance:view"],
       expiresAt: daysFromNow(10), createdAt: daysAgo(1), status: "pending",

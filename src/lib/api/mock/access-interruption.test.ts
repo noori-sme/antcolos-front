@@ -10,7 +10,9 @@ import {
   driverProfileSync, driverRelationshipsSync, resetDriverMock,
 } from "@/features/driver/mock-driver";
 import { profileForUser, resetDriverRegistry } from "./driver-registry";
-import { documentsForSubject, resetDocumentStore } from "./document-store";
+import {
+  addLinks, documentsForSubject, eventsForLineage, failLinkWriteForTests, resetDocumentStore,
+} from "./document-store";
 import { auditLedger, resetAuditLedger } from "./audit-ledger";
 import {
   failAcceptanceStepForTests, failJoinedAuditForTests, mockAccessService,
@@ -106,6 +108,7 @@ const relationships = () => driverRelationshipsSync()
 beforeEach(() => {
   failAcceptanceStepForTests(null);
   failJoinedAuditForTests(false);
+  failLinkWriteForTests(null);
   resetAccessStore();
   resetRoster();
   resetDocumentStore();
@@ -264,19 +267,45 @@ describe("retrying finishes the job exactly once", () => {
 
 describe("a link that is not theirs to use", () => {
   it("refuses the wrong recipient, and creates nothing", async () => {
-    // `INV-WRONGUSER` is addressed to karin.vogel@example.com; this session is
-    // signed in as somebody else, and no amount of pressing changes that.
-    const lookup = await mockAccessService.lookUp("INV-WRONGUSER", { returningFromAuth: false });
+    // `INV-NEWCOMER` is addressed to alex.rivera@example.com, who has an
+    // account. This session is signed in as somebody else, and no amount of
+    // pressing changes that.
+    //
+    // It used to point at karin.vogel@example.com, who has no account at all.
+    // That invitation now resolves to `needs-account` first — correctly, since
+    // there is nobody to compare against until she makes one — because
+    // `recipientHasAccount` is derived from the directory rather than typed
+    // into the fixture. A seed can no longer claim an account that does not
+    // exist, and the case below covers it.
+    const lookup = await mockAccessService.lookUp("INV-NEWCOMER", { returningFromAuth: false });
     expect(lookup.status).toBe("wrong-recipient");
 
     const result = await mockAccessService.accept(
-      "INV-WRONGUSER", { returningFromAuth: false }, { sharedDocumentKeys: [] },
+      "INV-NEWCOMER", { returningFromAuth: false }, { sharedDocumentKeys: [] },
     );
     expect(result.status).toBe("not-acceptable");
     // Exactly what they had before: the Owner seat, untouched. Nothing was
     // added for an invitation addressed to somebody else.
     expect(seats()).toHaveLength(1);
     expect(seats()[0].id).toBe("mem_northline_owner");
+    expect(joinedEvents()).toHaveLength(0);
+  });
+
+  it("sends somebody with no account to sign up before it can say whose it is", async () => {
+    // karin.vogel@example.com is nobody in particular until she makes an
+    // account, so the address is all the invitation can name and there is
+    // nothing to compare a signed-in session against.
+    const lookup = await mockAccessService.lookUp("INV-WRONGUSER", { returningFromAuth: false });
+    expect(lookup.status).toBe("needs-account");
+    if (lookup.status === "needs-account") {
+      expect(lookup.invitation.recipientHasAccount).toBe(false);
+      expect(lookup.invitation.recipientUserId).toBeUndefined();
+    }
+
+    const result = await mockAccessService.accept(
+      "INV-WRONGUSER", { returningFromAuth: false }, { sharedDocumentKeys: [] },
+    );
+    expect(result.status).toBe("not-acceptable");
     expect(joinedEvents()).toHaveLength(0);
   });
 
@@ -422,6 +451,10 @@ const carrierCanList = async (documentId: string) =>
 const driverDocumentId = (requirementKey: string) =>
   documentsForSubject("driver", "dp_sam")
     .find((d) => d.links.some((l) => l.requirementKey === requirementKey))!.documentId;
+
+const documentEventsFor = (documentId: string) =>
+  eventsForLineage(documentsForSubject("driver", "dp_sam")
+    .find((d) => d.documentId === documentId)!.lineageId);
 
 const northlineLinks = (documentId: string) =>
   documentsForSubject("driver", "dp_sam")
@@ -747,5 +780,174 @@ describe("the fault seam is reachable from tests and nowhere else", () => {
       const body = source.slice(source.indexOf(`export function ${seam}`));
       expect(body.slice(0, 200)).toContain("if (!SEAM_AVAILABLE) return;");
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* A failure INSIDE the document step, between one link and the next           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ HALF A GRANT IS A GRANT ★
+ *
+ * The step-level seam fails `document_access` before it writes anything, which
+ * proves the step boundary and nothing about what happens INSIDE it. A carrier
+ * reads a driver's document through a link, so every link is access the instant
+ * it lands: linking the first of two agreed documents and then refusing the
+ * second would leave real access granted by a grant that failed, and a consent
+ * record that disagrees with what is actually shared.
+ *
+ * The store's seam refuses one named requirement, so the grant breaks in the
+ * middle rather than at the start.
+ */
+describe("interrupted between the first document and the second", () => {
+  const FIRST = "cdl_front";
+  const SECOND = "medical_front";
+
+  it("grants neither, while leaving what the carrier already held alone", async () => {
+    asDriverWithPaperwork();
+
+    // Refuse the SECOND. The first is already resolved and would be written.
+    failLinkWriteForTests(SECOND);
+    const result = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: [FIRST, SECOND], licence: LICENCE,
+    });
+    expect(result.status).toBe("incomplete");
+    if (result.status !== "incomplete") return;
+
+    const steps = new Map(result.run.steps.map((s) => [s.key, s]));
+    expect(steps.get("carrier_relationship")!.state).toBe("done");
+    expect(steps.get("document_access")!.state).toBe("failed");
+    // The reason names the real refusal rather than a tidy generic one.
+    expect(steps.get("document_access")!.failureReason).toMatch(/medical_front/);
+    expect(steps.get("document_access")!.detail).toMatch(/None of them was shared/);
+
+    /* ---- neither document, not just the one that refused -------------- */
+
+    for (const key of [FIRST, SECOND]) {
+      const documentId = driverDocumentId(key);
+      expect(northlineLinks(documentId)).toHaveLength(0);
+      expect(await carrierCanList(documentId)).toBe(false);
+      await expect(mockDocumentsService.get(CARRIER(), documentId))
+        .rejects.toBeInstanceOf(NotFoundError);
+    }
+
+    // No consent recorded for documents that were not shared. The relationship
+    // stands, because it is not this step's to undo, and it promises nothing.
+    expect(relationships()).toHaveLength(1);
+    expect(relationships()[0].sharedDocumentKeys).toEqual([]);
+
+    // And no "linked" event for either, so the history does not record a share
+    // that did not happen.
+    const events = documentEventsFor(driverDocumentId(FIRST))
+      .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id);
+    expect(events).toHaveLength(0);
+
+    /* ---- what was already theirs, on an independent basis ------------- */
+
+    // Northline issued this driver a handbook. That link predates the
+    // invitation and rests on nothing acceptance did, so a failure here must
+    // not touch it — withholding what was not granted is the rule, not
+    // revoking what was.
+    const handbook = driverDocumentId("northline_handbook");
+    expect(northlineLinks(handbook)).toHaveLength(1);
+    expect(await carrierCanList(handbook)).toBe(true);
+    const detail = await mockDocumentsService.get(CARRIER(), handbook);
+    expect(detail.document.documentId).toBe(handbook);
+
+    // The driver still owns their whole file.
+    expect(documentsForSubject("driver", "dp_sam").length).toBeGreaterThan(0);
+
+    // Nothing after the failure ran: no seat, no ledger line, and it is raised.
+    expect(steps.get("workspace_membership")!.state).toBe("pending");
+    expect(liveMembershipFor("demo", "usr_sam", NORTHLINE.id)).toBeUndefined();
+    expect(joinedEvents()).toHaveLength(0);
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(1);
+
+    // The invitation is still open, so the retry below is theirs to make.
+    const [invitation] = (await mockAccessService.list(OWNER()))
+      .filter((i) => i.token === TOKEN);
+    expect(invitation.status).toBe("pending");
+  });
+
+  it("finishes with exactly the intended links, and one of every record", async () => {
+    asDriverWithPaperwork();
+    failLinkWriteForTests(SECOND);
+    await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: [FIRST, SECOND], licence: LICENCE,
+    });
+
+    failLinkWriteForTests(null);
+    const retry = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: [FIRST, SECOND], licence: LICENCE,
+    });
+    expect(retry.status).toBe("accepted");
+
+    for (const key of [FIRST, SECOND]) {
+      const documentId = driverDocumentId(key);
+      // One link each — the first attempt left nothing to double up on.
+      expect(northlineLinks(documentId)).toHaveLength(1);
+      expect(await carrierCanList(documentId)).toBe(true);
+      expect(documentEventsFor(documentId)
+        .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id))
+        .toHaveLength(1);
+    }
+
+    // Nothing wider than what was agreed.
+    const notAgreed = driverDocumentId("cdl_back");
+    expect(northlineLinks(notAgreed)).toHaveLength(0);
+    expect(await carrierCanList(notAgreed)).toBe(false);
+
+    // One of every record, and one acceptance rather than two.
+    expect(relationships()).toHaveLength(1);
+    expect([...relationships()[0].sharedDocumentKeys].sort()).toEqual([FIRST, SECOND].sort());
+    expect(seats()).toHaveLength(1);
+    expect(joinedEvents()).toHaveLength(1);
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(0);
+
+    // Still one run, still the first attempt's consent moment.
+    if (retry.status === "accepted") {
+      expect(retry.run.invitationId).toBe(
+        (await mockAccessService.list(OWNER())).find((i) => i.token === TOKEN)!.id,
+      );
+    }
+  });
+
+  it("is refused by the store as a batch, so no caller can half-apply it", () => {
+    // The guarantee lives at the OWNING boundary, not in the caller's loop.
+    // Called directly, with one entry poisoned, the store writes neither.
+    asDriverWithPaperwork();
+    const first = documentsForSubject("driver", "dp_sam")[0];
+    const second = documentsForSubject("driver", "dp_sam")[1];
+    const before = (id: string) => documentsForSubject("driver", "dp_sam")
+      .find((d) => d.documentId === id)!.links.length;
+    const counts = [before(first.documentId), before(second.documentId)];
+
+    failLinkWriteForTests("__poison__");
+    expect(() => addLinks([
+      {
+        documentId: first.documentId,
+        input: {
+          subject: { kind: "driver", id: "dp_sam", label: "Sam Murtaza" },
+          requirementKey: "cdl_front",
+          contextOrganizationId: NORTHLINE.id,
+          contextOrganizationName: NORTHLINE.displayName,
+          actorName: "Sam Murtaza",
+        },
+      },
+      {
+        documentId: second.documentId,
+        input: {
+          subject: { kind: "driver", id: "dp_sam", label: "Sam Murtaza" },
+          requirementKey: "__poison__",
+          contextOrganizationId: NORTHLINE.id,
+          contextOrganizationName: NORTHLINE.displayName,
+          actorName: "Sam Murtaza",
+        },
+      },
+    ])).toThrow();
+
+    expect(before(first.documentId)).toBe(counts[0]);
+    expect(before(second.documentId)).toBe(counts[1]);
   });
 });

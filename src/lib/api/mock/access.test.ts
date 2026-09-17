@@ -57,8 +57,16 @@ function carrierContext(permissions: PermissionKey[]): ServiceContext {
   };
 }
 
+/**
+ * An owner who can invite — and who HOLDS what they hand out.
+ *
+ * `loads:view` is here because nobody may give away access they do not have
+ * themselves, so a sender narrowed to invitation permissions alone can issue
+ * no invitation at all. A real owner holds the driver permissions they offer.
+ */
 const OWNER = () => carrierContext([
   "invitations:view", "invitations:create", "invitations:revoke", "invitations:resend",
+  "loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view",
 ]);
 
 const RETURNING = { returningFromAuth: true };
@@ -165,6 +173,9 @@ describe("accepting twice produces one of everything", () => {
     const draft = {
       kind: "driver" as const,
       roleName: "Driver",
+      // Required now: the engagement type decides a driver's paperwork and
+      // their pay, so the carrier states it and the driver cannot choose it.
+      engagementType: "company_driver" as const,
       recipientName: "Yusuf Demir",
       recipientEmail: "yusuf.demir@example.com",
       permissions: ["loads:view"] as PermissionKey[],

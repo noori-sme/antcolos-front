@@ -56,7 +56,6 @@ export default defineConfig({
      * browser suite presses the same buttons a person does and the bridge is
      * gone — file, mount, gate and all.
      */
->>>>>>> 806f467
     // `localhost`, not `127.0.0.1`: `next dev` blocks cross-origin requests to
     // its own HMR endpoint, and a page whose HMR socket is refused never
     // finishes hydrating — every click then does nothing.
