@@ -463,6 +463,30 @@ export function failAfterConsentForTests(on: boolean): void {
   postConsentFault = on;
 }
 
+/**
+ * Writes the consent record BEFORE the links, inverting phases 2 and 3.
+ *
+ * ★ WHY A SEAM EXISTS TO REACH A STATE THIS CODE CANNOT PRODUCE ★
+ *
+ * As written, the links commit and the consent follows, so "the agreement is
+ * recorded while some links are still missing" is unreachable here — and
+ * proving an invariant by pointing at the order the code happens to use is
+ * proving nothing. A backend writing the same two things in the other order
+ * reaches that state on any bad day, and whichever order it picks, a crash
+ * between them leaves the other half missing.
+ *
+ * So this inverts them, and the rollback and the read guard are asserted
+ * against the inverted order too. What must hold is the INVARIANT, not the
+ * sequence: no acceptance-derived document is readable unless its consent is
+ * effective at the moment of the read.
+ */
+let consentBeforeLinks = false;
+
+export function commitConsentBeforeLinksForTests(on: boolean): void {
+  if (!LINK_SEAM_AVAILABLE) return;
+  consentBeforeLinks = on;
+}
+
 export interface AddLinkEntry {
   documentId: string;
   input: AddLinkInput;
@@ -600,7 +624,26 @@ export function addLinks(
   const events = state.events;
   let consentCommitted = false;
 
+  // Phase 3 — the consent that makes the links mean something. Still the same
+  // synchronous block, so no read can land between it and the links.
+  const commitConsent = () => {
+    if (!consent || consentCommitted) return;
+    consent.commit();
+    consentCommitted = true;
+    if (postConsentFault) {
+      throw new Error(
+        "Injected post-consent failure (test only). In a real system this is "
+        + "where the grant died with the agreement already recorded.",
+      );
+    }
+  };
+
   try {
+    // Normally after the links. Under the seam, before them — so a link can
+    // refuse with the agreement already in, which is the state a differently
+    // ordered backend reaches on any bad day.
+    if (consentBeforeLinks) commitConsent();
+
     const written = planned.map(({ existing, input, link }) => {
       if (commitFaultKey && input.requirementKey === commitFaultKey) {
         throw new Error(
@@ -618,18 +661,7 @@ export function addLinks(
       return updated;
     });
 
-    // Phase 3 — the consent that makes the links mean something. Still the same
-    // synchronous block, so no read can land between phase 2 and here.
-    if (consent) {
-      consent.commit();
-      consentCommitted = true;
-      if (postConsentFault) {
-        throw new Error(
-          "Injected post-consent failure (test only). In a real system this is "
-          + "where the grant died with the agreement already recorded.",
-        );
-      }
-    }
+    commitConsent();
     return written;
   } catch (error) {
     // Put BOTH stores back. Not "unlink" — these links were never real, and a

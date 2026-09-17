@@ -14,8 +14,8 @@ import {
   setSharedDocumentKeysForTests,
 } from "./driver-registry";
 import {
-  addLinks, documentsForSubject, eventsForLineage, failAfterConsentForTests,
-  failLinkCommitForTests, failLinkWriteForTests, resetDocumentStore,
+  addLinks, commitConsentBeforeLinksForTests, documentsForSubject, eventsForLineage,
+  failAfterConsentForTests, failLinkCommitForTests, failLinkWriteForTests, resetDocumentStore,
 } from "./document-store";
 import { auditLedger, resetAuditLedger } from "./audit-ledger";
 import {
@@ -128,6 +128,7 @@ beforeEach(() => {
   failLinkWriteForTests(null);
   failLinkCommitForTests(null);
   failAfterConsentForTests(false);
+  commitConsentBeforeLinksForTests(false);
   failConsentWriteForTests(false);
   resetAccessStore();
   resetRoster();
@@ -1227,6 +1228,110 @@ describe("a grant that dies with part of itself already written", () => {
     for (const key of AGREED) {
       const documentId = driverDocumentId(key);
       expect(northlineLinks(documentId)).toHaveLength(1);
+      expect(documentEventsFor(documentId)
+        .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id))
+        .toHaveLength(1);
+    }
+    expect([...consentFor()].sort()).toEqual([...AGREED].sort());
+    expect(relationships()).toHaveLength(1);
+    expect(seats()).toHaveLength(1);
+    expect(joinedEvents()).toHaveLength(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The invariant does not depend on the write order                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ PROVING IT AGAINST THE ORDER THIS CODE HAPPENS TO USE PROVES NOTHING ★
+ *
+ * `addLinks` commits the links and then the consent, so "the agreement is
+ * recorded while some links are still missing" is unreachable here. A backend
+ * writing the same two things in the other order reaches it on any bad day —
+ * and whichever order it picks, a crash between them leaves the other half
+ * missing. So the seam inverts the two phases and the same properties are
+ * asserted against the inverted order.
+ *
+ * What must hold is the invariant, not the sequence: no acceptance-derived
+ * document is readable unless its consent is effective at the moment of the
+ * read.
+ */
+describe("consent recorded first, links still missing", () => {
+  const AGREED = ["cdl_front", "medical_front"];
+
+  const consentFor = () => liveRelationship(
+    profileForUser("usr_sam")!.id, NORTHLINE.id,
+  )?.sharedDocumentKeys ?? [];
+
+  it("reads nothing, and unwinds the consent that was already in", async () => {
+    asDriverWithPaperwork();
+    commitConsentBeforeLinksForTests(true);
+    // A link refuses with the agreement already recorded.
+    failLinkCommitForTests("medical_front");
+
+    const result = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+    expect(result.status).toBe("incomplete");
+
+    // The consent was written and then put back, so the relationship promises
+    // nothing it cannot deliver.
+    expect(consentFor()).toEqual([]);
+
+    for (const key of AGREED) {
+      const documentId = driverDocumentId(key);
+      expect(northlineLinks(documentId)).toHaveLength(0);
+      expect(await carrierCanList(documentId)).toBe(false);
+      await expect(mockDocumentsService.get(CARRIER(), documentId))
+        .rejects.toBeInstanceOf(NotFoundError);
+    }
+    // What the carrier held on its own basis is untouched, as always.
+    expect(await carrierCanList(driverDocumentId("northline_handbook"))).toBe(true);
+    expect(liveMembershipFor("demo", "usr_sam", NORTHLINE.id)).toBeUndefined();
+    expect(joinedEvents()).toHaveLength(0);
+  });
+
+  it("would not have been readable even if the consent had survived", async () => {
+    /*
+     * The read guard, on its own, against the inverted order.
+     *
+     * Consent recorded, no link: the state a backend whose transaction did not
+     * hold would leave behind. `consentBacked` refuses a link with no consent;
+     * this is the other half — a consent with no link grants nothing either,
+     * because the link IS the access and the consent only authorises it.
+     */
+    asDriverWithPaperwork();
+    const profileId = profileForUser("usr_sam")?.id ?? "dp_sam";
+    setSharedDocumentKeysForTests(profileId, NORTHLINE.id, AGREED);
+
+    for (const key of AGREED) {
+      const documentId = driverDocumentId(key);
+      expect(northlineLinks(documentId)).toHaveLength(0);
+      expect(await carrierCanList(documentId)).toBe(false);
+      await expect(mockDocumentsService.get(CARRIER(), documentId))
+        .rejects.toBeInstanceOf(NotFoundError);
+    }
+  });
+
+  it("completes once on retry, whichever order the grant was written in", async () => {
+    asDriverWithPaperwork();
+    commitConsentBeforeLinksForTests(true);
+    failLinkCommitForTests("medical_front");
+    await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+
+    failLinkCommitForTests(null);
+    const retry = await mockAccessService.accept(TOKEN, RETURNING, {
+      sharedDocumentKeys: AGREED, licence: LICENCE,
+    });
+    expect(retry.status).toBe("accepted");
+
+    for (const key of AGREED) {
+      const documentId = driverDocumentId(key);
+      expect(northlineLinks(documentId)).toHaveLength(1);
+      expect(await carrierCanList(documentId)).toBe(true);
       expect(documentEventsFor(documentId)
         .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id))
         .toHaveLength(1);
