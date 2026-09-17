@@ -29,6 +29,7 @@ export type NeedsYouModule =
   | "documents"
   | "accounting"
   | "contracts"
+  | "workforce"
   | "audit";
 
 /**
@@ -47,6 +48,7 @@ export const NEEDS_YOU_MODULE_ORDER: readonly NeedsYouModule[] = [
   "documents",
   "accounting",
   "contracts",
+  "workforce",
   "fleet",
   "eld",
   "fuel",
@@ -66,6 +68,7 @@ export const MODULE_LABEL: Record<NeedsYouModule, string> = {
   documents: "Documents",
   accounting: "Accounting",
   contracts: "Contracts",
+  workforce: "Workforce & HR",
   audit: "Audit & risk",
 };
 
@@ -115,6 +118,16 @@ export const CATEGORY_MODULE: Record<NeedsYouCategory, NeedsYouModule> = {
   compliance_expiring: "compliance",
   compliance_expired: "compliance",
   compliance_critical: "compliance",
+
+  /* Workforce & HR. The qualification-file items sit here rather than under
+     Documents: they are about a carrier's custody of evidence about a person,
+     and somebody looking for them is thinking about the person. */
+  workforce_applicant_review: "workforce",
+  workforce_onboarding_blocked: "workforce",
+  workforce_start_approval: "workforce",
+  workforce_offboarding_incomplete: "workforce",
+  qualification_review_required: "workforce",
+  qualification_replacement_available: "workforce",
 
   /* Fleet */
   invalid_assignment: "fleet",

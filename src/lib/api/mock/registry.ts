@@ -44,6 +44,8 @@ import { resetTracking } from "./tracking-registry";
 import { resetTrackingSignals } from "./tracking-signals";
 import { resetTrailerRegistry } from "./trailer-registry";
 import { resetTruckRegistry } from "./truck-registry";
+import { resetQualificationStore } from "./qualification-store";
+import { resetWorkforceStore } from "./workforce-store";
 import { resetIntegrationMocks } from "@/lib/integrations/mock/adapters";
 import { resetMockSequence } from "@/lib/integrations/mock/support";
 import { resetPropagationBus } from "@/lib/propagation";
@@ -109,6 +111,14 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // it, and a stale directory would make both of them wrong about the same
   // person.
   { id: "membership_directory", holds: "Every membership, its availability and who supervises whom", module: "membership-directory.ts", reset: resetMembershipDirectory },
+  // AFTER the driver registry and the membership directory, because the
+  // engagement fixtures point at both by id and a seed built over a stale
+  // roster would name people who are not there. It holds no document, no
+  // permission and no contract term — only references to those.
+  { id: "workforce", holds: "Workforce engagements, their history, waivers and unfinished offboarding", module: "workforce-store.ts", reset: resetWorkforceStore },
+  // AFTER the document store, whose versions its records pin. It holds no file
+  // and no second document identity — only pinned references into that store.
+  { id: "qualification", holds: "Carrier qualification-file custody and retention records", module: "qualification-store.ts", reset: resetQualificationStore },
 
   /* -- The canonical equipment meter ------------------------------------- */
   // Before the operational layers, because maintenance and fleet both PROJECT

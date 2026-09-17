@@ -224,6 +224,20 @@ export async function mockGetCarrierDriver(id: string): Promise<CarrierDriver | 
  * the carrier's records as a historical snapshot; the carrier simply stops
  * receiving anything new.
  */
+/**
+ * Ends a relationship from the carrier's driver screens.
+ *
+ * ★ IT DELEGATES; IT DOES NOT DECIDE ★
+ * The canonical `CarrierRelationship` lives in the driver registry, and
+ * `endCarrierRelationship` there is the one command that ends one. This screen
+ * roster used to end its own copy instead, which meant a relationship could
+ * read as ended here while every module that derives from the registry —
+ * Safety & Compliance above all — went on treating the driver as live.
+ *
+ * So the canonical command runs first and its answer decides. The row below is
+ * then brought into line for the screens that still read it. That is one
+ * ending, reflected in two places, rather than two rosters kept in step.
+ */
 export async function mockEndCarrierRelationship(
   id: string,
   reason: string,
@@ -231,14 +245,29 @@ export async function mockEndCarrierRelationship(
   await sleep(LATENCY_MS);
   const index = DRIVERS.findIndex((d) => d.id === id);
   if (index < 0) throw new Error(`No such driver relationship: ${id}`);
+  const row = DRIVERS[index];
+  const at = iso(now());
+
+  // The canonical record first. Idempotent, so a row already ended there — by
+  // HR offboarding, say — is not ended twice and does not fail here.
+  const { endCarrierRelationship } = await import("@/lib/api/mock/driver-registry");
+  const outcome = endCarrierRelationship(
+    row.driverProfileId, CARRIER_DRIVERS_ORGANIZATION_ID, reason.trim(), at,
+  );
+  if (outcome.outcome === "unknown_driver" || outcome.outcome === "no_relationship") {
+    throw new Error(
+      `${row.name} has no canonical driver relationship with this carrier, so it cannot be ended.`,
+    );
+  }
+
   const ended: CarrierDriver = {
-    ...DRIVERS[index],
+    ...row,
     status: "ended",
-    endedAt: iso(now()),
-    endReason: reason.trim(),
+    endedAt: outcome.relationship?.endedAt ?? at,
+    endReason: outcome.relationship?.endReason ?? reason.trim(),
     timeline: [
-      ...DRIVERS[index].timeline,
-      { at: iso(now()), event: "Relationship ended", detail: reason.trim() },
+      ...row.timeline,
+      { at, event: "Relationship ended", detail: reason.trim() },
     ],
   };
   DRIVERS = DRIVERS.map((d) => (d.id === id ? ended : d));

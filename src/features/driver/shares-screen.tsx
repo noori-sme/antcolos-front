@@ -10,6 +10,8 @@ import { FormAlert } from "@/features/auth/form-alert";
 import type { DocumentSharePackage } from "@/types";
 import { SHARE_PURPOSE_LABEL } from "@/types";
 import { recipientLabel, shareReference } from "@/lib/api/mock/document-shares";
+import { DriverAdoptionsPanel } from "@/features/workforce/driver-adoptions-panel";
+import { useServiceContext } from "@/lib/api/use-service-context";
 import { ShareStateChip } from "./share-badges";
 import { driverShares, driverSharesNeedingRefresh, revokeDriverShare } from "./sharing";
 import { formatDate } from "./driver-rules";
@@ -22,6 +24,7 @@ import { formatDate } from "./driver-rules";
  * whether it was opened; and every one of them can be withdrawn from here.
  */
 export function DriverSharesScreen() {
+  const ctx = useServiceContext();
   const [nonce, setNonce] = useState(0);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   void nonce;
@@ -56,6 +59,12 @@ export function DriverSharesScreen() {
           ))}
         </ul>
       )}
+
+      {/* Withdrawing a share is the loudest thing on this page, so what it does
+          NOT undo belongs on the same page rather than in a help article. */}
+      {ctx?.driverProfileId ? (
+        <DriverAdoptionsPanel driverProfileId={ctx.driverProfileId} />
+      ) : null}
 
       <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-[0.75rem] leading-relaxed text-fg-subtle">
         Preview build: shares live in this browser session only, no email is sent, and no file is

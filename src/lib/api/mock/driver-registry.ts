@@ -244,6 +244,25 @@ function buildFixtures(): DriverRecord[] {
       },
     },
     {
+      // ★ INVITED, AND HOLDING NOTHING ★
+      //
+      // The case that proves a compliance REQUIREMENT is not a document: Ray
+      // has been invited, has shared nothing, and every obligation about him
+      // exists anyway. He lived only in the driver feature's screen roster
+      // until Safety & Compliance started deriving from this registry; a
+      // scenario the product depends on has to exist in the canonical record,
+      // not beside it.
+      profile: profile("dp_ray", "Ray Bell", "B3310027745", "IL",
+        { phone: "+1 (312) 555-0190", email: "ray.bell@example.com", cdlDays: 450 }),
+      availability: { status: "inactive", homeTerminal: "Chicago, IL" },
+      preferences: {},
+      engagements: [{
+        ...engagement("dp_ray", "org_northline", "Northline Freight", "company_driver", "invited", 3, []),
+        startedAt: undefined,
+      }],
+      documents: {},
+    },
+    {
       profile: profile("dp_kelsey", "Kelsey Nguyen", "N5590028841", "IL",
         { phone: "+1 (312) 555-0186", cdlDays: 380, medicalDays: 150 }),
       availability: { status: "inactive", homeTerminal: "Chicago, IL" },
@@ -441,6 +460,178 @@ export function driverDocumentRowsUnscoped(
 ): DriverDocument[] {
   const record = db().find((d) => d.profile.id === driverProfileId);
   return (record?.documents[organizationId] ?? []).map((d) => ({ ...d }));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cross-module reads and the relationship command                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One carrier's engagement with one driver, with NO access check.
+ *
+ * The same shape of read as `driverDocumentRowsUnscoped` and for the same
+ * reason: a caller already scoping by something else needs the record without a
+ * context. Workforce uses it to ANSWER whether an operational driver
+ * relationship exists — never to decide who may see the driver, which stays
+ * `driverViewSync`'s job.
+ */
+export function carrierRelationshipUnscoped(
+  driverProfileId: string,
+  carrierId: string,
+): CarrierRelationship | undefined {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  const found = record?.engagements.find((e) => e.carrierId === carrierId);
+  return found ? { ...found } : undefined;
+}
+
+/** The permanent person, with NO access check. Never returned to a screen. */
+export function driverProfileUnscoped(driverProfileId: string): DriverProfile | undefined {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  return record ? { ...record.profile } : undefined;
+}
+
+/**
+ * One carrier's driver relationships, as the modules downstream of the registry
+ * need them. NO access check: the caller scopes by the organization it passes.
+ *
+ * ★ WHY THIS EXISTS ★
+ * Safety & Compliance has to know which drivers a carrier owes records about,
+ * and whether each relationship is still live — that is what decides when a
+ * requirement freezes and a snapshot is taken. It used to read a SECOND driver
+ * roster held in the driver feature, which meant a relationship ended here was
+ * invisible there: a driver could leave and their compliance records would
+ * never freeze, while a driver present here and absent there sat permanently at
+ * "requirements not built".
+ *
+ * The fix is not to keep two rosters in step. It is for the one that is
+ * canonical to be the one compliance derives from, which is this function.
+ * Nothing is copied: every field below is read from the registry's own records
+ * at the moment it is asked for.
+ */
+export interface CarrierDriverRelationshipRow {
+  /** The relationship id. A driver may hold one per carrier. */
+  id: string;
+  driverProfileId: string;
+  name: string;
+  email: string;
+  engagementType: EngagementType;
+  status: RelationshipStatus;
+  cdlNumber: string;
+  cdlState: string;
+  cdlExpiresAt: string;
+  medicalExpiresAt?: string;
+  startedAt?: string;
+  endedAt?: string;
+  endReason?: string;
+  /** Only the keys the driver agreed to share with THIS carrier. */
+  sharedDocuments: Array<{
+    key: string;
+    status: DriverDocument["status"];
+    fileName?: string;
+    sharedAt: string;
+    expiresAt?: string;
+  }>;
+}
+
+export function carrierDriverRelationshipsUnscoped(
+  organizationId: string,
+): CarrierDriverRelationshipRow[] {
+  const out: CarrierDriverRelationshipRow[] = [];
+  for (const record of db()) {
+    for (const engagement of record.engagements) {
+      if (engagement.carrierId !== organizationId) continue;
+      const held = record.documents[organizationId] ?? [];
+      out.push({
+        id: engagement.id,
+        driverProfileId: record.profile.id,
+        name: record.profile.legalName,
+        email: record.profile.email,
+        engagementType: engagement.engagementType,
+        status: engagement.status,
+        cdlNumber: record.profile.cdlNumber,
+        cdlState: record.profile.cdlState,
+        cdlExpiresAt: record.profile.cdlExpiresAt,
+        medicalExpiresAt: record.profile.medicalCardExpiresAt,
+        startedAt: engagement.startedAt,
+        endedAt: engagement.endedAt,
+        endReason: engagement.endReason,
+        // Rule 2 of this registry, applied here too: only what the driver
+        // agreed to share with this carrier travels.
+        sharedDocuments: held
+          .filter((d) => engagement.sharedDocumentKeys.includes(d.requirementKey))
+          .map((d) => ({
+            key: d.requirementKey,
+            status: d.status,
+            fileName: d.fileName,
+            sharedAt: d.submittedAt ?? d.updatedAt ?? engagement.invitedAt,
+            expiresAt: d.expiresAt,
+          })),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * What `endCarrierRelationship` did. Four outcomes, and they are not the same.
+ *
+ * `already_ended` is a SUCCESS: the command is idempotent, so asking twice
+ * leaves one ending and one history entry. A caller that treated it as a
+ * failure would raise an offboarding item about work that is already done.
+ */
+export type EndRelationshipOutcome =
+  | "ended"
+  | "already_ended"
+  | "unknown_driver"
+  | "no_relationship";
+
+/**
+ * ★ THE DRIVER RELATIONSHIP MODULE'S OWN ENDING COMMAND ★
+ *
+ * The only way a `CarrierRelationship` ever ends, and it lives HERE, with the
+ * records it changes. Workforce offboarding calls it; it does not reach into
+ * this registry's state, which is the difference between a module performing
+ * its own change and another module writing into its store.
+ *
+ * IDEMPOTENT. A retry, a double click or a re-run of a half-finished
+ * offboarding produces one ending, one `endedAt`, one reason — the second call
+ * answers `already_ended` and changes nothing. That matters more here than
+ * almost anywhere: the caller is an offboarding that may legitimately be run
+ * again after a different step failed.
+ *
+ * PRESERVES, NEVER DELETES. The relationship row stays, with its status, its
+ * end date, its reason and everything it was. What it stops being is live.
+ *
+ * What it does NOT touch, ever: the `DriverProfile`, the person's account, the
+ * documents they own, another carrier's relationship, load history, settlements,
+ * qualification records or anything in the audit ledger. Ending a relationship
+ * ends the relationship. Following A6's rule about published facts, it also
+ * leaves every event and every meter reading published under that relationship
+ * exactly as it was.
+ */
+export function endCarrierRelationship(
+  driverProfileId: string,
+  carrierId: string,
+  reason: string,
+  at: string = iso(now()),
+): { outcome: EndRelationshipOutcome; relationship?: CarrierRelationship } {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  if (!record) return { outcome: "unknown_driver" };
+
+  const engagement = record.engagements.find((e) => e.carrierId === carrierId);
+  if (!engagement) return { outcome: "no_relationship" };
+  if (engagement.status === "ended") {
+    return { outcome: "already_ended", relationship: { ...engagement } };
+  }
+
+  engagement.status = "ended";
+  engagement.endedAt = at;
+  engagement.endReason = reason;
+  // The truck ASSIGNMENT goes with the relationship, because it was the
+  // relationship that put them on it. The truck, its registry record, its
+  // meters and its history are the truck registry's and are untouched.
+  engagement.assignedTruckId = undefined;
+  return { outcome: "ended", relationship: { ...engagement } };
 }
 
 export function driversForWorkspaceSync(ctx: TruckContext): DriverView[] {

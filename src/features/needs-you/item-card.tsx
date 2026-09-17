@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  ArrowUpCircle, BellOff, Building2, CalendarClock, CheckCircle2, ChevronRight,
-  ClipboardCheck, ClipboardList, Container, FileSignature, FileText, Fuel, Handshake,
+  ArrowUpCircle, BellOff, Briefcase, Building2, CalendarClock, CheckCircle2, ChevronRight,
+  ClipboardCheck, ClipboardList, Container, FileSignature, FileText, Fuel, Handshake, IdCard,
   Mail, MailQuestion, Map, Package, Radar, Receipt, RefreshCw, Router, Satellite,
   ScrollText, ShieldAlert, ShieldCheck, TriangleAlert, Truck, User, UserCheck,
   UserCircle, Wrench, type LucideIcon,
@@ -27,6 +27,7 @@ const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   contract: ScrollText, contract_version: FileSignature,
   risk_case: ShieldAlert,
   eld_device: Satellite, eld_connection: Router,
+  workforce_engagement: Briefcase, qualification_record: IdCard,
 };
 
 export function NeedsYouCard({

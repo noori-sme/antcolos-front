@@ -15,6 +15,8 @@ import {
   openNativePackage, packagesForOrganization, recordShareReview, shareState,
 } from "@/lib/api/mock/document-shares";
 import { documentById } from "@/lib/api/mock/document-store";
+import { AdoptDialog } from "@/features/workforce/adopt-dialog";
+import { useCan } from "@/lib/session/hooks";
 import { SHARE_PURPOSE_LABEL } from "@/types";
 
 /**
@@ -106,6 +108,8 @@ export function SharedWithUsScreen() {
                         <SharedDocumentCard item={item} pkg={pkg} />
                         <ReviewRow
                           documentId={item.documentId}
+                          driverProfileId={pkg.driverProfileId}
+                          driverName={pkg.driverName}
                           organizationId={organization.id}
                           packageId={pkg.id}
                           onReviewed={reload}
@@ -132,9 +136,19 @@ export function SharedWithUsScreen() {
   );
 }
 
-/** This carrier's own verdict on one shared document. */
+/**
+ * This carrier's own verdict on one shared document, and — only once it has one
+ * — the option to rely on that exact version.
+ *
+ * The order is the rule, not the layout. Reviewing comes first because adopting
+ * evidence nobody looked at is the one claim a qualification file must never be
+ * able to make, and the service refuses it regardless of what this screen
+ * renders.
+ */
 function ReviewRow({
   documentId,
+  driverProfileId,
+  driverName,
   organizationId,
   organizationName,
   packageId,
@@ -142,6 +156,8 @@ function ReviewRow({
   onReviewed,
 }: {
   documentId: string;
+  driverProfileId: string;
+  driverName: string;
   organizationId: string;
   organizationName: string;
   packageId: string;
@@ -151,16 +167,41 @@ function ReviewRow({
   const record = documentById(documentId);
   const link = record?.links.find((l) => !l.unlinkedAt && l.contextOrganizationId === organizationId);
   const state = link?.review.state;
+  // Both hooks called unconditionally: `&&` would short-circuit the second and
+  // change the hook order between renders.
+  const canManageCompliance = useCan("compliance:manage");
+  const canSeeQualificationFile = useCan("qualification:view");
+  const canAdopt = canManageCompliance && canSeeQualificationFile;
+  const [adoptOpen, setAdoptOpen] = useState(false);
 
   if (state === "approved" || state === "rejected") {
     return (
-      <p
-        data-review-state={state}
-        className="px-1 text-[0.75rem] font-medium text-fg-muted"
-      >
-        {state === "approved" ? "You accepted this document." : "You rejected this document."}
-        {link?.review.reviewedByName ? ` — ${link.review.reviewedByName}` : ""}
-      </p>
+      <div className="space-y-2 px-1">
+        <p data-review-state={state} className="text-[0.75rem] font-medium text-fg-muted">
+          {state === "approved" ? "You accepted this document." : "You rejected this document."}
+          {link?.review.reviewedByName ? ` — ${link.review.reviewedByName}` : ""}
+        </p>
+        {canAdopt ? (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              data-testid="adopt-button"
+              onClick={() => setAdoptOpen(true)}
+            >
+              Adopt into qualification file
+            </Button>
+            <AdoptDialog
+              documentId={documentId}
+              driverProfileId={driverProfileId}
+              driverName={driverName}
+              open={adoptOpen}
+              onOpenChange={setAdoptOpen}
+              onAdopted={onReviewed}
+            />
+          </>
+        ) : null}
+      </div>
     );
   }
 
