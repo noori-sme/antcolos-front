@@ -11,7 +11,7 @@ import { negotiationsForCycle } from "./negotiation";
 import { bookingForCycle } from "./booking";
 import { renderTemplate, TEMPLATES, writerFor } from "./message-templates";
 import { truckContextFrom } from "./truck-registry";
-import { mockStore } from "./store";
+import { reachableLoadById } from "./dispatch-delegation";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -163,9 +163,8 @@ export function contextForCycle(
     ? listingById(ctx.organizationId, negotiation.listingId)
     : undefined;
 
-  const load = booking
-    ? mockStore.org(ctx.organizationId).loads.find((l) => l.id === booking.loadId)
-    : undefined;
+  // Same rule: the booking is the carrier's, so its load is reached, not owned.
+  const load = booking ? reachableLoadById(ctx, booking.loadId) : undefined;
 
   const origin = listing?.origin ?? {
     city: loop.expectedEmptyCity ?? "", state: loop.expectedEmptyState ?? "",

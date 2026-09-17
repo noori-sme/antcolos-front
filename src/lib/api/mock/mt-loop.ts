@@ -9,7 +9,7 @@ import { AVAILABILITY_STATE_LABEL } from "@/types";
 import { isPublishableAvailability } from "@/lib/tracking";
 import { resolveWorkspace } from "@/lib/workspace/resolve";
 import type { ServiceContext } from "../contracts/context";
-import { mockStore } from "./store";
+import { loadsReachableBy } from "./dispatch-delegation";
 import {
   fleetSync, truckCarrierFor, truckContextFrom, truckDispatchGrants,
   truckDocumentProblems, truckOperatingCarrier, truckApprovedCarriers, organizationNameFor,
@@ -490,7 +490,16 @@ function refresh(loop: MtLoop, truck: FleetTruck, ctx: MtLoopContext) {
   }
 
   /* ---- The load booked onto this truck, if any ---- */
-  const load = mockStore.org(ctx.organizationId).loads.find(
+  /*
+   * Asked through REACH, not through this workspace's own store.
+   *
+   * A load a dispatch organization books belongs to the carrier, so looking it
+   * up here by `ctx.organizationId` finds nothing — and the branch below does
+   * not merely miss it, it concludes the load came OFF the truck, records that
+   * on the cycle and puts the truck back out as available. A provider would
+   * book a load and watch the board offer the same truck again.
+   */
+  const load = loadsReachableBy(ctx).find(
     (l) => l.assignment?.truckId === truck.truckId
       && !l.assignment.endedAt
       && l.status !== "delivered" && l.status !== "cancelled"

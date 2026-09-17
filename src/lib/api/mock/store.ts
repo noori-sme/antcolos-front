@@ -16,6 +16,19 @@ class MockStore {
     return org;
   }
 
+  /**
+   * The organization's data, or nothing.
+   *
+   * `org()` throws for an organization with no seeded data, which is right for
+   * a caller acting IN that organization — it is a programming error. It is
+   * wrong for a caller sweeping the organizations a grant points at: a carrier
+   * can perfectly well have granted dispatch access and have no seeded loads,
+   * and that is an empty list rather than a fault.
+   */
+  maybeOrg(organizationId: string): OrgData | undefined {
+    return this.data[organizationId];
+  }
+
   /** Guards against a record from one organization being read through another. */
   assertOwned(organizationId: string, recordOrgId: string) {
     if (organizationId !== recordOrgId) {

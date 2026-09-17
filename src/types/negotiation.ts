@@ -1,4 +1,5 @@
 import type { Cents, IsoDateTime } from "./common";
+import type { LoadStatus } from "./load";
 import type { MatchCheckKey } from "./opportunity";
 
 /**
@@ -237,6 +238,16 @@ export const CONSENT_LABEL: Record<ConsentRequirement, string> = {
  */
 export interface BookingRecord {
   bookingId: string;
+  /**
+   * The organization that owns this booking — always the CARRIER.
+   *
+   * ★ A BOOKING UNDER A CARRIER'S MC IS A CARRIER TRANSACTION ★
+   * The commercial facts below — the agreed rate, the broker, the miles, the
+   * equipment and the driver — are the carrier's record of its own business,
+   * whoever negotiated it. A dispatch provider working for that carrier reads
+   * them through a live grant and keeps none of them afterwards; what stays
+   * with the provider is its own market activity, in `ProviderBookingLink`.
+   */
   organizationId: string;
   /**
    * The carrier the load is booked under. Absent when the cycle it came from
@@ -245,9 +256,19 @@ export interface BookingRecord {
    * for a carrier nobody named.
    */
   carrierOrganizationId?: string;
-  negotiationId: string;
-  matchId: string;
-  listingId: string;
+  /** Pinned at booking by A6's `operatingContextAt`. See `Load`. */
+  pinnedCarrierOrganizationId: string;
+  /** The provider that booked it, when one did. Attribution, never a grant. */
+  dispatchedByOrganizationId?: string;
+  /**
+   * The MT Loop cycle this booking closed.
+   *
+   * Operational rather than commercial, and shared on purpose: the cycle
+   * re-homes to the carrier when a grant ends, so both sides legitimately
+   * refer to it. The provider's MARKET ids — which listing, which match, which
+   * negotiation, what was stood down — are not here; they are its own, on
+   * `ProviderBookingLink`.
+   */
   dispatchCycleId: string;
 
   loadId: string;
@@ -275,9 +296,97 @@ export interface BookingRecord {
   bookedAt: IsoDateTime;
   bookedByName: string;
   bookedByMembershipId: string;
-  /** Matches and drafts that were stood down because this one won. */
+}
+
+/* -------------------------------------------------------------------------- */
+/* The provider's own half                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A dispatch provider's own record of market work that produced one booking.
+ *
+ * ★ WHAT THIS IS NOT ★
+ * It is not a second BookingRecord. Every field is either the provider's own
+ * market activity — which listing it found, which match it worked, which
+ * negotiation it ran, what it stood down when this one won — or a REFERENCE to
+ * the carrier's canonical booking. `bookingId` is a foreign key: reading it
+ * yields nothing unless the provider still holds a live grant, and after that
+ * it yields only the bounded receipt below.
+ *
+ * No mutable commercial fact has a second canonical copy here. The rate, the
+ * broker, the miles, the driver and the equipment live once, on the carrier's
+ * `BookingRecord`, and are read through reach.
+ *
+ * It survives revocation, because the provider's own market history is its own.
+ */
+export interface ProviderBookingLink {
+  /** The provider organization that did the work. */
+  organizationId: string;
+  /** Foreign key to the carrier's canonical booking. A reference, not a copy. */
+  bookingId: string;
+  /** The carrier whose transaction it was. Attribution, never a grant. */
+  carrierOrganizationId: string;
+  negotiationId: string;
+  matchId: string;
+  listingId: string;
+  dispatchCycleId: string;
+  /** Matches and drafts this provider stood down because this one won. */
   closedMatchIds: string[];
   supersededDraftIds: string[];
+  bookedAt: IsoDateTime;
+  /** Sealed when the provider's access ended. Absent while access is live. */
+  receipt?: DispatchWorkReceipt;
+}
+
+/**
+ * Why a provider's access to a booking ended, and therefore what could honestly
+ * be recorded at that moment.
+ */
+export type DispatchReceiptBasis =
+  /** A person at the carrier revoked the grant. A command ran. */
+  | "revoked"
+  /** The carrier moved the truck to another provider. A command ran. */
+  | "transferred"
+  /**
+   * The grant's own `effectiveTo` passed. NOTHING RAN.
+   *
+   * There is no scheduler in this build, so no code was executing at that
+   * instant and nobody observed the load's state. A receipt on this basis
+   * therefore carries NO status, and saying otherwise — by reading the
+   * carrier's load days later and labelling it "status at expiry" — would be
+   * inventing an observation that never happened.
+   */
+  | "expired_unobserved";
+
+/**
+ * The bounded record a provider keeps of work it completed for a carrier.
+ *
+ * ★ FIXED AS OF THE MOMENT ACCESS ENDED ★
+ * Written once and never recomputed. No field is derived from a later read of
+ * the carrier's records, so a former provider cannot watch the carrier's work
+ * through a changing receipt. It carries no `loadId` and no `truckId`: there is
+ * deliberately no handle on it that could be replayed, and every carrier-side
+ * service refuses independently in any case.
+ *
+ * No retention period is set here. Nothing expires a receipt in this build; a
+ * durable policy is owed by the backend — see the M1 PR.
+ */
+export interface DispatchWorkReceipt {
+  basis: DispatchReceiptBasis;
+  /** The carrier's reference, as the provider knew it. */
+  loadReference: string;
+  bookedAt: IsoDateTime;
+  accessEndedAt: IsoDateTime;
+  /**
+   * The load's status at `accessEndedAt`.
+   *
+   * Present ONLY for `revoked` and `transferred`, where a command was running
+   * and could read it. Absent for `expired_unobserved`, and absent means
+   * "nobody was there to see", never "unknown status".
+   */
+  statusAtAccessEnd?: LoadStatus;
+  /** Plain-language reason the receipt says what it says. */
+  note: string;
 }
 
 /* -------------------------------------------------------------------------- */

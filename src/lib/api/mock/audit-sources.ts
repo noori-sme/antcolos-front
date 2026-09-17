@@ -11,6 +11,7 @@ import { mockSettlementsService } from "./settlements";
 import { mockStore } from "./store";
 import { packagesForOrganization, recipientLabel } from "./document-shares";
 import { sessionLoadRef, trackingAuditForLedger } from "./tracking-registry";
+import { dispatchAccessEventsFor } from "./truck-registry";
 import { hoursFromNow } from "./time";
 
 /**
@@ -383,6 +384,70 @@ const documentSharesFeed: ModuleAuditFeed<ServiceContext> = {
 /* The registry                                                                */
 /* -------------------------------------------------------------------------- */
 
+
+/* -------------------------------------------------------------------------- */
+/* Fleet — dispatch delegation                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Granting and ending a dispatch arrangement, in the one ledger.
+ *
+ * ★ WHY THE ENTRY ID CARRIES THE ORGANIZATION ★
+ * Every other feed reads records only its own organization can see, so no entry
+ * id has ever been visible to two organizations at once. A dispatch grant is
+ * the first fact BOTH sides may read — the carrier that issued it and the
+ * provider that received it — and that breaks an assumption sitting in the
+ * ledger: `projectionId` is `module + entryId` with no organization in it, and
+ * `AuditLedger.has` checks a single index shared across every bucket. Two
+ * organizations projecting the same entry id would therefore mean the FIRST
+ * one to open its audit page got the row and the second silently got nothing,
+ * with `find` then throwing `OrganizationScopeError` at whichever lost.
+ *
+ * So the entry id is qualified with the reading organization. Both rows exist,
+ * order does not decide who sees what, and `projectionId` and every existing
+ * feed stay exactly as they are. The two rows carry the same
+ * `projection.recordId` — the grant — so they are provably two views of one
+ * source record rather than two independent writes that could disagree.
+ */
+const fleetDispatchFeed: ModuleAuditFeed<ServiceContext> = {
+  module: "fleet",
+  requires: ["trucks:view"],
+  mock: false,
+  read(ctx) {
+    if (!has(ctx, "trucks:view")) return [];
+    return dispatchAccessEventsFor(ctx.organizationId).map(
+      ({ event, grant }): ModuleAuditRecord => ({
+        // Organization-qualified. See the note above.
+        entryId: `${event.id}:${ctx.organizationId}`,
+        recordId: grant.id,
+        action: "fleet.record_changed",
+        sourceAction: event.kind,
+        occurredAt: event.at,
+        actor: {
+          userId: "system",
+          membershipId: grant.endedByMembershipId ?? grant.grantedByMembershipId,
+          displayNameSnapshot: event.actorName
+            ?? grant.endedByName
+            ?? grant.grantedByName,
+          source: "web",
+        },
+        entity: ref(
+          "truck",
+          event.truckId,
+          grant.unitLabel ? `Unit ${grant.unitLabel}` : event.truckId,
+          `/fleet/trucks/${event.truckId}`,
+        ),
+        relatedEntities: [
+          ref("organization", grant.dispatchOrganizationId, grant.dispatchOrganizationName),
+        ],
+        summary: event.summary,
+        source: "human",
+        outcome: "succeeded",
+      }),
+    );
+  },
+};
+
 export const AUDIT_FEEDS: readonly ModuleAuditFeed<ServiceContext>[] = [
   loadsFeed,
   fuelFeed,
@@ -391,6 +456,7 @@ export const AUDIT_FEEDS: readonly ModuleAuditFeed<ServiceContext>[] = [
   settlementsFeed,
   trackingFeed,
   documentSharesFeed,
+  fleetDispatchFeed,
 ];
 
 /** Reads every feed the caller is entitled to. A feed that throws is skipped

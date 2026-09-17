@@ -655,6 +655,18 @@ export interface TrackingRecipient {
   contactEmail?: string;
   visibility: TrackingVisibility;
   link: TrackingLink;
+  /**
+   * The organization that minted this link.
+   *
+   * ★ WHY THIS IS NOT THE SESSION'S ORGANIZATION ★
+   * A session belongs to the carrier that owns the load. A dispatch provider
+   * working that load mints links of its own, and when its grant ends those
+   * links must die — but the CARRIER still has the truck, so asking whether the
+   * session's organization still has it would answer "yes" forever and quietly
+   * leave a former provider's broker link live. The question has to be asked of
+   * whoever issued the link, which is what this records.
+   */
+  issuedByOrganizationId: string;
   /** Derived on read from the link, the load and the relationship. */
   state: TrackingLinkState;
 }

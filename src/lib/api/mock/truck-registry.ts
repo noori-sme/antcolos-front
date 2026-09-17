@@ -24,6 +24,7 @@ import type {
   TruckSpecs,
 } from "@/types";
 import { DOCUMENT_LABEL } from "@/lib/fleet/equipment";
+import { grantIsLive } from "@/types";
 import {
   resolveOperatingContextAt, type OperatingContextResult,
 } from "@/lib/fleet/operating-context";
@@ -287,11 +288,17 @@ function rel(
 function dispatch(
   truckId: string, dispatchOrganizationId: string, dispatchOrganizationName: string,
   carrierId: string, carrierName: string, unitLabel: string, startedAt: string,
+  effectiveTo?: string,
 ): TruckDispatchAccess {
   return {
     id: rowId("dsp"), truckId, dispatchOrganizationId, dispatchOrganizationName,
     grantedByCarrierOrganizationId: carrierId, grantedByCarrierName: carrierName,
     unitLabel, status: "active", startedAt,
+    purpose: `${dispatchOrganizationName} books freight on unit ${unitLabel} for ${carrierName}.`,
+    effectiveFrom: startedAt,
+    effectiveTo,
+    grantedByMembershipId: `mem_seed_${carrierId}`,
+    grantedByName: carrierName,
     initiatedByOrganizationId: carrierId, createdAt: startedAt,
   };
 }
@@ -727,9 +734,18 @@ export function activationStateFor(
   return "active_operating_lease";
 }
 
+/**
+ * The grant that gives THIS organization authority over THIS truck right now.
+ *
+ * Asks `grantIsLive` rather than reading `status`, because there is no
+ * scheduler: a grant whose `effectiveTo` has passed is still `active` in the
+ * row and must stop conferring anything from the next read onwards.
+ */
 function activeDispatchAccess(truckId: string, organizationId: string) {
   return db().dispatchAccess.find(
-    (d) => d.truckId === truckId && d.dispatchOrganizationId === organizationId && d.status === "active",
+    (d) => d.truckId === truckId
+      && d.dispatchOrganizationId === organizationId
+      && grantIsLive(d),
   );
 }
 
@@ -1759,6 +1775,7 @@ export function endTruckDispatchAccess(
   truckId: string,
   dispatchOrganizationId: string,
   reason: string,
+  endedBy?: { membershipId: string; name: string },
 ): TruckDispatchAccess | undefined {
   const grant = db().dispatchAccess.find(
     (d) => d.truckId === truckId
@@ -1766,10 +1783,290 @@ export function endTruckDispatchAccess(
       && d.status === "active",
   );
   if (!grant) return undefined;
-  grant.status = "ended";
-  grant.endedAt = new Date().toISOString();
-  grant.endReason = reason;
+  endGrantRow(grant, reason, endedBy);
   return grant;
+}
+
+/** The one place a grant row is closed. Ended, never removed. */
+function endGrantRow(
+  grant: TruckDispatchAccess,
+  reason: string,
+  endedBy?: { membershipId: string; name: string },
+) {
+  grant.status = "ended";
+  grant.endedAt = iso(now());
+  grant.endReason = reason;
+  grant.endedByMembershipId = endedBy?.membershipId;
+  grant.endedByName = endedBy?.name;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Granting, revoking and transferring dispatch access                         */
+/* -------------------------------------------------------------------------- */
+
+export class TruckDispatchOverlapError extends Error {
+  constructor(readonly incumbent: TruckDispatchAccess) {
+    super(
+      `${incumbent.dispatchOrganizationName} has dispatched this truck since `
+      + `${incumbent.effectiveFrom.slice(0, 10)}. Transfer the truck to move the `
+      + "work, or end that arrangement first.",
+    );
+    this.name = "TruckDispatchOverlapError";
+  }
+}
+
+export interface GrantDispatchAccessInput {
+  truckId: string;
+  dispatchOrganizationId: string;
+  dispatchOrganizationName: string;
+  /** Required. A grant nobody can explain is a grant nobody can review. */
+  purpose: string;
+  unitLabel?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  /**
+   * The grant being replaced, when the carrier is deliberately moving the work.
+   *
+   * Supplying it is the carrier CONFIRMING a transfer. Without it, an overlap
+   * is refused rather than silently collapsed to whichever grant is older —
+   * which is what used to happen, and it showed the incoming organization the
+   * truck while giving the cycle to the incumbent.
+   */
+  transferFromGrantId?: string;
+}
+
+/**
+ * A carrier lets a dispatch organization book freight on one of its trucks.
+ *
+ * ★ THE COMMAND THE RECORD HAS ALWAYS BEEN WAITING FOR ★
+ * `TruckDispatchAccess` carried `status`, `endedAt` and `endReason` from the
+ * start and nothing could set them, because nothing could create a row either:
+ * every grant in this build came from the fixtures. This is the carrier-facing
+ * half, and `endTruckDispatchAccess` above is the other.
+ *
+ * Two rules, and they are the whole of it:
+ *
+ *  1. Only the carrier that OPERATES the truck may grant it. Owning the
+ *     equipment is not operating it — a leasing company that holds the title
+ *     has nothing to hand a dispatcher — so authority is proved through the
+ *     same `accessReason` every other truck command uses, and an owner-only
+ *     reason is refused.
+ *  2. One truck, one dispatch organization at a time. A second grant is
+ *     REFUSED unless the carrier names the one it replaces.
+ *
+ * The check and the write happen together with no `await` between them, for
+ * the reason `activateOperatingLease` gives: splitting them would let two
+ * grants race onto the same truck.
+ */
+export async function grantTruckDispatchAccess(
+  input: GrantDispatchAccessInput,
+  ctx: TruckContext,
+): Promise<TruckDispatchAccess> {
+  await sleep(LATENCY_MS);
+  requirePermissions(ctx, "trucks:relationships:manage");
+
+  const purpose = input.purpose.trim();
+  if (!purpose) throw new Error("Say what this dispatch organization is being asked to do.");
+  if (input.dispatchOrganizationId === ctx.organizationId) {
+    throw new Error("A carrier already dispatches its own trucks.");
+  }
+
+  const effectiveFrom = input.effectiveFrom ?? iso(now());
+  if (input.effectiveTo && Date.parse(input.effectiveTo) <= Date.parse(effectiveFrom)) {
+    throw new Error("The end of the arrangement must come after its start.");
+  }
+
+  /* --- from here, nothing awaits ---------------------------------------- */
+
+  // Unknown truck and truck-you-cannot-see are one answer, as everywhere else.
+  const truck = db().trucks.find((t) => t.truckId === input.truckId);
+  if (!truck) throw new TruckNotFoundError();
+
+  // Ownership is not authority. Only the operating carrier may delegate.
+  const reason = accessReason(input.truckId, ctx);
+  if (reason !== "operating_carrier") throw new TruckNotFoundError();
+
+  const incumbent = db().dispatchAccess.find(
+    (d) => d.truckId === input.truckId && grantIsLive(d),
+  );
+
+  if (incumbent && incumbent.id !== input.transferFromGrantId) {
+    throw new TruckDispatchOverlapError(incumbent);
+  }
+  if (input.transferFromGrantId) {
+    if (!incumbent) throw new TruckNotFoundError();
+    if (incumbent.grantedByCarrierOrganizationId !== ctx.organizationId) {
+      // A carrier may only move work it granted in the first place.
+      throw new TruckNotFoundError();
+    }
+  }
+
+  const carrierName = organizationNameFor(ctx.organizationId);
+  const at = iso(now());
+  const grant: TruckDispatchAccess = {
+    id: rowId("dsp"),
+    truckId: input.truckId,
+    dispatchOrganizationId: input.dispatchOrganizationId,
+    dispatchOrganizationName: input.dispatchOrganizationName,
+    grantedByCarrierOrganizationId: ctx.organizationId,
+    grantedByCarrierName: carrierName,
+    unitLabel: input.unitLabel,
+    status: "active",
+    purpose,
+    effectiveFrom,
+    effectiveTo: input.effectiveTo,
+    grantedByMembershipId: ctx.membershipId,
+    grantedByName: ctx.actorName,
+    startedAt: effectiveFrom,
+    initiatedByOrganizationId: ctx.organizationId,
+    createdAt: at,
+    transferredFromGrantId: incumbent?.id,
+  };
+
+  if (incumbent) {
+    endGrantRow(
+      incumbent,
+      `Transferred to ${input.dispatchOrganizationName}.`,
+      { membershipId: ctx.membershipId, name: ctx.actorName },
+    );
+    incumbent.supersededByGrantId = grant.id;
+  }
+
+  db().dispatchAccess.push(grant);
+
+  record({
+    truckId: input.truckId,
+    at,
+    kind: "dispatch_access_started",
+    summary: incumbent
+      ? `Dispatch of this truck moved from ${incumbent.dispatchOrganizationName} to ${input.dispatchOrganizationName}`
+      : `${input.dispatchOrganizationName} may dispatch this truck`,
+    detail: purpose,
+    organizationId: ctx.organizationId,
+    actorName: ctx.actorName,
+  });
+
+  return { ...grant };
+}
+
+/**
+ * The carrier ends an arrangement, through the service boundary.
+ *
+ * `endTruckDispatchAccess` above is the registry's own mutator and takes no
+ * context, which is how it was reachable only from tests. This is the command:
+ * it proves the caller may manage relationships AND that they are the carrier
+ * that granted this one, before anything is written.
+ */
+export async function revokeTruckDispatchAccess(
+  grantId: string,
+  reason: string,
+  ctx: TruckContext,
+): Promise<TruckDispatchAccess> {
+  await sleep(LATENCY_MS);
+  requirePermissions(ctx, "trucks:relationships:manage");
+  const grant = db().dispatchAccess.find((d) => d.id === grantId);
+  // Somebody else's grant and a grant that never existed are one answer.
+  if (!grant || grant.grantedByCarrierOrganizationId !== ctx.organizationId) {
+    throw new TruckNotFoundError();
+  }
+  if (grant.status !== "active") throw new TruckNotFoundError();
+
+  endGrantRow(grant, reason.trim() || "Dispatch arrangement ended.", {
+    membershipId: ctx.membershipId,
+    name: ctx.actorName,
+  });
+
+  record({
+    truckId: grant.truckId,
+    at: iso(now()),
+    kind: "dispatch_access_ended",
+    summary: `${grant.dispatchOrganizationName} no longer dispatches this truck`,
+    detail: grant.endReason,
+    organizationId: ctx.organizationId,
+    actorName: ctx.actorName,
+  });
+
+  return { ...grant };
+}
+
+/** Every grant a carrier has issued, live or not, newest first. */
+export function dispatchGrantHistoryFor(
+  carrierOrganizationId: string,
+): TruckDispatchAccess[] {
+  return db().dispatchAccess
+    .filter((d) => d.grantedByCarrierOrganizationId === carrierOrganizationId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/**
+ * The dispatch-grant events this organization is entitled to see.
+ *
+ * Both sides of a grant may read it: the carrier because it granted it, the
+ * dispatch organization because it received it. Two ROWS in two ledgers, from
+ * ONE source event — see the fleet audit feed for why that needs an
+ * organization-qualified projection id.
+ */
+export function dispatchAccessEventsFor(organizationId: string): Array<{
+  event: TruckEvent;
+  grant: TruckDispatchAccess;
+}> {
+  const mine = db().dispatchAccess.filter(
+    (d) => d.grantedByCarrierOrganizationId === organizationId
+      || d.dispatchOrganizationId === organizationId,
+  );
+  const byTruck = new Map<string, TruckDispatchAccess[]>();
+  for (const g of mine) {
+    byTruck.set(g.truckId, [...(byTruck.get(g.truckId) ?? []), g]);
+  }
+  const out: Array<{ event: TruckEvent; grant: TruckDispatchAccess }> = [];
+  for (const event of db().events) {
+    if (event.kind !== "dispatch_access_started" && event.kind !== "dispatch_access_ended") {
+      continue;
+    }
+    const candidates = byTruck.get(event.truckId);
+    if (!candidates || candidates.length === 0) continue;
+    // The grant closest in time to the event, which is the one it is about.
+    const grant = [...candidates].sort((a, b) =>
+      Math.abs(Date.parse(a.createdAt) - Date.parse(event.at))
+      - Math.abs(Date.parse(b.createdAt) - Date.parse(event.at)))[0];
+    out.push({ event, grant });
+  }
+  return out;
+}
+
+/**
+ * Every live grant held BY this dispatch organization, across all carriers.
+ *
+ * The index a delegated read starts from: "which carriers' records may I reach
+ * at all?" A real backend has this as its own index; here it is a filter, and
+ * it honours `effectiveTo` like every other reach check.
+ */
+export function liveDispatchGrantsHeldBy(
+  dispatchOrganizationId: string,
+): TruckDispatchAccess[] {
+  return db().dispatchAccess.filter(
+    (d) => d.dispatchOrganizationId === dispatchOrganizationId && grantIsLive(d),
+  );
+}
+
+/** One grant, for the services that must re-check it. */
+export function dispatchGrantById(grantId: string): TruckDispatchAccess | undefined {
+  return db().dispatchAccess.find((d) => d.id === grantId);
+}
+
+/**
+ * The live grant naming this organization on this truck, or nothing.
+ *
+ * The single reach primitive every delegated read and write asks. Exported so
+ * the delegation guard does not re-implement the rule, and deliberately
+ * returns the GRANT rather than a boolean: a caller that needs to know whether
+ * it may act also needs to record which authority it acted under.
+ */
+export function liveDispatchGrantFor(
+  truckId: string,
+  dispatchOrganizationId: string,
+): TruckDispatchAccess | undefined {
+  return activeDispatchAccess(truckId, dispatchOrganizationId);
 }
 
 /**
@@ -1787,7 +2084,7 @@ export function dispatchGrantsByCarrier(
   return db().dispatchAccess.filter(
     (d) => d.grantedByCarrierOrganizationId === carrierOrganizationId
       && d.dispatchOrganizationId !== carrierOrganizationId
-      && d.status === "active",
+      && grantIsLive(d),
   );
 }
 
@@ -2146,7 +2443,7 @@ export function truckCarrierFor(
  */
 export function truckDispatchGrants(truckId: string): TruckDispatchAccess[] {
   return db().dispatchAccess
-    .filter((d) => d.truckId === truckId && d.status === "active")
+    .filter((d) => d.truckId === truckId && grantIsLive(d))
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 }
 
