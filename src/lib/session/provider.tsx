@@ -15,16 +15,22 @@ import {
   subscribeActiveMembership,
 } from "./active-membership-store";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_SESSION, MOCK_TEMPLATES, MOCK_USER,
-  NEWCOMER_MEMBERSHIPS, NEWCOMER_ORGANIZATIONS, NEWCOMER_USER,
+  MOCK_SESSION, MOCK_TEMPLATES, MOCK_USER, NEWCOMER_USER,
 } from "./fixtures";
+import {
+  rosterServerSnapshot, rosterSnapshot, subscribeRoster,
+} from "./membership-store";
 import { readSessionScenario, type SessionScenario } from "./scenarios";
 
 export interface SessionContextValue {
   /** Permanent. Identical across every organization switch. */
   user: User;
-  memberships: Membership[];
-  organizations: Organization[];
+  /**
+   * Readonly, because these come from a store now and a screen that spliced
+   * this array would be editing the session out from under every other screen.
+   */
+  memberships: readonly Membership[];
+  organizations: readonly Organization[];
   templates: PermissionTemplate[];
   activeMembership: Membership | null;
   activeOrganization: Organization | null;
@@ -61,8 +67,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const newcomer = scenario === "newcomer";
 
   const user = newcomer ? NEWCOMER_USER : MOCK_USER;
-  const memberships = newcomer ? NEWCOMER_MEMBERSHIPS : MOCK_MEMBERSHIPS;
-  const organizations = newcomer ? NEWCOMER_ORGANIZATIONS : MOCK_ORGANIZATIONS;
+
+  /**
+   * The seats this person holds, READ FROM A STORE rather than from a frozen
+   * array.
+   *
+   * This is the line that decides whether a seat granted while the tab is open
+   * is usable. Everything downstream — the active membership, the organization,
+   * the permission set, `isDriverMembership`, and therefore Home, the nav and
+   * the driver portal — is derived from this, so making it observable makes all
+   * of them observable at once. No screen had to learn anything new.
+   */
+  const getRoster = useCallback(() => rosterSnapshot(scenario), [scenario]);
+  const getServerRoster = useCallback(() => rosterServerSnapshot(scenario), [scenario]);
+  const roster = useSyncExternalStore(subscribeRoster, getRoster, getServerRoster);
+  const memberships = roster.memberships;
+  const organizations = roster.organizations;
   // Restored from storage after hydration; falls back to the default membership.
   const storedMembershipId = useSyncExternalStore(
     subscribeActiveMembership,
@@ -71,11 +91,38 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
   const [switchedTo, setSwitchedTo] = useState<string | null>(null);
 
+  /**
+   * Which seat is active, resolved against the roster the person ACTUALLY holds.
+   *
+   * Two things here are load-bearing now that the roster can change while the
+   * tab is open.
+   *
+   * It resolves against USABLE seats only. A suspended or ended membership is
+   * not a seat somebody is working from — the organization switcher has always
+   * said so by listing only active ones — and before this it could still be the
+   * active membership, quietly producing a full permission set for a workspace
+   * the switcher refused to offer. While the roster was frozen that could never
+   * happen; it can now, so it is ruled out here rather than left to each screen.
+   *
+   * And the last arm matters: the fixture default is a Northline membership,
+   * which a person granted their first seat does not hold, so falling back to
+   * it left them with no organization and no permissions while holding a
+   * perfectly good seat. Only somebody holding nothing ends up with nothing.
+   */
+  const usable = useMemo(
+    () => memberships.filter((m) => m.status === "active"),
+    [memberships],
+  );
+
+  const held = (candidate: string | null): string | null =>
+    candidate && usable.some((m) => m.id === candidate) ? candidate : null;
+
   const activeMembershipId =
-    switchedTo ??
-    (storedMembershipId && memberships.some((m) => m.id === storedMembershipId)
-      ? storedMembershipId
-      : MOCK_SESSION.activeMembershipId);
+    held(switchedTo)
+    ?? held(storedMembershipId)
+    ?? held(MOCK_SESSION.activeMembershipId)
+    ?? usable[0]?.id
+    ?? null;
   const [density, setDensityState] = useState<DensityPreference>(
     MOCK_USER.preferences.density,
   );
@@ -89,8 +136,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // organization and no permissions. Every screen already treats that as a
   // possible answer; nothing here invents a workspace to avoid it.
   const activeMembership = useMemo(
-    () => memberships.find((m) => m.id === activeMembershipId) ?? null,
-    [memberships, activeMembershipId],
+    () => usable.find((m) => m.id === activeMembershipId) ?? null,
+    [usable, activeMembershipId],
   );
 
   const activeOrganization = useMemo(
