@@ -107,7 +107,25 @@ export function appendLoadEvent(
 /* -------------------------------------------------------------------------- */
 
 export interface CreateBookedLoadArgs {
+  /**
+   * The organization the load BELONGS to — always the carrier whose operating
+   * authority it runs under, never the dispatch workspace that booked it.
+   *
+   * Callers must not pass `ctx.organizationId` blindly. Under delegation the
+   * two differ, and the delegation guard is what derives this one.
+   */
   organizationId: string;
+  /**
+   * The operating carrier proved by A6's `operatingContextAt` at booking time,
+   * pinned onto the load so no later command re-derives it from whoever runs
+   * the truck today. Defaults to `organizationId` for a carrier booking its own
+   * freight, which is the same answer by a shorter route.
+   */
+  pinnedCarrierOrganizationId?: string;
+  /** The lease that proved it, when a lease did. Pinned, never rewritten. */
+  operatingLeaseId?: string;
+  /** The provider that booked it. Attribution, never a grant. */
+  dispatchedByOrganizationId?: string;
   actor: ActorRef;
   idempotencyKey: string;
   reference: string;
@@ -144,6 +162,10 @@ export function createBookedLoad(args: CreateBookedLoadArgs): Load {
   const load: Load = {
     id: args.loadId,
     organizationId: args.organizationId,
+    pinnedCarrierOrganizationId:
+      args.pinnedCarrierOrganizationId ?? args.organizationId,
+    operatingLeaseId: args.operatingLeaseId,
+    dispatchedByOrganizationId: args.dispatchedByOrganizationId,
     reference: args.reference,
     status,
     customer: args.customer,

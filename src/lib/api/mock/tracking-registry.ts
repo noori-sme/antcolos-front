@@ -295,13 +295,24 @@ export function organizationStillHasTruck(organizationId: string, truckId?: stri
   return truckApprovedCarriers(truckId).some((c) => c.organizationId === organizationId);
 }
 
-function linkContextFor(session: TrackingSession, now = new Date()): LinkContext {
+/**
+ * The link context, for ONE recipient.
+ *
+ * `relationshipActive` is asked of the organization that MINTED the link, not
+ * of the session's owner: a carrier's own links stay alive while it holds the
+ * truck, and a provider's die with its grant, on the same session.
+ */
+function linkContextFor(
+  session: TrackingSession,
+  issuedByOrganizationId: string,
+  now = new Date(),
+): LinkContext {
   const load = loadInOrg(session.organizationId, session.loadId);
   return {
     loadStatus: load?.status ?? "cancelled",
     deliveredAt: deliveredAtOf(session.organizationId, session.loadId),
     postDeliveryGraceHours: session.postDeliveryGraceHours,
-    relationshipActive: organizationStillHasTruck(session.organizationId, session.truckId),
+    relationshipActive: organizationStillHasTruck(issuedByOrganizationId, session.truckId),
     sessionActive: session.status === "active",
     now,
   };
@@ -316,8 +327,10 @@ function linkContextFor(session: TrackingSession, now = new Date()): LinkContext
  * writes the audit line, which is honest — it is when Antcolos noticed.
  */
 function reconcile(session: TrackingSession, now = new Date()): TrackingSession {
-  const ctx = linkContextFor(session, now);
+  let ctx = linkContextFor(session, session.organizationId, now);
   for (const recipient of session.recipients) {
+    const issuer = recipient.issuedByOrganizationId ?? session.organizationId;
+    ctx = linkContextFor(session, issuer, now);
     const next = linkStateOf(recipient.link, ctx);
     if (next !== recipient.state) {
       const previous = recipient.state;
@@ -473,6 +486,8 @@ export async function addTrackingRecipient(
   const recipient: TrackingRecipient = {
     id: rowId("trr"),
     sessionId: session.id,
+    // Who minted it, so the link dies with THEIR relationship to the truck.
+    issuedByOrganizationId: ctx.organizationId,
     audience: input.audience,
     partyName: input.partyName.trim(),
     contactName: input.contactName?.trim() || undefined,
@@ -903,7 +918,10 @@ export function resolvePublicTracking(
     status: v.exceptionStatus
       ? shown.map((u) => ({ kind: u.kind, message: u.message, at: u.createdAt, basis: u.basis }))
       : [],
-    expiresAt: effectiveExpiry(recipient.link, linkContextFor(session, now)),
+    expiresAt: effectiveExpiry(
+      recipient.link,
+      linkContextFor(session, recipient.issuedByOrganizationId ?? session.organizationId, now),
+    ),
     disclosure: PUBLIC_DISCLOSURE,
   };
 

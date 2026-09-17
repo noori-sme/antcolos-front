@@ -26,7 +26,8 @@ import {
 } from "./driver-review";
 import { rateConForCycle, rateConsFor } from "./rate-confirmation";
 import {
-  bookAndStandDown, bookingForCycle, bookingsForWorkspace, type CloseoutResult,
+  bookAndStandDown, bookingForCycle, bookingsForWorkspace, providerBookingLinks,
+  type CloseoutResult,
 } from "./booking";
 import { learningFor, rankingPreferences } from "./ranking";
 import { sessionForCycle, sessionsFor } from "./search-session";
@@ -139,7 +140,7 @@ export function opportunityInboxSync(ctx: MtLoopContext): OpportunityInbox {
   const sessions = sessionsFor(ctx);
   const loops = openLoopsFor(ctx);
   const bookings = bookingsForWorkspace(ctx);
-  const negotiations = withBookings(summarizeAll(openNegotiations(ctx), ctx), bookings);
+  const negotiations = withBookings(summarizeAll(openNegotiations(ctx), ctx), bookings, ctx);
   reconcileMessages(ctx);
   const waiting = messagesWaitingCount(ctx);
   const rateCons = rateConsFor(ctx);
@@ -255,6 +256,7 @@ export function truckOpportunitiesSync(
     negotiations: withBookings(
       summarizeAll(negotiationsForCycle(dispatchCycleId, ctx), ctx),
       bookingsForWorkspace(ctx),
+      ctx,
     ),
     booking: bookingForCycle(dispatchCycleId, ctx),
     communications: cycleCommunicationsSync(dispatchCycleId, ctx),
@@ -290,11 +292,26 @@ export async function truckOpportunities(
 function withBookings(
   rows: NegotiationSummary[],
   bookings: BookingRecord[],
+  ctx: MtLoopContext,
 ): NegotiationSummary[] {
   if (bookings.length === 0) return rows;
-  const byNegotiation = new Map(bookings.map((b) => [b.negotiationId, b]));
+  // Which negotiation produced which booking is the PROVIDER's own market
+  // bookkeeping, so it is read from its link rather than from the carrier's
+  // booking. A carrier looking at its own booking has no negotiation to join
+  // to — it did not run one — and the row simply carries no negotiation id.
+  const byBookingId = new Map(bookings.map((b) => [b.bookingId, b]));
+  const byNegotiation = new Map<string, BookingRecord>();
+  for (const link of providerBookingLinks(ctx)) {
+    const booking = byBookingId.get(link.bookingId);
+    if (booking) byNegotiation.set(link.negotiationId, booking);
+  }
+  for (const booking of bookings) {
+    // A carrier's own booking joins on the cycle, which both sides share.
+    byNegotiation.set(booking.dispatchCycleId, booking);
+  }
   return rows.map((r) => {
-    const booking = byNegotiation.get(r.negotiation.negotiationId);
+    const booking = byNegotiation.get(r.negotiation.negotiationId)
+      ?? byNegotiation.get(r.negotiation.dispatchCycleId);
     return booking ? { ...r, booking } : r;
   });
 }

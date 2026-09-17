@@ -219,6 +219,10 @@ export function buildLoad(organizationId: string, seed: LoadSeed): BuiltLoad {
   const load: Load = {
     id: loadId,
     organizationId,
+    // Seeded loads are the owning organization's own freight: the carrier that
+    // holds them is the carrier they ran under. A delegated booking pins this
+    // through `operatingContextAt` instead — see `createBookedLoad`.
+    pinnedCarrierOrganizationId: organizationId,
     reference: seed.ref,
     customerReference: seed.customerRef,
     status: seed.status,

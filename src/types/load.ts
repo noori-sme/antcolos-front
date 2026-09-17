@@ -142,7 +142,52 @@ export interface CustomerRef {
 
 export interface Load {
   id: string;
+  /**
+   * The organization that owns this load — always the CARRIER whose operating
+   * authority it runs under, never the dispatch organization that booked it.
+   *
+   * A booking made under a carrier's MC is that carrier's transaction. A
+   * dispatch provider acting for the carrier appears in
+   * `dispatchedByOrganizationId` and on each event's actor, and acquires
+   * nothing by having pressed the button.
+   */
   organizationId: string;
+  /**
+   * ★ PINNED AT BOOKING, NEVER RE-DERIVED ★
+   *
+   * The operating carrier proved by A6's `operatingContextAt` at the instant
+   * the load was booked, together with the operating lease that proved it.
+   *
+   * Equal to `organizationId` and carried separately on purpose: the first is
+   * where the record lives, this is the PROOF of why it lives there. A truck
+   * moving to another carrier next month must not move, rewrite or re-authorize
+   * this load, and a command that re-derived the owner from today's operator
+   * would do exactly that. Every later command authorizes against this field
+   * plus the actor's current, action-specific authority — two separate
+   * questions, and neither substitutes for the other.
+   */
+  pinnedCarrierOrganizationId: string;
+  /**
+   * The `TruckOperatingLease.id` that proved it, when a lease did.
+   *
+   * Absent when the operating carrier was proved another way — a carrier-owned
+   * truck, or a sole approved relationship. Pinned permanently, exactly as
+   * `FactScope.truckOperatingLeaseId` is: correcting a lease later does not
+   * move the loads that happened under it.
+   */
+  operatingLeaseId?: string;
+  /**
+   * The dispatch organization that booked or worked this load for the carrier.
+   *
+   * ★ ATTRIBUTION, NEVER A GRANT ★
+   * The same rule A6 states for `FactScope`. This field says who did the work;
+   * it does not say who may read it. Reach is decided by a live
+   * `TruckDispatchAccess` and the membership's own permissions, checked at the
+   * service boundary. A filter of the form
+   * `dispatchedByOrganizationId === myOrganizationId` would be a silent
+   * cross-organization grant and must never be written.
+   */
+  dispatchedByOrganizationId?: string;
   /** Human-facing identifier, unique within the organization. */
   reference: string;
   /** The customer's own load or order number, as printed on the rate con. */
