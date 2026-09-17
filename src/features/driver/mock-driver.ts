@@ -14,8 +14,11 @@ import { driverRequirements, requirementByKey } from "@/lib/documents/requiremen
 import { isNewcomerSession } from "@/lib/session/scenarios";
 import { MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
 import {
-  createOrResumeProfile, profileForUser, resetDriverRegistry,
+  createOrResumeProfile, createOrResumeRelationship, endCarrierRelationship,
+  profileForUser, relationshipsForProfile, resetDriverRegistry,
+  setCarrierRelationshipStatus,
 } from "@/lib/api/mock/driver-registry";
+import { ordinaryDocumentKeys } from "@/lib/documents/requirements";
 import { effectiveStatus } from "@/lib/documents/status";
 import {
   addLink, clearDocumentsForSubjectKind, createDocument, documentInSlot, documentsForSubject,
@@ -50,8 +53,6 @@ const daysFromNow = (n: number) => {
 };
 const daysAgo = (n: number) => daysFromNow(-n);
 
-let sequence = 0;
-const nextId = (p: string) => `${p}_${(++sequence).toString(36)}${Date.now().toString(36)}`;
 
 /* -------------------------------------------------------------------------- */
 /* What each carrier asks a driver for                                         */
@@ -75,6 +76,43 @@ const CARRIER_EXTRA_DOCUMENTS: Record<string, DocumentRequirement[]> = {
       applicability: "required",
       expires: false,
       reason: "Northline asks every driver to sign their handbook before the first load.",
+      addedByOrganizationId: "org_northline",
+    },
+    /*
+     * ★ TWO RESTRICTED ROWS, ON PURPOSE ★
+     *
+     * Both are ordinary things a carrier genuinely asks a driver for, and both
+     * carry something that must never travel as part of a bulk consent: the
+     * DOT employment application carries a social security number and prior
+     * employers, and an MVR is a driving history pulled from the state.
+     *
+     * They are on the checklist — the driver still owes them — and accepting an
+     * invitation does not hand either over. That is the difference this pair
+     * exists to make visible: a rule nothing ever exercises is a rule nobody
+     * can tell is working.
+     */
+    {
+      key: "northline_employment_application",
+      setId: "driver",
+      typeKey: "employment_application",
+      subjectKind: "driver",
+      label: "DOT employment application",
+      description: "The three-year employment history the FMCSA requires a carrier to collect.",
+      applicability: "required",
+      expires: false,
+      reason: "Northline has to hold three years of employment history for every driver.",
+      addedByOrganizationId: "org_northline",
+    },
+    {
+      key: "northline_mvr",
+      setId: "driver",
+      typeKey: "mvr",
+      subjectKind: "driver",
+      label: "Motor vehicle record",
+      description: "Your driving record, pulled from the state that issued your licence.",
+      applicability: "required",
+      expires: true,
+      reason: "Northline reviews a driving record before putting anybody on a truck.",
       addedByOrganizationId: "org_northline",
     },
   ],
@@ -123,55 +161,6 @@ function currentUser() {
  */
 function ownProfile(): DriverProfile | null {
   return profileForUser(currentUser().id) ?? null;
-}
-
-function seedRelationships(): CarrierRelationship[] {
-  return [
-    {
-      id: "rel_cascade",
-      driverProfileId: "dp_sam",
-      carrierId: "org_cascade",
-      carrierName: "Cascade Haul",
-      engagementType: "company_driver",
-      roleName: "Driver",
-      permissions: ["loads:view", "loads:status:update", "proposals:view", "proposals:respond", "trips:execute", "documents:view", "documents:upload", "settlements:view"],
-      invitedAt: daysAgo(110),
-      startedAt: daysAgo(108),
-      status: "active",
-      sharedDocumentKeys: ["cdl_front", "cdl_back", "medical_front"],
-    },
-    {
-      // The owner-operator side of the same person. Engagement type is the
-      // carrier's decision, not the driver's, and it is what the proposal and
-      // trip policies are resolved from.
-      id: "rel_stonebridge",
-      driverProfileId: "dp_sam",
-      carrierId: "org_stonebridge",
-      carrierName: "Stonebridge Carriers",
-      engagementType: "owner_operator",
-      roleName: "Owner-operator",
-      permissions: ["loads:view", "loads:status:update", "proposals:view", "proposals:respond", "trips:execute", "documents:view", "documents:upload"],
-      invitedAt: daysAgo(86),
-      startedAt: daysAgo(84),
-      status: "active",
-      sharedDocumentKeys: ["cdl_front", "cdl_back", "medical_front", "w9", "coi", "vehicle_registration"],
-    },
-    {
-      id: "rel_ridgeway",
-      driverProfileId: "dp_sam",
-      carrierId: "org_ridgeway",
-      carrierName: "Ridgeway Carriers",
-      engagementType: "owner_operator",
-      roleName: "Driver",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload"],
-      invitedAt: daysAgo(430),
-      startedAt: daysAgo(425),
-      status: "ended",
-      endedAt: daysAgo(150),
-      endReason: "Driver moved to a different carrier.",
-      sharedDocumentKeys: ["cdl_front", "cdl_back", "medical_front", "w9", "coi"],
-    },
-  ];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -300,13 +289,20 @@ function seedDocuments(profile: DriverProfile | null) {
 }
 
 /**
- * Relationships stay here; the PROFILE does not.
+ * ★ RELATIONSHIPS DO NOT LIVE HERE ANY MORE ★
  *
- * The driver's side of a carrier engagement is still this module's — PR-1 moved
- * the person, not the relationship, and touching `CarrierRelationship` is
- * deliberately out of its scope.
+ * They used to: this module held a second literal describing the same person's
+ * engagements that `driver-registry.ts` already described from the carrier's
+ * side. The two disagreed — both claimed Cascade Haul, and they did not agree
+ * about what had been shared with it — which is exactly the defect PR-1 removed
+ * for `DriverProfile`, one level up.
+ *
+ * So the record is the registry's, this module reads and writes it through the
+ * registry's own commands, and there is no local array to drift. The
+ * consequence that matters: a driver who accepts an invitation gets ONE
+ * engagement, and their own portal and the carrier's screens are looking at it
+ * rather than at two copies that happen to agree today.
  */
-let RELATIONSHIPS: CarrierRelationship[] = [];
 let seeded = false;
 
 /**
@@ -324,13 +320,9 @@ function ensureSeeded() {
   seeded = true;
   // A newcomer has no profile because the REGISTRY has none for them, not
   // because this module blanks a local one. `usr_newcomer` simply is not in it.
-  if (isNewcomerSession()) {
-    RELATIONSHIPS = [];
-    seedDocuments(null);
-    return;
-  }
-  RELATIONSHIPS = seedRelationships();
-  seedDocuments(ownProfile());
+  // A newcomer has no profile because the REGISTRY has none for them, and
+  // therefore no engagements either. Nothing is blanked out locally.
+  seedDocuments(isNewcomerSession() ? null : ownProfile());
 }
 
 /**
@@ -344,10 +336,11 @@ function ensureSeeded() {
 export function resetDriverMock(options?: { withProfile?: boolean }) {
   seeded = true;
   const withoutProfile = options?.withProfile === false;
+  // Dropping the person drops their engagements with them, because the
+  // engagements hang off the person in the one registry that holds both.
   resetDriverRegistry(withoutProfile ? { omitUserIds: [currentUser().id] } : undefined);
-  RELATIONSHIPS = withoutProfile ? [] : seedRelationships();
   seedDocuments(ownProfile());
-  sequence = 0;
+
 }
 
 /**
@@ -413,7 +406,8 @@ export function driverProfileSync(): DriverProfile | null {
 
 export function driverRelationshipsSync(): CarrierRelationship[] {
   ensureSeeded();
-  return RELATIONSHIPS.map((r) => ({ ...r }));
+  const profile = ownProfile();
+  return profile ? relationshipsForProfile(profile.id) : [];
 }
 
 /**
@@ -489,7 +483,7 @@ export async function mockCreateOrGetDriverProfile(
 export async function mockListRelationships(): Promise<CarrierRelationship[]> {
   ensureSeeded();
   await sleep(250);
-  return RELATIONSHIPS.map((r) => ({ ...r }));
+  return driverRelationshipsSync();
 }
 
 export interface NewRelationshipInput {
@@ -501,30 +495,61 @@ export interface NewRelationshipInput {
   sharedDocumentKeys: string[];
 }
 
+/**
+ * DELEGATED, and narrowed twice on the way through.
+ *
+ * This module no longer builds a `CarrierRelationship`; it asks the registry
+ * that owns them. Two rules are applied here because this is the door the
+ * driver's own screens come through:
+ *
+ *  · `sharedDocumentKeys` is filtered to ORDINARY paperwork. Whatever a caller
+ *    passes, a restricted category — a social security number, bank details, a
+ *    state driving record — is never handed over as part of starting a
+ *    relationship. Access to one of those is asked for separately.
+ *  · No `startedAt`. The registry command refuses to invent one; see the note
+ *    on `createOrResumeRelationship`.
+ */
 export async function mockCreateRelationship(
   profileId: string,
   input: NewRelationshipInput,
 ): Promise<CarrierRelationship> {
   ensureSeeded();
   await sleep(LATENCY_MS);
-  const relationship: CarrierRelationship = {
-    id: nextId("rel"),
+  const at = iso(now());
+  const allowed = ordinaryKeysAmong(input.sharedDocumentKeys, input.engagementType, input.carrierId);
+
+  const result = createOrResumeRelationship({
     driverProfileId: profileId,
-    ...input,
-    invitedAt: iso(now()),
-    startedAt: iso(now()),
-    status: "onboarding",
-    sharedDocumentKeys: [...input.sharedDocumentKeys],
-  };
-  RELATIONSHIPS = [relationship, ...RELATIONSHIPS];
+    carrierId: input.carrierId,
+    carrierName: input.carrierName,
+    engagementType: input.engagementType,
+    roleName: input.roleName,
+    permissions: input.permissions,
+    sharedDocumentKeys: allowed,
+    invitedAt: at,
+    acceptedAt: at,
+  });
+  if (!result.relationship) throw new Error(`No such driver profile: ${profileId}`);
 
   // Sharing consent, applied to the documents the driver ALREADY has: the
   // carrier gets its own link to each shared one, carrying its own review. Not
   // a copy, not a re-upload, and not a change of owner — the driver's link is
   // untouched, and ending this relationship will end only the carrier's.
-  attachSharedDocuments(relationship);
+  attachSharedDocuments(result.relationship);
 
-  return { ...relationship };
+  return result.relationship;
+}
+
+/** The subset of the requested keys that a bulk consent may actually carry. */
+function ordinaryKeysAmong(
+  requested: readonly string[],
+  engagementType: EngagementType,
+  carrierId: string,
+): string[] {
+  const ordinary = new Set(
+    ordinaryDocumentKeys(documentRequirements(engagementType, carrierId)),
+  );
+  return requested.filter((key) => ordinary.has(key));
 }
 
 function attachSharedDocuments(relationship: CarrierRelationship) {
@@ -559,15 +584,15 @@ export async function mockEndRelationship(
 ): Promise<CarrierRelationship> {
   ensureSeeded();
   await sleep(LATENCY_MS);
-  const index = RELATIONSHIPS.findIndex((r) => r.id === relationshipId);
-  if (index < 0) throw new Error(`No such relationship: ${relationshipId}`);
-  const ended: CarrierRelationship = {
-    ...RELATIONSHIPS[index],
-    status: "ended",
-    endedAt: iso(now()),
-    endReason: reason.trim(),
-  };
-  RELATIONSHIPS = RELATIONSHIPS.map((r) => (r.id === ended.id ? ended : r));
+  const existing = driverRelationshipsSync().find((r) => r.id === relationshipId);
+  if (!existing) throw new Error(`No such relationship: ${relationshipId}`);
+  // The registry's own ending command. This module does not reach into its
+  // state — the difference between a module performing its own change and
+  // another module writing into its store.
+  const result = endCarrierRelationship(
+    existing.driverProfileId, existing.carrierId, reason.trim(),
+  );
+  const ended = result.relationship ?? existing;
 
   // The carrier's links to the driver's documents are closed and its shares
   // revoked, with a snapshot of each kept. Not one record, version or event is
@@ -583,17 +608,26 @@ export async function mockEndRelationship(
   return { ...ended };
 }
 
+/**
+ * Moves a relationship between live statuses.
+ *
+ * `ended` is deliberately not one of them: ending is `mockEndRelationship`,
+ * which also writes the end date and reason and closes the carrier's document
+ * links. A status setter that could end one would skip all three.
+ */
 export async function mockSetRelationshipStatus(
   relationshipId: string,
-  status: RelationshipStatus,
+  status: Exclude<RelationshipStatus, "ended">,
 ): Promise<CarrierRelationship> {
   ensureSeeded();
   await sleep(LATENCY_MS);
-  const index = RELATIONSHIPS.findIndex((r) => r.id === relationshipId);
-  if (index < 0) throw new Error(`No such relationship: ${relationshipId}`);
-  const updated = { ...RELATIONSHIPS[index], status };
-  RELATIONSHIPS = RELATIONSHIPS.map((r) => (r.id === updated.id ? updated : r));
-  return { ...updated };
+  const existing = driverRelationshipsSync().find((r) => r.id === relationshipId);
+  if (!existing) throw new Error(`No such relationship: ${relationshipId}`);
+  const updated = setCarrierRelationshipStatus(
+    existing.driverProfileId, existing.carrierId, status,
+  );
+  if (!updated) throw new Error(`No such relationship: ${relationshipId}`);
+  return updated;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -631,7 +665,8 @@ function contextForRequirement(
 ): { id?: string; name?: string } {
   for (const [organizationId, extras] of Object.entries(CARRIER_EXTRA_DOCUMENTS)) {
     if (extras.some((r) => r.key === requirementKey)) {
-      const relationship = RELATIONSHIPS.find((r) => r.carrierId === organizationId);
+      const relationship = driverRelationshipsSync()
+        .find((r) => r.carrierId === organizationId);
       return { id: organizationId, name: relationship?.carrierName ?? organizationId };
     }
   }

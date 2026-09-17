@@ -223,10 +223,29 @@ function engagement(
     roleName: "Driver",
     permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload"],
     invitedAt: daysAgo(startedDaysAgo + 2),
+    acceptedAt: daysAgo(startedDaysAgo + 1),
     startedAt: daysAgo(startedDaysAgo),
+    // Seeded relationships are ones the product watched begin. An imported one
+    // would carry `carrier_asserted` here and would never be promoted to this.
+    startedAtBasis: "observed",
     status,
     sharedDocumentKeys,
     assignedTruckId,
+  };
+}
+
+/** A relationship that has already ended. It stays on the record, with its reason. */
+function endedEngagement(
+  driverProfileId: string, carrierId: string, carrierName: string,
+  engagementType: EngagementType, startedDaysAgo: number, endedDaysAgo: number,
+  endReason: string, sharedDocumentKeys: string[],
+): CarrierRelationship {
+  return {
+    ...engagement(driverProfileId, carrierId, carrierName, engagementType, "ended",
+      startedDaysAgo, sharedDocumentKeys),
+    status: "ended",
+    endedAt: daysAgo(endedDaysAgo),
+    endReason,
   };
 }
 
@@ -328,10 +347,34 @@ function buildFixtures(): DriverRecord[] {
         homeTerminal: "Portland, OR", currentCity: "Portland", currentState: "OR",
       },
       preferences: { preferredStates: ["OR", "WA", "ID"], maxDaysOut: 3, homeBy: "Home most nights" },
-      engagements: [engagement("dp_sam", "org_cascade", "Cascade Haul", "company_driver", "active", 108,
-        // The driver shared their licence but NOT the medical card with this
-        // carrier. The gap is the driver's decision and the page says so.
-        ["cdl_front", "cdl_back"], TRUCK_IDS.cs47)],
+      /*
+       * ★ ONE SET OF ENGAGEMENTS FOR THIS PERSON, HERE ★
+       *
+       * Stonebridge and Ridgeway used to be a SECOND literal, in
+       * `features/driver/mock-driver.ts`, describing the same person's
+       * relationships from the driver's side while this file described them
+       * from the carrier's. The two already disagreed: both claimed Cascade,
+       * and they did not agree about what Sam had shared with it.
+       *
+       * That is precisely the defect PR-1 removed for `DriverProfile`, one
+       * level up. So the relationships live here now — with the module that
+       * owns the type and owns the only command that ends one — and the
+       * driver's own module reads them.
+       */
+      engagements: [
+        engagement("dp_sam", "org_cascade", "Cascade Haul", "company_driver", "active", 108,
+          // The driver shared their licence but NOT the medical card with this
+          // carrier. The gap is the driver's decision and the page says so.
+          ["cdl_front", "cdl_back"], TRUCK_IDS.cs47),
+        // The owner-operator side of the same person. Engagement type is the
+        // carrier's decision, and it is what proposal and trip policies resolve
+        // from — which is why one person needs to hold both.
+        engagement("dp_sam", "org_stonebridge", "Stonebridge Carriers", "owner_operator", "active", 84,
+          ["cdl_front", "cdl_back", "medical_front", "w9", "coi", "vehicle_registration"]),
+        endedEngagement("dp_sam", "org_ridgeway", "Ridgeway Carriers", "owner_operator", 425, 150,
+          "Driver moved to a different carrier.",
+          ["cdl_front", "cdl_back", "medical_front", "w9", "coi"]),
+      ],
       documents: {
         org_cascade: docs([
           ["cdl_front", "approved", { expiresDays: 210 }],
@@ -746,6 +789,159 @@ export function endCarrierRelationship(
   // meters and its history are the truck registry's and are untouched.
   engagement.assignedTruckId = undefined;
   return { outcome: "ended", relationship: { ...engagement } };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Starting a relationship                                                     */
+/* -------------------------------------------------------------------------- */
+
+export interface CreateRelationshipInput {
+  driverProfileId: string;
+  carrierId: string;
+  carrierName: string;
+  engagementType: EngagementType;
+  /** Snapshotted from the invitation, so later role edits do not rewrite it. */
+  roleName: string;
+  permissions: readonly PermissionKey[];
+  /**
+   * What the driver agreed to share, ALREADY narrowed to ordinary paperwork.
+   *
+   * This module does not do the narrowing and must not: the rule is a property
+   * of the document type and lives with the document domain
+   * (`ordinaryDocumentKeys`). Taking the answer rather than re-deriving it is
+   * what stops a second, drifting copy of "what counts as restricted".
+   */
+  sharedDocumentKeys: readonly string[];
+  /** When the carrier offered. Snapshotted from the invitation, never `now`. */
+  invitedAt: string;
+  /** When the person said yes. See the note on the type. */
+  acceptedAt: string;
+}
+
+export type CreateRelationshipOutcome =
+  | "created"
+  /** One already existed and is live. Nothing was written. */
+  | "resumed"
+  | "unknown_driver";
+
+/**
+ * ★ THE DRIVER RELATIONSHIP MODULE'S OWN STARTING COMMAND ★
+ *
+ * The counterpart of `endCarrierRelationship`, and the only way a
+ * `CarrierRelationship` is ever created from an acceptance. It lives HERE, with
+ * the records it changes, for the same reason the ending command does.
+ *
+ * ── THE DATE RULE THIS COMMAND EXISTS TO ENFORCE ───────────────────────────
+ *
+ * It sets `acceptedAt` and it does NOT set `startedAt`. Not to `now`, not to
+ * `acceptedAt`, not at all.
+ *
+ * Somebody accepting an invitation has agreed to work for this carrier. They
+ * have not begun: for a new driver the paperwork is not in, no truck is
+ * assigned, and nobody yet knows the date they will actually start. Writing
+ * today's date into `startedAt` because the field looked empty would turn a
+ * guess into a fact, and every downstream reader — tenure, settlements,
+ * qualification windows, "engaged since" on a dispatcher's screen — would treat
+ * it as one. So the relationship opens in `onboarding` with an accepted date
+ * and no start date, and `startedAt` is written by whatever actually starts it.
+ *
+ * An imported relationship is the other side of the same rule: a carrier
+ * asserting a historical start date supplies `startedAt` WITH
+ * `startedAtBasis: "carrier_asserted"`, and nothing here or afterwards
+ * promotes that to `observed`.
+ *
+ * IDEMPOTENT on `(driverProfileId, carrierId)` where the relationship is live.
+ * A retry, a double-submitted acceptance, or a link opened twice produces ONE
+ * engagement — and `resumed` is a SUCCESS, carrying the one that is already
+ * there. The check and the write are one synchronous block with no `await`
+ * between them.
+ */
+export function createOrResumeRelationship(
+  input: CreateRelationshipInput,
+): { outcome: CreateRelationshipOutcome; relationship?: CarrierRelationship } {
+  const record = db().find((d) => d.profile.id === input.driverProfileId);
+  if (!record) return { outcome: "unknown_driver" };
+
+  const live = record.engagements.find(
+    (e) => e.carrierId === input.carrierId && e.status !== "ended",
+  );
+  if (live) return { outcome: "resumed", relationship: { ...live } };
+
+  const relationship: CarrierRelationship = {
+    id: `deng_${input.driverProfileId}_${input.carrierId}`,
+    driverProfileId: input.driverProfileId,
+    carrierId: input.carrierId,
+    carrierName: input.carrierName,
+    engagementType: input.engagementType,
+    roleName: input.roleName,
+    permissions: [...input.permissions],
+    invitedAt: input.invitedAt,
+    acceptedAt: input.acceptedAt,
+    // Deliberately absent. See the note above.
+    startedAt: undefined,
+    startedAtBasis: undefined,
+    status: "onboarding",
+    sharedDocumentKeys: [...input.sharedDocumentKeys],
+  };
+  record.engagements.push(relationship);
+  // The carrier's copy of this driver's paperwork starts EMPTY. Nothing is
+  // copied across: what the carrier comes to hold is what the driver's own
+  // documents are linked into, by the document store, on the driver's consent.
+  record.documents[input.carrierId] ??= [];
+  return { outcome: "created", relationship: { ...relationship } };
+}
+
+/**
+ * Moves a relationship into `active` — the moment work actually begins.
+ *
+ * This is where `startedAt` is finally written, with `startedAtBasis:
+ * "observed"`, because this IS the observation. Idempotent: activating an
+ * already-active relationship changes nothing and keeps the original date.
+ */
+export function activateCarrierRelationship(
+  driverProfileId: string,
+  carrierId: string,
+  at: string = iso(now()),
+): { outcome: "activated" | "already_active" | "no_relationship"; relationship?: CarrierRelationship } {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  const engagement = record?.engagements.find(
+    (e) => e.carrierId === carrierId && e.status !== "ended",
+  );
+  if (!engagement) return { outcome: "no_relationship" };
+  if (engagement.status === "active") {
+    return { outcome: "already_active", relationship: { ...engagement } };
+  }
+  engagement.status = "active";
+  engagement.startedAt = at;
+  engagement.startedAtBasis = "observed";
+  return { outcome: "activated", relationship: { ...engagement } };
+}
+
+/**
+ * Moves a live relationship to another status — suspended, back to onboarding.
+ *
+ * Deliberately cannot reach `ended`: ending is `endCarrierRelationship`'s, and
+ * it does more than set a field. A caller that could end one here would skip
+ * the end date, the reason and the truck being released.
+ */
+export function setCarrierRelationshipStatus(
+  driverProfileId: string,
+  carrierId: string,
+  status: Exclude<RelationshipStatus, "ended">,
+): CarrierRelationship | undefined {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  const engagement = record?.engagements.find(
+    (e) => e.carrierId === carrierId && e.status !== "ended",
+  );
+  if (!engagement) return undefined;
+  engagement.status = status;
+  return { ...engagement };
+}
+
+/** Every engagement this person holds, live or ended. Their own view. */
+export function relationshipsForProfile(driverProfileId: string): CarrierRelationship[] {
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  return (record?.engagements ?? []).map((e) => ({ ...e }));
 }
 
 export function driversForWorkspaceSync(ctx: TruckContext): DriverView[] {

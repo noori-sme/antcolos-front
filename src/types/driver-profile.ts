@@ -49,7 +49,39 @@ export interface CarrierRelationship {
   roleName: string;
   permissions: PermissionKey[];
   invitedAt: string;
+  /**
+   * When the person opened the invitation and said yes.
+   *
+   * ★ ACCEPTING IS NOT STARTING ★
+   * These are two different facts and the product must not collapse them. A
+   * driver who accepts on Tuesday has agreed to work for this carrier; they
+   * have not yet driven for it, and in most cases cannot until the paperwork
+   * is in. `acceptedAt` is what Antcolos OBSERVED. `startedAt` is when the
+   * working relationship actually began, which for a genuinely new driver
+   * nobody knows yet — so it stays ABSENT rather than being filled in with the
+   * acceptance date because a date field looked empty.
+   *
+   * The one case where `startedAt` legitimately precedes `acceptedAt` is an
+   * IMPORTED relationship: a carrier asserting that somebody has driven for
+   * them since March. That is the carrier's assertion, carried as such, and
+   * accepting an invitation never converts it into something Antcolos saw.
+   */
+  acceptedAt?: string;
   startedAt?: string;
+  /**
+   * WHERE `startedAt` CAME FROM. Absent whenever `startedAt` is.
+   *
+   * `observed` — Antcolos watched it happen: somebody activated the
+   *   relationship here, on this date, and the event is in the ledger.
+   * `carrier_asserted` — the carrier told us, typically on import. It may well
+   *   be true and it is not ours to contradict, but it is a claim rather than
+   *   something we saw, and every surface that shows it says whose claim.
+   *
+   * Nothing promotes `carrier_asserted` to `observed`. Accepting an invitation
+   * certainly does not: the person agreeing to work here today says nothing
+   * about what a spreadsheet claimed about last March.
+   */
+  startedAtBasis?: "observed" | "carrier_asserted";
   status: RelationshipStatus;
   endedAt?: string;
   endReason?: string;

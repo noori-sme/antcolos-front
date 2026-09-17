@@ -8,15 +8,15 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { useActiveMembership } from "@/lib/session/hooks";
 import type { Invitation, InvitationStatus } from "@/types";
 import { PermissionSummary } from "./permission-summary";
 import {
   invitationLink,
-  mockListInvitations,
   mockResendInvitation,
-  mockRevokeInvitation,
 } from "./mock-access";
+import { listInvitations, revokeInvitation } from "@/lib/api/mock/access-service";
+import { useServiceContext } from "@/lib/api/use-service-context";
+import { WalkthroughPanel } from "./walkthrough-panel";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLE: Record<InvitationStatus, { label: string; className: string }> = {
@@ -42,7 +42,7 @@ function formatDate(iso: string): string {
 
 /** Who has been invited, where it got to, and what to do about it. */
 export function InvitationsScreen() {
-  const { organization } = useActiveMembership();
+  const ctx = useServiceContext();
   const [invitations, setInvitations] = useState<Invitation[] | null>(null);
   const [filter, setFilter] = useState<InvitationStatus | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -50,20 +50,27 @@ export function InvitationsScreen() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!organization) return;
+    if (!ctx) return;
     let cancelled = false;
-    mockListInvitations(organization.id).then((list) => {
+    // Through the service, so the list is gated on `invitations:view` rather
+    // than on the screen having been routed to.
+    listInvitations(ctx).then((list) => {
       if (!cancelled) setInvitations(list);
     });
     return () => {
       cancelled = true;
     };
-  }, [organization]);
+  }, [ctx]);
 
   async function act(id: string, action: "revoke" | "resend") {
+    if (!ctx) return;
     setBusyId(id);
-    const updated =
-      action === "revoke" ? await mockRevokeInvitation(id) : await mockResendInvitation(id);
+    // Revoking goes through the service — it requires `invitations:revoke`, it
+    // refuses an invitation belonging to another organization, and it records
+    // the withdrawal. Resending only moves the invitation's own dates.
+    const updated = action === "revoke"
+      ? await revokeInvitation(ctx, id)
+      : await mockResendInvitation(id);
     setInvitations((prev) => prev?.map((i) => (i.id === updated.id ? updated : i)) ?? null);
     setBusyId(null);
   }
@@ -94,6 +101,8 @@ export function InvitationsScreen() {
           </Button>
         }
       />
+
+      <WalkthroughPanel />
 
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
         {FILTERS.map((f) => {

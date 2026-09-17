@@ -185,9 +185,22 @@ describe("the carrier side cannot reach a person it has no relationship with", (
     // carrier that could search by CDL could ask whether a stranger is on
     // Antcolos, and a carrier that could create a profile could make a second
     // one for somebody who already had it.
+    //
+    // PR-2 added `createOrResumeRelationship`, which matches the same prefix
+    // and is deliberately allowed here: it creates a RELATIONSHIP, it requires
+    // an existing `driverProfileId`, and it creates no person. The guarantee
+    // this test exists for is unchanged, so it is now asserted twice — once as
+    // the exact surface, and once as the thing the surface is a proxy for.
     const writers = Object.keys(registry).filter((key) =>
       /^(create|register|add|upsert|find|search|lookUp|lookup)/.test(key));
-    expect(writers).toEqual(["createOrResumeProfile"]);
+    expect(writers).toEqual(["createOrResumeProfile", "createOrResumeRelationship"]);
+
+    // Exactly ONE function creates a person, and nothing anywhere on this
+    // module's surface is addressed by a licence.
+    expect(writers.filter((key) => /Profile$/.test(key))).toEqual(["createOrResumeProfile"]);
+    for (const key of Object.keys(registry)) {
+      expect(key.toLowerCase()).not.toMatch(/cdl|licen[cs]e/);
+    }
   });
 
   it("keys create-or-resume on the account, so there is no licence to probe with", () => {

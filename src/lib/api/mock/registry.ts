@@ -1,3 +1,4 @@
+import { resetAccessStore } from "./access-store";
 import { resetAgreementRegistry } from "./agreement-registry";
 import { resetAuditLedger } from "./audit-ledger";
 import { resetBookings } from "./booking";
@@ -111,6 +112,12 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // it, and a stale directory would make both of them wrong about the same
   // person.
   { id: "membership_directory", holds: "Every membership, its availability and who supervises whom", module: "membership-directory.ts", reset: resetMembershipDirectory },
+  // BEFORE the workforce store and AFTER the driver registry, because accepting
+  // an invitation is what creates a seat and a driver engagement — so a stale
+  // invitation would offer access into an organization whose roster had already
+  // been rebuilt. It holds no membership and no profile of its own: the seats
+  // are the membership store's and the people are the driver registry's.
+  { id: "access", holds: "Invitations, their state and who they were addressed to", module: "access-store.ts", reset: resetAccessStore },
   // AFTER the driver registry and the membership directory, because the
   // engagement fixtures point at both by id and a seed built over a stale
   // roster would name people who are not there. It holds no document, no
