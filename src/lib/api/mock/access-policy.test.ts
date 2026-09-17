@@ -540,3 +540,62 @@ describe("an invitation is tied to a person, not to whoever holds the link", () 
     expect(invitation.status).toBe("pending");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Somebody who belonged to nothing                                            */
+/* -------------------------------------------------------------------------- */
+
+describe("a person with no organization at all", () => {
+  const NEWCOMER = {
+    userId: "usr_newcomer",
+    email: "alex.rivera@example.com",
+    displayName: "Alex Rivera",
+    scenario: "newcomer" as const,
+  };
+
+  it("is put on the organization's roster, with no second copy anywhere", async () => {
+    const before = rosterOf(NORTHLINE.id).length;
+
+    const result = await mockAccessService.accept("INV-NEWCOMER", NEWCOMER, {
+      sharedDocumentKeys: [],
+      licence: {
+        legalName: "Alex Rivera", cdlNumber: "R9920184471",
+        cdlState: "IL", cdlExpiresAt: "2030-04-01T00:00:00.000Z",
+      },
+    });
+    expect(result.status).toBe("accepted");
+
+    // The seat lands on the roster the session actually reads — the scenario
+    // came in with the identity, so no module below the session boundary had to
+    // guess which one this tab is on.
+    const seats = rosterSnapshot("newcomer").memberships
+      .filter((m) => m.userId === "usr_newcomer" && m.organizationId === NORTHLINE.id
+        && m.status === "active");
+    expect(seats).toHaveLength(1);
+    expect(rosterOf(NORTHLINE.id)).toHaveLength(before + 1);
+
+    // And exactly one, with no copy on the other scenario's roster.
+    expect(rosterSnapshot("demo").memberships
+      .filter((m) => m.userId === "usr_newcomer")).toHaveLength(0);
+  });
+
+  it("still refuses when a restricted category is smuggled in among ordinary keys", async () => {
+    // The realistic shape: a mostly-ordinary list with one restricted category
+    // hidden in it. The filter is over every key, not the first one.
+    const result = await mockAccessService.accept("INV-NEWCOMER", NEWCOMER, {
+      sharedDocumentKeys: ["cdl_front", "drug_alcohol_test_result", "medical_front"],
+      licence: {
+        legalName: "Alex Rivera", cdlNumber: "R9920184471",
+        cdlState: "IL", cdlExpiresAt: "2030-04-01T00:00:00.000Z",
+      },
+    });
+    expect(result.status).toBe("restricted-category");
+    if (result.status === "restricted-category") {
+      expect(result.categories).toEqual(["drug_alcohol_test_result"]);
+    }
+    // Refused before the first step, so the ordinary keys did not travel either.
+    expect(rosterSnapshot("newcomer").memberships
+      .filter((m) => m.userId === "usr_newcomer" && m.organizationId === NORTHLINE.id))
+      .toHaveLength(0);
+  });
+});
