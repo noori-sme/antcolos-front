@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { PermissionKey } from "@/types";
@@ -14,6 +16,7 @@ import {
 import { documentsForSubject, resetDocumentStore } from "./document-store";
 import { auditLedger, resetAuditLedger } from "./audit-ledger";
 import * as access from "./access";
+import { failAcceptanceStepForTests } from "./access";
 import { mockAccessService, rosterOf } from "./access";
 
 const endSeat = mockAccessService.endSeat;
@@ -597,5 +600,108 @@ describe("a person with no organization at all", () => {
     expect(rosterSnapshot("newcomer").memberships
       .filter((m) => m.userId === "usr_newcomer" && m.organizationId === NORTHLINE.id))
       .toHaveLength(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Claiming to be somebody else                                                */
+/* -------------------------------------------------------------------------- */
+
+describe("an identity that does not match the person it claims", () => {
+  const ALEX = {
+    userId: "usr_newcomer",
+    email: "alex.rivera@example.com",
+    displayName: "Alex Rivera",
+    scenario: "demo" as const,
+  };
+  const SAM = {
+    userId: "usr_sam",
+    email: "sam@antcolos.com",
+    displayName: "Sam Murtaza",
+    scenario: "demo" as const,
+  };
+
+  it("is still refused when somebody claims the addressee's EMAIL with their own id", async () => {
+    // The spoofing shape: the address is the invitation's, the account is not.
+    // Once an invitation has resolved to an account, the account is what it is
+    // tied to, and the address it was found by stops being the answer.
+    const spoofed = { ...SAM, email: ALEX.email };
+    expect((await mockAccessService.lookUp("INV-NEWCOMER", spoofed)).status)
+      .toBe("wrong-recipient");
+
+    const before = rosterOf(NORTHLINE.id).length;
+    expect((await mockAccessService.accept("INV-NEWCOMER", spoofed, { sharedDocumentKeys: [] }))
+      .status).toBe("not-acceptable");
+    expect(rosterOf(NORTHLINE.id)).toHaveLength(before);
+  });
+
+  it("does not let somebody finish a run the addressee started", async () => {
+    // Alex starts and is interrupted.
+    failAcceptanceStepForTests("workspace_membership");
+    const started = await mockAccessService.accept("INV-NEWCOMER", ALEX, {
+      sharedDocumentKeys: [],
+      licence: {
+        legalName: "Alex Rivera", cdlNumber: "R9920184471",
+        cdlState: "IL", cdlExpiresAt: "2030-04-01T00:00:00.000Z",
+      },
+    });
+    expect(started.status).toBe("incomplete");
+    failAcceptanceStepForTests(null);
+
+    // Sam opens the same link. A run is keyed to the person it belongs to, so
+    // there is nothing here for him to resume — and finishing somebody else's
+    // half-made acceptance would be the sharpest version of taking their seat.
+    const lookup = await mockAccessService.lookUp("INV-NEWCOMER", SAM);
+    expect(lookup.status).toBe("wrong-recipient");
+    expect((await mockAccessService.accept("INV-NEWCOMER", SAM, { sharedDocumentKeys: [] }))
+      .status).toBe("not-acceptable");
+
+    // And it is still Alex's to finish.
+    const resumed = await mockAccessService.lookUp("INV-NEWCOMER", ALEX);
+    expect(resumed.status).toBe("resume");
+  });
+
+  it("records nothing when it refuses", async () => {
+    const before = auditLedger.all(NORTHLINE.id).length;
+    await mockAccessService.accept("INV-NEWCOMER", SAM, { sharedDocumentKeys: [] });
+    // A refusal to attach an invitation to the wrong account creates no member,
+    // and writes no line claiming one joined.
+    expect(auditLedger.all(NORTHLINE.id)).toHaveLength(before);
+    expect(auditLedger.all(NORTHLINE.id)
+      .filter((e) => e.action === "access.member_joined")).toHaveLength(0);
+  });
+});
+
+describe("where the identity comes from, and what it is worth", () => {
+  it("is read from the session by the screen and from nothing else", () => {
+    const screen = readFileSync(
+      join(process.cwd(), "src/features/access/acceptance-screen.tsx"), "utf8",
+    );
+    expect(screen).toContain("useSession()");
+    // Not from the address bar. The comment still NAMES `?signedin=1` to say
+    // what this replaced, so the check is that nothing reads it — a mention in
+    // prose is the record, not a code path.
+    expect(screen).not.toContain("useSearchParams");
+    expect(screen).not.toMatch(/params\.get\(|searchParams/);
+    expect(screen).not.toMatch(/get\("signedin"\)/);
+  });
+
+  it("is not reconstructed inside the service", () => {
+    // The access module used to resolve the person itself, which put a window
+    // read underneath an API-layer module and left one fixture person
+    // unreachable from a test.
+    const service = readFileSync(join(process.cwd(), "src/lib/api/mock/access.ts"), "utf8");
+    expect(service).not.toContain("isNewcomerSession");
+    expect(service).not.toMatch(/function currentUser\(/);
+  });
+
+  it("says in the contract that it is a simulation, and what a server must do", () => {
+    // The honest framing, kept where somebody would rely on it: follow this
+    // identity down and it is still a URL.
+    const contract = readFileSync(
+      join(process.cwd(), "src/lib/api/contracts/access.ts"), "utf8",
+    );
+    expect(contract).toMatch(/SIMULATION, NOT AN AUTHENTICATED IDENTITY/);
+    expect(contract).toMatch(/DERIVES the acting identity from the/);
   });
 });
