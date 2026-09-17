@@ -1,0 +1,190 @@
+"use client";
+
+import type { Membership, Organization } from "@/types";
+import {
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS,
+  NEWCOMER_MEMBERSHIPS, NEWCOMER_ORGANIZATIONS,
+} from "./fixtures";
+import type { SessionScenario } from "./scenarios";
+
+/**
+ * The seats this person holds, as something that can CHANGE while the tab is open.
+ *
+ * Until now the session read its memberships straight off a frozen fixture
+ * array, with a comment saying "the fixture set never changes within a tab, so
+ * there is nothing to notify". That was true right up until something could
+ * grant a seat — and then it was the difference between a `Membership` record
+ * existing and a person being able to use their portal. A driver who accepts a
+ * carrier's invitation and is told to reload has not been let in.
+ *
+ * So this is the same shape `active-membership-store.ts` already uses for the
+ * active membership id: an external store, read through `useSyncExternalStore`,
+ * with a server snapshot that is stable and a client snapshot whose identity
+ * changes only when the roster actually changes.
+ *
+ * ███ WHAT THIS IS NOT ███
+ *
+ * It is NOT a permission system. Nothing here reads, computes, widens or stores
+ * a `PermissionKey`. A membership carries template ids, grants and revocations
+ * exactly as a fixture one does, and `effectivePermissions` — the one that
+ * already exists — turns those into permissions. A seat granted here is subject
+ * to precisely the rules a seeded seat is subject to, because it goes through
+ * precisely the same function.
+ *
+ * It is NOT an authorization boundary either. `grantMembership` is a primitive:
+ * it writes a seat and notifies. WHO may ask for one, on what basis, and what
+ * else must be true first is the Access service's, and the Access service does
+ * not exist yet. Until it does, nothing in the product calls this — it is
+ * reachable only from tests, which is deliberate and is asserted.
+ *
+ * ███ FRONTEND ONLY ███
+ * In-memory for the life of the tab, and reset by a reload. There is no
+ * persistence, no server-side authorization, and no uniqueness constraint that
+ * would survive two tabs racing: `grantMembership` checks for a live seat and
+ * then writes, with the check and the write in one synchronous block, which
+ * makes it safe against re-entry in ONE tab and proves nothing about two. The
+ * backend owes this seam a durable unique index on (userId, organizationId)
+ * where the seat is live.
+ */
+
+export interface SessionRoster {
+  memberships: readonly Membership[];
+  organizations: readonly Organization[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* State                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One roster per scenario, because the demo account and a newcomer are two
+ * different people and a tab is only ever one of them.
+ *
+ * Snapshots are CACHED rather than rebuilt per call. `useSyncExternalStore`
+ * re-reads the snapshot on every render and compares by identity, so a getter
+ * that returned a fresh array each time would re-render forever.
+ */
+type Snapshots = Record<SessionScenario, SessionRoster>;
+
+function seedFor(scenario: SessionScenario): SessionRoster {
+  return scenario === "newcomer"
+    ? { memberships: NEWCOMER_MEMBERSHIPS, organizations: NEWCOMER_ORGANIZATIONS }
+    : { memberships: MOCK_MEMBERSHIPS, organizations: MOCK_ORGANIZATIONS };
+}
+
+function freshSnapshots(): Snapshots {
+  return { demo: seedFor("demo"), newcomer: seedFor("newcomer") };
+}
+
+let snapshots: Snapshots = freshSnapshots();
+
+/**
+ * The SERVER snapshot, which must be stable for the life of the module.
+ *
+ * React calls it during server rendering and again during hydration, and throws
+ * if the two are not identical. It is the seeded roster and never the granted
+ * one: the server has no tab, so it cannot know about a seat granted in one.
+ */
+const serverSnapshots: Snapshots = freshSnapshots();
+
+const listeners = new Set<() => void>();
+
+function notify() {
+  for (const listener of listeners) listener();
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reads                                                                       */
+/* -------------------------------------------------------------------------- */
+
+export function subscribeRoster(onChange: () => void): () => void {
+  listeners.add(onChange);
+  return () => {
+    listeners.delete(onChange);
+  };
+}
+
+export function rosterSnapshot(scenario: SessionScenario): SessionRoster {
+  return snapshots[scenario];
+}
+
+/** Stable across every call. See the note on `serverSnapshots`. */
+export function rosterServerSnapshot(scenario: SessionScenario): SessionRoster {
+  return serverSnapshots[scenario];
+}
+
+/** The live seat this person holds in an organization, if they hold one. */
+export function liveMembershipFor(
+  scenario: SessionScenario,
+  userId: string,
+  organizationId: string,
+): Membership | undefined {
+  return snapshots[scenario].memberships.find(
+    (m) => m.userId === userId
+      && m.organizationId === organizationId
+      && m.status !== "left",
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Writes                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface GrantMembershipInput {
+  scenario: SessionScenario;
+  membership: Membership;
+  /**
+   * The organization the seat is in, when the roster does not already carry it.
+   *
+   * Required rather than looked up, because a seat in an organization the
+   * session cannot resolve renders as a workspace with no name — and every
+   * screen that switches organizations reads this list.
+   */
+  organization?: Organization;
+}
+
+export type GrantMembershipResult =
+  | { status: "granted"; membership: Membership }
+  /** A live seat already existed. Nothing was written. */
+  | { status: "already_held"; membership: Membership };
+
+/**
+ * Adds a seat, or reports the one that is already there.
+ *
+ * IDEMPOTENT on `(userId, organizationId)` where the seat is live. A retry, a
+ * double submit, or a second attempt after something later in a sequence failed
+ * all produce ONE seat — which is the property a caller retrying a partly
+ * finished grant depends on, and the reason the check and the write are in one
+ * synchronous block with no `await` between them.
+ *
+ * It grants no permission of its own. What the seat can do is whatever
+ * `effectivePermissions` makes of the templates, grants and revocations the
+ * caller put on the membership, clamped by the rules that already exist.
+ */
+export function grantMembership(input: GrantMembershipInput): GrantMembershipResult {
+  const { scenario, membership, organization } = input;
+  const existing = liveMembershipFor(scenario, membership.userId, membership.organizationId);
+  if (existing) return { status: "already_held", membership: existing };
+
+  const current = snapshots[scenario];
+  const organizations = organization
+    && !current.organizations.some((o) => o.id === organization.id)
+    ? [...current.organizations, organization]
+    : current.organizations;
+
+  snapshots = {
+    ...snapshots,
+    [scenario]: {
+      memberships: [...current.memberships, membership],
+      organizations,
+    },
+  };
+  notify();
+  return { status: "granted", membership };
+}
+
+/** Test hook. Never called by the UI. */
+export function resetRoster() {
+  snapshots = freshSnapshots();
+  notify();
+}

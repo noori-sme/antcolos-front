@@ -15,16 +15,22 @@ import {
   subscribeActiveMembership,
 } from "./active-membership-store";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_SESSION, MOCK_TEMPLATES, MOCK_USER,
-  NEWCOMER_MEMBERSHIPS, NEWCOMER_ORGANIZATIONS, NEWCOMER_USER,
+  MOCK_SESSION, MOCK_TEMPLATES, MOCK_USER, NEWCOMER_USER,
 } from "./fixtures";
+import {
+  rosterServerSnapshot, rosterSnapshot, subscribeRoster,
+} from "./membership-store";
 import { readSessionScenario, type SessionScenario } from "./scenarios";
 
 export interface SessionContextValue {
   /** Permanent. Identical across every organization switch. */
   user: User;
-  memberships: Membership[];
-  organizations: Organization[];
+  /**
+   * Readonly, because these come from a store now and a screen that spliced
+   * this array would be editing the session out from under every other screen.
+   */
+  memberships: readonly Membership[];
+  organizations: readonly Organization[];
   templates: PermissionTemplate[];
   activeMembership: Membership | null;
   activeOrganization: Organization | null;
@@ -61,8 +67,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const newcomer = scenario === "newcomer";
 
   const user = newcomer ? NEWCOMER_USER : MOCK_USER;
-  const memberships = newcomer ? NEWCOMER_MEMBERSHIPS : MOCK_MEMBERSHIPS;
-  const organizations = newcomer ? NEWCOMER_ORGANIZATIONS : MOCK_ORGANIZATIONS;
+
+  /**
+   * The seats this person holds, READ FROM A STORE rather than from a frozen
+   * array.
+   *
+   * This is the line that decides whether a seat granted while the tab is open
+   * is usable. Everything downstream — the active membership, the organization,
+   * the permission set, `isDriverMembership`, and therefore Home, the nav and
+   * the driver portal — is derived from this, so making it observable makes all
+   * of them observable at once. No screen had to learn anything new.
+   */
+  const getRoster = useCallback(() => rosterSnapshot(scenario), [scenario]);
+  const getServerRoster = useCallback(() => rosterServerSnapshot(scenario), [scenario]);
+  const roster = useSyncExternalStore(subscribeRoster, getRoster, getServerRoster);
+  const memberships = roster.memberships;
+  const organizations = roster.organizations;
   // Restored from storage after hydration; falls back to the default membership.
   const storedMembershipId = useSyncExternalStore(
     subscribeActiveMembership,
@@ -71,11 +91,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
   const [switchedTo, setSwitchedTo] = useState<string | null>(null);
 
+  /**
+   * Which seat is active, resolved against the roster the person ACTUALLY has.
+   *
+   * The last arm is new and it matters. The fixture default is a Northline
+   * membership, which a person who has just been granted their first seat does
+   * not hold — so falling back to it left them with no active membership, no
+   * organization and no permissions while holding a perfectly good seat. Now an
+   * unresolvable default falls through to the first seat they do hold, and only
+   * somebody holding nothing ends up with nothing.
+   */
+  const held = (candidate: string | null): string | null =>
+    candidate && memberships.some((m) => m.id === candidate) ? candidate : null;
+
   const activeMembershipId =
-    switchedTo ??
-    (storedMembershipId && memberships.some((m) => m.id === storedMembershipId)
-      ? storedMembershipId
-      : MOCK_SESSION.activeMembershipId);
+    held(switchedTo)
+    ?? held(storedMembershipId)
+    ?? held(MOCK_SESSION.activeMembershipId)
+    ?? memberships[0]?.id
+    ?? null;
   const [density, setDensityState] = useState<DensityPreference>(
     MOCK_USER.preferences.density,
   );
