@@ -9,10 +9,12 @@ import {
 } from "@/lib/session/membership-store";
 import { ordinaryDocumentKeys, splitByRestriction } from "@/lib/documents/requirements";
 import { isRestrictedDocumentType } from "@/lib/documents/catalog";
-import { documentRequirements, resetDriverMock } from "@/features/driver/mock-driver";
 import {
-  activateCarrierRelationship, liveRelationship, profileForUser, resetDriverRegistry,
-  setAssertedStartForTests,
+  documentRequirements, mockCreateRelationship, resetDriverMock,
+} from "@/features/driver/mock-driver";
+import {
+  activateCarrierRelationship, createOrResumeRelationship, liveRelationship, profileForUser,
+  resetDriverRegistry, setAssertedStartForTests,
 } from "./driver-registry";
 import { documentsForSubject, resetDocumentStore } from "./document-store";
 import { auditLedger, resetAuditLedger } from "./audit-ledger";
@@ -738,5 +740,81 @@ describe("where the identity comes from, and what it is worth", () => {
     );
     expect(contract).toMatch(/SIMULATION, NOT AN AUTHENTICATED IDENTITY/);
     expect(contract).toMatch(/DERIVES the acting identity from the/);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* A start date the carrier asserted                                           */
+/* -------------------------------------------------------------------------- */
+
+describe("a carrier-asserted start date has a way in", () => {
+  it("is carried through relationship creation, marked as the carrier's claim", () => {
+    const ASSERTED = "2024-03-04T00:00:00.000Z";
+    const created = createOrResumeRelationship({
+      driverProfileId: "dp_sam",
+      carrierId: "org_baxter",
+      carrierName: "Baxter Logistics",
+      engagementType: "company_driver",
+      roleName: "Driver",
+      permissions: [],
+      sharedDocumentKeys: [],
+      invitedAt: ASSERTED,
+      acceptedAt: new Date().toISOString(),
+      // The import path states it. Acceptance never does.
+      assertedStartDate: ASSERTED,
+    });
+    expect(created.outcome).toBe("created");
+    expect(created.relationship!.startedAt).toBe(ASSERTED);
+    expect(created.relationship!.startedAtBasis).toBe("carrier_asserted");
+    // Still not active: the carrier saying somebody has driven for them since
+    // March is not Antcolos being told they may drive today.
+    expect(created.relationship!.status).toBe("onboarding");
+  });
+
+  it("is absent when nobody asserted one", () => {
+    const created = createOrResumeRelationship({
+      driverProfileId: "dp_sam",
+      carrierId: "org_baxter",
+      carrierName: "Baxter Logistics",
+      engagementType: "company_driver",
+      roleName: "Driver",
+      permissions: [],
+      sharedDocumentKeys: [],
+      invitedAt: new Date().toISOString(),
+      acceptedAt: new Date().toISOString(),
+    });
+    expect(created.relationship!.startedAt).toBeUndefined();
+    expect(created.relationship!.startedAtBasis).toBeUndefined();
+  });
+
+  it("survives the driver module's own command instead of being dropped", async () => {
+    // The field was DECLARED on `NewRelationshipInput` and silently discarded
+    // on the way to the registry, so an import passing it would have watched
+    // its carrier-asserted date vanish without a word. This is the path that
+    // dropped it.
+    const ASSERTED = "2023-11-20T00:00:00.000Z";
+    const relationship = await mockCreateRelationship("dp_sam", {
+      carrierId: "org_baxter",
+      carrierName: "Baxter Logistics",
+      engagementType: "company_driver",
+      roleName: "Driver",
+      permissions: [],
+      sharedDocumentKeys: [],
+      assertedStartDate: ASSERTED,
+    });
+    expect(relationship.startedAt).toBe(ASSERTED);
+    expect(relationship.startedAtBasis).toBe("carrier_asserted");
+  });
+
+  it("is never supplied by accepting an invitation", async () => {
+    // The field exists so an IMPORT can state a date. Acceptance passing one
+    // would be Antcolos inventing history on the carrier's behalf.
+    const result = await mockAccessService.accept(
+      "INV-DRIVER-ACCT", SAM, { sharedDocumentKeys: [] },
+    );
+    expect(result.status).toBe("accepted");
+    const relationship = liveRelationship(profileForUser("usr_sam")!.id, NORTHLINE.id)!;
+    expect(relationship.startedAt).toBeUndefined();
+    expect(relationship.startedAtBasis).toBeUndefined();
   });
 });

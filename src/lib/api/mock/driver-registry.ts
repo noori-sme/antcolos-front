@@ -816,6 +816,16 @@ export interface CreateRelationshipInput {
   invitedAt: string;
   /** When the person said yes. See the note on the type. */
   acceptedAt: string;
+  /**
+   * A start date the CARRIER asserted, for an existing worker being connected.
+   *
+   * Carried through untouched and marked as their claim, never invented and
+   * never promoted. Absent for somebody genuinely new, whose relationship has
+   * no start date until activation writes one — and acceptance never supplies
+   * this, which is the whole point of it being a parameter rather than a
+   * default: the import path states it, and every other caller does not.
+   */
+  assertedStartDate?: string;
 }
 
 export type CreateRelationshipOutcome =
@@ -877,9 +887,10 @@ export function createOrResumeRelationship(
     permissions: [...input.permissions],
     invitedAt: input.invitedAt,
     acceptedAt: input.acceptedAt,
-    // Deliberately absent. See the note above.
-    startedAt: undefined,
-    startedAtBasis: undefined,
+    // Absent unless the carrier asserted one, and then marked as their claim.
+    // Acceptance never supplies one — see the note above.
+    startedAt: input.assertedStartDate,
+    startedAtBasis: input.assertedStartDate ? "carrier_asserted" : undefined,
     status: "onboarding",
     sharedDocumentKeys: [...input.sharedDocumentKeys],
   };
@@ -927,7 +938,7 @@ export function activateCarrierRelationship(
    * it and its basis are left exactly as they are: activation is a change of
    * STATE, and it is not evidence about when the relationship began.
    */
-  if (!engagement.startedAt) {
+  if (engagement.startedAt === undefined) {
     engagement.startedAt = at;
     // Antcolos watched this one begin. That is what `observed` means.
     engagement.startedAtBasis = "observed";

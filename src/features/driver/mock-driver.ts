@@ -658,6 +658,10 @@ export async function mockCreateRelationship(
     sharedDocumentKeys: allowed,
     invitedAt: at,
     acceptedAt: at,
+    // Forwarded rather than dropped. The field was declared on this input and
+    // silently discarded here, so an import passing it would have watched its
+    // carrier-asserted date vanish without a word.
+    assertedStartDate: input.assertedStartDate,
   });
   if (!result.relationship) throw new Error(`No such driver profile: ${profileId}`);
 
