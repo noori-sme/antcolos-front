@@ -64,15 +64,129 @@ interface DriverRecord {
 }
 
 let registry: DriverRecord[] | null = null;
+/** Profiles created at runtime keep counting up from the fixtures. */
+let profileSeq = 0;
 
 function db(): DriverRecord[] {
   if (!registry) registry = buildFixtures();
   return registry;
 }
 
-/** Test hook. Never called by the UI. */
-export function resetDriverRegistry() {
-  registry = null;
+/**
+ * Test hook. Never called by the UI.
+ *
+ * `omitUserIds` rebuilds the registry as if those people had never had a
+ * profile. It exists because "a person with no profile yet" is a real state the
+ * product has to handle — somebody who has just made an account — and, now that
+ * a profile is one record in one place, dropping it here is the only honest way
+ * to express it. There is no second store to leave empty instead.
+ */
+export function resetDriverRegistry(options?: { omitUserIds?: readonly string[] }) {
+  profileSeq = 0;
+  const omit = options?.omitUserIds;
+  registry = omit && omit.length > 0
+    ? buildFixtures().filter((r) => !omit.includes(r.profile.userId))
+    : null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* THE canonical DriverProfile writer                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ THE ONE PLACE A DriverProfile IS CREATED ★
+ *
+ * There used to be two. The carrier-facing registry held Sam Murtaza's licence,
+ * and the driver-facing mock held it again, in a second literal, agreeing only
+ * because two people had typed matching values. Nothing reconciled them, no
+ * test asserted they agreed, and the moment either was edited the product would
+ * have held two different opinions about one person's licence.
+ *
+ * So the profile lives here, once, and the driver's own module reads and writes
+ * it through these two functions. Which is also what makes the product rule
+ * enforceable rather than merely stated: ONE permanent profile per person.
+ *
+ * ███ WHO MAY CALL THIS ███
+ * The person themselves, and nobody else. There is deliberately no carrier-side
+ * caller and no lookup by licence number: a carrier that could search the
+ * registry for a CDL could ask whether a stranger is on Antcolos, and a carrier
+ * that could create a profile could create a second one for somebody who
+ * already had it. Both are exactly what this boundary exists to prevent, and
+ * both are prevented by there being no function that does it — not by a comment
+ * asking callers not to.
+ */
+export function profileForUser(userId: string): DriverProfile | undefined {
+  const record = db().find((d) => d.profile.userId === userId);
+  // A COPY. The caller holds the person's licence details, not a handle on the
+  // canonical record — editing what they were given must not edit the registry.
+  return record ? { ...record.profile } : undefined;
+}
+
+export interface CreateOrResumeProfileInput {
+  /** From the authenticated session. Never a literal, never a display name. */
+  userId: string;
+  legalName: string;
+  cdlNumber: string;
+  cdlState: string;
+  cdlExpiresAt: string;
+  /** Required: `DriverProfile.email` is. Comes from the verified account. */
+  email: string;
+  phone?: string;
+  username?: string;
+}
+
+export interface CreateOrResumeProfileResult {
+  profile: DriverProfile;
+  /** True when a profile already existed and was reused rather than made. */
+  resumed: boolean;
+}
+
+/**
+ * The person's own create-or-resume, keyed on who they are.
+ *
+ * RESUMES FIRST, ALWAYS. A person who already has a profile gets it back
+ * unchanged — the same id, the same licence, the same creation date — however
+ * many times they ask and whatever they pass in. A second attempt after a
+ * half-finished sign-up, a double-submitted form and a retry all converge on
+ * one record, and a resume never overwrites what is on file: somebody typing a
+ * different licence number here is not how a licence gets corrected.
+ *
+ * The check and the write are one synchronous block with no `await` between
+ * them, so two calls in one tab cannot both create. Two TABS could, and that is
+ * the backend's unique index to enforce, not this module's to pretend about.
+ */
+export function createOrResumeProfile(
+  input: CreateOrResumeProfileInput,
+): CreateOrResumeProfileResult {
+  const rows = db();
+  const existing = rows.find((d) => d.profile.userId === input.userId);
+  if (existing) return { profile: { ...existing.profile }, resumed: true };
+
+  const created: DriverProfile = {
+    id: `dp_${(profileSeq += 1).toString(36)}${Date.now().toString(36)}`,
+    userId: input.userId,
+    username: input.username
+      ?? input.legalName.toLowerCase().replace(/[^a-z]+/g, "_").replace(/^_|_$/g, ""),
+    legalName: input.legalName.trim(),
+    email: input.email.trim().toLowerCase(),
+    phone: input.phone?.trim(),
+    cdlNumber: input.cdlNumber.trim().toUpperCase(),
+    cdlState: input.cdlState,
+    cdlExpiresAt: input.cdlExpiresAt,
+    createdAt: iso(now()),
+  };
+
+  // A person with a profile and no carrier is a real, common state — somebody
+  // who signed up for themselves. They get the profile and nothing else: no
+  // engagement, no documents, no employer. Being a driver is not being hired.
+  rows.push({
+    profile: created,
+    availability: { status: "available" },
+    preferences: {},
+    engagements: [],
+    documents: {},
+  });
+  return { profile: { ...created }, resumed: false };
 }
 
 /* -------------------------------------------------------------------------- */

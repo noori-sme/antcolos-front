@@ -47,6 +47,14 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev -- --port 3100",
+    /**
+     * The second gate on the development fixture bridge.
+     *
+     * The bridge needs both a development build AND this, so an ordinary
+     * `npm run dev` does not attach it and a production build cannot. Only this
+     * server, started by this suite, does. See src/lib/session/fixture-bridge.tsx.
+     */
+    env: { NEXT_PUBLIC_ANTCOLOS_E2E: "1" },
     // `localhost`, not `127.0.0.1`: `next dev` blocks cross-origin requests to
     // its own HMR endpoint, and a page whose HMR socket is refused never
     // finishes hydrating — every click then does nothing.

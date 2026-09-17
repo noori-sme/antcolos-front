@@ -12,6 +12,10 @@ import type {
 } from "@/types";
 import { driverRequirements, requirementByKey } from "@/lib/documents/requirements";
 import { isNewcomerSession } from "@/lib/session/scenarios";
+import { MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
+import {
+  createOrResumeProfile, profileForUser, resetDriverRegistry,
+} from "@/lib/api/mock/driver-registry";
 import { effectiveStatus } from "@/lib/documents/status";
 import {
   addLink, clearDocumentsForSubjectKind, createDocument, documentInSlot, documentsForSubject,
@@ -94,20 +98,31 @@ export function documentRequirements(
 /* Seed state                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function seedProfile(): DriverProfile {
-  return {
-    id: "dp_sam",
-    userId: "usr_sam",
-    username: "sam_murtaza",
-    legalName: "Sam Murtaza",
-    email: "sam@antcolos.com",
-    phone: "+1 (312) 555-0148",
-    cdlNumber: "K4471182993",
-    cdlState: "IL",
-    cdlExpiresAt: daysFromNow(210),
-    medicalCardExpiresAt: daysFromNow(24),
-    createdAt: daysAgo(300),
-  };
+/**
+ * WHO IS SIGNED IN.
+ *
+ * Read from the session fixtures, which are the account boundary in a build
+ * with no backend — never from a literal in this file. That distinction is the
+ * whole point: this module used to hard-code `usr_sam`, so "the signed-in
+ * person" and "Sam" were the same statement and there was no code path by which
+ * anybody else could have a profile. A real session replaces the two constants
+ * below and nothing else here changes.
+ */
+function currentUser() {
+  return isNewcomerSession() ? NEWCOMER_USER : MOCK_USER;
+}
+
+/**
+ * The signed-in person's permanent profile, from THE registry.
+ *
+ * There is no local copy any more. `driver-registry.ts` holds one profile per
+ * person and this reads it — so the carrier looking at a driver and the driver
+ * looking at themselves are looking at one record, and a correction to it is
+ * visible to both on the next read rather than to whichever module happened to
+ * be edited.
+ */
+function ownProfile(): DriverProfile | null {
+  return profileForUser(currentUser().id) ?? null;
 }
 
 function seedRelationships(): CarrierRelationship[] {
@@ -173,18 +188,25 @@ export const DRIVER_PROFILE_ID = "dp_sam";
  * shared rather than because the carrier holds it.
  */
 function driverOwner(profile: DriverProfile | null) {
+  const user = currentUser();
   return {
     kind: "person" as const,
-    id: profile?.userId ?? "usr_sam",
-    name: profile?.legalName ?? "Sam Murtaza",
+    // The signed-in account, not a literal. Identical to the old hard-coded
+    // value for the demo fixture, and correct rather than wrong for anybody
+    // else — a person with no profile yet used to be recorded as Sam.
+    id: profile?.userId ?? user.id,
+    name: profile?.legalName ?? user.displayName,
   };
 }
 
 function driverSubject(profile: DriverProfile | null) {
   return {
     kind: "driver" as const,
+    // The document SLOT, deliberately unchanged. Which subject a document hangs
+    // off decides its identity in the shared store, and PR-1 does not move a
+    // single document. See the note on DRIVER_PROFILE_ID.
     id: profile?.id ?? DRIVER_PROFILE_ID,
-    label: profile?.legalName ?? "Sam Murtaza",
+    label: profile?.legalName ?? currentUser().displayName,
     href: "/driver/documents",
   };
 }
@@ -277,7 +299,13 @@ function seedDocuments(profile: DriverProfile | null) {
   }
 }
 
-let PROFILE: DriverProfile | null = null;
+/**
+ * Relationships stay here; the PROFILE does not.
+ *
+ * The driver's side of a carrier engagement is still this module's — PR-1 moved
+ * the person, not the relationship, and touching `CarrierRelationship` is
+ * deliberately out of its scope.
+ */
 let RELATIONSHIPS: CarrierRelationship[] = [];
 let seeded = false;
 
@@ -294,23 +322,31 @@ let seeded = false;
 function ensureSeeded() {
   if (seeded) return;
   seeded = true;
+  // A newcomer has no profile because the REGISTRY has none for them, not
+  // because this module blanks a local one. `usr_newcomer` simply is not in it.
   if (isNewcomerSession()) {
-    PROFILE = null;
     RELATIONSHIPS = [];
     seedDocuments(null);
     return;
   }
-  PROFILE = seedProfile();
   RELATIONSHIPS = seedRelationships();
-  seedDocuments(PROFILE);
+  seedDocuments(ownProfile());
 }
 
-/** Test hook. Never called by the UI. */
+/**
+ * Test hook. Never called by the UI.
+ *
+ * `withProfile: false` now rebuilds the REGISTRY without this person's profile,
+ * because that is where a profile lives. There is no local field to null out
+ * any more, and a version of this that quietly kept one would be the second
+ * store all over again.
+ */
 export function resetDriverMock(options?: { withProfile?: boolean }) {
   seeded = true;
-  PROFILE = options?.withProfile === false ? null : seedProfile();
-  RELATIONSHIPS = options?.withProfile === false ? [] : seedRelationships();
-  seedDocuments(PROFILE);
+  const withoutProfile = options?.withProfile === false;
+  resetDriverRegistry(withoutProfile ? { omitUserIds: [currentUser().id] } : undefined);
+  RELATIONSHIPS = withoutProfile ? [] : seedRelationships();
+  seedDocuments(ownProfile());
   sequence = 0;
 }
 
@@ -356,7 +392,7 @@ function carrierReviewOf(
 }
 
 function currentDriverDocument(requirementKey: string): DocumentRecord | undefined {
-  return documentInSlot("driver", PROFILE?.id ?? DRIVER_PROFILE_ID, requirementKey);
+  return documentInSlot("driver", ownProfile()?.id ?? DRIVER_PROFILE_ID, requirementKey);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -372,7 +408,7 @@ function currentDriverDocument(requirementKey: string): DocumentRecord | undefin
  */
 export function driverProfileSync(): DriverProfile | null {
   ensureSeeded();
-  return PROFILE ? { ...PROFILE } : null;
+  return ownProfile();
 }
 
 export function driverRelationshipsSync(): CarrierRelationship[] {
@@ -395,7 +431,7 @@ export function driverDocumentsSync(): DriverDocument[] {
 export async function mockGetDriverProfile(): Promise<DriverProfile | null> {
   ensureSeeded();
   await sleep(250);
-  return PROFILE ? { ...PROFILE } : null;
+  return ownProfile();
 }
 
 export interface QuickOnboardingInput {
@@ -429,19 +465,21 @@ export async function mockCreateOrGetDriverProfile(
 ): Promise<DriverProfile> {
   ensureSeeded();
   await sleep(LATENCY_MS);
-  if (PROFILE) return { ...PROFILE };
-  PROFILE = {
-    id: nextId("dp"),
-    userId: "usr_sam",
-    username: "sam_murtaza",
-    legalName: input.legalName.trim(),
-    email: input.email?.trim() || "sam@antcolos.com",
-    cdlNumber: input.cdlNumber.trim().toUpperCase(),
+  const user = currentUser();
+  // DELEGATED. This module no longer builds a `DriverProfile`; it asks the
+  // registry that owns them, keyed on who is signed in. A person who already
+  // has a profile gets that one back — the resume arm lives there, so the
+  // driver's own door and any other door reach the same record.
+  const { profile } = createOrResumeProfile({
+    userId: user.id,
+    legalName: input.legalName,
+    cdlNumber: input.cdlNumber,
     cdlState: input.cdlState,
     cdlExpiresAt: input.cdlExpiresAt,
-    createdAt: iso(now()),
-  };
-  return { ...PROFILE };
+    email: input.email?.trim() || user.email,
+    phone: user.phone,
+  });
+  return profile;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -490,7 +528,7 @@ export async function mockCreateRelationship(
 }
 
 function attachSharedDocuments(relationship: CarrierRelationship) {
-  const profileId = PROFILE?.id ?? DRIVER_PROFILE_ID;
+  const profileId = ownProfile()?.id ?? DRIVER_PROFILE_ID;
   for (const requirementKey of relationship.sharedDocumentKeys) {
     const existing = documentInSlot("driver", profileId, requirementKey);
     if (!existing) continue;
@@ -499,11 +537,11 @@ function attachSharedDocuments(relationship: CarrierRelationship) {
     );
     if (alreadyLinked) continue;
     addLink(existing.documentId, {
-      subject: driverSubject(PROFILE),
+      subject: driverSubject(ownProfile()),
       requirementKey,
       contextOrganizationId: relationship.carrierId,
       contextOrganizationName: relationship.carrierName,
-      actorName: PROFILE?.legalName ?? "Driver",
+      actorName: ownProfile()?.legalName ?? "Driver",
     });
   }
 }
@@ -536,10 +574,10 @@ export async function mockEndRelationship(
   // deleted: the carrier still has to be able to show what it held at the time.
   endRelationshipDocuments({
     subjectKind: "driver",
-    subjectId: PROFILE?.id ?? DRIVER_PROFILE_ID,
+    subjectId: ownProfile()?.id ?? DRIVER_PROFILE_ID,
     organizationId: ended.carrierId,
     reason: ended.endReason || "Carrier relationship ended.",
-    actorName: PROFILE?.legalName ?? "Driver",
+    actorName: ownProfile()?.legalName ?? "Driver",
   });
 
   return { ...ended };
@@ -569,7 +607,7 @@ export async function mockListDocuments(carrierId?: string): Promise<DriverDocum
 }
 
 function driverDocumentRows(carrierId?: string): DriverDocument[] {
-  const profileId = PROFILE?.id ?? DRIVER_PROFILE_ID;
+  const profileId = ownProfile()?.id ?? DRIVER_PROFILE_ID;
   return documentsForSubject("driver", profileId)
     .map((record) => projectDriverDocument(record, carrierId))
     .filter((d): d is DriverDocument => Boolean(d));
@@ -635,21 +673,21 @@ export async function mockUploadDocument(
         file: fileRef,
         expiresAt: previous.expiresAt,
         status: "selected_local",
-        addedByName: PROFILE?.legalName ?? "Driver",
+        addedByName: ownProfile()?.legalName ?? "Driver",
         contextOrganizationId: context.id,
       })
     : createDocument({
-        owner: driverOwner(PROFILE),
+        owner: driverOwner(ownProfile()),
         typeKey: requirementByKey(requirementKey)?.typeKey
           ?? CARRIER_EXTRA_DOCUMENTS.org_northline.find((r) => r.key === requirementKey)?.typeKey
           ?? "other",
-        subject: driverSubject(PROFILE),
+        subject: driverSubject(ownProfile()),
         requirementKey,
         contextOrganizationId: context.id,
         contextOrganizationName: context.name,
         status: "selected_local",
         file: fileRef,
-        addedByName: PROFILE?.legalName ?? "Driver",
+        addedByName: ownProfile()?.legalName ?? "Driver",
       });
 
   return projectDriverDocument(record)!;
@@ -680,7 +718,7 @@ export async function mockRemoveDocument(requirementKey: string): Promise<void> 
     lineageId: existing.lineageId, documentId: existing.documentId, kind: "unlinked",
     summary: "Withdrawn before review",
     detail: "The record is kept; only the checklist link was ended.",
-    actorName: PROFILE?.legalName ?? "Driver",
+    actorName: ownProfile()?.legalName ?? "Driver",
   });
 }
 
@@ -696,7 +734,7 @@ export async function mockSetDocumentExpiry(
   recordEvent({
     lineageId: existing.lineageId, documentId: existing.documentId, kind: "expiry_set",
     summary: `Expiry recorded: ${expiresAt.slice(0, 10)}`,
-    actorName: PROFILE?.legalName ?? "Driver",
+    actorName: ownProfile()?.legalName ?? "Driver",
   });
   return projectDriverDocument(updated)!;
 }
@@ -723,7 +761,7 @@ export async function mockSubmitDocument(requirementKey: string): Promise<Driver
     lineageId: existing.lineageId, documentId: existing.documentId, kind: "submitted",
     summary: "Sent to the carrier for review",
     detail: "Nothing was uploaded or transmitted. The record is marked as waiting for a person.",
-    actorName: PROFILE?.legalName ?? "Driver",
+    actorName: ownProfile()?.legalName ?? "Driver",
   });
   return projectDriverDocument(updated)!;
 }
