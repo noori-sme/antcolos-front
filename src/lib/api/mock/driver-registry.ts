@@ -912,9 +912,51 @@ export function activateCarrierRelationship(
     return { outcome: "already_active", relationship: { ...engagement } };
   }
   engagement.status = "active";
-  engagement.startedAt = at;
-  engagement.startedAtBasis = "observed";
+
+  /*
+   * ★ ACTIVATION DOES NOT OVERWRITE A DATE SOMEBODY ALREADY ASSERTED ★
+   *
+   * This wrote `startedAt = today` and `startedAtBasis = "observed"`
+   * unconditionally. For a driver who was IMPORTED — a carrier asserting they
+   * have driven here since March — activating them in Antcolos would have
+   * replaced March with this afternoon and relabelled the carrier's claim as
+   * something Antcolos watched happen. That is the same collapse the whole date
+   * decision exists to prevent, arriving one step later than acceptance.
+   *
+   * So the date is written only when there is none. When one is already there,
+   * it and its basis are left exactly as they are: activation is a change of
+   * STATE, and it is not evidence about when the relationship began.
+   */
+  if (!engagement.startedAt) {
+    engagement.startedAt = at;
+    // Antcolos watched this one begin. That is what `observed` means.
+    engagement.startedAtBasis = "observed";
+  }
   return { outcome: "activated", relationship: { ...engagement } };
+}
+
+/**
+ * Test hook: a relationship carrying a date the CARRIER asserted.
+ *
+ * Stands in for the import path PR-3 will build. Until that exists there is no
+ * product way to produce a `carrier_asserted` start date, so the rule that
+ * nothing promotes one has nothing to be tested against — and a test written
+ * over a seeded `observed` relationship passes without exercising it at all.
+ */
+export function setAssertedStartForTests(
+  driverProfileId: string,
+  carrierId: string,
+  assertedStartedAt: string,
+): void {
+  if (!CONSENT_SEAM_AVAILABLE) return;
+  const record = db().find((d) => d.profile.id === driverProfileId);
+  const engagement = record?.engagements.find(
+    (e) => e.carrierId === carrierId && e.status !== "ended",
+  );
+  if (!engagement) return;
+  engagement.startedAt = assertedStartedAt;
+  engagement.startedAtBasis = "carrier_asserted";
+  engagement.status = "onboarding";
 }
 
 /**

@@ -12,6 +12,7 @@ import { isRestrictedDocumentType } from "@/lib/documents/catalog";
 import { documentRequirements, resetDriverMock } from "@/features/driver/mock-driver";
 import {
   activateCarrierRelationship, liveRelationship, profileForUser, resetDriverRegistry,
+  setAssertedStartForTests,
 } from "./driver-registry";
 import { documentsForSubject, resetDocumentStore } from "./document-store";
 import { auditLedger, resetAuditLedger } from "./audit-ledger";
@@ -383,19 +384,45 @@ describe("only activation writes a start date", () => {
     expect(again.relationship!.startedAt).toBe(activated.relationship!.startedAt);
   });
 
-  it("never promotes a carrier's asserted historical date to an observed one", () => {
-    // A seeded relationship stands in for an imported one here: it has a start
-    // date this product did not watch begin. Accepting says nothing about what
-    // a spreadsheet claimed about last March, so nothing may rewrite the basis.
-    const relationship = liveRelationship("dp_sam", "org_cascade")!;
-    expect(relationship.startedAt).toBeTruthy();
-    const basis = relationship.startedAtBasis;
-    const date = relationship.startedAt;
+  it("keeps a genuinely CARRIER-ASSERTED date and its basis through activation", () => {
+    /*
+     * ★ THIS TEST USED TO PASS WITHOUT EXERCISING THE RULE ★
+     *
+     * It read a SEEDED relationship, whose basis is `observed` and whose status
+     * is already `active` — so activation returned `already_active` and changed
+     * nothing, and the assertion held for the wrong reason. Behind that there
+     * was a real defect: activation wrote `startedAt = today` and
+     * `startedAtBasis = "observed"` unconditionally, so activating an imported
+     * driver would have replaced the carrier's March with this afternoon and
+     * relabelled their claim as something Antcolos watched happen.
+     *
+     * There is no product path to a `carrier_asserted` date yet — that is the
+     * import PR-3 will build — so the state is constructed directly.
+     */
+    const ASSERTED = "2024-03-04T00:00:00.000Z";
+    setAssertedStartForTests("dp_sam", "org_cascade", ASSERTED);
 
-    activateCarrierRelationship("dp_sam", "org_cascade");
+    const before = liveRelationship("dp_sam", "org_cascade")!;
+    expect(before.startedAt).toBe(ASSERTED);
+    expect(before.startedAtBasis).toBe("carrier_asserted");
+    expect(before.status).toBe("onboarding");
+
+    const activated = activateCarrierRelationship("dp_sam", "org_cascade");
+    expect(activated.outcome).toBe("activated");
+
     const after = liveRelationship("dp_sam", "org_cascade")!;
-    expect(after.startedAt).toBe(date);
-    expect(after.startedAtBasis).toBe(basis);
+    // The state changed. The date, and whose claim it is, did not.
+    expect(after.status).toBe("active");
+    expect(after.startedAt).toBe(ASSERTED);
+    expect(after.startedAtBasis).toBe("carrier_asserted");
+  });
+
+  it("leaves a seeded, already-active relationship alone", () => {
+    const before = liveRelationship("dp_sam", "org_cascade")!;
+    const again = activateCarrierRelationship("dp_sam", "org_cascade");
+    expect(again.outcome).toBe("already_active");
+    expect(again.relationship!.startedAt).toBe(before.startedAt);
+    expect(again.relationship!.startedAtBasis).toBe(before.startedAtBasis);
   });
 });
 
@@ -693,6 +720,14 @@ describe("where the identity comes from, and what it is worth", () => {
     const service = readFileSync(join(process.cwd(), "src/lib/api/mock/access.ts"), "utf8");
     expect(service).not.toContain("isNewcomerSession");
     expect(service).not.toMatch(/function currentUser\(/);
+  });
+
+  it("tells the HTTP adapter not to put it on the wire", () => {
+    // An endpoint that accepts a user id or an email from its caller is an
+    // endpoint that accepts anyone's. Written where whoever implements the
+    // adapter will read it, not only in a PR description.
+    const http = readFileSync(join(process.cwd(), "src/lib/api/http/index.ts"), "utf8");
+    expect(http).toContain("IDENTITY DOES NOT CROSS THE WIRE");
   });
 
   it("says in the contract that it is a simulation, and what a server must do", () => {
