@@ -42,6 +42,7 @@ import {
 } from "./risk-needs-you";
 import { isWorkforceNeedsYouId, workforceNeedsYouItems } from "./workforce-needs-you";
 import { accessNeedsYouItems, isAccessNeedsYouId } from "./access-needs-you";
+import { importNeedsYouItems, isImportNeedsYouId } from "./import-needs-you";
 
 const LATENCY_MS = 180;
 const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
@@ -120,6 +121,10 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // An acceptance that did not finish. Derived from the run itself, so it
     // stops existing the moment the person accepts again and it completes.
     ...accessNeedsYouItems(ctx),
+    // An imported row the matcher would not decide. Derived from the claim, so
+    // answering it is what makes the item stop existing — and until somebody
+    // does, the row is visibly not imported rather than quietly guessed at.
+    ...importNeedsYouItems(ctx),
     // Derived above, so the document rows it seeds are already in place.
     ...compliance,
   ];
@@ -176,6 +181,12 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // case for an invitation, so without this a manager would silently lose the
   // one item that says somebody is half-joined.
   if (isAccessNeedsYouId(item.id)) return true;
+
+  // Import items are gated at the source on `workforce:manage` and scoped to
+  // the caller's own organization there. The entity-kind narrowing below has no
+  // case for a claim — deliberately, because a claim is not a person — so
+  // without this the one item asking who somebody is would silently vanish.
+  if (isImportNeedsYouId(item.id)) return true;
 
   // Record scope: a driver sees only items about their own loads and record.
   if (ctx.scope.loads === "assigned" && ctx.driverProfileId) {

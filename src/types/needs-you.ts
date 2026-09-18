@@ -178,6 +178,17 @@ export type NeedsYouCategory =
    */
   | "invitation_acceptance_incomplete"
 
+  /* ---- Import. Derived from claims the matcher would not decide. ---- */
+  /**
+   * A row from a carrier's own records that could be one of their people and
+   * could be somebody new, and nothing in it proves which.
+   *
+   * The whole reason the import stops. Guessing costs a second permanent
+   * identity for somebody who already had one, and nobody notices until they
+   * count — so the row waits here for a person who can actually tell.
+   */
+  | "import_claim_unresolved"
+
   /* ---- Audit & Risk. Derived from open risk cases, never seeded. ---- */
   /** A high-severity risk case somebody has been made responsible for. */
   | "risk_case_assigned"
@@ -238,6 +249,14 @@ export type NeedsYouEntityKind =
   | "invitation"
   /** One carrier's pinned custody record of one document version. */
   | "qualification_record"
+  /**
+   * One row of what a carrier asserted while importing their own records.
+   *
+   * NEVER a person, a truck or an organization. It is evidence of a claim, and
+   * the moment it becomes one of those it stops being a claim — which is the
+   * property that keeps an import from growing into a second registry.
+   */
+  | "import_claim"
   /** One ELD or telematics device. Never the truck it happens to be on. */
   | "eld_device"
   /** One organization's link to a provider. */
@@ -307,6 +326,10 @@ export type NeedsYouActionKind =
   /* ---- Access ---- */
   /** Look at an acceptance that did not finish, and at what is missing. */
   | "review_acceptance"
+
+  /* ---- Import ---- */
+  /** Say which existing record an imported row is, or that it is nobody's. */
+  | "resolve_import_claim"
 
   /* ---- Workforce & HR ---- */
   /** Decide whether to take a prospective person forward. Never automatic. */
@@ -425,6 +448,7 @@ export const SEVERITY_LABEL: Record<NeedsYouSeverity, string> = {
 
 export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invitation_acceptance_incomplete: "Acceptance did not finish",
+  import_claim_unresolved: "Imported row needs you",
   rate_con_verification: "Rate con to verify",
   unassigned_load: "Unassigned load",
   missing_equipment: "Missing equipment",

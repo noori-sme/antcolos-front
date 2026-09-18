@@ -18,11 +18,13 @@ export type * from "./responsibility";
 export type * from "./access";
 export type * from "./workforce";
 export type * from "./qualification";
+export type * from "./import";
 
 
 
 
 import type { AccessService } from "./access";
+import type { ImportService } from "./import";
 import type { AuditService } from "./audit";
 import type { RiskService } from "./risk";
 import type { ComplianceService } from "./compliance";
@@ -112,4 +114,12 @@ export interface AntcolosServices {
    * one document store, and there is no method that takes or stores a file.
    */
   qualification: QualificationService;
+  /**
+   * Bringing an existing operation's records in.
+   *
+   * It owns no canonical record. Every commit goes through the module that
+   * already writes that record, and a claim it cannot resolve stays a claim
+   * rather than becoming a second registry of people and trucks.
+   */
+  import: ImportService;
 }

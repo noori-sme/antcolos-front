@@ -173,3 +173,7 @@ export {
   RESTRICTED_QUALIFICATION_CATEGORIES, RESTRICTED_CATEGORY_REASON,
   isRestrictedQualificationCategory,
 } from "./qualification";
+export type * from "./import";
+export {
+  CLAIM_OUTCOME_LABEL, IMPORT_LIMITATION, IMPORT_ASSERTION_BASIS, SOLO_OWNER_NOTE,
+} from "./import";
