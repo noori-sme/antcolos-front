@@ -220,6 +220,29 @@ test.describe("when a seat ends underneath the person", () => {
     await expect(page.getByTestId("leave-organization")).toHaveCount(1);
   });
 
+  /**
+   * ★ THE ROSTER READS TWO STORES, SO REMOVAL HAS TO REACH BOTH ★
+   *
+   * Colleagues live in the membership directory; seats granted in this tab live
+   * in the session store. When the People screen began listing both, "Remove
+   * access" kept writing only to the session store — so for six of Northline's
+   * seven rows it did nothing at all and said it had worked. This drives the
+   * button on a colleague and insists the row is gone.
+   */
+  test("removing a colleague actually removes them", async ({ page }) => {
+    await page.goto("/settings/users", { waitUntil: "networkidle" });
+
+    const paige = page.getByTestId("person-row").filter({ hasText: "Paige Ellery" });
+    await expect(paige).toHaveCount(1);
+    const before = await page.getByTestId("person-row").count();
+
+    await paige.getByRole("button", { name: "Remove access" }).click();
+
+    await expect(page.getByTestId("person-row").filter({ hasText: "Paige Ellery" }))
+      .toHaveCount(0);
+    await expect(page.getByTestId("person-row")).toHaveCount(before - 1);
+  });
+
   test("stops being their workspace instead of leaving stale permissions", async ({ page }) => {
     await joinAsOfficeManager(page);
 

@@ -66,6 +66,42 @@ in a dispatch workspace's catalog at all, and the key that comes closest —
 it is necessary and not sufficient, because the carrier's per-truck
 `TruckDispatchAccess` decides which trucks it reaches.
 
+## The roster, and why it reads two stores
+
+`rosterOf(organizationId)` answers "who is in this organization" from two
+places, because two different things are recorded:
+
+| Store | Holds | Written by |
+|---|---|---|
+| Membership directory | The colleagues who are IN an organization | `updateMemberAccess`, `setMembershipStatus` |
+| Session store | The seats THIS TAB has, including any granted at runtime by somebody accepting an invitation | `grantMembership`, `updateMembershipAccess`, `setMembershipStatus` |
+
+Fixture memberships exist in both. **The session copy wins on id**, because a
+seat it holds is the live one. Three rules make that safe, and each one is
+there because its absence produced a specific lie:
+
+- **The id is claimed before the seat is judged.** A session copy marked `left`
+  still owns its id. Testing the status first left the id unclaimed, so the
+  directory's fixture copy was listed instead and somebody who had just been
+  removed came back reading `active`.
+- **Every write is routed by the same ownership test.** `writeSeatAccess` and
+  `writeSeatStatus` both ask which store owns the seat. Unioning the read path
+  while leaving a write pointed at one store meant ending a colleague's seat
+  did nothing and reported success.
+- **"Does this person already have a seat here?" is asked of the union.**
+  `liveSeatFor` derives from `rosterOf`. Asking the session store alone meant a
+  colleague accepting an invitation was handed a *second* live seat — two
+  answers to what they may do, and two rows on the roster.
+
+Writes to either store notify one subscription (`subscribeRoster`), so a screen
+has one thing to listen to.
+
+★ FOR THE BACKEND ★ None of this survives. A server has ONE membership table.
+The invariants that do survive are the ones these rules stand in for: a unique
+index on `(userId, organizationId)` where the seat is live, status transitions
+that are a single UPDATE on that table, and no second place a roster can be
+read from.
+
 ## ███ None of this is enforced in a browser ███
 
 `ctx.permissions` is a set the browser assembled from fixtures. Every refusal
@@ -127,4 +163,4 @@ template edit to anybody's access.
 | Mock implementation | `src/lib/api/mock/access-templates.ts` |
 | Template store | `src/lib/api/mock/template-store.ts` |
 | Screens | `src/features/access/roles-screen.tsx`, `permission-catalog.tsx`, `apply-template-panel.tsx`, `access-diff.tsx` |
-| Tests | `src/lib/api/mock/access-templates.test.ts` |
+| Tests | `src/lib/api/mock/access-templates.test.ts`, `roster-union.test.ts` |

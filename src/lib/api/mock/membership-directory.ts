@@ -3,6 +3,7 @@ import { DEFAULT_SCOPE, OWN_RECORDS_SCOPE } from "@/lib/permissions/scope";
 import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER, appliedSeedTemplate,
 } from "@/lib/session/fixtures";
+import { notifyRosterChanged } from "@/lib/session/membership-store";
 import type {
   IsoDateTime, Membership, PermissionKey, ResponsibilityFunction,
 } from "@/types";
@@ -699,6 +700,7 @@ function ov(): DirectoryOverrides {
 /** Test hook and demo control. Never called during a normal render. */
 export function resetMembershipDirectory() {
   overrides = null;
+  notifyRosterChanged();
 }
 
 /**
@@ -713,6 +715,7 @@ export function setMembershipAvailability(
   availability: MembershipAvailability,
 ) {
   ov().availability.set(membershipId, availability);
+  notifyRosterChanged();
 }
 
 /**
@@ -727,6 +730,7 @@ export function setMembershipStatus(
   status: Membership["status"],
 ) {
   ov().status.set(membershipId, status);
+  notifyRosterChanged();
 }
 
 /**
@@ -758,6 +762,8 @@ export function updateMemberAccess(
   if (!base) return undefined;
   const current = ov().access.get(membershipId) ?? {};
   ov().access.set(membershipId, { ...current, ...patch });
+  // The roster's answer just changed. Screens read it through one subscription.
+  notifyRosterChanged();
   return membershipRecordFor(membershipId);
 }
 
@@ -767,6 +773,7 @@ export function setMembershipDelegationScope(
 ) {
   if (scope === undefined) ov().scope.delete(membershipId);
   else ov().scope.set(membershipId, scope);
+  notifyRosterChanged();
 }
 
 /* -------------------------------------------------------------------------- */

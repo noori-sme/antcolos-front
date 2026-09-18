@@ -13,7 +13,10 @@ import {
   grantMembership, liveMembershipFor, rosterSnapshot, setMembershipStatus,
   updateMembershipAccess,
 } from "@/lib/session/membership-store";
-import { memberById, membershipsIn, updateMemberAccess } from "./membership-directory";
+import {
+  memberById, membershipsIn, updateMemberAccess,
+  setMembershipStatus as setDirectoryMembershipStatus,
+} from "./membership-directory";
 import { effectivePermissions } from "@/lib/permissions";
 import {
   createOrResumeProfile, profileForUser, relationshipsForProfile,
@@ -511,8 +514,19 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
         undefined, `Antcolos has no record of the organization ${invitation.organizationId}.`));
     } else {
       const scenario = identity.scenario;
-      const held = liveMembershipFor(scenario, userId, invitation.organizationId);
-      const result = grantMembership({
+      /*
+       * Asked of the UNION, not of the session store alone. Somebody who
+       * already holds a seat this tab did not grant — a colleague in the
+       * directory — must resume it rather than be handed a second one.
+       */
+      const held = liveSeatFor(userId, invitation.organizationId)
+        ?? liveMembershipFor(scenario, userId, invitation.organizationId);
+      const result = held && !seatIsInSession(held)
+        // Already a member, by a route this tab did not perform. Resume it:
+        // writing it into the session store would be the second seat again,
+        // under a different store rather than a different id.
+        ? ({ status: "already_held", membership: held } as const)
+        : grantMembership({
         scenario,
         membership: held ?? {
           id: `mem_${invitation.id}_${userId}`,
@@ -1046,9 +1060,19 @@ export function rosterOf(organizationId: string): Membership[] {
    */
   const push = (m: Membership) => {
     if (m.organizationId !== organizationId) return;
-    if (m.status === "left") return;
     if (seen.has(m.id)) return;
+    /*
+     * ★ THE ID IS CLAIMED BEFORE THE SEAT IS JUDGED ★
+     * `seen.add` runs even for a seat that will not be listed, because the
+     * session copy OWNS this id whatever it says. Testing the status first
+     * left the id unclaimed, so a seat the session had marked `left` fell
+     * through to the directory's fixture copy — and somebody who had just
+     * been removed came back, reading `active`. Removal reported success and
+     * changed nothing a person could see, which is the worst shape an access
+     * control can take.
+     */
     seen.add(m.id);
+    if (m.status === "left") return;
     out.push(m);
   };
 
@@ -1068,6 +1092,11 @@ export function rosterOf(organizationId: string): Membership[] {
  * so no caller has to — and neither primitive decides anything: both are
  * handed a selection the Access service already clamped.
  */
+function seatIsInSession(seat: Membership): boolean {
+  return (["demo", "newcomer"] as const).some((scenario) =>
+    rosterSnapshot(scenario).memberships.some((m) => m.id === seat.id));
+}
+
 export function writeSeatAccess(
   seat: Membership,
   patch: {
@@ -1076,11 +1105,44 @@ export function writeSeatAccess(
     revocations?: Membership["revocations"];
   },
 ): Membership | undefined {
-  const inSession = (["demo", "newcomer"] as const).some((scenario) =>
-    rosterSnapshot(scenario).memberships.some((m) => m.id === seat.id));
-  return inSession
+  return seatIsInSession(seat)
     ? updateMembershipAccess(scenarioOf(seat), seat.id, patch)
     : updateMemberAccess(seat.id, patch);
+}
+
+/**
+ * Changes a seat's STATUS, into the store that owns it.
+ *
+ * ★ WHY THIS EXISTS AS A SIBLING OF `writeSeatAccess` ★
+ * The read path was unioned across both stores while the status write was left
+ * pointed at the session store alone — and the session primitive opens with a
+ * membership-exists guard, so ending a colleague's seat returned silently
+ * having done nothing. The service reported `ended`, wrote a revocation to the
+ * ledger, and the person kept working. Every write that can reach a seat now
+ * goes through the same ownership test as every other.
+ */
+export function writeSeatStatus(seat: Membership, status: Membership["status"]): void {
+  if (seatIsInSession(seat)) setMembershipStatus(scenarioOf(seat), seat.id, status);
+  else setDirectoryMembershipStatus(seat.id, status);
+}
+
+/**
+ * The live seat a person holds in an organization, ACROSS BOTH STORES.
+ *
+ * The session store's own `liveMembershipFor` cannot answer this: it sees only
+ * the seats this tab holds, so somebody with a directory seat reads as having
+ * none, and accepting an invitation mints them a second one. Two live seats for
+ * one person in one organization makes "what may they do here" a question with
+ * two answers, and the roster renders them twice.
+ *
+ * Derived from `rosterOf`, so it inherits the same exclusions: a seat somebody
+ * left is history rather than a reason to refuse them a new one.
+ */
+export function liveSeatFor(
+  userId: string,
+  organizationId: string,
+): Membership | undefined {
+  return rosterOf(organizationId).find((m) => m.userId === userId);
 }
 
 /** Which scenario roster a seat lives in. */
@@ -1171,7 +1233,7 @@ async function endSeatImpl(
     };
   }
 
-  setMembershipStatus(scenarioOf(seat), membershipId, "left");
+  writeSeatStatus(seat, "left");
   appendAuditEvent(ctx, {
     module: "access",
     action: "access.permission_revoked",
@@ -1200,7 +1262,7 @@ async function leaveOrganizationImpl(
     };
   }
 
-  setMembershipStatus(scenarioOf(seat), seat.id, "left");
+  writeSeatStatus(seat, "left");
   appendAuditEvent(ctx, {
     module: "access",
     action: "access.permission_revoked",

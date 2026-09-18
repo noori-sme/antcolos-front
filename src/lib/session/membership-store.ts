@@ -98,6 +98,22 @@ function notify() {
 /* Reads                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Announce that the roster changed, from a store that is not this one.
+ *
+ * ★ WHY THIS IS EXPORTED ★
+ * "Who is in this organization" is answered by two stores — this one holds the
+ * seats this tab has, the mock membership directory holds the colleagues — but
+ * there is only one QUESTION, so there is only one subscription. Without this,
+ * a write to the directory changed the roster and notified nobody, and the
+ * People screen sat there showing the answer from before it.
+ *
+ * It notifies. It does not write, and it has no opinion about what changed.
+ */
+export function notifyRosterChanged(): void {
+  notify();
+}
+
 export function subscribeRoster(onChange: () => void): () => void {
   listeners.add(onChange);
   return () => {
