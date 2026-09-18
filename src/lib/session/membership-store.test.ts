@@ -3,7 +3,7 @@ import { effectivePermissions } from "@/lib/permissions/effective";
 import { OWN_RECORDS_SCOPE } from "@/lib/permissions/scope";
 import type { Membership, PermissionKey } from "@/types";
 import {
-  MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER, NEWCOMER_USER,
+  MOCK_ORGANIZATIONS, MOCK_USER, NEWCOMER_USER, appliedSeedTemplate,
 } from "./fixtures";
 import {
   grantMembership, liveMembershipFor, resetRoster, rosterServerSnapshot,
@@ -42,7 +42,7 @@ function driverSeat(overrides: Partial<Membership> = {}): Membership {
     organizationId: CARRIER.id,
     status: "active",
     title: "Driver",
-    templateIds: [`tpl_${CARRIER.id}_driver`],
+    appliedTemplates: [appliedSeedTemplate(CARRIER.id, "driver")],
     grants: [],
     revocations: [],
     scope: OWN_RECORDS_SCOPE,
@@ -213,7 +213,7 @@ describe("a granted seat gets its permissions from the system that already exist
     grantMembership({ scenario: "newcomer", membership: driverSeat(), organization: CARRIER });
     const seat = rosterSnapshot("newcomer").memberships[0];
 
-    const permissions = effectivePermissions(seat, CARRIER, MOCK_TEMPLATES);
+    const permissions = effectivePermissions(seat, CARRIER);
 
     // What a driver seat is for: their own loads, their own paperwork, their
     // own pay. Not the workspace.

@@ -1,7 +1,7 @@
 import type { ServiceContext } from "@/lib/api/contracts/context";
 import { effectivePermissions } from "@/lib/permissions/effective";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER,
 } from "@/lib/session/fixtures";
 import { workspaceKindOf, type ReportFilters } from "@/types";
 
@@ -20,7 +20,7 @@ export function contextFor(membershipId: string): ServiceContext {
     workspaceKind: workspaceKindOf(organization),
     organizationName: organization.displayName,
     membershipId: membership.id,
-    permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
+    permissions: effectivePermissions(membership, organization),
     scope: membership.scope,
     driverProfileId: membership.driverProfileId,
     actor: {

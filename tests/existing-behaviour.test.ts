@@ -9,8 +9,7 @@ import {
 import { effectivePermissions } from "@/lib/permissions/effective";
 import { requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES,
-} from "@/lib/session/fixtures";
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import {
   CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER, STONEBRIDGE_DRIVER,
   contextFor, resetWorld,
@@ -49,7 +48,7 @@ describe("the permission catalog stays coherent", () => {
   it("gives an owner every permission their organization type offers", () => {
     const membership = MOCK_MEMBERSHIPS.find((m) => m.id === NORTHLINE_OWNER)!;
     const organization = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
-    const effective = effectivePermissions(membership, organization, MOCK_TEMPLATES);
+    const effective = effectivePermissions(membership, organization);
 
     for (const key of availablePermissionKeys(organization.type)) {
       assert.equal(effective.has(key), true);

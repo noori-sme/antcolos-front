@@ -6,8 +6,7 @@ import { PRODUCT_NAV } from "@/config/nav";
 import { effectivePermissions } from "@/lib/permissions/effective";
 import { requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES,
-} from "@/lib/session/fixtures";
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import { contextFor, DRIVER, INDIVIDUAL_DISPATCHER, OWNER_CARRIER } from "@/lib/reports/__tests__/helpers";
 
 /**
@@ -67,7 +66,7 @@ describe("permissions", () => {
   it("still gives an owner everything available to the organization type", () => {
     const membership = MOCK_MEMBERSHIPS.find((m) => m.id === OWNER_CARRIER)!;
     const organization = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
-    const permissions = effectivePermissions(membership, organization, MOCK_TEMPLATES);
+    const permissions = effectivePermissions(membership, organization);
     expect(permissions.has("reports:view")).toBe(true);
     expect(permissions.has("revenue:view")).toBe(true);
   });

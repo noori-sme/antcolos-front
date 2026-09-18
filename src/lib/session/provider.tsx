@@ -8,14 +8,14 @@ import {
 import { effectivePermissions } from "@/lib/permissions/effective";
 import type {
   DensityPreference, Membership, Organization, PermissionKey,
-  PermissionTemplate, User,
+  User,
 } from "@/types";
 import {
   getStoredActiveMembership, setStoredActiveMembership,
   subscribeActiveMembership,
 } from "./active-membership-store";
 import {
-  MOCK_SESSION, MOCK_TEMPLATES, MOCK_USER, NEWCOMER_USER,
+  MOCK_SESSION, MOCK_USER, NEWCOMER_USER,
 } from "./fixtures";
 import {
   rosterServerSnapshot, rosterSnapshot, subscribeRoster,
@@ -31,7 +31,6 @@ export interface SessionContextValue {
    */
   memberships: readonly Membership[];
   organizations: readonly Organization[];
-  templates: PermissionTemplate[];
   activeMembership: Membership | null;
   activeOrganization: Organization | null;
   permissions: ReadonlySet<PermissionKey>;
@@ -147,7 +146,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const permissions = useMemo<ReadonlySet<PermissionKey>>(() => {
     if (!activeMembership || !activeOrganization) return new Set<PermissionKey>();
-    return effectivePermissions(activeMembership, activeOrganization, MOCK_TEMPLATES);
+    return effectivePermissions(activeMembership, activeOrganization);
   }, [activeMembership, activeOrganization]);
 
   const switchOrganization = useCallback(
@@ -167,7 +166,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       user,
       memberships,
       organizations,
-      templates: MOCK_TEMPLATES,
       activeMembership,
       activeOrganization,
       permissions,

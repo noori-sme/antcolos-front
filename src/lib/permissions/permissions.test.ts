@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES,
-} from "@/lib/session/fixtures";
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import type { PermissionKey } from "@/types";
 import { can, canAll, canAny } from "./can";
 import {
@@ -71,8 +70,7 @@ describe("the catalog", () => {
 describe("effective permissions", () => {
   it("gives an active owner everything their organization type allows", () => {
     const effective = effectivePermissions(
-      membership("mem_northline_owner"), org("org_northline"), MOCK_TEMPLATES,
-    );
+      membership("mem_northline_owner"), org("org_northline"));
     expect(effective.size).toBe(availablePermissionKeys("CARRIER").length);
     expect(effective.has("fuel:view")).toBe(true);
     expect(effective.has("ifta:manage")).toBe(true);
@@ -80,8 +78,7 @@ describe("effective permissions", () => {
 
   it("applies template, then grant, then revocation — in that order", () => {
     const effective = effectivePermissions(
-      membership("mem_meridian_dispatcher"), org("org_meridian"), MOCK_TEMPLATES,
-    );
+      membership("mem_meridian_dispatcher"), org("org_meridian"));
     expect(effective.has("loads:view")).toBe(true);        // template
     expect(effective.has("customers:edit")).toBe(true);    // explicit grant
     expect(effective.has("loads:delete")).toBe(false);     // explicit revocation
@@ -90,16 +87,15 @@ describe("effective permissions", () => {
 
   it("gives a suspended or departed membership nothing at all", () => {
     const suspended = { ...membership("mem_northline_owner"), status: "suspended" as const };
-    expect(effectivePermissions(suspended, org("org_northline"), MOCK_TEMPLATES).size).toBe(0);
+    expect(effectivePermissions(suspended, org("org_northline")).size).toBe(0);
   });
 
-  it("ignores a template belonging to another organization", () => {
-    const crossed = {
-      ...membership("mem_meridian_dispatcher"),
-      templateIds: ["tpl_org_northline_dispatcher"],
-      grants: [] as PermissionKey[],
-    };
-    expect(effectivePermissions(crossed, org("org_meridian"), MOCK_TEMPLATES).size).toBe(0);
+  it("gives a seat nothing when it is read against another organization", () => {
+    // The snapshot on this seat is Northline's. Reading it against Meridian
+    // must not produce Meridian access — a template's permissions are keys,
+    // and keys mean nothing outside the organization the seat belongs to.
+    const northlineSeat = membership("mem_northline_owner");
+    expect(effectivePermissions(northlineSeat, org("org_meridian")).size).toBe(0);
   });
 });
 

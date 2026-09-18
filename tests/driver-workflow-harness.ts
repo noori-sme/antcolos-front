@@ -1,6 +1,6 @@
 import { effectivePermissions } from "@/lib/permissions/effective";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER,
 } from "@/lib/session/fixtures";
 import type { ServiceContext } from "@/lib/api/contracts/context";
 import { driverWorkflowStore } from "@/lib/api/mock/driver-workflow-store";
@@ -29,7 +29,7 @@ export function contextFor(
     organizationName: organization.displayName,
     workspaceKind: workspaceKindOf(organization),
     membershipId: membership.id,
-    permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
+    permissions: effectivePermissions(membership, organization),
     scope: membership.scope,
     driverProfileId: membership.driverProfileId,
     actor: {
