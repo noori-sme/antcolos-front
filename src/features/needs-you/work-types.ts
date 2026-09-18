@@ -30,6 +30,7 @@ export type NeedsYouModule =
   | "accounting"
   | "contracts"
   | "workforce"
+  | "access"
   | "audit";
 
 /**
@@ -49,6 +50,7 @@ export const NEEDS_YOU_MODULE_ORDER: readonly NeedsYouModule[] = [
   "accounting",
   "contracts",
   "workforce",
+  "access",
   "fleet",
   "eld",
   "fuel",
@@ -69,10 +71,13 @@ export const MODULE_LABEL: Record<NeedsYouModule, string> = {
   accounting: "Accounting",
   contracts: "Contracts",
   workforce: "Workforce & HR",
+  access: "Access and invitations",
   audit: "Audit & risk",
 };
 
 export const CATEGORY_MODULE: Record<NeedsYouCategory, NeedsYouModule> = {
+  invitation_acceptance_incomplete: "access",
+
   /* Dispatch & loads */
   rate_con_verification: "dispatch",
   unassigned_load: "dispatch",

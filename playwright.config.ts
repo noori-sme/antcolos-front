@@ -47,14 +47,15 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev -- --port 3100",
-    /**
-     * The second gate on the development fixture bridge.
+    /*
+     * ★ NO TEST-ONLY AFFORDANCE IS MOUNTED ANY MORE ★
      *
-     * The bridge needs both a development build AND this, so an ordinary
-     * `npm run dev` does not attach it and a production build cannot. Only this
-     * server, started by this suite, does. See src/lib/session/fixture-bridge.tsx.
+     * PR-1 gated a development-only `window.__antcolosFixtures` bridge behind
+     * this variable, because it had made a granted seat OBSERVABLE without
+     * adding anything that GRANTED one. PR-2 added the Access service, so the
+     * browser suite presses the same buttons a person does and the bridge is
+     * gone — file, mount, gate and all.
      */
-    env: { NEXT_PUBLIC_ANTCOLOS_E2E: "1" },
     // `localhost`, not `127.0.0.1`: `next dev` blocks cross-origin requests to
     // its own HMR endpoint, and a page whose HMR socket is refused never
     // finishes hydrating — every click then does nothing.

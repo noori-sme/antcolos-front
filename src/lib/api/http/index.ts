@@ -313,4 +313,31 @@ export const httpServices: AntcolosServices = {
     authorizeDisposal: notImplemented("qualification.authorizeDisposal"),
     adoptionsForDriver: notImplemented("qualification.adoptionsForDriver"),
   },
+  /*
+   * ███ WHEN THIS IS IMPLEMENTED, IDENTITY DOES NOT CROSS THE WIRE ███
+   *
+   * `lookUp`, `preview`, `accept` and `decline` take an `AcceptingIdentity` in
+   * the mock because a browser has no server to ask who is signed in. This
+   * adapter must NOT serialize it. The server derives the acting identity from
+   * the session it issued and binds it to the operation; an endpoint that
+   * accepts a user id or an email from its caller is an endpoint that accepts
+   * anyone's. The addressee match belongs on that side, against the
+   * authenticated principal, and the invitation token proves which invitation
+   * — never who is holding it.
+   *
+   * See the note on `AcceptingIdentity` in ../contracts/access.ts.
+   */
+  access: {
+    list: notImplemented("access.list"),
+    create: notImplemented("access.create"),
+    revoke: notImplemented("access.revoke"),
+    resend: notImplemented("access.resend"),
+    lookUp: notImplemented("access.lookUp"),
+    preview: notImplemented("access.preview"),
+    accept: notImplemented("access.accept"),
+    decline: notImplemented("access.decline"),
+    roster: notImplemented("access.roster"),
+    endSeat: notImplemented("access.endSeat"),
+    leaveOrganization: notImplemented("access.leaveOrganization"),
+  },
 };

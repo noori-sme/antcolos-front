@@ -153,7 +153,7 @@ export const SETTINGS_NAV: NavSection[] = [
     label: "Organization",
     items: [
       { label: "Organization", href: "/settings/organization", icon: Building2, requires: ["organization:manage"] },
-      { label: "Users", href: "/settings/users", icon: Users, requires: ["members:view"] },
+      { label: "People", href: "/settings/users", icon: Users, requires: ["members:view"] },
       { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:view"] },
       { label: "Roles and permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
       { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["integrations:view"] },

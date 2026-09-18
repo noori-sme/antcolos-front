@@ -711,3 +711,52 @@ export const SYSTEM_ACTOR: ActorRef = {
   displayNameSnapshot: "Antcolos",
   source: "system",
 };
+
+/**
+ * Connects a person's permanent driver profile to an engagement this
+ * organization already recorded.
+ *
+ * ★ A CONNECTION, NOT A HIRING ★
+ * The ONLY field written is `driverProfileId`. The engagement's state, its
+ * classification, its manager, its contract link and — most of all — its
+ * `startDate` are untouched. A carrier that asserted Maria started in 2019 said
+ * something about 2019; her getting an Antcolos account today says something
+ * about today, and overwriting the first with the second is exactly the
+ * mistake this module exists to make impossible.
+ *
+ * Idempotent: an engagement already carrying this profile is left alone and
+ * reports success, so a retried acceptance adds no second history line.
+ *
+ * Called by the access module when an invitation names an engagement. It takes
+ * the organization explicitly and checks it, because the caller is a person
+ * accepting an invitation who has no membership here yet — the invitation is
+ * the basis, and a scope check is still owed.
+ */
+export function linkDriverProfileToEngagement(
+  engagementId: string,
+  driverProfileId: string,
+  organizationId: string,
+): boolean {
+  db();
+  const engagement = engagementById(engagementId);
+  if (!engagement || engagement.organizationId !== organizationId) return false;
+  if (engagement.driverProfileId === driverProfileId) return true;
+
+  amendEngagement(engagement.id, {
+    driverProfileId,
+    person: { ...engagement.person, driverProfileId },
+  }, {
+    kind: "driver_profile_linked",
+    summary: `${engagement.person.displayName} connected their Antcolos driver profile`,
+    detail:
+      "They accepted an invitation and their permanent profile is now linked to this "
+      + "engagement. The start date recorded here is unchanged.",
+    actor: {
+      userId: "system",
+      membershipId: "system",
+      displayNameSnapshot: "Antcolos",
+      source: "system",
+    },
+  });
+  return true;
+}

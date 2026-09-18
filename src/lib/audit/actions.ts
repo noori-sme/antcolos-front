@@ -29,6 +29,9 @@ export const AUDIT_ACTIONS: readonly AuditActionMeta[] = [
   { key: "access.role_changed", label: "Role changed", module: "access", permissionSensitive: true },
   { key: "access.member_invited", label: "Member invited", module: "access", permissionSensitive: true },
   { key: "access.member_joined", label: "Member joined", module: "access" },
+  // The RECIPIENT's refusal, which is not the sender's revoke. A carrier that
+  // cannot tell the two apart re-sends the second kind forever.
+  { key: "access.invitation_declined", label: "Invitation declined", module: "access" },
   { key: "access.member_suspended", label: "Member suspended", module: "access", permissionSensitive: true },
   { key: "access.member_reinstated", label: "Member reinstated", module: "access", permissionSensitive: true },
   { key: "access.scope_changed", label: "Record scope changed", module: "access", permissionSensitive: true },

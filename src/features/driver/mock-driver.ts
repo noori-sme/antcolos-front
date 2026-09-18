@@ -10,16 +10,24 @@ import type {
   EngagementType,
   RelationshipStatus,
 } from "@/types";
-import { driverRequirements, requirementByKey } from "@/lib/documents/requirements";
+import {
+  driverRequirements, requirementByKey, splitByRestriction,
+} from "@/lib/documents/requirements";
+import { restrictedReason } from "@/lib/documents/catalog";
 import { isNewcomerSession } from "@/lib/session/scenarios";
 import { MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
 import {
-  createOrResumeProfile, profileForUser, resetDriverRegistry,
+  addSharedDocumentKeys, createOrResumeProfile, createOrResumeRelationship,
+  endCarrierRelationship, liveRelationship, profileForUser, relationshipsForProfile,
+  resetDriverRegistry, restoreSharedDocumentKeys, setCarrierRelationshipStatus,
 } from "@/lib/api/mock/driver-registry";
+import { ordinaryDocumentKeys } from "@/lib/documents/requirements";
 import { effectiveStatus } from "@/lib/documents/status";
 import {
-  addLink, clearDocumentsForSubjectKind, createDocument, documentInSlot, documentsForSubject,
+  addLink, addLinks, clearDocumentsForSubjectKind, createDocument, documentInSlot,
+  documentsForSubject,
   endRelationshipDocuments, recordEvent, replaceDocument, slotKey, updateDocument,
+  type AddLinkEntry,
 } from "@/lib/api/mock/document-store";
 
 /**
@@ -50,8 +58,6 @@ const daysFromNow = (n: number) => {
 };
 const daysAgo = (n: number) => daysFromNow(-n);
 
-let sequence = 0;
-const nextId = (p: string) => `${p}_${(++sequence).toString(36)}${Date.now().toString(36)}`;
 
 /* -------------------------------------------------------------------------- */
 /* What each carrier asks a driver for                                         */
@@ -75,6 +81,43 @@ const CARRIER_EXTRA_DOCUMENTS: Record<string, DocumentRequirement[]> = {
       applicability: "required",
       expires: false,
       reason: "Northline asks every driver to sign their handbook before the first load.",
+      addedByOrganizationId: "org_northline",
+    },
+    /*
+     * ★ TWO RESTRICTED ROWS, ON PURPOSE ★
+     *
+     * Both are ordinary things a carrier genuinely asks a driver for, and both
+     * carry something that must never travel as part of a bulk consent: the
+     * DOT employment application carries a social security number and prior
+     * employers, and an MVR is a driving history pulled from the state.
+     *
+     * They are on the checklist — the driver still owes them — and accepting an
+     * invitation does not hand either over. That is the difference this pair
+     * exists to make visible: a rule nothing ever exercises is a rule nobody
+     * can tell is working.
+     */
+    {
+      key: "northline_employment_application",
+      setId: "driver",
+      typeKey: "employment_application",
+      subjectKind: "driver",
+      label: "DOT employment application",
+      description: "The three-year employment history the FMCSA requires a carrier to collect.",
+      applicability: "required",
+      expires: false,
+      reason: "Northline has to hold three years of employment history for every driver.",
+      addedByOrganizationId: "org_northline",
+    },
+    {
+      key: "northline_mvr",
+      setId: "driver",
+      typeKey: "mvr",
+      subjectKind: "driver",
+      label: "Motor vehicle record",
+      description: "Your driving record, pulled from the state that issued your licence.",
+      applicability: "required",
+      expires: true,
+      reason: "Northline reviews a driving record before putting anybody on a truck.",
       addedByOrganizationId: "org_northline",
     },
   ],
@@ -123,55 +166,6 @@ function currentUser() {
  */
 function ownProfile(): DriverProfile | null {
   return profileForUser(currentUser().id) ?? null;
-}
-
-function seedRelationships(): CarrierRelationship[] {
-  return [
-    {
-      id: "rel_cascade",
-      driverProfileId: "dp_sam",
-      carrierId: "org_cascade",
-      carrierName: "Cascade Haul",
-      engagementType: "company_driver",
-      roleName: "Driver",
-      permissions: ["loads:view", "loads:status:update", "proposals:view", "proposals:respond", "trips:execute", "documents:view", "documents:upload", "settlements:view"],
-      invitedAt: daysAgo(110),
-      startedAt: daysAgo(108),
-      status: "active",
-      sharedDocumentKeys: ["cdl_front", "cdl_back", "medical_front"],
-    },
-    {
-      // The owner-operator side of the same person. Engagement type is the
-      // carrier's decision, not the driver's, and it is what the proposal and
-      // trip policies are resolved from.
-      id: "rel_stonebridge",
-      driverProfileId: "dp_sam",
-      carrierId: "org_stonebridge",
-      carrierName: "Stonebridge Carriers",
-      engagementType: "owner_operator",
-      roleName: "Owner-operator",
-      permissions: ["loads:view", "loads:status:update", "proposals:view", "proposals:respond", "trips:execute", "documents:view", "documents:upload"],
-      invitedAt: daysAgo(86),
-      startedAt: daysAgo(84),
-      status: "active",
-      sharedDocumentKeys: ["cdl_front", "cdl_back", "medical_front", "w9", "coi", "vehicle_registration"],
-    },
-    {
-      id: "rel_ridgeway",
-      driverProfileId: "dp_sam",
-      carrierId: "org_ridgeway",
-      carrierName: "Ridgeway Carriers",
-      engagementType: "owner_operator",
-      roleName: "Driver",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload"],
-      invitedAt: daysAgo(430),
-      startedAt: daysAgo(425),
-      status: "ended",
-      endedAt: daysAgo(150),
-      endReason: "Driver moved to a different carrier.",
-      sharedDocumentKeys: ["cdl_front", "cdl_back", "medical_front", "w9", "coi"],
-    },
-  ];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -300,13 +294,20 @@ function seedDocuments(profile: DriverProfile | null) {
 }
 
 /**
- * Relationships stay here; the PROFILE does not.
+ * ★ RELATIONSHIPS DO NOT LIVE HERE ANY MORE ★
  *
- * The driver's side of a carrier engagement is still this module's — PR-1 moved
- * the person, not the relationship, and touching `CarrierRelationship` is
- * deliberately out of its scope.
+ * They used to: this module held a second literal describing the same person's
+ * engagements that `driver-registry.ts` already described from the carrier's
+ * side. The two disagreed — both claimed Cascade Haul, and they did not agree
+ * about what had been shared with it — which is exactly the defect PR-1 removed
+ * for `DriverProfile`, one level up.
+ *
+ * So the record is the registry's, this module reads and writes it through the
+ * registry's own commands, and there is no local array to drift. The
+ * consequence that matters: a driver who accepts an invitation gets ONE
+ * engagement, and their own portal and the carrier's screens are looking at it
+ * rather than at two copies that happen to agree today.
  */
-let RELATIONSHIPS: CarrierRelationship[] = [];
 let seeded = false;
 
 /**
@@ -324,13 +325,9 @@ function ensureSeeded() {
   seeded = true;
   // A newcomer has no profile because the REGISTRY has none for them, not
   // because this module blanks a local one. `usr_newcomer` simply is not in it.
-  if (isNewcomerSession()) {
-    RELATIONSHIPS = [];
-    seedDocuments(null);
-    return;
-  }
-  RELATIONSHIPS = seedRelationships();
-  seedDocuments(ownProfile());
+  // A newcomer has no profile because the REGISTRY has none for them, and
+  // therefore no engagements either. Nothing is blanked out locally.
+  seedDocuments(isNewcomerSession() ? null : ownProfile());
 }
 
 /**
@@ -344,10 +341,11 @@ function ensureSeeded() {
 export function resetDriverMock(options?: { withProfile?: boolean }) {
   seeded = true;
   const withoutProfile = options?.withProfile === false;
+  // Dropping the person drops their engagements with them, because the
+  // engagements hang off the person in the one registry that holds both.
   resetDriverRegistry(withoutProfile ? { omitUserIds: [currentUser().id] } : undefined);
-  RELATIONSHIPS = withoutProfile ? [] : seedRelationships();
   seedDocuments(ownProfile());
-  sequence = 0;
+
 }
 
 /**
@@ -413,7 +411,8 @@ export function driverProfileSync(): DriverProfile | null {
 
 export function driverRelationshipsSync(): CarrierRelationship[] {
   ensureSeeded();
-  return RELATIONSHIPS.map((r) => ({ ...r }));
+  const profile = ownProfile();
+  return profile ? relationshipsForProfile(profile.id) : [];
 }
 
 /**
@@ -489,7 +488,7 @@ export async function mockCreateOrGetDriverProfile(
 export async function mockListRelationships(): Promise<CarrierRelationship[]> {
   ensureSeeded();
   await sleep(250);
-  return RELATIONSHIPS.map((r) => ({ ...r }));
+  return driverRelationshipsSync();
 }
 
 export interface NewRelationshipInput {
@@ -499,36 +498,267 @@ export interface NewRelationshipInput {
   roleName: string;
   permissions: CarrierRelationship["permissions"];
   sharedDocumentKeys: string[];
+  /** When the carrier asked. Defaults to now for a relationship made by hand. */
+  invitedAt?: string;
+  /**
+   * A start date the CARRIER asserted, for an existing worker being connected.
+   *
+   * Passed through untouched and never invented. Absent for somebody genuinely
+   * new, whose relationship has no start date until it is activated.
+   */
+  assertedStartDate?: string;
 }
 
+/**
+ * ★ CREATE OR RESUME, AND NEVER A START DATE ★
+ *
+ * Two things changed here and both are product rules rather than tidying.
+ *
+ * It RESUMES. Keyed on the live `(driverProfileId, carrierId)` pair, so a
+ * driver who accepts twice — a re-sent link, a double submit, a retry after
+ * something later in the sequence failed — ends up with ONE relationship. The
+ * previous version created unconditionally, which meant an invitation resent
+ * after acceptance produced a second relationship with the same carrier and no
+ * way to tell which was real.
+ *
+ * It does NOT set `startedAt`. Accepting an invitation is the person saying
+ * yes; it is not the carrier saying they may work, and it is not the day the
+ * relationship became effective. `startedAt` is set by the authorized
+ * activation step, or carried from a carrier's asserted historical date when an
+ * existing worker is migrated — and stamping today's date here would overwrite
+ * that assertion with the afternoon somebody clicked a link, which is exactly
+ * how a migrated workforce comes to look freshly hired. What acceptance records
+ * instead is `acceptedAt`: observed, true, and a different fact.
+ */
+export function liveRelationshipWith(
+  profileId: string, carrierId: string,
+): CarrierRelationship | undefined {
+  ensureSeeded();
+  return liveRelationship(profileId, carrierId);
+}
+
+/**
+ * ★ CONSENT RECORDED IS NOT ACCESS GRANTED ★
+ *
+ * Applies a driver's sharing consent to the documents they already hold: the
+ * carrier gets its own LINK to each shared one, carrying its own review. Not a
+ * copy, not a re-upload, not a change of owner.
+ *
+ * This exists as a separate command because the acceptance sequence needs the
+ * granting of document access to be a step that can fail ON ITS OWN. While the
+ * links were attached inside `mockCreateRelationship`, the acceptance step
+ * called "the documents you agreed to share" wrote nothing at all — it reported
+ * on work another step had done, which means it could never fail, could never
+ * be interrupted, and could never be tested for the thing that matters: that a
+ * carrier cannot read a document before the access basis for it exists.
+ *
+ * Idempotent twice over: the consent list is a set union, and a requirement
+ * already linked to this carrier is skipped. Retrying adds nothing.
+ *
+ * Returns the number of links it ADDED, so a caller can tell "granted three"
+ * from "there were already three".
+ */
+export function mockShareDocumentsWithCarrier(
+  profileId: string,
+  carrierId: string,
+  requirementKeys: readonly string[],
+): { relationship: CarrierRelationship; added: number } | undefined {
+  ensureSeeded();
+  const existing = liveRelationship(profileId, carrierId);
+  // No live relationship means no basis to share under. The caller decides what
+  // that is — here it is simply not something this command will invent.
+  if (!existing) return undefined;
+
+  // Narrowed before anything is written. Whatever a caller passes, a restricted
+  // category is never handed over as part of joining — see `ordinaryKeysAmong`.
+  const allowed = ordinaryKeysAmong(requirementKeys, existing.engagementType, carrierId);
+
+  /*
+   * ★ THE LINKS AND THE CONSENT ARE ONE GRANT ★
+   *
+   * They used to be two statements, links first and consent second. Either
+   * order leaves a moment where one exists without the other, and a failure
+   * landing in that moment left real, readable links behind a sharing decision
+   * that was never completed — the invitation still pending, the run still
+   * unfinished, and the carrier already reading.
+   *
+   * So the consent write is handed INTO the store's commit and runs inside it.
+   * If it refuses, the links this call wrote are gone before the refusal comes
+   * back. Belt and braces, every link is marked `driver_consent`, and a read
+   * refuses one whose consent is not on the live relationship — so even a link
+   * left behind by some other half-finished path cannot be read through.
+   */
+  /*
+   * The consent write comes with its UNDO.
+   *
+   * The store can put its own records back, and it cannot reach this
+   * relationship — consent lives in the driver registry. So a refusal landing
+   * after the consent write would strand a record claiming documents the
+   * carrier cannot read: not a leak, but a lie, and one nothing would ever
+   * correct because the retry path treats consent as already given.
+   *
+   * The prior list is captured BEFORE anything is written and restored
+   * wholesale rather than by subtracting what this grant added — the driver may
+   * already have agreed to some of these keys, and removing those would revoke
+   * consent this grant never gave.
+   */
+  const priorConsent = [...existing.sharedDocumentKeys];
+  let relationship: CarrierRelationship | undefined;
+  const added = attachSharedDocuments(
+    { ...existing, sharedDocumentKeys: allowed },
+    {
+      commit: () => {
+        relationship = addSharedDocumentKeys(profileId, carrierId, allowed);
+        if (!relationship) {
+          throw new Error(
+            `No live relationship between ${profileId} and ${carrierId} to record consent on.`,
+          );
+        }
+      },
+      rollback: () => {
+        restoreSharedDocumentKeys(profileId, carrierId, priorConsent);
+        relationship = undefined;
+      },
+    },
+  );
+  if (!relationship) return undefined;
+  return { relationship, added };
+}
+
+/**
+ * DELEGATED, and narrowed twice on the way through.
+ *
+ * This module no longer builds a `CarrierRelationship`; it asks the registry
+ * that owns them. Two rules are applied here because this is the door the
+ * driver's own screens come through:
+ *
+ *  · `sharedDocumentKeys` is filtered to ORDINARY paperwork. Whatever a caller
+ *    passes, a restricted category — a social security number, bank details, a
+ *    state driving record — is never handed over as part of starting a
+ *    relationship. Access to one of those is asked for separately.
+ *  · No `startedAt`. The registry command refuses to invent one; see the note
+ *    on `createOrResumeRelationship`.
+ */
 export async function mockCreateRelationship(
   profileId: string,
   input: NewRelationshipInput,
 ): Promise<CarrierRelationship> {
   ensureSeeded();
   await sleep(LATENCY_MS);
-  const relationship: CarrierRelationship = {
-    id: nextId("rel"),
+  const at = iso(now());
+  const allowed = ordinaryKeysAmong(input.sharedDocumentKeys, input.engagementType, input.carrierId);
+
+  const result = createOrResumeRelationship({
     driverProfileId: profileId,
-    ...input,
-    invitedAt: iso(now()),
-    startedAt: iso(now()),
-    status: "onboarding",
-    sharedDocumentKeys: [...input.sharedDocumentKeys],
-  };
-  RELATIONSHIPS = [relationship, ...RELATIONSHIPS];
+    carrierId: input.carrierId,
+    carrierName: input.carrierName,
+    engagementType: input.engagementType,
+    roleName: input.roleName,
+    permissions: input.permissions,
+    sharedDocumentKeys: allowed,
+    invitedAt: at,
+    acceptedAt: at,
+    // Forwarded rather than dropped. The field was declared on this input and
+    // silently discarded here, so an import passing it would have watched its
+    // carrier-asserted date vanish without a word.
+    assertedStartDate: input.assertedStartDate,
+  });
+  if (!result.relationship) throw new Error(`No such driver profile: ${profileId}`);
 
   // Sharing consent, applied to the documents the driver ALREADY has: the
   // carrier gets its own link to each shared one, carrying its own review. Not
   // a copy, not a re-upload, and not a change of owner — the driver's link is
   // untouched, and ending this relationship will end only the carrier's.
-  attachSharedDocuments(relationship);
+  attachSharedDocuments(result.relationship);
 
-  return { ...relationship };
+  return result.relationship;
 }
 
-function attachSharedDocuments(relationship: CarrierRelationship) {
+/**
+ * ★ EXACTLY WHAT ONE ACCEPTANCE COVERS, BEFORE ANYBODY AGREES TO IT ★
+ *
+ * Accepting a carrier's invitation is ONE decision about the ordinary,
+ * purpose-bound paperwork that relationship needs — not a row of switches. But
+ * "one decision" only works if the person can see what it actually covers, and
+ * the honest answer has three parts:
+ *
+ *   covered   the documents they already hold, named with the VERSION this
+ *             agreement applies to. Not "your documents" in the abstract.
+ *   awaiting  required paperwork they have not uploaded yet. The carrier does
+ *             NOT receive these — there is nothing to receive — and saying so
+ *             is the difference between an honest summary and a lie that the
+ *             carrier got something. The existing Needs You path raises each
+ *             one as a missing document; this only refuses to pretend.
+ *   withheld  restricted records. Never part of this decision at all, named so
+ *             the shorter list has a reason.
+ *
+ * Later versions are covered by the same agreement: replacing a document keeps
+ * the carrier's link and resets their review, so they see the new file and look
+ * at it again. That is the canonical sharing rule and this does not invent a
+ * second one.
+ */
+export interface DriverSharingPlan {
+  covered: Array<{ key: string; label: string; version: number; uploadedAt: string }>;
+  awaiting: Array<{ key: string; label: string }>;
+  withheld: Array<{ key: string; label: string; reason?: string }>;
+}
+
+export function driverSharingPlan(
+  engagementType: EngagementType,
+  carrierId: string,
+): DriverSharingPlan {
+  ensureSeeded();
   const profileId = ownProfile()?.id ?? DRIVER_PROFILE_ID;
+  const checklist = documentRequirements(engagementType, carrierId);
+  const { ordinary, restricted } = splitByRestriction(checklist);
+
+  const plan: DriverSharingPlan = { covered: [], awaiting: [], withheld: [] };
+  for (const requirement of ordinary) {
+    if (requirement.applicability !== "required") continue;
+    const document = documentInSlot("driver", profileId, requirement.key);
+    if (document) {
+      plan.covered.push({
+        key: requirement.key,
+        label: requirement.label,
+        version: document.version,
+        uploadedAt: document.createdAt,
+      });
+    } else {
+      plan.awaiting.push({ key: requirement.key, label: requirement.label });
+    }
+  }
+  for (const requirement of restricted) {
+    plan.withheld.push({
+      key: requirement.key,
+      label: requirement.label,
+      reason: restrictedReason(requirement.typeKey),
+    });
+  }
+  return plan;
+}
+
+/** The subset of the requested keys that a bulk consent may actually carry. */
+function ordinaryKeysAmong(
+  requested: readonly string[],
+  engagementType: EngagementType,
+  carrierId: string,
+): string[] {
+  const ordinary = new Set(
+    ordinaryDocumentKeys(documentRequirements(engagementType, carrierId)),
+  );
+  return requested.filter((key) => ordinary.has(key));
+}
+
+/**
+ * Every document this consent still owes the carrier, as one batch.
+ *
+ * Already-linked requirements are skipped here, which is where idempotence
+ * belongs: the store writes what it is handed, and deciding that a requirement
+ * is already shared is the driver module's business, not the store's.
+ */
+function pendingShareLinks(relationship: CarrierRelationship): AddLinkEntry[] {
+  const profileId = ownProfile()?.id ?? DRIVER_PROFILE_ID;
+  const entries: AddLinkEntry[] = [];
   for (const requirementKey of relationship.sharedDocumentKeys) {
     const existing = documentInSlot("driver", profileId, requirementKey);
     if (!existing) continue;
@@ -536,14 +766,34 @@ function attachSharedDocuments(relationship: CarrierRelationship) {
       (l) => !l.unlinkedAt && l.contextOrganizationId === relationship.carrierId,
     );
     if (alreadyLinked) continue;
-    addLink(existing.documentId, {
-      subject: driverSubject(ownProfile()),
-      requirementKey,
-      contextOrganizationId: relationship.carrierId,
-      contextOrganizationName: relationship.carrierName,
-      actorName: ownProfile()?.legalName ?? "Driver",
+    entries.push({
+      documentId: existing.documentId,
+      input: {
+        subject: driverSubject(ownProfile()),
+        requirementKey,
+        contextOrganizationId: relationship.carrierId,
+        contextOrganizationName: relationship.carrierName,
+        actorName: ownProfile()?.legalName ?? "Driver",
+        // The only reason this carrier holds it is that the driver said so, so
+        // the consent record governs whether it may ever be read.
+        basis: "driver_consent",
+      },
     });
   }
+  return entries;
+}
+
+function attachSharedDocuments(
+  relationship: CarrierRelationship,
+  consent?: { commit: () => void; rollback: () => void },
+): number {
+  const entries = pendingShareLinks(relationship);
+  // All of them or none, AND the consent that makes them readable in the same
+  // commit — with its undo, because consent lives in another store. A
+  // half-applied consent grants access the grant did not finish giving, and
+  // leaves a consent list that disagrees with it.
+  addLinks(entries, consent);
+  return entries.length;
 }
 
 /**
@@ -559,15 +809,15 @@ export async function mockEndRelationship(
 ): Promise<CarrierRelationship> {
   ensureSeeded();
   await sleep(LATENCY_MS);
-  const index = RELATIONSHIPS.findIndex((r) => r.id === relationshipId);
-  if (index < 0) throw new Error(`No such relationship: ${relationshipId}`);
-  const ended: CarrierRelationship = {
-    ...RELATIONSHIPS[index],
-    status: "ended",
-    endedAt: iso(now()),
-    endReason: reason.trim(),
-  };
-  RELATIONSHIPS = RELATIONSHIPS.map((r) => (r.id === ended.id ? ended : r));
+  const existing = driverRelationshipsSync().find((r) => r.id === relationshipId);
+  if (!existing) throw new Error(`No such relationship: ${relationshipId}`);
+  // The registry's own ending command. This module does not reach into its
+  // state — the difference between a module performing its own change and
+  // another module writing into its store.
+  const result = endCarrierRelationship(
+    existing.driverProfileId, existing.carrierId, reason.trim(),
+  );
+  const ended = result.relationship ?? existing;
 
   // The carrier's links to the driver's documents are closed and its shares
   // revoked, with a snapshot of each kept. Not one record, version or event is
@@ -583,17 +833,26 @@ export async function mockEndRelationship(
   return { ...ended };
 }
 
+/**
+ * Moves a relationship between live statuses.
+ *
+ * `ended` is deliberately not one of them: ending is `mockEndRelationship`,
+ * which also writes the end date and reason and closes the carrier's document
+ * links. A status setter that could end one would skip all three.
+ */
 export async function mockSetRelationshipStatus(
   relationshipId: string,
-  status: RelationshipStatus,
+  status: Exclude<RelationshipStatus, "ended">,
 ): Promise<CarrierRelationship> {
   ensureSeeded();
   await sleep(LATENCY_MS);
-  const index = RELATIONSHIPS.findIndex((r) => r.id === relationshipId);
-  if (index < 0) throw new Error(`No such relationship: ${relationshipId}`);
-  const updated = { ...RELATIONSHIPS[index], status };
-  RELATIONSHIPS = RELATIONSHIPS.map((r) => (r.id === updated.id ? updated : r));
-  return { ...updated };
+  const existing = driverRelationshipsSync().find((r) => r.id === relationshipId);
+  if (!existing) throw new Error(`No such relationship: ${relationshipId}`);
+  const updated = setCarrierRelationshipStatus(
+    existing.driverProfileId, existing.carrierId, status,
+  );
+  if (!updated) throw new Error(`No such relationship: ${relationshipId}`);
+  return updated;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -631,7 +890,8 @@ function contextForRequirement(
 ): { id?: string; name?: string } {
   for (const [organizationId, extras] of Object.entries(CARRIER_EXTRA_DOCUMENTS)) {
     if (extras.some((r) => r.key === requirementKey)) {
-      const relationship = RELATIONSHIPS.find((r) => r.carrierId === organizationId);
+      const relationship = driverRelationshipsSync()
+        .find((r) => r.carrierId === organizationId);
       return { id: organizationId, name: relationship?.carrierName ?? organizationId };
     }
   }

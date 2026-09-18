@@ -92,7 +92,9 @@ test("an invitation still rides through Sign In, exactly as before", async ({ pa
 
   await expect(page.getByText("Sign in to accept your invitation.")).toBeVisible();
   await signInWith(page, DEMO_PASSWORD);
-  await expect(page).toHaveURL(`/invitation/${DEMO_INVITATION}?signedin=1`);
+  // The token rides through; `signedin=1` does not, because it decided nothing
+  // and acceptance is authorized on the signed-in account instead.
+  await expect(page).toHaveURL(`/invitation/${DEMO_INVITATION}`);
 });
 
 test("post-authentication routing still ends at the product", async ({ page }) => {

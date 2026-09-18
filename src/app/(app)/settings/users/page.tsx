@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { PeopleScreen } from "@/features/access/people-screen";
 
-export const metadata = { title: "Users" };
+export const metadata = { title: "People" };
 
 export default function Page() {
-  return <ModulePlaceholder title="Users" description="Who belongs to this organization and what they may do." />;
+  return <PeopleScreen />;
 }

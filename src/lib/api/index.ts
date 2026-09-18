@@ -1,6 +1,7 @@
 import type { AntcolosServices } from "./contracts";
 import { API_MODE } from "./mode";
 import { httpServices } from "./http";
+import { mockAccessService } from "./mock/access";
 import { mockAgreementsService } from "./mock/agreements";
 import { mockAuditService } from "./mock/audit";
 import { mockRiskService } from "./mock/risk";
@@ -46,6 +47,7 @@ const mockServices: AntcolosServices = {
   responsibility: mockResponsibilityService,
   workforce: mockWorkforceService,
   qualification: mockQualificationService,
+  access: mockAccessService,
 };
 
 export const services: AntcolosServices =

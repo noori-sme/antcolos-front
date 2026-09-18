@@ -231,28 +231,3 @@ describe("a granted seat gets its permissions from the system that already exist
     expect(seat.driverProfileId).toBe("dp_test");
   });
 });
-
-describe("the development fixture bridge is gated twice", () => {
-  it("is off in this environment, and off unless BOTH gates hold", async () => {
-    const { fixtureBridgeEnabled } = await import("./fixture-bridge");
-
-    // Vitest runs with NODE_ENV="test", so the first gate already refuses. That
-    // is the point of testing `=== "development"` rather than `!== "production"`:
-    // the loose form would attach this in tests, in CI, and anywhere NODE_ENV
-    // happens to be unset.
-    expect(process.env.NODE_ENV).not.toBe("development");
-    expect(fixtureBridgeEnabled()).toBe(false);
-
-    // The opt-in alone is not enough either.
-    const before = process.env.NEXT_PUBLIC_ANTCOLOS_E2E;
-    process.env.NEXT_PUBLIC_ANTCOLOS_E2E = "1";
-    expect(fixtureBridgeEnabled()).toBe(false);
-    if (before === undefined) delete process.env.NEXT_PUBLIC_ANTCOLOS_E2E;
-    else process.env.NEXT_PUBLIC_ANTCOLOS_E2E = before;
-  });
-
-  it("renders nothing, so no element or effect reaches the page", async () => {
-    const { SessionFixtureBridge } = await import("./fixture-bridge");
-    expect(SessionFixtureBridge()).toBeNull();
-  });
-});

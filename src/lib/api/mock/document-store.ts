@@ -406,6 +406,8 @@ export interface AddLinkInput {
   contextOrganizationId: string;
   contextOrganizationName: string;
   actorName: string;
+  /** See `DocumentLink.basis`. Absent means the link stands on its own. */
+  basis?: DocumentLink["basis"];
 }
 
 /**
@@ -415,6 +417,262 @@ export interface AddLinkInput {
  * one record, two typed links, each with its own review state and its own
  * governing organization. Never a second copy of the file.
  */
+/**
+ * ███ TEST SEAM — NEVER SET BY THE PRODUCT ███
+ *
+ * Refuses the link for one requirement key, so a sharing grant can be made to
+ * fail PART WAY THROUGH rather than before it starts. Inert wherever a window
+ * exists, for the same reasons set out on the access module's seam, and for the
+ * same honest reason it is not a security property.
+ */
+const LINK_SEAM_AVAILABLE = typeof window === "undefined";
+let linkFaultKey: string | null = null;
+
+export function failLinkWriteForTests(requirementKey: string | null): void {
+  if (!LINK_SEAM_AVAILABLE) return;
+  linkFaultKey = requirementKey;
+}
+
+/**
+ * Refuses one link DURING the commit, with earlier links already written.
+ *
+ * `failLinkWriteForTests` refuses while PLANNING, so nothing is written and the
+ * commit is never entered. That is the only failure this mock produces on its
+ * own — and it is not the failure a database produces. A real store fails on
+ * row two of three with row one already in. This seam reaches that state, so
+ * the rollback below has something to undo.
+ */
+let commitFaultKey: string | null = null;
+
+export function failLinkCommitForTests(requirementKey: string | null): void {
+  if (!LINK_SEAM_AVAILABLE) return;
+  commitFaultKey = requirementKey;
+}
+
+/**
+ * Refuses AFTER the consent write has landed, inside the same commit.
+ *
+ * The state that proves the CROSS-STORE undo: this store can put its own
+ * records back and cannot reach the driver registry, so without the caller's
+ * rollback the relationship would be left claiming documents nobody can read.
+ */
+let postConsentFault = false;
+
+export function failAfterConsentForTests(on: boolean): void {
+  if (!LINK_SEAM_AVAILABLE) return;
+  postConsentFault = on;
+}
+
+/**
+ * Writes the consent record BEFORE the links, inverting phases 2 and 3.
+ *
+ * ★ WHY A SEAM EXISTS TO REACH A STATE THIS CODE CANNOT PRODUCE ★
+ *
+ * As written, the links commit and the consent follows, so "the agreement is
+ * recorded while some links are still missing" is unreachable here — and
+ * proving an invariant by pointing at the order the code happens to use is
+ * proving nothing. A backend writing the same two things in the other order
+ * reaches that state on any bad day, and whichever order it picks, a crash
+ * between them leaves the other half missing.
+ *
+ * So this inverts them, and the rollback and the read guard are asserted
+ * against the inverted order too. What must hold is the INVARIANT, not the
+ * sequence: no acceptance-derived document is readable unless its consent is
+ * effective at the moment of the read.
+ */
+let consentBeforeLinks = false;
+
+export function commitConsentBeforeLinksForTests(on: boolean): void {
+  if (!LINK_SEAM_AVAILABLE) return;
+  consentBeforeLinks = on;
+}
+
+export interface AddLinkEntry {
+  documentId: string;
+  input: AddLinkInput;
+}
+
+/**
+ * ★ SEVERAL LINKS, OR NONE ★
+ *
+ * A carrier reads a driver's document through a LINK, so each link written is
+ * access granted the instant it lands. Adding them one at a time means a
+ * failure on the second leaves the first readable — access granted by a grant
+ * that failed, and a consent record that disagrees with what is actually
+ * shared. Nobody asked for half of it.
+ *
+ * So this resolves and builds EVERY link first, writing nothing, and commits
+ * only once it knows all of them can be made. The commit loop cannot throw: the
+ * documents are already resolved and the links already built. In this mock that
+ * is genuinely atomic, because it is one synchronous block with no `await` in
+ * it — and in a backend it is one transaction, which is the point of putting
+ * the guarantee at the store rather than in whoever is calling it.
+ *
+ * Idempotence stays the caller's: this writes what it is given.
+ */
+export function addLinks(
+  entries: readonly AddLinkEntry[],
+  /**
+   * ★ THE CONSENT WRITE, INSIDE THE SAME COMMIT ★
+   *
+   * Links are what a carrier reads through; the consent record is what says
+   * they may. Written apart, in either order, there is a moment where one
+   * exists and the other does not — and if that moment is where a failure
+   * lands, the links are real access nobody agreed to complete.
+   *
+   * So the caller hands its consent write IN, with its undo, and both run
+   * inside this commit. If anything refuses — a link mid-commit, the consent
+   * write, or anything after it — every link this call wrote is removed AND the
+   * consent is put back before the refusal is passed on. Both stores are
+   * exactly as they were.
+   *
+   * ███ THIS IS NOT DURABLE ATOMICITY ███
+   *
+   * It is one synchronous block in one tab over in-memory arrays. Nothing can
+   * observe the half state because nothing else runs — not a transaction, not a
+   * lock, and no guarantee whatever across two tabs, two browsers or a restart.
+   *
+   * ★ THE INVARIANT A BACKEND MUST HOLD ★
+   *   No acceptance-derived document is readable unless its valid,
+   *   purpose-bound consent is effective at the moment of the read.
+   *
+   * Two mechanisms, and BOTH are required — neither substitutes for the other:
+   *
+   *   WRITE. The link rows and the consent row are one write and belong in one
+   *   transaction. Ordering them does not help: whichever goes first, a crash
+   *   between them leaves the other missing. The transaction must also take the
+   *   consent row's lock before inserting links (`SELECT … FOR UPDATE` on the
+   *   relationship), because the consent set is read-modify-write and two
+   *   concurrent grants would otherwise lose keys. Idempotence comes from a
+   *   unique constraint on `(driver_profile_id, carrier_id, requirement_key)`,
+   *   so a retry writes nothing rather than a duplicate.
+   *
+   *   READ. The read path JOINS a `driver_consent` link to its consent and
+   *   requires it to be effective — it does not trust that the write was
+   *   ordered or that the transaction held. This is what makes the invariant
+   *   survive a partial restore, a replayed message, a migration, or a bug in
+   *   some future write path. It belongs at the lowest layer that cannot be
+   *   bypassed: a view, a row-level security policy, or a repository method no
+   *   endpoint can go around. `consentBacked` in `documents.ts` is that guard
+   *   here, and it ports directly.
+   *
+   * ★ WHAT AN OUTBOX IS AND IS NOT FOR ★
+   * An outbox does NOT make these two writes atomic and does NOT prevent a
+   * temporarily readable, consent-less link: it delivers a message AFTER a
+   * transaction commits. Its place is the downstream effects of a grant that
+   * has already happened — notifying the carrier, refreshing a search index,
+   * forwarding the audit event to an external sink — where at-least-once
+   * delivery plus an idempotency key is exactly right. Using it in place of the
+   * transaction reintroduces the window this method exists to close.
+   *
+   * A compensating unlink is the weakest fallback of the three. It must run
+   * before the caller reports success, and even then it leaves the window open
+   * for as long as it takes to run.
+   */
+  consent?: {
+    /** Writes the agreement. Runs inside this commit. */
+    commit: () => void;
+    /**
+     * Puts the agreement back exactly as it was.
+     *
+     * Required alongside `commit`, not optional: consent lives in another
+     * module's records, and restoring THIS store cannot reach it. Without an
+     * undo, a refusal after the consent write lands leaves a relationship
+     * claiming documents the carrier cannot read — not a leak, but a record
+     * that is false and that nothing would ever correct, because the retry path
+     * treats consent as already given.
+     */
+    rollback: () => void;
+  },
+): DocumentRecord[] {
+  const at = iso();
+
+  // Phase 1 — resolve and build. Any refusal happens HERE, before any write.
+  const planned = entries.map(({ documentId, input }) => {
+    const existing = documentById(documentId);
+    if (!existing) throw new Error(`No such document: ${documentId}`);
+    if (linkFaultKey && input.requirementKey === linkFaultKey) {
+      throw new Error(
+        `Injected link failure for ${input.requirementKey} (test only). In a real `
+        + "system this is where the write would have refused.",
+      );
+    }
+    const link: DocumentLink = {
+      id: rowId("dlk"),
+      subject: input.subject,
+      requirementKey: input.requirementKey,
+      primary: false,
+      contextOrganizationId: input.contextOrganizationId,
+      contextOrganizationName: input.contextOrganizationName,
+      basis: input.basis,
+      // A second context has not reviewed it, whatever the first context decided.
+      review: { state: "pending" },
+      linkedAt: at,
+    };
+    return { existing, input, link };
+  });
+
+  /*
+   * ★ PHASES 2 AND 3 ARE ONE REVERSIBLE BLOCK ★
+   *
+   * Everything below can fail — a link mid-commit, the consent write, or
+   * anything after it — and every one of those failures unwinds to exactly the
+   * state before the call: this store's records and events by reference, and
+   * the caller's consent record through the undo it handed in.
+   */
+  const records = state.records;
+  const events = state.events;
+  let consentCommitted = false;
+
+  // Phase 3 — the consent that makes the links mean something. Still the same
+  // synchronous block, so no read can land between it and the links.
+  const commitConsent = () => {
+    if (!consent || consentCommitted) return;
+    consent.commit();
+    consentCommitted = true;
+    if (postConsentFault) {
+      throw new Error(
+        "Injected post-consent failure (test only). In a real system this is "
+        + "where the grant died with the agreement already recorded.",
+      );
+    }
+  };
+
+  try {
+    // Normally after the links. Under the seam, before them — so a link can
+    // refuse with the agreement already in, which is the state a differently
+    // ordered backend reaches on any bad day.
+    if (consentBeforeLinks) commitConsent();
+
+    const written = planned.map(({ existing, input, link }) => {
+      if (commitFaultKey && input.requirementKey === commitFaultKey) {
+        throw new Error(
+          `Injected mid-commit failure for ${input.requirementKey} (test only). In a `
+          + "real system this is a write refusing with earlier rows already in.",
+        );
+      }
+      const updated = updateDocument(existing.documentId, { links: [...existing.links, link] });
+      recordEvent({
+        lineageId: existing.lineageId, documentId: existing.documentId, at, kind: "linked",
+        summary: `Linked to ${input.subject.label}`,
+        detail: "The same document, linked with explicit permission. No copy was made.",
+        organizationId: input.contextOrganizationId, actorName: input.actorName,
+      });
+      return updated;
+    });
+
+    commitConsent();
+    return written;
+  } catch (error) {
+    // Put BOTH stores back. Not "unlink" — these links were never real, and a
+    // tombstoned `unlinkedAt` would leave a history saying a share happened.
+    if (consentCommitted) consent!.rollback();
+    state.records = records;
+    state.events = events;
+    throw error;
+  }
+}
+
 export function addLink(documentId: string, input: AddLinkInput): DocumentRecord {
   const existing = documentById(documentId);
   if (!existing) throw new Error(`No such document: ${documentId}`);
@@ -426,6 +684,7 @@ export function addLink(documentId: string, input: AddLinkInput): DocumentRecord
     primary: false,
     contextOrganizationId: input.contextOrganizationId,
     contextOrganizationName: input.contextOrganizationName,
+    basis: input.basis,
     // A second context has not reviewed it, whatever the first context decided.
     review: { state: "pending" },
     linkedAt: at,

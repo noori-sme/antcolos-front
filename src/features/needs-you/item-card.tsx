@@ -27,7 +27,7 @@ const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   contract: ScrollText, contract_version: FileSignature,
   risk_case: ShieldAlert,
   eld_device: Satellite, eld_connection: Router,
-  workforce_engagement: Briefcase, qualification_record: IdCard,
+  workforce_engagement: Briefcase, qualification_record: IdCard, invitation: Mail,
 };
 
 export function NeedsYouCard({

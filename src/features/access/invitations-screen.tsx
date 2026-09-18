@@ -7,15 +7,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
+import { WalkthroughPanel } from "./walkthrough-panel";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { useActiveMembership } from "@/lib/session/hooks";
+import { services } from "@/lib/api";
+import { useServiceContext } from "@/lib/api/use-service-context";
 import type { Invitation, InvitationStatus } from "@/types";
 import { PermissionSummary } from "./permission-summary";
 import {
   invitationLink,
-  mockListInvitations,
-  mockResendInvitation,
-  mockRevokeInvitation,
 } from "./mock-access";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +23,9 @@ const STATUS_STYLE: Record<InvitationStatus, { label: string; className: string 
   accepted: { label: "Accepted", className: "bg-st-success-bg text-st-success" },
   expired: { label: "Expired", className: "bg-st-neutral-bg text-st-neutral" },
   revoked: { label: "Revoked", className: "bg-st-danger-bg text-st-danger" },
+  // Not the same as revoked, and shown differently on purpose: the carrier
+  // withdrew one of those, and the person said no to this one.
+  declined: { label: "Declined", className: "bg-st-warning-bg text-st-warning" },
 };
 
 const FILTERS: Array<{ value: InvitationStatus | "all"; label: string }> = [
@@ -32,6 +34,7 @@ const FILTERS: Array<{ value: InvitationStatus | "all"; label: string }> = [
   { value: "accepted", label: "Accepted" },
   { value: "expired", label: "Expired" },
   { value: "revoked", label: "Revoked" },
+  { value: "declined", label: "Declined" },
 ];
 
 function formatDate(iso: string): string {
@@ -42,29 +45,40 @@ function formatDate(iso: string): string {
 
 /** Who has been invited, where it got to, and what to do about it. */
 export function InvitationsScreen() {
-  const { organization } = useActiveMembership();
+  const ctx = useServiceContext();
   const [invitations, setInvitations] = useState<Invitation[] | null>(null);
   const [filter, setFilter] = useState<InvitationStatus | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!organization) return;
+    if (!ctx) return;
     let cancelled = false;
-    mockListInvitations(organization.id).then((list) => {
+    services.access.list(ctx).then((list) => {
       if (!cancelled) setInvitations(list);
     });
     return () => {
       cancelled = true;
     };
-  }, [organization]);
+  }, [ctx]);
 
   async function act(id: string, action: "revoke" | "resend") {
+    if (!ctx) return;
     setBusyId(id);
-    const updated =
-      action === "revoke" ? await mockRevokeInvitation(id) : await mockResendInvitation(id);
-    setInvitations((prev) => prev?.map((i) => (i.id === updated.id ? updated : i)) ?? null);
+    setActionError(null);
+    try {
+      const updated = action === "revoke"
+        ? await services.access.revoke(ctx, id)
+        : await services.access.resend(ctx, id);
+      setInvitations((prev) => prev?.map((i) => (i.id === updated.id ? updated : i)) ?? null);
+    } catch (error) {
+      // Resending an accepted invitation is refused, and the reason is worth
+      // reading: re-opening a finished invitation is how somebody ends up with
+      // two relationships with the same carrier.
+      setActionError(error instanceof Error ? error.message : "That could not be done.");
+    }
     setBusyId(null);
   }
 
@@ -94,6 +108,17 @@ export function InvitationsScreen() {
           </Button>
         }
       />
+
+      <WalkthroughPanel />
+
+      {actionError ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-st-danger/35 bg-st-danger-bg/40 px-4 py-3 text-[0.8125rem] leading-relaxed text-fg"
+        >
+          {actionError}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
         {FILTERS.map((f) => {

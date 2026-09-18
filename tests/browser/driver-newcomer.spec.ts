@@ -186,14 +186,20 @@ test("moving around the portal keeps resolving to it; a reload forgets, as the m
 });
 
 test("a carrier invitation still onboards a driver who has nothing", async ({ page }) => {
-  // The invitation road, walked by the same newcomer: INV-DRIVER is addressed to
-  // somebody returning from signing up, which is exactly this person.
-  await page.goto(`/invitation/INV-DRIVER?signedin=1&fixture=newcomer`, { waitUntil: "networkidle" });
+  /*
+   * The invitation road, walked by the same newcomer.
+   *
+   * It used to open `INV-DRIVER`, which names somebody else entirely, and rely
+   * on `?signedin=1` to make the service treat whoever arrived as the
+   * addressee. That is gone: identity comes from the session, so the link has
+   * to be the one actually addressed to this person — `INV-NEWCOMER`.
+   */
+  await page.goto(`/invitation/INV-NEWCOMER?fixture=newcomer`, { waitUntil: "networkidle" });
 
   await page.getByRole("button", { name: "Accept invitation" }).click();
   await expect(page.getByRole("heading", { name: "Set up your driver profile" })).toBeVisible();
 
-  await page.getByLabel("Full legal name").fill("Yusuf Demir");
+  await page.getByLabel("Full legal name").fill("Alex Rivera");
   await page.getByLabel("Driver license / CDL number").fill("K4471182993");
   await page.getByLabel("Issuing state").selectOption("TX");
   await page.getByLabel("License expiration date").fill("2030-04-01");
@@ -202,7 +208,7 @@ test("a carrier invitation still onboards a driver who has nothing", async ({ pa
   await expect(page.getByRole("heading", { name: "Check this is right" })).toBeVisible();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Confirm and join" }).click();
-  await expect(page.getByRole("heading", { name: /^You.re set up with/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^You.ve joined/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Go to my documents" }).click();
   await expect(page).toHaveURL(/\/driver\/documents$/);

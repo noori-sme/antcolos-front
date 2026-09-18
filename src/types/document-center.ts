@@ -99,6 +99,22 @@ export interface DocumentTypeMeta {
    * every surface that shows one of these must say it is not built yet.
    */
   future?: boolean;
+  /**
+   * ★ NEVER HANDED OVER BECAUSE SOMEBODY JOINED ★
+   *
+   * A restricted type carries a government identifier, bank details, or a
+   * medical or substance-testing record. Access to one is its own decision,
+   * made per document, for a stated reason, by somebody who holds the
+   * permission for it — never a side effect of accepting an invitation,
+   * joining an organization or being handed a role.
+   *
+   * This flag does not by itself stop a document being shared. It stops the
+   * BULK paths — onboarding, acceptance, checklist defaults — from including
+   * one silently, which is where blanket access actually comes from.
+   */
+  restricted?: true;
+  /** Why it is restricted, in the words the person is shown. */
+  restrictedReason?: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -223,6 +239,26 @@ export interface DocumentLink {
    * carriers are approved on. Only that organization sees it.
    */
   contextPrivate?: boolean;
+  /**
+   * ★ WHY THIS LINK EXISTS, WHICH DECIDES WHETHER IT MAY BE READ ★
+   *
+   * `driver_consent` — the only reason a carrier holds it is that the driver
+   *   agreed to share it. Such a link is readable ONLY while the driver's live
+   *   relationship with that organization still lists the requirement: the
+   *   consent record is the authority and the link is its effect.
+   *
+   *   That is what makes a half-finished sharing decision harmless. A link
+   *   written and a consent not recorded is a link nobody can read through,
+   *   whatever order the two writes happened in and whatever failed between
+   *   them. Ending the relationship, or withdrawing the consent, stops the
+   *   reading without anything having to go and find the link.
+   *
+   * ABSENT — the link stands on its own basis and is not affected by any
+   *   sharing decision: a carrier's own handbook issued TO a driver, a truck's
+   *   registration, an organization's insurance. Those are not the driver's to
+   *   withdraw and must never be caught by the rule above.
+   */
+  basis?: "driver_consent";
   review: DocumentReview;
   linkedAt: string;
   /** Links are ended, never deleted. History survives. */

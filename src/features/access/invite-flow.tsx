@@ -26,10 +26,12 @@ import {
 import { invitationPresets, type InvitationPreset } from "./presets";
 import {
   invitationLink,
-  mockCreateInvitation,
   mockCreateRole,
   mockListRoles,
 } from "./mock-access";
+import { services } from "@/lib/api";
+import { useServiceContext } from "@/lib/api/use-service-context";
+import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
@@ -73,6 +75,7 @@ function sameSet(a: readonly PermissionKey[], b: ReadonlySet<PermissionKey>): bo
 export function InviteFlow() {
   const router = useRouter();
   const { membership, organization } = useActiveMembership();
+  const ctx = useServiceContext();
   const myPermissions = usePermissions();
 
   const [stage, setStage] = useState<Stage>("type");
@@ -95,6 +98,7 @@ export function InviteFlow() {
   const [confirmed, setConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
   const [sentToken, setSentToken] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const orgType = organization?.type ?? "CARRIER";
@@ -170,6 +174,7 @@ export function InviteFlow() {
   async function commit(alsoCopy: boolean) {
     if (!organization || !preset || sending || !confirmed) return;
     setSending(true);
+    setRefusal(null);
 
     // Belt and braces: whatever the UI allowed, the invitation can never exceed
     // what this owner personally holds.
@@ -185,20 +190,43 @@ export function InviteFlow() {
       customRoleId = created.id;
     }
 
-    const invitation = await mockCreateInvitation({
-      organizationId: organization.id,
-      organizationName: organization.displayName,
-      organizationType: orgType,
-      kind: preset.kind,
-      roleName: effectiveRoleName || preset.label,
-      customRoleId,
-      engagementType: engagementType ?? undefined,
-      recipientName,
-      recipientEmail,
-      permissions: safe,
-      scopedToCarrierName: isDispatchOrg ? organization.displayName : undefined,
-      expiresAt: expiryIso(expiryDays),
-    });
+    if (!ctx) return;
+
+    /*
+     * ★ THE SERVICE DECIDES, AND A REFUSAL IS READ RATHER THAN THROWN ★
+     *
+     * This screen no longer builds an `Invitation` and does not get the last
+     * word on what goes in one. The service re-checks `invitations:create`,
+     * re-checks that nothing here exceeds what this seat actually holds,
+     * snapshots the organization from the CONTEXT rather than from a field on
+     * this form, and records the issue — or the refusal — in the ledger.
+     *
+     * "You cannot give somebody access you do not have yourself" is a sentence
+     * the owner needs to read, with the keys named, not an exception.
+     */
+    let invitation;
+    try {
+      invitation = await services.access.create(ctx, {
+        kind: preset.kind,
+        roleName: effectiveRoleName || preset.label,
+        customRoleId,
+        engagementType: engagementType ?? undefined,
+        recipientName,
+        recipientEmail,
+        permissions: safe,
+        scopedToCarrierName: isDispatchOrg ? organization.displayName : undefined,
+        expiresAt: expiryIso(expiryDays),
+      });
+    } catch (error) {
+      setRefusal(
+        error instanceof PermissionDeniedError
+          ? "You cannot give somebody access you do not have yourself: "
+            + `${error.required.map((k) => permissionMeta(k).label).join(", ")}.`
+          : error instanceof Error ? error.message : "This invitation was not sent.",
+      );
+      setSending(false);
+      return;
+    }
 
     setSentToken(invitation.token);
     setSending(false);
@@ -501,6 +529,17 @@ export function InviteFlow() {
               have this access.
             </span>
           </label>
+
+          {refusal ? (
+            <div
+              role="alert"
+              data-testid="invite-refusal"
+              className="rounded-md border border-st-danger/40 bg-st-danger-bg/50 px-3.5 py-3 text-[0.8125rem] leading-relaxed"
+            >
+              <p className="font-medium text-fg">This invitation was not sent.</p>
+              <p className="mt-0.5 text-fg-muted">{refusal}</p>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
             <Button
