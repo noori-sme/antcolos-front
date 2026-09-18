@@ -15,7 +15,7 @@ import {
   validateRoleName,
 } from "@/lib/permissions";
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
-import type { CustomRole, EngagementType, PermissionKey } from "@/types";
+import type { EngagementType, PermissionKey, PermissionTemplate } from "@/types";
 import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import { PermissionPicker } from "./permission-picker";
 import {
@@ -24,11 +24,7 @@ import {
   SensitiveAccessWarning,
 } from "./permission-summary";
 import { invitationPresets, type InvitationPreset } from "./presets";
-import {
-  invitationLink,
-  mockCreateRole,
-  mockListRoles,
-} from "./mock-access";
+import { invitationLink } from "./mock-access";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { PermissionDeniedError } from "@/lib/api/contracts/context";
@@ -80,8 +76,8 @@ export function InviteFlow() {
 
   const [stage, setStage] = useState<Stage>("type");
   const [preset, setPreset] = useState<InvitationPreset | null>(null);
-  const [savedRole, setSavedRole] = useState<CustomRole | null>(null);
-  const [roles, setRoles] = useState<CustomRole[]>([]);
+  const [savedRole, setSavedRole] = useState<PermissionTemplate | null>(null);
+  const [roles, setRoles] = useState<PermissionTemplate[]>([]);
 
   const [roleName, setRoleName] = useState("");
   const [recipientName, setRecipientName] = useState("");
@@ -110,10 +106,15 @@ export function InviteFlow() {
   );
 
   useEffect(() => {
-    if (!organization) return;
+    if (!ctx) return;
     let cancelled = false;
-    mockListRoles(organization.id).then((list) => {
-      if (!cancelled) setRoles(list.filter((r) => !r.archived));
+    // Archived roles are left out on purpose: they keep working for whoever
+    // already holds one and cannot be handed to anybody new, and an invitation
+    // is exactly "handed to somebody new".
+    void services.access.templates(ctx).then((rows) => {
+      if (!cancelled) {
+        setRoles(rows.map((r) => r.template).filter((t) => !t.archived));
+      }
     });
     return () => {
       cancelled = true;
@@ -130,7 +131,7 @@ export function InviteFlow() {
 
   const selectedList = useMemo(() => [...permissions], [permissions]);
 
-  function choose(next: InvitationPreset, role?: CustomRole) {
+  function choose(next: InvitationPreset, role?: PermissionTemplate) {
     setPreset(next);
     setSavedRole(role ?? null);
     // A preset arrives pre-ticked; anything the granter cannot hand out is
@@ -180,17 +181,35 @@ export function InviteFlow() {
     // what this owner personally holds.
     const safe = clampToGrantable(selectedList, myPermissions, orgType);
 
-    let customRoleId = savedRole?.id;
+    if (!ctx) {
+      setSending(false);
+      return;
+    }
+
+    /*
+     * ★ SAVING THE SELECTION AS A ROLE IS A SEPARATE ACT ★
+     * The invitation carries `safe` either way — its own snapshot, taken now.
+     * Saving a role as well records where that snapshot came from and makes it
+     * reusable; it does not make the invitation depend on the role. Editing the
+     * role tomorrow cannot re-scope an invitation somebody is about to accept,
+     * because acceptance reads the snapshot and never the template.
+     */
+    let templateId = savedRole?.id;
+    let templateVersion = savedRole?.version;
     if (saveAsRole && !savedRole) {
-      const created = await mockCreateRole(organization.id, {
+      const created = await services.access.createTemplate(ctx, {
         name: newRoleName,
         description: `Saved from an invitation to ${recipientName.trim()}.`,
         permissions: safe,
       });
-      customRoleId = created.id;
+      if (created.status === "refused") {
+        setRefusal(`The role was not saved, so the invitation was not sent. ${created.message}`);
+        setSending(false);
+        return;
+      }
+      templateId = created.template.id;
+      templateVersion = created.template.version;
     }
-
-    if (!ctx) return;
 
     /*
      * ★ THE SERVICE DECIDES, AND A REFUSAL IS READ RATHER THAN THROWN ★
@@ -209,7 +228,8 @@ export function InviteFlow() {
       invitation = await services.access.create(ctx, {
         kind: preset.kind,
         roleName: effectiveRoleName || preset.label,
-        customRoleId,
+        templateId,
+        templateVersion,
         engagementType: engagementType ?? undefined,
         recipientName,
         recipientEmail,
@@ -641,7 +661,7 @@ function SelectedTypeCard({
   onChange,
 }: {
   preset: InvitationPreset;
-  savedRole: CustomRole | null;
+  savedRole: PermissionTemplate | null;
   onChange: () => void;
 }) {
   const Icon = KIND_ICON[preset.kind];
@@ -678,8 +698,8 @@ function TypeStep({
   onChoose,
 }: {
   presets: InvitationPreset[];
-  roles: CustomRole[];
-  onChoose: (preset: InvitationPreset, role?: CustomRole) => void;
+  roles: PermissionTemplate[];
+  onChoose: (preset: InvitationPreset, role?: PermissionTemplate) => void;
 }) {
   const custom = presets.find((p) => p.kind === "custom")!;
   const headingId = useId();
