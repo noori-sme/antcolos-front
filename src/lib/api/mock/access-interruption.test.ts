@@ -1274,6 +1274,26 @@ describe("consent recorded first, links still missing", () => {
       sharedDocumentKeys: AGREED, licence: LICENCE,
     });
     expect(result.status).toBe("incomplete");
+    if (result.status !== "incomplete") return;
+
+    /*
+     * ★ AN INCOMPLETE ATTEMPT IS NEVER REPORTED AS A COMPLETED ACCEPTANCE ★
+     *
+     * `incomplete` alone does not say it: `accepted` is PROJECTED from a
+     * completed run, so a run carrying `completedAt` would read as accepted
+     * from every other surface regardless of what this call returned. And the
+     * steps say WHERE it stopped — asserting only the status would pass just
+     * as well if the grant had silently been skipped rather than rolled back.
+     */
+    expect(result.run.completedAt).toBeUndefined();
+    const steps = new Map(result.run.steps.map((s) => [s.key, s]));
+    expect(steps.get("driver_profile")!.state).toBe("done");
+    expect(steps.get("carrier_relationship")!.state).toBe("done");
+    expect(steps.get("document_access")!.state).toBe("failed");
+    // Membership last, and not reached: a seat here is a workspace they can
+    // sign in to with the grant that justified it undone.
+    expect(steps.get("workspace_membership")!.state).not.toBe("done");
+    expect(seats()).toHaveLength(0);
 
     // The consent was written and then put back, so the relationship promises
     // nothing it cannot deliver.
@@ -1285,11 +1305,40 @@ describe("consent recorded first, links still missing", () => {
       expect(await carrierCanList(documentId)).toBe(false);
       await expect(mockDocumentsService.get(CARRIER(), documentId))
         .rejects.toBeInstanceOf(NotFoundError);
+
+      // The checklist reads the driver BY SUBJECT rather than by what the
+      // carrier can already see, so it is the one surface that could surface a
+      // half-written grant the other two hide. The row reads `missing`, which
+      // is the truth: this carrier has nothing for that requirement.
+      const checklist = await mockDocumentsService.entityChecklist(
+        CARRIER(), { kind: "driver", id: "dp_sam", label: "Sam Murtaza" },
+        { engagement: "company_driver" },
+      );
+      expect(checklist.items.find((item) => item.requirement.key === key)?.status)
+        .toBe("missing");
+      expect((await mockDocumentsService.listShares(CARRIER()))
+        .map((share) => share.lineageId)).not.toContain(documentId);
+      // And no history claiming a share happened, because none did.
+      expect(documentEventsFor(documentId)
+        .filter((e) => e.kind === "linked" && e.organizationId === NORTHLINE.id))
+        .toHaveLength(0);
     }
-    // What the carrier held on its own basis is untouched, as always.
+    // What the carrier held on its own basis is untouched, as always — by both
+    // routes, since the rollback restores this store by reference and the
+    // control has to prove it restores to before-this-call and not to empty.
     expect(await carrierCanList(driverDocumentId("northline_handbook"))).toBe(true);
+    expect((await mockDocumentsService.get(CARRIER(), driverDocumentId("northline_handbook")))
+      .document.documentId).toBe(driverDocumentId("northline_handbook"));
     expect(liveMembershipFor("demo", "usr_sam", NORTHLINE.id)).toBeUndefined();
     expect(joinedEvents()).toHaveLength(0);
+
+    // Still theirs to finish, and somebody is told rather than it failing
+    // quietly. Needs You derives from the run, so this is the assertion that
+    // the incomplete run is actually visible to a person.
+    const [invitation] = (await mockAccessService.list(OWNER()))
+      .filter((i) => i.token === TOKEN);
+    expect(invitation.status).toBe("pending");
+    expect(accessNeedsYouItems(OWNER())).toHaveLength(1);
   });
 
   it("would not have been readable even if the consent had survived", async () => {
