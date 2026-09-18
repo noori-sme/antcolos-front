@@ -13,10 +13,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   AUTHORITY_STATUS_LABEL, CONTACT_ROLE_LABEL, CARRIER_DOCUMENT_LABEL,
   ASSIGNMENT_SOURCE_LABEL, DRIVER_AVAILABILITY_LABEL, MT_LOOP_ACTION_LABEL, MT_LOOP_STATUS_LABEL,
-  type CarrierView, type DriverView,
+  type CarrierView, type DriverView, type MtLoopBlocker,
 } from "@/types";
 import type {
-  DispatchBlocker, PlannedSection, TruckDispatchWorkspace,
+  PlannedSection, TruckDispatchWorkspace,
 } from "@/lib/api/mock/truck-dispatch-workspace";
 import { cn } from "@/lib/utils";
 import { SearchPanel } from "@/features/opportunities/search-panel";
@@ -281,13 +281,13 @@ const EmptyNote = ({ children }: { children: React.ReactNode }) => (
 /* Blockers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const OWNER_LABEL: Record<DispatchBlocker["owner"], string> = {
+const OWNER_LABEL: Record<MtLoopBlocker["owner"], string> = {
   carrier: "The carrier has to fix this",
   driver: "The driver has to fix this",
   dispatcher: "Yours to sort out",
 };
 
-function BlockerPanel({ blockers }: { blockers: DispatchBlocker[] }) {
+function BlockerPanel({ blockers }: { blockers: MtLoopBlocker[] }) {
   if (blockers.length === 0) {
     return (
       <section className="flex items-start gap-2.5 rounded-lg border border-st-success/40 bg-st-success-bg/50 px-4 py-3">
@@ -324,7 +324,7 @@ function BlockerPanel({ blockers }: { blockers: DispatchBlocker[] }) {
         {blockers.map((b) => (
           <li key={b.key} className="rounded-md border border-border bg-surface px-3.5 py-2.5">
             <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium text-fg">
-              {b.title}
+              {b.label}
               <Badge tone={b.severity === "critical" ? "danger" : b.severity === "high" ? "warning" : "neutral"}>
                 {b.severity === "critical" ? "Stops everything" : b.severity === "high" ? "Serious" : "Needs a look"}
               </Badge>

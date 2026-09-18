@@ -13,8 +13,10 @@ import { loadsReachableBy } from "./dispatch-delegation";
 import {
   fleetSync, truckCarrierFor, truckContextFrom, truckDispatchGrants,
   truckDocumentProblems, truckOperatingCarrier, truckApprovedCarriers, organizationNameFor,
-  dispatchGrantsByCarrier,
+  dispatchGrantsByCarrier, type TruckContext,
 } from "./truck-registry";
+import { carrierForTruckSync } from "./carrier-registry";
+import { driverViewSync, driverDocumentProblems } from "./driver-registry";
 import { trailerFleetSync } from "./trailer-registry";
 import { assignableMembersOf, memberIn } from "./membership-directory";
 import { nowIso } from "./time";
@@ -747,12 +749,35 @@ function toCard(
   workspace: Workspace,
   truck: FleetTruck | undefined,
   responsible: CanonicalHolder | undefined,
+  truckCtx: TruckContext,
 ): MtLoopCard {
   const emptyAt = loop.expectedEmptyAt ? new Date(loop.expectedEmptyAt).getTime() : undefined;
   const isMine = responsible?.membershipId === ctx.membershipId;
   const claimedByMe = loop.claimedByMembershipId === ctx.membershipId;
+  /*
+   * The carrier and the driver, AS THIS VIEWER MAY SEE THEM.
+   *
+   * Read through the same scoped projections the truck's own workspace uses,
+   * never the registries underneath — a blocker naming a driver's medical card
+   * must not appear for somebody who may not read that driver. Both are
+   * `undefined` when the viewer may not see them, and `blockersFor` treats
+   * absent as "not established", never as "fine".
+   *
+   * This is what the board was missing: it could not see a carrier whose
+   * authority had lapsed or a driver whose licence had expired, and said
+   * nothing about either while the truck's own page named both.
+   */
+  const carrier = carrierForTruckSync(loop.truckId, truckCtx);
+  const driver = loop.driverProfileId
+    ? driverViewSync(loop.driverProfileId, truckCtx, carrier?.organizationId)
+    : undefined;
   // Derived on every read from records other modules own. See `mt-loop-cycle.ts`.
-  const cycle = cycleInputFor(loop, truck, responsible?.displayName);
+  const cycle = {
+    ...cycleInputFor(loop, truck, responsible?.displayName),
+    carrier,
+    driver,
+    driverProblems: driver ? driverDocumentProblems(driver) : [],
+  };
   return {
     loopId: loop.loopId,
     truckId: loop.truckId,
@@ -884,15 +909,16 @@ export async function buildMtLoopBoard(ctx: MtLoopContext): Promise<MtLoopBoard>
   const loops = syncMtLoops(ctx);
   // The trucks are read once and handed to each card, so the board does not do
   // one registry lookup per loop to answer the same question.
+  const truckCtx = truckContextFrom(ctx);
   const trucks = new Map(
-    fleetSync(truckContextFrom(ctx)).map((t) => [t.truckId, t] as const),
+    fleetSync(truckCtx).map((t) => [t.truckId, t] as const),
   );
   // ★ The one call that makes four surfaces agree. ★
   // Not a lookup this module maintains: the Responsibility Engine's own answer,
   // computed the same way `/work`, Needs You and Home compute theirs.
   const responsible = await canonicalResponsibleFor(ctx, "mt_loop");
   const cards = loops
-    .map((l) => toCard(l, ctx, workspace!, trucks.get(l.truckId), responsible.get(l.loopId)))
+    .map((l) => toCard(l, ctx, workspace!, trucks.get(l.truckId), responsible.get(l.loopId), truckCtx))
     .sort(byUrgency);
   const mayMoveWork = workspace!.supportsTeam && ctx.permissions.has("loads:assign");
 

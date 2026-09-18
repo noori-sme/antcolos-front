@@ -1,6 +1,6 @@
 import type {
   CarrierView, DriverView, FleetTrailer, FleetTruck, MtLoop, MtLoopAbilities,
-  MtLoopCard, Truck, TruckDocument,
+  MtLoopBlocker, MtLoopCard, Truck, TruckDocument,
 } from "@/types";
 import { resolveWorkspace } from "@/lib/workspace/resolve";
 import { mockStore } from "./store";
@@ -12,6 +12,8 @@ import { trailerFleetSync } from "./trailer-registry";
 import { carrierForTruckSync } from "./carrier-registry";
 import { driverViewSync, driverDocumentProblems } from "./driver-registry";
 import { buildMtLoopBoard, openLoopsFor, type MtLoopContext } from "./mt-loop";
+// ★ The one place a blocker is decided, for every screen that shows one. ★
+import { blockersFor } from "./mt-loop-cycle";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -95,30 +97,13 @@ export interface TruckDispatchWorkspace {
    * The one thing standing in the way of dispatching this truck right now, if
    * there is one. Ordered by how badly it stops the work, not alphabetically.
    */
-  blockers: DispatchBlocker[];
+  blockers: MtLoopBlocker[];
 
   /** What is not built yet, named honestly rather than mocked up. */
   planned: PlannedSection[];
 
   /** What this membership may do here. Mirrors the loop's own abilities. */
   can: MtLoopAbilities;
-}
-
-/**
- * Something that stops this truck being dispatched.
- *
- * Each one names what is wrong, whose it is to fix, and where to go. A blocker
- * is not a warning: every entry here means a load should not be booked on this
- * truck until it is sorted out.
- */
-export interface DispatchBlocker {
-  key: string;
-  severity: "critical" | "high" | "medium";
-  title: string;
-  detail: string;
-  /** Who has to act: the carrier, the driver, or this dispatch workspace. */
-  owner: "carrier" | "driver" | "dispatcher";
-  href?: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -192,7 +177,28 @@ export async function truckDispatchWorkspaceFor(
     loopCard,
     // Newest first: who has it now is the question people ask.
     handoffs: loop ? [...loop.assignments].reverse() : [],
-    blockers: blockersFor({ carrier, driver, driverProblems, docProblems, fleetTruck, trailerMissing }),
+    /*
+     * ★ THE SAME LIST THE BOARD RENDERS ★
+     * This page used to work out its own blockers from its own inputs, and the
+     * two answers disagreed: the board would name a rate confirmation nobody had
+     * returned, or a hold a person had deliberately put on, while this page said
+     * in green that nothing was standing in the way — and offered the very
+     * action the hold existed to prevent. There is one function now. A truck
+     * with no open cycle still gets an answer, which is why `loop` is optional.
+     */
+    blockers: blockersFor({
+      loop,
+      truck: fleetTruck,
+      carrier,
+      driver,
+      driverProblems,
+      trailerAttached: trailer !== undefined,
+      // The Responsibility Engine's answer, handed in exactly as the board hands
+      // it in. Without it the "not claimed" line here read "Nobody has accepted
+      // this cycle yet" while the board named the person it had been routed to —
+      // the same two-answers problem in miniature.
+      responsibleName: loopCard?.responsible?.displayName,
+    }),
     planned: PLANNED_SECTIONS,
     can: loopCard?.can ?? NOTHING_ALLOWED,
   };
@@ -202,144 +208,6 @@ const NOTHING_ALLOWED: MtLoopAbilities = {
   claim: false, assign: false, reassign: false, pause: false,
   resume: false, block: false, unblock: false, close: false,
   escalateToCarrier: false,
-};
-
-/* -------------------------------------------------------------------------- */
-/* Blockers                                                                    */
-/* -------------------------------------------------------------------------- */
-
-const DOC_NAME: Record<string, string> = {
-  registration: "registration",
-  title: "title",
-  insurance: "insurance certificate",
-  annual_inspection: "annual inspection",
-  cab_card: "cab card",
-  lease_agreement: "lease agreement",
-  other: "document",
-};
-
-/**
- * Everything standing between this truck and its next load.
- *
- * Assembled in one place so the page can lead with it, and ordered by how hard
- * each one stops the work: a carrier that may not legally haul comes before a
- * medical card that lapses in three weeks, because one of them means nothing
- * can move at all.
- */
-function blockersFor(input: {
-  carrier?: CarrierView;
-  driver?: DriverView;
-  driverProblems: ReturnType<typeof driverDocumentProblems>;
-  docProblems: ReturnType<typeof truckDocumentProblems>;
-  fleetTruck: FleetTruck;
-  trailerMissing: boolean;
-}): DispatchBlocker[] {
-  const out: DispatchBlocker[] = [];
-  const { carrier, driver, driverProblems, docProblems, fleetTruck, trailerMissing } = input;
-
-  /* ---- The carrier may not legally haul ---- */
-  if (carrier && !carrier.canHaul) {
-    out.push({
-      key: "carrier-authority",
-      severity: "critical",
-      title:
-        carrier.authority.status === "not_recorded"
-          ? `${carrier.displayName}'s operating authority has never been recorded`
-          : `${carrier.displayName}'s operating authority is ${carrier.authority.status === "inactive" ? "not active" : carrier.authority.status}`,
-      detail:
-        carrier.authority.note
-        ?? "Nothing should be booked on this carrier's trucks until the authority is confirmed.",
-      owner: "carrier",
-    });
-  }
-
-  /* ---- The carrier's own paperwork ---- */
-  for (const doc of carrier?.documents ?? []) {
-    if (doc.status === "expired" || doc.status === "missing") {
-      out.push({
-        key: `carrier-doc-${doc.id}`,
-        severity: doc.kind === "certificate_of_insurance" ? "critical" : "high",
-        title:
-          doc.status === "missing"
-            ? `${carrier!.displayName} has no ${CARRIER_DOC[doc.kind]} on file`
-            : `${carrier!.displayName}'s ${CARRIER_DOC[doc.kind]} has expired`,
-        detail:
-          doc.status === "missing"
-            ? "Nobody has provided it, so there is nothing to check against."
-            : `Lapsed ${doc.expiresAt ? new Date(doc.expiresAt).toLocaleDateString() : "some time ago"}.`,
-        owner: "carrier",
-      });
-    }
-  }
-
-  /* ---- The truck itself ---- */
-  for (const problem of docProblems) {
-    if (problem.status !== "expired" && problem.status !== "rejected") continue;
-    out.push({
-      key: `truck-doc-${problem.id}`,
-      severity: "high",
-      title: `Unit ${fleetTruck.unit}'s ${DOC_NAME[problem.kind] ?? "document"} ${problem.status === "expired" ? "has expired" : "was rejected"}`,
-      detail: problem.rejectionReason ?? "The truck cannot be dispatched until this is put right.",
-      owner: "carrier",
-      href: `/fleet/trucks/${fleetTruck.truckId}`,
-    });
-  }
-
-  /* ---- The person ---- */
-  if (driver) {
-    for (const problem of driverProblems) {
-      if (problem.status === "expiring_soon") continue;
-      out.push({
-        key: `driver-doc-${problem.requirementKey}`,
-        severity: "high",
-        title: `${driver.legalName}'s ${problem.label.toLowerCase()} ${problem.status === "rejected" ? "was rejected" : problem.status === "expired" ? "has expired" : "is missing"}`,
-        detail: problem.rejectionReason ?? "The driver cannot be dispatched until this is put right.",
-        owner: "driver",
-      });
-    }
-    if (driver.availability.status === "inactive") {
-      out.push({
-        key: "driver-inactive",
-        severity: "high",
-        title: `${driver.legalName} is not working`,
-        detail: "The truck needs a driver before anything can be booked on it.",
-        owner: "carrier",
-      });
-    }
-  } else {
-    out.push({
-      key: "no-driver",
-      severity: "medium",
-      title: `Unit ${fleetTruck.unit} has nobody on it`,
-      detail: "A load cannot be dispatched to a truck with no driver assigned.",
-      owner: "carrier",
-      href: `/fleet/trucks/${fleetTruck.truckId}`,
-    });
-  }
-
-  /* ---- The equipment ---- */
-  if (trailerMissing) {
-    out.push({
-      key: "no-trailer",
-      severity: "medium",
-      title: `Unit ${fleetTruck.unit} has no trailer on it`,
-      detail: "This is a tractor, so it needs a trailer before it can take a load.",
-      owner: "dispatcher",
-      href: "/fleet/trailers",
-    });
-  }
-
-  const ORDER = { critical: 0, high: 1, medium: 2 };
-  return out.sort((a, b) => ORDER[a.severity] - ORDER[b.severity]);
-}
-
-const CARRIER_DOC: Record<string, string> = {
-  operating_authority: "operating authority letter",
-  certificate_of_insurance: "certificate of insurance",
-  w9: "W-9",
-  carrier_packet: "carrier packet",
-  safety_rating: "safety rating",
-  other: "document",
 };
 
 /* -------------------------------------------------------------------------- */

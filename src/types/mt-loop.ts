@@ -629,12 +629,36 @@ export interface MtLoopNextAction {
  * `blocked` STATUS. A cycle can be perfectly workable and still have two
  * unresolved problems on it — an expired trailer inspection and no driver — and a
  * board that shows only the one that stopped it hides the other.
+ *
+ * ★ ONE LIST, FOR EVERY SCREEN ★
+ * There used to be two of these: this one, computed for the board, and a
+ * `DispatchBlocker` computed separately for the truck's dispatch workspace. They
+ * read different records and produced different answers about the same truck —
+ * the board naming a rate confirmation nobody had returned while the truck page
+ * said, in green, that nothing was standing in the way. Neither list was the
+ * complete one: the board could not see the carrier's authority or the driver's
+ * paperwork, and the truck page could not see the loop's own hold.
+ *
+ * `blockersFor` is now the only thing that decides a blocker, and every screen
+ * renders what it returns. A screen that wants a different answer has to change
+ * that function, where the change is visible to all of them at once.
  */
 export interface MtLoopBlocker {
   /** Stable within a loop, so it can be listed and deep-linked. */
   key: string;
   label: string;
   detail: string;
+  /**
+   * Who has to act. Not who noticed — a dispatcher can see an expired medical
+   * card and still have no way to fix it, and a screen that offers them a button
+   * for it is lying about whose problem it is.
+   */
+  owner: "carrier" | "driver" | "dispatcher";
+  /**
+   * How hard it stops the work, for ordering. A carrier that may not legally
+   * haul comes before a medical card lapsing in three weeks.
+   */
+  severity: "critical" | "high" | "medium";
   /** Whether this alone prevents the truck being dispatched. */
   stopsDispatch: boolean;
   /** Straight to where it is fixed. */
