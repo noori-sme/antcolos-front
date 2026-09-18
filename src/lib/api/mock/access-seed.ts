@@ -1,4 +1,5 @@
-import type { Invitation, OrganizationType } from "@/types";
+import type { OrganizationType } from "@/types";
+import type { InvitationSeed } from "./access-store";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -24,19 +25,26 @@ const daysFromNow = (n: number) => {
 };
 const daysAgo = (n: number) => daysFromNow(-n);
 
-export function seedInvitations(): Invitation[] {
+/**
+ * ★ A SEED CANNOT CLAIM AN ACCOUNT EXISTS ★
+ *
+ * `recipientHasAccount` and `recipientUserId` are derived by the store from the
+ * directory, exactly as issuance derives them — and the literals below cannot
+ * state them, because `InvitationSeed` does not have them. Overriding a claim
+ * would have been enough; making the claim impossible to write is better.
+ */
+export function seedInvitations(): InvitationSeed[] {
   const base = {
     organizationId: "org_northline",
     organizationName: "Northline Freight",
     organizationType: "CARRIER" as OrganizationType,
-    recipientHasAccount: false,
     // An invitation is issued from inside an organization, by a SEAT that held
     // `invitations:create` — never by a User in the abstract. The name is
     // snapshotted so the record still reads after the sender is renamed.
     invitedByMembershipId: "mem_northline_owner",
     invitedByName: "Sam Murtaza",
   };
-  return [
+  const seeds: InvitationSeed[] = [
     {
       ...base,
       id: "inv_1", token: "INV-DRIVER", kind: "driver", roleName: "Driver",
@@ -49,7 +57,6 @@ export function seedInvitations(): Invitation[] {
       ...base,
       id: "inv_2", token: "INV-EMPLOYEE", kind: "employee", roleName: "Employee",
       recipientName: "Bea Lindgren", recipientEmail: "sam@antcolos.com",
-      recipientHasAccount: true,
       permissions: ["loads:view", "drivers:view", "trucks:view", "trailers:view", "customers:view", "documents:view", "documents:upload", "compliance:view"],
       expiresAt: daysFromNow(9), createdAt: daysAgo(2), status: "pending",
     },
@@ -104,7 +111,6 @@ export function seedInvitations(): Invitation[] {
       id: "inv_11", token: "INV-DRIVER-ACCT", kind: "driver", roleName: "Driver",
       engagementType: "company_driver",
       recipientName: "Sam Murtaza", recipientEmail: "sam@antcolos.com",
-      recipientHasAccount: true,
       permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(12), createdAt: daysAgo(1), status: "pending",
     },
@@ -112,7 +118,6 @@ export function seedInvitations(): Invitation[] {
       ...base,
       id: "inv_9", token: "INV-WRONGUSER", kind: "employee", roleName: "Employee",
       recipientName: "Karin Vogel", recipientEmail: "karin.vogel@example.com",
-      recipientHasAccount: true,
       permissions: ["loads:view", "documents:view", "customers:view"],
       expiresAt: daysFromNow(8), createdAt: daysAgo(1), status: "pending",
     },
@@ -127,7 +132,6 @@ export function seedInvitations(): Invitation[] {
       id: "inv_12", token: "INV-NEWCOMER", kind: "driver", roleName: "Driver",
       engagementType: "company_driver",
       recipientName: "Alex Rivera", recipientEmail: "alex.rivera@example.com",
-      recipientHasAccount: true,
       permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(14), createdAt: daysAgo(1), status: "pending",
     },
@@ -141,7 +145,6 @@ export function seedInvitations(): Invitation[] {
       id: "inv_13", token: "INV-MIGRATED", kind: "driver", roleName: "Driver",
       engagementType: "owner_operator",
       recipientName: "Sam Murtaza", recipientEmail: "sam@antcolos.com",
-      recipientHasAccount: true,
       engagementId: "weng_nl_migrated_driver",
       permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(21), createdAt: daysAgo(2), status: "pending",
@@ -168,11 +171,12 @@ export function seedInvitations(): Invitation[] {
     {
       id: "inv_8", token: "INV-DISPATCHEMP", kind: "dispatcher", roleName: "Dispatcher",
       organizationId: "org_summit", organizationName: "Summit Dispatch",
-      organizationType: "DISPATCH_AGENCY", recipientHasAccount: false,
+      organizationType: "DISPATCH_AGENCY",
       invitedByMembershipId: "mem_summit_owner", invitedByName: "Dana Whitfield",
       recipientName: "Owen Pratt", recipientEmail: "owen@example.com",
       permissions: ["loads:view", "loads:create", "loads:edit", "loads:status:update", "dispatch:view", "loads:assign", "drivers:view", "trucks:view", "trailers:view", "customers:view", "documents:view", "documents:upload", "compliance:view"],
       expiresAt: daysFromNow(10), createdAt: daysAgo(1), status: "pending",
     },
   ];
+  return seeds;
 }

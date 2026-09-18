@@ -1,4 +1,13 @@
 import type { AcceptanceRun, Invitation, User } from "@/types";
+
+/**
+ * A seed cannot state whether the address has an account.
+ *
+ * The two fields are derived below, exactly as issuance derives them, so a
+ * fixture cannot claim an account that does not exist — and now cannot make the
+ * claim at all rather than having one overridden.
+ */
+export type InvitationSeed = Omit<Invitation, "recipientHasAccount" | "recipientUserId">;
 import { MOCK_USER, NEWCOMER_USER } from "@/lib/session/fixtures";
 
 /**
@@ -69,7 +78,7 @@ export function nextInvitationToken(): string {
  * That is the same rule issuing follows, applied to the fixtures so they cannot
  * drift away from it.
  */
-export function ensureSeeded(seed: () => Invitation[]) {
+export function ensureSeeded(seed: () => InvitationSeed[]) {
   if (state.seeded) return;
   state.seeded = true;
   state.invitations = seed().map((invitation) => {
