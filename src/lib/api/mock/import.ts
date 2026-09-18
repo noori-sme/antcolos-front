@@ -12,6 +12,7 @@ import {
 } from "./driver-registry";
 import { mockWorkforceService } from "./workforce";
 import { appendAuditEvent } from "./audit";
+import { MAX_AUDIT_VALUE_LENGTH } from "@/lib/audit/redaction";
 import {
   addClaim, batchByContentKey, batchById, batchesForOrganization, claimById,
   claimsForBatch, nextImportId, putBatch, putResolution, putRun, resolutionFor,
@@ -19,6 +20,7 @@ import {
 } from "./import-store";
 import { nowIso } from "./time";
 import { PermissionDeniedError, type ServiceContext } from "../contracts/context";
+import { InvalidDecisionError } from "../contracts/import";
 import type {
   ImportPlan, ImportPlanSummary, ImportService, StageImportInput, StagedImport,
 } from "../contracts/import";
@@ -323,11 +325,92 @@ export const mockImportService: ImportService = {
     const current = resolutionFor(claimId);
     if (!current) return null;
 
+    /*
+     * ★ A LINK MUST NAME A RECORD THAT IS STILL ON THE TABLE ★
+     * Resolutions are re-derived on every plan, so an id from a screen somebody
+     * left open on Tuesday may point at a record that is no longer a candidate
+     * — or was never one. Accepting it would let an import link a row to any
+     * entity id a caller could name, which is a far larger hole than the
+     * ambiguity it was meant to settle.
+     */
+    if (decision.choice === "link") {
+      const chosen = decision.entityId
+        && current.candidates.find((c) => c.entityId === decision.entityId);
+      if (!chosen) {
+        throw new InvalidDecisionError(
+          "That record is not one of the candidates for this row. Look at the row again "
+          + "and choose from what it is actually offering.",
+        );
+      }
+    }
+
+    const contested = current.candidates.some((c) => c.conflicts.length > 0);
+
     const recorded: ClaimDecision = {
       ...decision,
       decidedAt: nowIso(),
       decidedBy: ctx.actor,
+      // Snapshotted, never re-derived: the candidate list that justified this
+      // answer is replaced on the next plan, and an audit line pointing at
+      // evidence that has since changed is worse than no line at all.
+      evidence: {
+        plannedOutcome: current.outcome,
+        rationale: current.rationale,
+        candidates: current.candidates.map((c) => ({
+          ...c,
+          signals: c.signals.map((x) => ({ ...x })),
+          conflicts: c.conflicts.map((x) => ({ ...x })),
+        })),
+        contested,
+      },
     };
+
+    const subject = claim.subject.kind === "person"
+      ? claim.subject.fullName
+      : claim.subject.vin ?? claim.subject.unitNumber ?? "a truck";
+    const chosenLabel = decision.choice === "link"
+      ? current.candidates.find((c) => c.entityId === decision.entityId)?.label ?? decision.entityId
+      : undefined;
+
+    appendAuditEvent(ctx, {
+      module: "workforce",
+      action: "workforce.import_identity_resolved",
+      sourceAction: "import.claim_decided",
+      entity: { kind: "organization", id: ctx.organizationId, label: subject },
+      summary: (decision.choice === "link"
+        ? `Decided that ${subject} is ${chosenLabel}, a record this carrier already holds.`
+        : decision.choice === "create"
+          ? `Decided that ${subject} is somebody new, not a record already held.`
+          : `Decided to leave ${subject} out of this import.`)
+        + (contested
+          ? " The row carried a conflicting identifier, so Antcolos would not decide it: "
+            + current.rationale
+          : ""),
+      /*
+       * The evidence, as FLAT field changes.
+       *
+       * The ledger refuses structured values on purpose — an audit line holding
+       * a blob is one nobody reads — so the candidates go in as the sentence a
+       * reviewer would want, one field each, capped to what the ledger accepts.
+       * The full snapshot lives on the decision; this is what survives in the
+       * one place somebody will actually look six months from now.
+       */
+      changes: [
+        {
+          field: "outcome",
+          label: "What Antcolos concluded, and what the person decided",
+          before: current.outcome,
+          after: decision.choice,
+        },
+        ...current.candidates.slice(0, 5).map((c, i) => ({
+          field: `candidate.${i + 1}`,
+          label: `Record offered: ${c.label}`,
+          after: auditLine(c),
+        })),
+        ...(decision.note ? [{ field: "note", label: "Why", after: decision.note }] : []),
+      ],
+    });
+
     return putResolution({ ...current, decision: recorded });
   },
 
@@ -371,6 +454,20 @@ export const mockImportService: ImportService = {
     return putRun(run);
   },
 };
+
+/**
+ * One candidate as one readable line, inside the ledger's value limit.
+ *
+ * Codes rather than prose: the prose is on the resolution and in the summary,
+ * and what an auditor needs from the ledger is which signals agreed and which
+ * identifier did not.
+ */
+function auditLine(c: ClaimCandidate): string {
+  const parts: string[] = [c.confidence];
+  if (c.signals.length > 0) parts.push(`agrees on ${c.signals.map((s) => s.code).join(", ")}`);
+  if (c.conflicts.length > 0) parts.push(`conflicts: ${c.conflicts.map((x) => x.code).join(", ")}`);
+  return parts.join(" · ").slice(0, MAX_AUDIT_VALUE_LENGTH);
+}
 
 /**
  * Whether a skipped row could still be finished.
@@ -439,6 +536,43 @@ async function commitOne(ctx: ServiceContext, claim: ImportClaim): Promise<Impor
     };
   }
 
+  /*
+   * ★ THE GATE ★
+   *
+   * A row carrying a conflicting decisive identifier is never committed on the
+   * matcher's say-so, whatever outcome the ranking reached. `rank` already
+   * returns `needs_decision` for these, so this is belt and braces — and it is
+   * worth the braces: this is the exact defect that let a mistyped licence
+   * become a second engagement, and a future change to the ranking must not be
+   * able to reopen it quietly. Failing closed here costs one skipped row and a
+   * question; failing open costs a permanent duplicate.
+   */
+  const contested = resolution.candidates.some((c) => c.conflicts.length > 0);
+  if (contested && !decided) {
+    return {
+      claimId: claim.id, outcome: "skipped",
+      detail: "An existing record looks like this one but its licence or VIN does not "
+        + "match. Somebody has to say whether it is the same person or equipment.",
+    };
+  }
+
+  /*
+   * A decision that named a record is only good while that record is still on
+   * offer. Re-planning happens between deciding and committing, and linking to
+   * something the current plan does not list is how a stale screen writes a
+   * relationship nobody reviewed.
+   */
+  if (decided?.choice === "link") {
+    const stillOffered = resolution.candidates.some((c) => c.entityId === decided.entityId);
+    if (!stillOffered) {
+      return {
+        claimId: claim.id, outcome: "skipped",
+        detail: "The record somebody chose for this row is no longer one of its candidates. "
+          + "Look at the row again.",
+      };
+    }
+  }
+
   if (claim.subject.kind !== "person") {
     return {
       claimId: claim.id, outcome: "skipped",
@@ -468,7 +602,12 @@ async function commitPerson(
   const chosen = resolution.decision?.choice === "link"
     ? resolution.decision.entityId
     : resolution.outcome === "matched"
-      ? resolution.candidates.find((c) => c.confidence === "exact")?.entityId
+      // `exact` is unreachable for a conflicted candidate by construction, and
+      // the conflict check is repeated anyway: the one automatic link in this
+      // module should be readable as safe without going to another file.
+      ? resolution.candidates.find(
+        (c) => c.confidence === "exact" && c.conflicts.length === 0,
+      )?.entityId
       : undefined;
 
   /*

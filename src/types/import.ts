@@ -247,7 +247,23 @@ export const CLAIM_OUTCOME_LABEL: Record<ClaimOutcome, string> = {
   blocked: "Cannot be imported yet",
 };
 
-/** What an authorized person decided about a claim that stopped. */
+/**
+ * What an authorized person decided about a claim that stopped.
+ *
+ * ★ THE ONLY WAY A CONTESTED ROW IS EVER RESOLVED ★
+ *
+ * `link` says "this is that person, despite what the licence says". `create`
+ * says "this really is somebody new, despite the resemblance". Both are
+ * assertions about a real human being that nothing in the file could settle,
+ * and both are permanent, so both are recorded the same way: who decided, when,
+ * and — in `evidence` — exactly what they were looking at when they did.
+ *
+ * `evidence` is a SNAPSHOT, and that is the point. Resolutions are re-derived
+ * on every plan, so without it the candidate list and conflicts that justified
+ * somebody's answer would be silently replaced by whatever the registries look
+ * like later, and an audit six months on would show a decision with nothing
+ * behind it.
+ */
 export interface ClaimDecision {
   choice: "link" | "create" | "skip";
   /** Required for `link`. The canonical id they chose. */
@@ -255,6 +271,20 @@ export interface ClaimDecision {
   decidedAt: IsoDateTime;
   decidedBy: ActorRef;
   note?: string;
+  /** What was on the screen when they decided. Never re-derived. */
+  evidence?: ClaimDecisionEvidence;
+}
+
+/** The state of the question at the moment somebody answered it. */
+export interface ClaimDecisionEvidence {
+  /** The outcome the matcher had reached, which the person overrode or confirmed. */
+  plannedOutcome: ClaimOutcome;
+  /** What the person read before choosing. */
+  rationale: string;
+  /** Every candidate they were choosing between, with its signals and conflicts. */
+  candidates: ClaimCandidate[];
+  /** True when at least one candidate carried a conflicting decisive identifier. */
+  contested: boolean;
 }
 
 /**

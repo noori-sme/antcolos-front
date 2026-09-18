@@ -179,6 +179,17 @@ export type AuditAction =
   | "workforce.onboarding_step_waived"
   | "workforce.access_step_requested"
   | "workforce.offboarding_step_recorded"
+  /**
+   * Somebody said which real person an imported row is, or that it is nobody
+   * Antcolos holds.
+   *
+   * HIGH VALUE, because it is the one judgement an import cannot make and
+   * cannot undo. Linking the wrong record attaches a stranger's licence and
+   * medical card to a carrier; creating a wrong new one splits somebody's
+   * permanent history in two. The line carries who decided and what they were
+   * shown, so the answer stays reviewable long after the file is gone.
+   */
+  | "workforce.import_identity_resolved"
   /* A carrier's custody of a document version it relied on. Projected into the
      ONE ledger under compliance, because that is whose file it is. ---------- */
   | "compliance.qualification_adopted"

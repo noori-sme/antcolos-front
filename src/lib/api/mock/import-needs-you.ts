@@ -59,6 +59,21 @@ export function importNeedsYouItems(ctx: ServiceContext): NeedsYouItem[] {
       .map((c) => `${c.label}${c.detail ? ` — ${c.detail}` : ""}`)
       .join("; ");
 
+    /*
+     * A contested row is a different question from an ambiguous one, and the
+     * item has to say which. "This might be one of these people" asks somebody
+     * to recognise a name. "This looks like Dmitri but the licence does not
+     * match" asks them to go and check a document — and if the item does not
+     * say so, they will answer the easy question instead of the real one.
+     */
+    const contested = resolution.candidates.filter((c) => c.conflicts.length > 0);
+    const contestedReason = contested.length > 0
+      ? `${contested[0].label} looks like this row, and the identifier that would settle it `
+        + `does not match. ${contested[0].conflicts.map((x) => x.label).join(" ")} `
+        + "Antcolos will not decide it either way: linking the wrong record and creating a "
+        + "second one are both permanent."
+      : undefined;
+
     out.push({
       id: `${IMPORT_ITEM_PREFIX}${claim.id}`,
       organizationId: claim.organizationId,
@@ -71,13 +86,16 @@ export function importNeedsYouItems(ctx: ServiceContext): NeedsYouItem[] {
        */
       severity: "medium",
       status: "open",
-      title: `Which person is row ${claim.rowNumber} of ${batch.label}?`,
-      reason: resolution.candidates.length > 0
-        ? `The file says ${label}. That could be ${names}, and nothing in the row `
-          + "proves which. Antcolos will not guess, because guessing wrong makes a "
-          + "second permanent record for somebody who already has one."
-        : `The file says ${label}, and there is not enough in the row to tell whether `
-          + "this is somebody you already have.",
+      title: contested.length > 0
+        ? `Is row ${claim.rowNumber} of ${batch.label} somebody you already have?`
+        : `Which person is row ${claim.rowNumber} of ${batch.label}?`,
+      reason: contestedReason
+        ?? (resolution.candidates.length > 0
+          ? `The file says ${label}. That could be ${names}, and nothing in the row `
+            + "proves which. Antcolos will not guess, because guessing wrong makes a "
+            + "second permanent record for somebody who already has one."
+          : `The file says ${label}, and there is not enough in the row to tell whether `
+            + "this is somebody you already have."),
       detail: resolution.rationale,
       entity: {
         // The claim, never a person: nobody has established there is a person

@@ -5,6 +5,20 @@ import type {
 import type { ServiceContext } from "./context";
 
 /**
+ * A resolution that cannot be acted on.
+ *
+ * Thrown rather than returned so a caller cannot mistake a refused decision for
+ * a recorded one — the whole value of the gate is that nothing silently
+ * proceeds when somebody answers a question that is no longer on the screen.
+ */
+export class InvalidDecisionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidDecisionError";
+  }
+}
+
+/**
  * Bringing a carrier that already exists into Antcolos.
  *
  * ★ WHAT THIS SERVICE MAY CREATE, AND WHAT IT MAY NOT ★

@@ -31,18 +31,31 @@ describe("a licence number is the one thing that identifies a driver", () => {
   });
 
   it("does not match on the number alone, because states reuse them", () => {
-    // Same digits, different issuing state: two licences, two people.
+    // Same digits, different issuing state. Two states DO reuse numbers, so
+    // this is not an identity — and a driver who moves is issued a new licence,
+    // so it is not proof of two people either. It is a question.
     const candidate = scorePerson(
       person({ cdlNumber: "K4471182993", cdlState: "IL" }),
       record({ cdlNumber: "K4471182993", cdlState: "TX" }),
     );
     expect(candidate.confidence).not.toBe("exact");
-    expect(candidate.conflicts.map((c) => c.code)).toContain("cdl_conflict");
+    expect(candidate.conflicts.map((c) => c.code)).toContain("cdl_state_change");
+    expect(rank([candidate]).outcome).toBe("needs_decision");
   });
 
-  it("treats a different licence as PROOF of two people, not weak evidence", () => {
-    // Everything else agrees — same name, same phone, same mailbox. A licence
-    // is issued to one holder, so this is still two people.
+  it("★ does not treat a different licence as proof of two people ★", () => {
+    /*
+     * THE RULE THIS FILE GOT WRONG THE FIRST TIME.
+     *
+     * It said a licence is issued to one holder, so two numbers are two people,
+     * and it dropped the candidate. But people move states and get new numbers,
+     * and rosters are typed by hand. Dropping the candidate left nothing
+     * plausible, so the row was called new — and the import created a second
+     * engagement for somebody already on the roster, with nobody asked.
+     *
+     * Same name, same phone, same mailbox, different licence is not an answer.
+     * It is the case where a person has to look.
+     */
     const candidate = scorePerson(
       person({
         cdlNumber: "AAA111", cdlState: "IL",
@@ -53,7 +66,47 @@ describe("a licence number is the one thing that identifies a driver", () => {
         email: "m.santos@example.com", phone: "3125550134",
       }),
     );
-    expect(candidate.score).toBe(0);
+
+    expect(candidate.score).toBeGreaterThan(0);
+    expect(candidate.confidence).not.toBe("none");
+    // Never linkable on its own, whatever the soft signals add up to.
+    expect(candidate.confidence).not.toBe("exact");
+    expect(candidate.conflicts.map((c) => c.code)).toContain("cdl_conflict");
+
+    const ranking = rank([candidate]);
+    expect(ranking.outcome).toBe("needs_decision");
+    expect(ranking.outcome).not.toBe("new");
+    expect(ranking.outcome).not.toBe("matched");
+  });
+
+  it("reads one wrong character as a typing error, not a second driver", () => {
+    // K4471182993 → K447118299**4**. Nothing else in common at all: the
+    // near-miss alone is enough to stop, because that is what a typo looks like.
+    const candidate = scorePerson(
+      person({ fullName: "Someone Else", cdlNumber: "K4471182994", cdlState: "IL" }),
+      record({ legalName: "Marisol Santos", cdlNumber: "K4471182993", cdlState: "IL" }),
+    );
+    expect(candidate.conflicts.map((c) => c.code)).toContain("cdl_near_miss");
+    expect(rank([candidate]).outcome).toBe("needs_decision");
+  });
+
+  it("still lets an unrelated person be new, so the common case stays quiet", () => {
+    /*
+     * The other side of the rule, and the reason it is not simply "never say
+     * new". A different name, a different mailbox and a licence that is not a
+     * near miss is not a contest — it is a different person, and stopping on
+     * every row would make the queue useless and the import unusable.
+     */
+    const candidate = scorePerson(
+      person({
+        fullName: "Wendell Achebe", cdlNumber: "A7781093322", cdlState: "OH",
+        email: "wendell@example.com",
+      }),
+      record({
+        legalName: "Marisol Santos", cdlNumber: "K4471182993", cdlState: "IL",
+        email: "m.santos@example.com",
+      }),
+    );
     expect(candidate.confidence).toBe("none");
     expect(rank([candidate]).outcome).toBe("new");
   });
@@ -128,13 +181,40 @@ describe("a VIN is the one thing that identifies a truck", () => {
     expect(rank([candidate]).outcome).toBe("matched");
   });
 
-  it("treats a different VIN as proof of two trucks", () => {
+  it("★ does not treat a different VIN as proof of two trucks ★", () => {
+    /*
+     * The same correction as the licence rule above, for the same reason. This
+     * carrier's own plate, on a VIN that does not match: either the seventeen
+     * characters were copied wrong, or the plate was moved to another truck.
+     * Those are opposite facts about the fleet and nothing here can tell which.
+     */
     const candidate = scoreTruck(
       truck({ vin: "1XPWD40X1ED215307", plateNumber: "ABC123", plateState: "IL" }),
       truckRecord({ plateNumber: "ABC123", plateState: "IL" }),
     );
-    expect(candidate.score).toBe(0);
+    expect(candidate.score).toBeGreaterThan(0);
+    expect(candidate.confidence).not.toBe("exact");
     expect(candidate.conflicts.map((c) => c.code)).toContain("vin_conflict");
+    expect(candidate.conflicts.map((c) => c.code)).toContain("plate_matches_vin_differs");
+
+    const ranking = rank([candidate]);
+    expect(ranking.outcome).toBe("needs_decision");
+    expect(ranking.outcome).not.toBe("new");
+  });
+
+  it("reads one wrong character in a VIN as a transcription error", () => {
+    // Seventeen characters copied off a doorframe, one of them wrong.
+    const mistyped = `${VIN.slice(0, 16)}${VIN[16] === "7" ? "8" : "7"}`;
+    const candidate = scoreTruck(truck({ vin: mistyped }), truckRecord());
+    expect(candidate.conflicts.map((c) => c.code)).toContain("vin_near_miss");
+    expect(candidate.confidence).not.toBe("exact");
+    expect(rank([candidate]).outcome).toBe("needs_decision");
+  });
+
+  it("still lets an unrelated truck be new", () => {
+    const candidate = scoreTruck(truck({ vin: "1XPWD40X1ED215307" }), truckRecord());
+    expect(candidate.confidence).toBe("none");
+    expect(rank([candidate]).outcome).toBe("new");
   });
 
   it("★ never matches on a unit number ★", () => {
