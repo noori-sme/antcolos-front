@@ -1,7 +1,8 @@
 import type {
-  AcceptanceRun, CarrierRelationship, EngagementType, Invitation, InvitationKind,
-  Membership, PermissionKey, User,
+  AcceptanceRun, AppliedTemplate, CarrierRelationship, EngagementType, Invitation,
+  InvitationKind, Membership, PermissionKey, PermissionTemplate, User,
 } from "@/types";
+import type { AccessDiff } from "@/lib/permissions/applied";
 import type { DriverSharingPlan } from "@/features/driver/mock-driver";
 import type { ServiceContext } from "./context";
 
@@ -66,9 +67,12 @@ import type { ServiceContext } from "./context";
 
 export interface InvitationDraft {
   kind: InvitationKind;
-  /** A preset name, or the custom role's name. Snapshotted onto the invitation. */
+  /** A preset name, or the template's name. Snapshotted onto the invitation. */
   roleName: string;
-  customRoleId?: string;
+  /** The template this was built from, when one was used. Provenance only. */
+  templateId?: string;
+  /** The template version the snapshot below was taken from. */
+  templateVersion?: number;
   /** Driver invitations only. The carrier's decision, never the driver's. */
   engagementType?: EngagementType;
   recipientName: string;
@@ -244,6 +248,15 @@ export interface RosterEntry {
   membership: Membership;
   /** The person behind the seat, when Antcolos knows them. A lookup, never a search. */
   account?: User;
+  /**
+   * What to call them on screen. Always populated.
+   *
+   * Resolved by the service rather than left to each screen to piece together,
+   * because a screen falling back to `membership.userId` prints `usr_paige` at
+   * somebody — and the one place that is least forgivable is the screens that
+   * ask an owner to make a decision about that person.
+   */
+  displayName: string;
   /** Derived through `effectivePermissions`. No screen computes a permission. */
   permissions: PermissionKey[];
   /** Their live driving relationships with this organization, if any. */
@@ -255,6 +268,134 @@ export type EndSeatResult =
   /** Already gone, or never here. Both are "nothing left to do". */
   | { status: "already_ended" }
   | { status: "refused"; refusal: "not_permitted" | "last_owner"; message: string };
+
+
+/* -------------------------------------------------------------------------- */
+/* Permission templates                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ A TEMPLATE IS A WAY OF CHOOSING PERMISSIONS, NOT A SECOND SOURCE OF THEM ★
+ *
+ * Every method below moves a SELECTION around. None of them answers "may this
+ * person do X" — that question has one answer, `effectivePermissions` over a
+ * Membership, and these calls exist to make arriving at a good Membership less
+ * tedious than ticking sixty boxes twice.
+ *
+ * Three properties the interface is shaped to guarantee, and which a server
+ * must actually enforce:
+ *
+ *   SCOPED      Every call takes a `ServiceContext` and touches only
+ *               `ctx.organizationId`. A template id from another organization
+ *               reads as absent rather than as somebody else's template.
+ *
+ *   CLAMPED     Nothing written by these calls can exceed what the ACTING
+ *               membership holds. A template may legally contain more than the
+ *               person applying it has; the seat receives the intersection and
+ *               the caller is told what was withheld.
+ *
+ *   DETACHED    `update` changes a template and nobody's access. Moving people
+ *               onto the new version is `applyToMembership`, one seat at a
+ *               time, with `previewApplication` available first.
+ */
+
+export interface TemplateDraft {
+  name: string;
+  description: string;
+  permissions: PermissionKey[];
+}
+
+/** A template, plus the facts a management screen needs and must not invent. */
+export interface TemplateSummary {
+  template: PermissionTemplate;
+  /**
+   * How many live seats carry it. COUNTED off the roster on every read, never
+   * stored on the template — a stored count is a number that goes wrong the
+   * first time somebody leaves.
+   */
+  memberCount: number;
+  /**
+   * Seats carrying an OLDER version than the template now has.
+   *
+   * The expected, correct state after an edit. It is surfaced so an owner can
+   * act on it deliberately, never so the product can resolve it for them.
+   */
+  behindCount: number;
+}
+
+export type TemplateWriteResult =
+  | { status: "saved"; template: PermissionTemplate }
+  | { status: "refused"; refusal: TemplateRefusal; message: string };
+
+export type TemplateRefusal =
+  /** The acting membership does not hold the authority this call needs. */
+  | "not_permitted"
+  /**
+   * The selection contains keys the acting membership does not hold.
+   *
+   * Refused rather than silently trimmed on a SAVE, because a template quietly
+   * shorter than what the owner ticked is a template they will hand out
+   * believing it does something it does not. (On APPLY the behaviour is
+   * different and deliberately so: there the seat gets the intersection and the
+   * withheld keys are reported, because the alternative is refusing to let a
+   * senior dispatcher use a template an owner wrote.)
+   */
+  | "escalation"
+  | "not_found"
+  /** A template people hold cannot be deleted. Archiving is always offered. */
+  | "in_use"
+  | "invalid_name"
+  /** Owner is structural. It cannot be recreated, edited or handed out. */
+  | "reserved";
+
+export type TemplateDeleteResult =
+  | { status: "deleted" }
+  | { status: "refused"; refusal: TemplateRefusal; message: string; memberCount?: number };
+
+/**
+ * Applying a template to a seat that already exists.
+ *
+ * ★ THE SEPARATE, EXPLICIT, AUTHORIZED ACTION ★
+ * This is what a template edit deliberately does NOT do. It writes a snapshot
+ * onto one Membership, named, versioned and stamped with who did it — and it is
+ * the only way an existing person's access moves onto a newer version of a
+ * template they already hold.
+ */
+export type ApplyTemplateResult =
+  | {
+    status: "applied";
+    membership: Membership;
+    applied: AppliedTemplate;
+    /** What actually changed, in effective permissions. Same value as the preview. */
+    diff: AccessDiff;
+  }
+  | { status: "refused"; refusal: ApplyRefusal; message: string };
+
+export type ApplyRefusal =
+  | "not_permitted"
+  | "not_found"
+  /** The template belongs to another organization, or the seat does. */
+  | "cross_organization"
+  /** Archived templates keep working for holders and cannot be handed out again. */
+  | "archived"
+  /**
+   * The acting membership would be widening its OWN access.
+   *
+   * Refused outright rather than clamped. Clamping a self-application is a
+   * no-op that looks like it worked, and "apply a template to yourself" is the
+   * shortest path from `permissions:manage` to every permission there is.
+   */
+  | "self_escalation"
+  /**
+   * The owner seat. Its access is structural and is not composed from
+   * templates, so applying one to it would be writing a snapshot nothing reads.
+   */
+  | "owner_seat";
+
+/** Taking a template back off a seat. Same authority, same preview. */
+export type RemoveTemplateResult =
+  | { status: "removed"; membership: Membership; diff: AccessDiff }
+  | { status: "refused"; refusal: ApplyRefusal | "last_owner"; message: string };
 
 export interface AccessService {
   /* ---- management, by the organization that sent them ---- */
@@ -283,6 +424,43 @@ export interface AccessService {
    * creates nothing.
    */
   decline(token: string, identity: AcceptingIdentity): Promise<Invitation | null>;
+
+
+  /* ---- permission templates, by the organization that owns them ---- */
+  /**
+   * Every template in this organization, with its live member count.
+   *
+   * Includes archived ones: an owner has to be able to see what people are
+   * still holding. The screen separates them; the service does not hide them.
+   */
+  templates(ctx: ServiceContext): Promise<TemplateSummary[]>;
+  createTemplate(ctx: ServiceContext, draft: TemplateDraft): Promise<TemplateWriteResult>;
+  /** Changes the template. Changes nobody's access — see `applyToMembership`. */
+  updateTemplate(
+    ctx: ServiceContext, templateId: string, draft: TemplateDraft,
+  ): Promise<TemplateWriteResult>;
+  /** A new template with the same selection, held by nobody. */
+  duplicateTemplate(ctx: ServiceContext, templateId: string): Promise<TemplateWriteResult>;
+  /** Archived templates keep working for holders and cannot be applied again. */
+  setTemplateArchived(
+    ctx: ServiceContext, templateId: string, archived: boolean,
+  ): Promise<TemplateWriteResult>;
+  deleteTemplate(ctx: ServiceContext, templateId: string): Promise<TemplateDeleteResult>;
+
+  /* ---- putting one on a seat ---- */
+  /**
+   * What applying it would do. Changes nothing, and returns the SAME value the
+   * command returns, so the preview cannot drift from the outcome.
+   */
+  previewApplication(
+    ctx: ServiceContext, membershipId: string, templateId: string,
+  ): Promise<AccessDiff | null>;
+  applyToMembership(
+    ctx: ServiceContext, membershipId: string, templateId: string,
+  ): Promise<ApplyTemplateResult>;
+  removeFromMembership(
+    ctx: ServiceContext, membershipId: string, templateId: string,
+  ): Promise<RemoveTemplateResult>;
 
   /* ---- the roster, from the organization's side ---- */
   /**

@@ -44,6 +44,7 @@ import { resetEmptyConfirmations } from "./tracking-availability";
 import { resetTracking } from "./tracking-registry";
 import { resetTrackingSignals } from "./tracking-signals";
 import { resetTrailerRegistry } from "./trailer-registry";
+import { resetTemplateStore } from "./template-store";
 import { resetTruckRegistry } from "./truck-registry";
 import { resetQualificationStore } from "./qualification-store";
 import { resetWorkforceStore } from "./workforce-store";
@@ -117,6 +118,10 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // invitation would offer access into an organization whose roster had already
   // been rebuilt. It holds no membership and no profile of its own: the seats
   // are the membership store's and the people are the driver registry's.
+  // BEFORE the access store, because an invitation may name the template it was
+  // built from. It holds no membership and no permission belonging to a person:
+  // a template is a saved SELECTION out of the one permission catalog.
+  { id: "permission_templates", holds: "Reusable, organization-scoped permission templates", module: "template-store.ts", reset: resetTemplateStore },
   { id: "access", holds: "Invitations, their state, and each person's attempt to accept one", module: "access-store.ts", reset: resetAccessStore },
   // AFTER the driver registry and the membership directory, because the
   // engagement fixtures point at both by id and a seed built over a stale

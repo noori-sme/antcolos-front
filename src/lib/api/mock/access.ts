@@ -11,9 +11,10 @@ import { restrictedReason } from "@/lib/documents/catalog";
 import { MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
 import {
   grantMembership, liveMembershipFor, rosterSnapshot, setMembershipStatus,
+  updateMembershipAccess,
 } from "@/lib/session/membership-store";
+import { memberById, membershipsIn, updateMemberAccess } from "./membership-directory";
 import { effectivePermissions } from "@/lib/permissions";
-import { MOCK_TEMPLATES } from "@/lib/session/fixtures";
 import {
   createOrResumeProfile, profileForUser, relationshipsForProfile,
 } from "./driver-registry";
@@ -29,6 +30,11 @@ import {
   runFor, runsForInvitation, withJoinedAudit,
 } from "./access-store";
 import { seedInvitations } from "./access-seed";
+import {
+  applyToMembershipImpl, createTemplateImpl, deleteTemplateImpl, duplicateTemplateImpl,
+  previewApplicationImpl, removeFromMembershipImpl, setTemplateArchivedImpl,
+  templatesImpl, updateTemplateImpl,
+} from "./access-templates";
 import { linkDriverProfileToEngagement } from "./workforce";
 import { nowIso } from "./time";
 import type { ServiceContext } from "../contracts/context";
@@ -514,7 +520,10 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
           organizationId: invitation.organizationId,
           status: "active",
           title: invitation.roleName,
-          templateIds: [],
+          // No template. The seat carries the invitation's OWN snapshot, so
+          // editing any template later cannot reach it — and there is no
+          // provenance to show, because none was used.
+          appliedTemplates: [],
           // The invitation's own snapshot, narrowed. Not a template, not an
           // owner seat, and nothing this module chose for itself.
           grants: driverSeatPermissions(invitation),
@@ -640,7 +649,8 @@ export const mockAccessService: AccessService = {
       organizationType: ctx.workspaceKind === "carrier_organization" ? "CARRIER" : "DISPATCH_AGENCY",
       kind: draft.kind,
       roleName: draft.roleName,
-      customRoleId: draft.customRoleId,
+      templateId: draft.templateId,
+      templateVersion: draft.templateVersion,
       engagementType: draft.engagementType,
       recipientName: draft.recipientName.trim(),
       recipientEmail: email,
@@ -697,6 +707,15 @@ export const mockAccessService: AccessService = {
     return { ...updated };
   },
 
+  templates: templatesImpl,
+  createTemplate: createTemplateImpl,
+  updateTemplate: updateTemplateImpl,
+  duplicateTemplate: duplicateTemplateImpl,
+  setTemplateArchived: setTemplateArchivedImpl,
+  deleteTemplate: deleteTemplateImpl,
+  previewApplication: previewApplicationImpl,
+  applyToMembership: applyToMembershipImpl,
+  removeFromMembership: removeFromMembershipImpl,
   roster: rosterImpl,
   endSeat: endSeatImpl,
   leaveOrganization: leaveOrganizationImpl,
@@ -1012,20 +1031,60 @@ function auditJoined(invitation: Invitation, identity: AcceptingIdentity) {
 export function rosterOf(organizationId: string): Membership[] {
   const seen = new Set<string>();
   const out: Membership[] = [];
+
+  /*
+   * ★ WHY THIS READS TWO PLACES, AND WHY THAT IS NOT TWO ROSTERS ★
+   * They hold different things. The membership directory is who is IN an
+   * organization — the colleagues, written as fixtures. The session store is
+   * the seats THIS TAB has, including any granted at runtime by somebody
+   * accepting an invitation, which the fixtures cannot know about.
+   *
+   * The session store is read FIRST and wins on id, because a seat it holds is
+   * the live one: a person who left, or whose access was just changed, is
+   * current there and stale in the fixture list. Reading the directory first
+   * would answer with the version of a seat that predates the change.
+   */
+  const push = (m: Membership) => {
+    if (m.organizationId !== organizationId) return;
+    if (m.status === "left") return;
+    if (seen.has(m.id)) return;
+    seen.add(m.id);
+    out.push(m);
+  };
+
   for (const scenario of ["demo", "newcomer"] as const) {
-    for (const m of rosterSnapshot(scenario).memberships) {
-      if (m.organizationId !== organizationId) continue;
-      if (m.status === "left") continue;
-      if (seen.has(m.id)) continue;
-      seen.add(m.id);
-      out.push(m);
-    }
+    for (const m of rosterSnapshot(scenario).memberships) push(m);
   }
+  for (const m of membershipsIn(organizationId)) push(m);
+
   return out;
 }
 
+/**
+ * Writes a change to whatever a seat carries, into the store that owns it.
+ *
+ * A seat is in the session store or in the directory, never both, and the two
+ * have different write primitives. This is the one place that knows which,
+ * so no caller has to — and neither primitive decides anything: both are
+ * handed a selection the Access service already clamped.
+ */
+export function writeSeatAccess(
+  seat: Membership,
+  patch: {
+    appliedTemplates?: Membership["appliedTemplates"];
+    grants?: Membership["grants"];
+    revocations?: Membership["revocations"];
+  },
+): Membership | undefined {
+  const inSession = (["demo", "newcomer"] as const).some((scenario) =>
+    rosterSnapshot(scenario).memberships.some((m) => m.id === seat.id));
+  return inSession
+    ? updateMembershipAccess(scenarioOf(seat), seat.id, patch)
+    : updateMemberAccess(seat.id, patch);
+}
+
 /** Which scenario roster a seat lives in. */
-function scenarioOf(seat: Membership): "demo" | "newcomer" {
+export function scenarioOf(seat: Membership): "demo" | "newcomer" {
   return rosterSnapshot("newcomer").memberships.some((m) => m.id === seat.id)
     ? "newcomer" : "demo";
 }
@@ -1039,7 +1098,7 @@ function permissionsOfSeat(
   membership: Membership,
   organization: Organization,
 ): ReadonlySet<PermissionKey> {
-  return effectivePermissions(membership, organization, MOCK_TEMPLATES);
+  return effectivePermissions(membership, organization);
 }
 
 async function rosterImpl(ctx: ServiceContext): Promise<RosterEntry[]> {
@@ -1049,6 +1108,13 @@ async function rosterImpl(ctx: ServiceContext): Promise<RosterEntry[]> {
   return rosterOf(ctx.organizationId).map((membership) => ({
     membership,
     account: accountOfSeat(membership.userId),
+    // The account directory first, then the membership directory, then the id.
+    // Never the `title`: "Dispatcher" is a job, not a person, and two of them
+    // on one screen are indistinguishable.
+    displayName:
+      accountOfSeat(membership.userId)?.displayName
+      ?? memberById(membership.id)?.displayName
+      ?? membership.userId,
     // Derived here, through the system that already exists. No screen computes
     // a permission, and no second answer to "what may this seat do" is made.
     permissions: organization

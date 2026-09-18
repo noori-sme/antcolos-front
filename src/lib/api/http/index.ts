@@ -336,6 +336,37 @@ export const httpServices: AntcolosServices = {
     preview: notImplemented("access.preview"),
     accept: notImplemented("access.accept"),
     decline: notImplemented("access.decline"),
+    /*
+     * ███ TEMPLATES: WHAT THE SERVER OWES, BEYOND SERIALIZING THESE ███
+     *
+     * Every refusal the mock returns is computed in a browser out of a set the
+     * browser assembled, so none of it survives the trip. On this side the
+     * server must, from the authenticated session and its own records:
+     *
+     *   • Scope every call to the acting membership's organization. A template
+     *     id from elsewhere answers "not found", never "forbidden" — the second
+     *     one confirms the template exists.
+     *   • Derive the acting membership's permissions itself and refuse a saved
+     *     selection containing anything outside them, and clamp an application
+     *     to the same set. Both, not one: the save guard stops a template being
+     *     written that its author could not grant, the apply clamp stops one
+     *     being USED to hand out more than the applier holds.
+     *   • Refuse a self-application outright.
+     *   • Keep the applied snapshot immutable. `updateTemplate` must not touch a
+     *     single existing membership; if that is one UPDATE statement away in
+     *     the schema, the schema is wrong.
+     *   • Write an audit event for every one of these, refusals included, with
+     *     the template, its version, the seat, and the before/after counts.
+     */
+    templates: notImplemented("access.templates"),
+    createTemplate: notImplemented("access.createTemplate"),
+    updateTemplate: notImplemented("access.updateTemplate"),
+    duplicateTemplate: notImplemented("access.duplicateTemplate"),
+    setTemplateArchived: notImplemented("access.setTemplateArchived"),
+    deleteTemplate: notImplemented("access.deleteTemplate"),
+    previewApplication: notImplemented("access.previewApplication"),
+    applyToMembership: notImplemented("access.applyToMembership"),
+    removeFromMembership: notImplemented("access.removeFromMembership"),
     roster: notImplemented("access.roster"),
     endSeat: notImplemented("access.endSeat"),
     leaveOrganization: notImplemented("access.leaveOrganization"),

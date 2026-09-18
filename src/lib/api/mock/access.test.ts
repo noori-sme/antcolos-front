@@ -3,7 +3,7 @@ import {
   RESTRICTED_QUALIFICATION_CATEGORIES, type PermissionKey,
 } from "@/types";
 import { OWN_RECORDS_SCOPE } from "@/lib/permissions/scope";
-import { MOCK_TEMPLATES, MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
+import { MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
 import { effectivePermissions } from "@/lib/permissions/effective";
 import {
   liveMembershipFor, resetRoster, rosterSnapshot,
@@ -225,13 +225,11 @@ describe("the seat is the smallest one that opens a portal", () => {
     const permissions = effectivePermissions(
       {
         id: "mem_probe", userId: "usr_newcomer", organizationId: NORTHLINE.id,
-        status: "active", title: "Driver", templateIds: [],
+        status: "active", title: "Driver", appliedTemplates: [],
         grants: invitation.permissions, revocations: [],
         scope: OWN_RECORDS_SCOPE, isOwner: false, joinedAt: "2026-09-17T00:00:00.000Z",
       },
-      NORTHLINE,
-      MOCK_TEMPLATES,
-    );
+      NORTHLINE);
 
     expect(permissions.has("loads:view")).toBe(true);
     for (const forbidden of [
