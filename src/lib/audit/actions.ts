@@ -92,6 +92,8 @@ export const AUDIT_ACTIONS: readonly AuditActionMeta[] = [
   { key: "workforce.onboarding_step_waived", label: "Onboarding step waived", module: "workforce", permissionSensitive: true },
   { key: "workforce.access_step_requested", label: "Access step requested", module: "workforce", permissionSensitive: true },
   { key: "workforce.offboarding_step_recorded", label: "Offboarding step recorded", module: "workforce" },
+  // The judgement an import is not allowed to make for itself.
+  { key: "workforce.import_identity_resolved", label: "Imported row resolved to a person", module: "workforce", highValue: true },
 
   // A carrier's custody of evidence it relied on. Adoption and disposal are
   // high-value: one creates a retention obligation, the other discharges it.

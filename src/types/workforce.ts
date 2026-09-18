@@ -158,6 +158,16 @@ export type WorkforceSourceKind =
   | "invitation"
   /** An existing driver–carrier relationship being described in HR terms. */
   | "existing_carrier_relationship"
+  /**
+   * A roster file the carrier supplied, describing people it already employs.
+   *
+   * Distinct from `manual_entry` because the honest answer to "where did this
+   * record come from" is a file nobody has checked, and because everything it
+   * asserts — a start date most of all — stays the carrier's claim rather than
+   * something Antcolos observed. The claim itself keeps its own provenance; see
+   * `ImportedAssertion`.
+   */
+  | "roster_import"
   /** Somebody typed it in, because nothing else could supply it. */
   | "manual_entry";
 
@@ -165,6 +175,7 @@ export const WORKFORCE_SOURCE_LABEL: Record<WorkforceSourceKind, string> = {
   document_share: "From documents the person shared",
   invitation: "From an invitation",
   existing_carrier_relationship: "From an existing driver relationship",
+  roster_import: "Imported from a roster file",
   manual_entry: "Entered by hand",
 };
 

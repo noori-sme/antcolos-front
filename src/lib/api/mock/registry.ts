@@ -19,6 +19,7 @@ import { driverWorkflowStore } from "./driver-workflow-store";
 import { resetEldRegistry } from "./eld-registry";
 import { resetFleetTelemetry } from "./fleet-telemetry";
 import { resetFuelStore } from "./fuel-store";
+import { resetImportStore } from "./import-store";
 import { resetInsuranceRegistry } from "./insurance-registry";
 import { resetInvoiceRegistry } from "./invoice-registry";
 import { resetListings } from "./listing-registry";
@@ -126,6 +127,12 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // AFTER the document store, whose versions its records pin. It holds no file
   // and no second document identity — only pinned references into that store.
   { id: "qualification", holds: "Carrier qualification-file custody and retention records", module: "qualification-store.ts", reset: resetQualificationStore },
+  // AFTER the driver registry and the workforce store, because a staged claim
+  // is planned against the records THOSE hold and a plan re-derived over a
+  // stale roster would offer matches to people who are not there. It holds no
+  // person, no truck and no organization of its own — only what a carrier
+  // asserted, and what somebody decided about it.
+  { id: "import", holds: "Import batches, their immutable claims, the current plan and each run", module: "import-store.ts", reset: resetImportStore },
 
   /* -- The canonical equipment meter ------------------------------------- */
   // Before the operational layers, because maintenance and fleet both PROJECT
