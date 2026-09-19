@@ -15,6 +15,7 @@ import {
   acceptOnTheTable, recordBrokerRound, recordOurOffer, sampleBrokerReply, walkAway,
 } from "@/lib/api/mock/negotiation";
 import { bookNegotiation, canBook, recordDriverConsent } from "@/lib/api/mock/booking";
+import { InfoTip } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -70,15 +71,13 @@ export function NegotiationPanel({
           <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
             <Handshake className="size-4 text-fg-subtle" aria-hidden />
             Talking to brokers
+            <InfoTip text="Every number either side has put on the table, in order. Nothing is emailed from here — a reply is recorded by a person." />
             {live.length > 0 ? (
               <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
                 {live.length}
               </span>
             ) : null}
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Every number either side has put on the table, in order. Nothing is emailed from here.
-          </p>
         </div>
       </div>
 
@@ -90,10 +89,9 @@ export function NegotiationPanel({
 
       {negotiations.length === 0 ? (
         <div className="mt-3 rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-          <p className="text-[0.8125rem] font-medium text-fg">No conversation is open</p>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Pick a load above and ask for it. What you ask, what they say back and what you settle
-            on all stay here.
+          <p className="flex items-center justify-center gap-1.5 text-[0.8125rem] font-medium text-fg">
+            None open
+            <InfoTip text="Use Broker on a load above. What you ask, what they say back and what you settle on all stay here." />
           </p>
         </div>
       ) : (

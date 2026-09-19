@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import type { BookingRecord, RateConWorkflow } from "@/types";
 import { RATECON_STATUS_LABEL } from "@/types";
 import { relativeTime } from "@/lib/utils/format";
+import { InfoTip, Metric } from "@/features/mt-loop/tip";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
 import { progressOf, receiveRateConfirmation } from "@/lib/api/mock/rate-confirmation";
 import { PROJECTION_STATE_LABEL } from "@/types";
@@ -41,10 +42,20 @@ export function RateConSummary({ rateCon }: { rateCon: RateConWorkflow }) {
               </Badge>
             ) : null}
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            {done
-              ? `Signed as ${rateCon.carrierName} and recorded as returned to ${rateCon.brokerName}. The original is kept unchanged.`
-              : `From ${rateCon.brokerName}, ${relativeTime(rateCon.email.receivedAt)}. ${progress.reviewed} of ${progress.required} fields checked — nothing is signed until all of them are.`}
+          {/* Broker, age, progress — three facts, not two sentences. */}
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Metric label="From" value={rateCon.brokerName} />
+            <Metric label="Age" value={relativeTime(rateCon.email.receivedAt)} />
+            <Metric
+              label="Checked"
+              value={`${progress.reviewed}/${progress.required}`}
+              tone={progress.reviewed === progress.required ? "good" : "warn"}
+            />
+            <InfoTip
+              text={done
+                ? `Signed as ${rateCon.carrierName} on the broker's own document — their page, unchanged, with a signature block added. Antcolos never returns a rewritten document.`
+                : "Nothing is signed until every required field has been looked at by a person."}
+            />
           </p>
         </div>
         <Button variant={done ? "secondary" : "primary"} size="sm" asChild>

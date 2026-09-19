@@ -2,7 +2,7 @@
 
 import { ArrowRight, Check, FileSignature, ShieldCheck, TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,13 +12,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type {
   DistributionOutcome, ExtractedField, RateConFieldKey, RateConWorkflow,
 } from "@/types";
-import { PROJECTION_STATE_LABEL, RATECON_STATUS_LABEL } from "@/types";
+import {
+  PROJECTION_STATE_LABEL, RATECON_FIELD_LABEL, RATECON_STATUS_LABEL,
+} from "@/types";
 import { relativeTime } from "@/lib/utils/format";
 import { useMtLoopContext } from "@/features/mt-loop/use-mt-loop";
 import { useOpportunityRefresh } from "@/features/opportunities/use-opportunity-refresh";
 import {
-  confirmAndSign, correctField, progressOf, rejectRateConfirmation, verifyField,
+  confirmAndSign, correctField, fieldsByPriority, progressOf,
+  rejectRateConfirmation, returnToBroker, verifyField,
 } from "@/lib/api/mock/rate-confirmation";
+import { InfoTip } from "@/features/mt-loop/tip";
 import { DocumentView } from "./document-view";
 import { PROJECTION_TONE } from "./projection-tone";
 import { useRateCon } from "./use-rate-con";
@@ -99,6 +103,38 @@ export function RateConReviewScreen({ rateConId }: { rateConId: string }) {
   const current = workflow.fields.find((f) => f.key === (currentKey ?? progress.nextFieldKey));
   const done = workflow.status === "returned" || workflow.status === "rejected";
   const shown = showSigned && workflow.signed ? workflow.signed : workflow.original;
+  const conflicts = workflow.fields.filter((f) => f.disagrees);
+  /*
+   * ★ AN ANSWERED CONFLICT IS STILL A CONFLICT ★
+   * Saying "theirs is right" on a rate that is $50 under what was agreed does
+   * not make the document match the booking — it records that a person looked.
+   * The banner therefore never shrinks as fields are checked; each line says
+   * whether it has been answered yet, and the money is still on the screen.
+   */
+  const openConflicts = conflicts.filter((f) => f.status === "unreviewed");
+
+  /*
+   * ★ ENTER ADVANCES ★
+   * Nineteen fields, and every one used to be a reach for the mouse away from
+   * the next. A rate confirmation is a keyboard job: read the value, press
+   * Enter, read the next one.
+   *
+   * While correcting, Enter saves the correction instead — that is what the
+   * person is in the middle of doing. It is ignored inside any other text box
+   * and while a request is in flight, so a held key cannot approve three
+   * fields nobody looked at.
+   */
+  const rateConId_ = workflow.rateConId;
+  function approveOrSave() {
+    if (busy || !ctx || !current || done) return;
+    if (correcting) {
+      if (!draftValue.trim()) return;
+      void act(() => correctField(rateConId_, current.key, draftValue, ctx, note));
+    } else {
+      void act(() => verifyField(rateConId_, current.key, ctx));
+    }
+    moveToNext();
+  }
 
   /** Unpin, so the screen goes back to following the queue. */
   function moveToNext() {
@@ -109,6 +145,7 @@ export function RateConReviewScreen({ rateConId }: { rateConId: string }) {
 
   return (
     <div className="space-y-section">
+      <EnterAdvances onEnter={approveOrSave} active={Boolean(ctx) && !done && Boolean(current)} />
       <PageHeader
         title={`Rate confirmation — ${workflow.loadReference}`}
         description={`From ${workflow.brokerName}, for ${workflow.carrierName}. Checked against what was booked.`}
@@ -148,7 +185,7 @@ export function RateConReviewScreen({ rateConId }: { rateConId: string }) {
           </div>
           <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
             {shown.kind === "signed"
-              ? "A separate document. The original is kept exactly as it arrived."
+              ? "The broker's own document with a signature block added. Their pages are carried across unchanged; the received original is kept as it arrived."
               : "Click anything on the page to jump to that field."}
           </p>
           <div className="mt-3">
@@ -174,11 +211,71 @@ export function RateConReviewScreen({ rateConId }: { rateConId: string }) {
               <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
                 {progress.reviewed}/{progress.required}
               </span>
+              <span className="flex-1" />
+              <kbd className="rounded-sm border border-border px-1.5 py-0.5 text-[0.625rem] font-normal text-fg-subtle">
+                Enter
+              </kbd>
+              <InfoTip text="Enter approves the field being checked and moves to the next one. While you are correcting a value, Enter saves the correction." />
             </h2>
-            <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-              Read by a mock reader over a document Antcolos drew. Every value is checked against
-              what was booked, and {progress.disagreements === 0 ? "nothing disagrees" : `${progress.disagreements} disagree`}.
-            </p>
+
+
+            {/*
+              ★ THE MIDDLE ANSWER ★
+              Two buttons used to exist here: sign it, or kill the load. A
+              document that says $2,200 where $2,500 was agreed is usually
+              neither — it is a correction, and a dispatcher without this
+              banner either accepted the wrong number or blew up a booked load.
+            */}
+            {conflicts.length > 0 && !done ? (
+              <div className="mt-3 rounded-md border border-st-warning/50 bg-st-warning-bg/35 px-3.5 py-2.5">
+                <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-semibold text-fg">
+                  <TriangleAlert className="size-4 shrink-0 text-st-warning" aria-hidden />
+                  {conflicts.length} {conflicts.length === 1 ? "line does" : "lines do"} not match the booking
+                  {openConflicts.length === 0 ? (
+                    <Badge tone="neutral">all answered</Badge>
+                  ) : (
+                    <Badge tone="warning">{openConflicts.length} unanswered</Badge>
+                  )}
+                </p>
+                <ul className="mt-1.5 space-y-0.5">
+                  {conflicts.map((f) => (
+                    <li key={f.key} className="flex flex-wrap items-baseline gap-x-2 text-[0.75rem]">
+                      <span className="text-[0.625rem] tracking-wide text-fg-subtle uppercase">
+                        {RATECON_FIELD_LABEL[f.key]}
+                      </span>
+                      <span className="font-medium tabular-nums text-fg">{f.expected ?? "not recorded"}</span>
+                      <span aria-hidden className="text-fg-subtle">→</span>
+                      <span className="font-medium tabular-nums text-st-warning">{f.value}</span>
+                      {f.status === "unreviewed" ? null : (
+                        <span className="text-[0.625rem] tracking-wide text-fg-subtle uppercase">
+                          {f.status === "corrected" ? "corrected" : "kept theirs"}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void act(() => returnToBroker(workflow.rateConId, ctx!))}
+                  >
+                    Send back for correction
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRejecting(true)}>
+                    Reject the load
+                  </Button>
+                  <span className="flex-1" />
+                  <InfoTip text="Sending it back returns the broker's own document with these lines marked, attached to a message quoting both numbers. The load stands and the truck keeps holding. Rejecting ends it." />
+                </div>
+                {workflow.sentBackAt ? (
+                  <p className="mt-1.5 text-[0.6875rem] text-fg-muted">
+                    Already sent back {relativeTime(workflow.sentBackAt)}.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
             {!current && !done ? (
               <p className="mt-3 rounded-md border border-st-success/40 bg-surface-sunken px-3.5 py-2.5 text-[0.8125rem] leading-relaxed text-fg">
@@ -208,8 +305,15 @@ export function RateConReviewScreen({ rateConId }: { rateConId: string }) {
               />
             ) : null}
 
+            {/*
+              ★ WORST FIRST, NOT PAGE ORDER ★
+              A rate read at 82% buried under a street address read at 61% is
+              how a wrong number gets signed. The list is ranked: anything that
+              disagrees with the booking, then the fields that cost money or
+              miss a dock, then anything the reader was unsure of.
+            */}
             <ul className="mt-3 space-y-1">
-              {workflow.fields.map((f) => (
+              {fieldsByPriority(workflow).map((f) => (
                 <FieldRow
                   key={f.key}
                   field={f}
@@ -629,4 +733,40 @@ function AuditPanel({ workflow }: { workflow: RateConWorkflow }) {
       </ol>
     </section>
   );
+}
+
+/**
+ * Enter, from anywhere on the screen.
+ *
+ * ★ WHY THIS IS NOT AN onKeyDown ON THE PAGE ★
+ * It was, and it did nothing: a React key handler only fires for events inside
+ * the element, and after a page load the focus is on the document body. A
+ * dispatcher who opens a rate confirmation and presses Enter is not going to
+ * click the page first, so the listener goes on the document.
+ *
+ * It stands aside wherever Enter already means something else — inside a text
+ * box that is not the correction field, and on a focused button or link, where
+ * the browser is about to press it.
+ */
+function EnterAdvances({ onEnter, active }: { onEnter: () => void; active: boolean }) {
+  const latest = useRef(onEnter);
+  useEffect(() => {
+    latest.current = onEnter;
+  });
+  useEffect(() => {
+    if (!active) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Enter" || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "TEXTAREA" || tag === "BUTTON" || tag === "A" || tag === "SELECT") return;
+      if (tag === "INPUT" && el?.getAttribute("data-ratecon") === null) return;
+      if (el?.isContentEditable) return;
+      e.preventDefault();
+      latest.current();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [active]);
+  return null;
 }

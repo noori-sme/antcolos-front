@@ -1,3 +1,4 @@
+import type { DriverReviewStatus } from "./driver-review";
 import type { Cents, IsoDateTime } from "./common";
 import type { EquipmentType } from "./load";
 
@@ -515,7 +516,14 @@ export interface MatchDriverState {
   reviewRequired: boolean;
   /** True when this may be sent right now. */
   canSend: boolean;
-  status?: string;
+  /**
+   * Where the review got to, when one has been sent.
+   *
+   * Typed rather than a bare string: this is assigned straight from
+   * `DriverGate.status`, and a screen labelling it had to widen a
+   * `Record<DriverReviewStatus, string>` lookup to do so.
+   */
+  status?: DriverReviewStatus;
   driverName?: string;
   /** Why the negotiation is waiting, or where the review got to. */
   note?: string;

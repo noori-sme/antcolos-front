@@ -1,19 +1,21 @@
 "use client";
 
-import { Radar, RefreshCw, Search, Unplug } from "lucide-react";
+import { ArrowRight, Handshake, Radar, RefreshCw, Search, Unplug } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   CONNECTION_IS_PLANNED, CONNECTION_LABEL, SEARCH_STATUS_LABEL, SOURCE_LABEL,
-  type SearchSession,
+  type MatchWithListing, type SearchSession,
 } from "@/types";
 import {
   closeSearch, pauseSearch, resumeSearch, searchAgain, startSearch, widenSearch,
   type SearchOutcome,
 } from "@/lib/api/mock/search-session";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
+import { TalkToBrokerDialog } from "./talk-to-broker-dialog";
+import { InfoTip, Metric } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,13 +28,25 @@ import { cn } from "@/lib/utils";
  * source says how it reaches Antcolos and whether that is built.
  */
 export function SearchPanel({
-  dispatchCycleId, session, ctx, onChanged,
+  dispatchCycleId, session, top = [], ctx, onChanged,
 }: {
   dispatchCycleId: string;
   session?: SearchSession;
+  /**
+   * The best few this search turned up.
+   *
+   * ★ WHY THE SEARCH STAGE SHOWS LOADS AT ALL ★
+   * It lists SOURCES, which answers "did anybody look?" and not "what did they
+   * find?". A dispatcher who has just watched a search finish wants the second
+   * question, and making them scroll to the next stage to ring a broker about
+   * the top result is a step that exists for no reason. Three rows, and the
+   * full list with its working is still one stage down.
+   */
+  top?: MatchWithListing[];
   ctx: MtLoopContext | null;
   onChanged: () => void;
 }) {
+  const [talkTo, setTalkTo] = useState<MatchWithListing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -72,17 +86,14 @@ export function SearchPanel({
           <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
             <Radar className="size-4 text-fg-subtle" aria-hidden />
             Load search
+            <InfoTip text="Every connected source, what each one had, and what was already in the inbox. Two are not built yet and say so." />
             {session ? (
               <Badge tone={session.status === "running" ? "info" : session.status === "paused" ? "warning" : "neutral"}>
                 {SEARCH_STATUS_LABEL[session.status]}
               </Badge>
             ) : null}
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            {session
-              ? "Every source that was searched for this truck, and what each one had."
-              : "Nothing is looking for a load for this truck yet."}
-          </p>
+
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -261,14 +272,52 @@ export function SearchPanel({
           </ol>
         </>
       ) : (
-        <div className="mt-3 rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-          <p className="text-[0.8125rem] font-medium text-fg">No search running</p>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Starting one looks at every connected source and puts what it finds in the Opportunity
-            Inbox, against this truck&rsquo;s cycle.
-          </p>
-        </div>
+        <p className="mt-3 flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-4 text-[0.8125rem] font-medium text-fg">
+          Not running
+          <InfoTip text="Starting one looks at every connected source and puts what it finds in the Opportunity Inbox, against this truck's cycle." />
+        </p>
       )}
+
+      {/* The best few, with the one action a finished search leads to. */}
+      {top.length > 0 ? (
+        <ul className="mt-3 flex flex-col gap-1.5 border-t border-border pt-3">
+          {top.slice(0, 3).map((row) => (
+            <li
+              key={row.match.matchId}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-sunken px-2.5 py-1.5"
+            >
+              <span className="inline-flex min-w-0 items-center gap-1.5 text-[0.75rem] font-medium text-fg">
+                {row.listing.origin.city}, {row.listing.origin.state}
+                <ArrowRight className="size-3 shrink-0 text-fg-subtle" aria-hidden />
+                {row.listing.destination.city}, {row.listing.destination.state}
+              </span>
+              {row.listing.offeredRateCents !== undefined ? (
+                <Metric
+                  label="Rate"
+                  value={`$${(row.listing.offeredRateCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                  tone="good"
+                />
+              ) : null}
+              <Metric label="Empty" value={`${row.match.deadheadMiles} mi`} />
+              <Metric label="Score" value={String(row.match.score.total)} />
+              <span className="flex-1" />
+              <Button variant="secondary" size="sm" onClick={() => setTalkTo(row)}>
+                <Handshake className="size-3.5" aria-hidden />
+                Broker
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {talkTo ? (
+        <TalkToBrokerDialog
+          row={talkTo}
+          ctx={ctx}
+          onClose={() => setTalkTo(null)}
+          onChanged={onChanged}
+        />
+      ) : null}
     </section>
   );
 }

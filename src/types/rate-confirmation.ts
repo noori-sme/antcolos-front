@@ -559,6 +559,8 @@ export type RateConAuditAction =
   | "confirmed"
   | "signed"
   | "returned"
+  /** Sent back unsigned for a correction. The load stands; the paper does not. */
+  | "returned_for_correction"
   | "distributed"
   | "rejected";
 
@@ -640,6 +642,17 @@ export interface RateConWorkflow {
 
   /** The message that carried the signed copy back. */
   returnMessageId?: string;
+  /**
+   * Sent back unsigned because it disagreed with the booking.
+   *
+   * ★ NOT A REJECTION, AND NOT A SIGNATURE ★
+   * The load stands and the truck is still holding; what is refused is this
+   * PIECE OF PAPER until a number on it is fixed. Kept as its own pair of
+   * fields rather than a third status, because the workflow genuinely is still
+   * `reviewing` — a corrected copy arrives and the same review continues.
+   */
+  sentBackAt?: IsoDateTime;
+  sentBackMessageId?: string;
   distribution: DistributionOutcome[];
   audit: RateConAuditEntry[];
   createdAt: IsoDateTime;

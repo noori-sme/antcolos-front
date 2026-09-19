@@ -155,11 +155,36 @@ export interface OutgoingOpportunity {
 
   /** What the dispatcher wants to say about it. */
   note?: string;
+  /**
+   * How it reached them.
+   *
+   * ★ RECORDED BECAUSE THE ANSWER DEPENDS ON IT ★
+   * A load read out over the phone and a load pushed to an app are answered
+   * differently and evidenced differently: the first is a dispatcher writing
+   * down what somebody said, the second is the driver's own tap. A review that
+   * did not say which cannot be argued with later.
+   */
+  channel: DriverSendChannel;
   sentAt: IsoDateTime;
   sentByName: string;
   /** Said plainly on the driver's screen as well as ours. */
   isMockDelivery: true;
 }
+
+/**
+ * How a load is put in front of a driver.
+ *
+ * `phone` is not a lesser channel — for a lot of carriers it IS the channel,
+ * and a dispatcher reading a load down the phone needs the same facts in front
+ * of them, filtered the same way, as the ones that would have been sent.
+ */
+export type DriverSendChannel = "app" | "sms" | "phone";
+
+export const DRIVER_SEND_CHANNEL_LABEL: Record<DriverSendChannel, string> = {
+  app: "Driver app",
+  sms: "Text message",
+  phone: "Read over the phone",
+};
 
 /** A progress update on a negotiation, while the driver is waiting. */
 export interface OutgoingProgressUpdate {

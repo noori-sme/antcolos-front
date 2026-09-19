@@ -45,7 +45,16 @@ export type MessageTemplateKey =
   /** After the load is off. Short, and worth sending. */
   | "thank_you"
   /** The rate confirmation, checked and signed, going back. */
-  | "signed_rate_confirmation";
+  | "signed_rate_confirmation"
+  /**
+   * The rate confirmation disagrees with what was booked, and is going back
+   * unsigned with the conflicting lines named.
+   *
+   * Its own template rather than a note on the signed one, because the two are
+   * opposite acts: one commits the truck, the other refuses to until a number
+   * is fixed. A dispatcher must never reach for the wrong one.
+   */
+  | "ratecon_discrepancy";
 
 export const TEMPLATE_LABEL: Record<MessageTemplateKey, string> = {
   load_inquiry: "Load inquiry",
@@ -56,6 +65,7 @@ export const TEMPLATE_LABEL: Record<MessageTemplateKey, string> = {
   delivery_update: "Delivery update",
   thank_you: "Thank you after delivery",
   signed_rate_confirmation: "Returning a signed rate confirmation",
+  ratecon_discrepancy: "Rate confirmation does not match — sending it back",
 };
 
 /**
@@ -71,6 +81,8 @@ export type TemplateRequirement =
   | "driver"
   | "rate"
   | "signed_document"
+  /** At least one field where the document and the booking disagree. */
+  | "discrepancies"
   | "delay_reason"
   | "eta";
 
@@ -155,6 +167,13 @@ export interface MessageExtras {
   /** signed_rate_confirmation */
   signedDocumentName?: string;
   correctionsMade?: string[];
+  /**
+   * ratecon_discrepancy: each line the document and the booking disagree on.
+   *
+   * Carried as the field's label, what was agreed and what the document says,
+   * so the message quotes the conflict rather than describing it.
+   */
+  discrepancies?: Array<{ label: string; agreed: string; onDocument: string }>;
   /** truck_covered */
   whatHappened?: string;
 }
@@ -219,6 +238,17 @@ export interface MessageAttachment {
   fileName: string;
   /** What it is, for a person scanning the thread. */
   label: string;
+  /**
+   * Blocks on that document to mark up for the reader.
+   *
+   * ★ THE ORIGINAL, ANNOTATED — NEVER A REWRITE ★
+   * Set when a document goes back with something wrong on it: these are the
+   * ids of the values in dispute, so the broker's own page can be shown with
+   * exactly those lines highlighted. Antcolos does not produce a corrected
+   * document and send that instead, because six weeks later the argument is
+   * about what the broker actually wrote.
+   */
+  highlightBlockIds?: string[];
 }
 
 export interface OutreachMessage {

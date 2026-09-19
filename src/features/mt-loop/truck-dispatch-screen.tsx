@@ -148,6 +148,8 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
           <SearchPanel
             dispatchCycleId={dispatchCycleId}
             session={opportunities.data?.session}
+            // So a finished search leads somewhere without leaving the stage.
+            top={opportunities.data?.top ?? []}
             ctx={ctx}
             onChanged={refreshEverything}
           />
@@ -212,15 +214,34 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
           </p>
         );
       case "ratecon":
-        return opportunities.data?.rateCon ? (
-          <RateConSummary rateCon={opportunities.data.rateCon} />
-        ) : opportunities.data?.booking ? (
-          <RateConAwaiting
-            booking={opportunities.data.booking}
-            ctx={ctx}
-            onChanged={refreshEverything}
-          />
-        ) : null;
+        if (opportunities.data?.rateCon) {
+          return <RateConSummary rateCon={opportunities.data.rateCon} />;
+        }
+        if (opportunities.data?.booking) {
+          return (
+            <RateConAwaiting
+              booking={opportunities.data.booking}
+              ctx={ctx}
+              onChanged={refreshEverything}
+            />
+          );
+        }
+        /*
+         * ★ A STAGE A PERSON OPENED NEVER RENDERS NOTHING ★
+         * A truck can be carrying a load this workspace did not book through
+         * Antcolos — the load is on the cycle, the booking record is not. The
+         * rate confirmation for it is somebody's filing cabinet, not ours, and
+         * saying so is the answer. Drawing an empty panel was the bug: the
+         * stage looked broken rather than out of scope.
+         */
+        return (
+          <p className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-border px-3.5 py-2 text-[0.8125rem] text-fg-muted">
+            {card?.loadReference
+              ? `${card?.loadReference} was not booked here`
+              : "Not booked here"}
+            <InfoTip text="This truck is on a load that did not come through Antcolos, so there is no booking for a rate confirmation to hang off. Nothing about the paperwork for it is known here." />
+          </p>
+        );
     }
   }
 

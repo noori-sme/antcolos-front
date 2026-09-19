@@ -1,6 +1,7 @@
 import type {
   DriverDecisionKind, DriverGate, DriverReview, DriverReviewStatus,
-  EngagementType, OutgoingOpportunity, OutgoingProgressUpdate,
+  DriverSendChannel, EffectiveVisibility, EngagementType, MatchWithListing,
+  OutgoingOpportunity, OutgoingProgressUpdate,
 } from "@/types";
 import { driverWorkflowPort } from "../contracts/driver-workflow";
 import { carrierViewSync } from "./carrier-registry";
@@ -9,6 +10,7 @@ import { mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
 import { allMatches, estimateProfit } from "./opportunity-matching";
 import { effectiveVisibility, redact, sendsAnyMoney } from "./driver-visibility";
+import type { FullOpportunityFacts, RedactedFacts } from "./driver-visibility";
 import { recordDriverAnswer } from "./driver-workflow-adapter";
 import { truckContextFrom } from "./truck-registry";
 // The shared simulated round trip. A seeder can suppress it; a person never does.
@@ -226,6 +228,7 @@ export async function sendOpportunityToDriver(
   matchId: string,
   ctx: MtLoopContext,
   note?: string,
+  channel: DriverSendChannel = "app",
 ): Promise<ReviewOutcome> {
   await sleep(LATENCY_MS);
   if (!mayAct(ctx)) return { status: "not_permitted" };
@@ -254,31 +257,7 @@ export async function sendOpportunityToDriver(
   const visibility = effectiveVisibility(carrier.organizationId, engagementType, ctx);
 
   const listing = row.listing;
-  const profit = estimateProfit(listing, row.match.deadheadMiles);
-  const facts = {
-    originCity: listing.origin.city,
-    originState: listing.origin.state,
-    destinationCity: listing.destination.city,
-    destinationState: listing.destination.state,
-    equipmentLabel: listing.equipment.replace(/_/g, " "),
-    pickupAt: listing.pickupAt,
-    deliverBy: listing.deliverBy,
-    loadedMiles: row.match.loadedMiles,
-    deadheadMiles: row.match.deadheadMiles,
-    commodity: listing.commodity,
-    weightLbs: listing.weightLbs,
-    brokerName: listing.broker.name,
-    brokerContact: [listing.broker.contactName, listing.broker.phone].filter(Boolean).join(" · ") || undefined,
-    totalRateCents: listing.offeredRateCents,
-    ratePerMileCents: listing.ratePerMileCents,
-    estimatedProfitCents: profit,
-    // A company driver's own pay is theirs to see even where the load's rate is
-    // not. Estimated from the load, and labelled an estimate wherever shown.
-    driverPayEstimateCents: listing.offeredRateCents === undefined
-      ? undefined
-      : Math.round(listing.offeredRateCents * (engagementType === "owner_operator" ? 0.88 : 0.27)),
-    accessorialTerms: undefined,
-  };
+  const facts = factsFor(row, engagementType);
 
   const reviewId = rowId("rev");
   const payload: OutgoingOpportunity = {
@@ -290,6 +269,7 @@ export async function sendOpportunityToDriver(
     truckUnit: row.match.truckUnit,
     ...redact(facts, visibility),
     note: note?.trim() || undefined,
+    channel,
     sentAt: nowIso(),
     sentByName: ctx.actor.displayNameSnapshot,
     isMockDelivery: true,
@@ -320,6 +300,97 @@ export async function sendOpportunityToDriver(
   };
   bucket(ctx.organizationId).push(review);
   return { status: "ok", review };
+}
+
+/**
+ * Everything Dispatch knows about one opportunity, before the policy applies.
+ *
+ * ★ ONE BUILDER, SO A PREVIEW CANNOT LIE ★
+ * A dialog that shows a dispatcher "this is what the driver will get" and then
+ * sends something assembled somewhere else is worse than no preview at all.
+ * `previewForDriver` and `sendOpportunityToDriver` both come through here, so
+ * what is shown is what goes.
+ */
+function factsFor(row: MatchWithListing, engagementType: EngagementType): FullOpportunityFacts {
+  const listing = row.listing;
+  return {
+    originCity: listing.origin.city,
+    originState: listing.origin.state,
+    destinationCity: listing.destination.city,
+    destinationState: listing.destination.state,
+    equipmentLabel: listing.equipment.replace(/_/g, " "),
+    pickupAt: listing.pickupAt,
+    deliverBy: listing.deliverBy,
+    loadedMiles: row.match.loadedMiles,
+    deadheadMiles: row.match.deadheadMiles,
+    commodity: listing.commodity,
+    weightLbs: listing.weightLbs,
+    brokerName: listing.broker.name,
+    brokerContact: [listing.broker.contactName, listing.broker.phone].filter(Boolean).join(" · ") || undefined,
+    totalRateCents: listing.offeredRateCents,
+    ratePerMileCents: listing.ratePerMileCents,
+    estimatedProfitCents: estimateProfit(listing, row.match.deadheadMiles),
+    // A company driver's own pay is theirs to see even where the load's rate is
+    // not. Estimated from the load, and labelled an estimate wherever shown.
+    driverPayEstimateCents: listing.offeredRateCents === undefined
+      ? undefined
+      : Math.round(listing.offeredRateCents * (engagementType === "owner_operator" ? 0.88 : 0.27)),
+    accessorialTerms: undefined,
+  };
+}
+
+export interface DriverSendPreview {
+  driverName: string;
+  driverPhone?: string;
+  engagementType: EngagementType;
+  carrierName: string;
+  truckUnit: string;
+  /** Exactly what would travel: the facts with the policy already applied. */
+  facts: RedactedFacts;
+  /** What was removed, and why. Shown so a dispatcher is not surprised. */
+  visibility: EffectiveVisibility;
+  /** The whole truth, for the dispatcher's own eyes on a phone call. */
+  full: FullOpportunityFacts;
+}
+
+/**
+ * What a driver would be told about this load, before anybody sends it.
+ *
+ * ★ TWO AUDIENCES, ONE CALL ★
+ * `facts` is the driver's version — redacted by the carrier's policy and
+ * narrowed again by what the sender may themselves see. `full` is the
+ * dispatcher's, for reading off during a phone call. They are returned
+ * together and never confused: only `facts` is ever sent.
+ */
+export function previewForDriver(
+  matchId: string,
+  ctx: MtLoopContext,
+): DriverSendPreview | undefined {
+  if (!mayAct(ctx)) return undefined;
+  const row = allMatches(ctx).find((r) => r.match.matchId === matchId);
+  if (!row) return undefined;
+
+  const loop = mtLoopById(row.match.dispatchCycleId, ctx);
+  if (!loop?.driverProfileId) return undefined;
+
+  const truckCtx = truckContextFrom(ctx);
+  const carrier = carrierViewSync(row.match.carrierOrganizationId, truckCtx);
+  const driver = driverViewSync(loop.driverProfileId, truckCtx, carrier?.organizationId);
+  if (!driver || !carrier) return undefined;
+
+  const visibility = effectiveVisibility(carrier.organizationId, driver.engagementType, ctx);
+  const full = factsFor(row, driver.engagementType);
+
+  return {
+    driverName: driver.legalName,
+    driverPhone: driver.phone,
+    engagementType: driver.engagementType,
+    carrierName: carrier.displayName,
+    truckUnit: row.match.truckUnit,
+    facts: redact(full, visibility),
+    visibility,
+    full,
+  };
 }
 
 /**
