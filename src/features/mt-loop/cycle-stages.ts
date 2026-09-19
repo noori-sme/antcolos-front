@@ -221,6 +221,22 @@ function shortlistStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStag
     };
   }
 
+  /*
+   * ★ ONCE ONE IS TAKEN, THE COUNT IS HISTORY ★
+   * A booked match stops being "eligible" — it is spoken for — so the live
+   * count falls to zero and the honest-looking sentence "0 loads this truck
+   * can legally take, 13 it cannot" appears on a truck that is already
+   * rolling. What this stage did is pick one, and that is what it should say.
+   */
+  if (input.card?.loadReference || input.opportunities?.booking) {
+    return {
+      key: "shortlist", title: "Pick the ones worth asking about", state: "done",
+      summary: `${plural(o.counts.considered, "load")} considered, one taken`
+        + (ineligible > 0 ? `, ${ineligible} this truck could not legally haul` : "") + ".",
+      count: o.counts.considered,
+    };
+  }
+
   const summary = `${plural(eligible, "load")} this truck can legally take`
     + (ineligible > 0 ? `, ${ineligible} it cannot` : "");
 
@@ -325,8 +341,28 @@ function brokerStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
   const yourTurn = live.filter((r) => r.negotiation.status === "waiting_on_you").length;
   const agreed = live.filter((r) => r.negotiation.status === "agreed").length;
   const outstanding = live.filter((r) => r.negotiation.status === "waiting_on_broker").length;
+  const booked = live.find((r) => r.negotiation.status === "booked");
 
   const caveat = "Nothing is emailed from Antcolos — a reply is recorded by a person.";
+
+  /*
+   * ★ A CONVERSATION THAT ENDED IN A BOOKING IS FINISHED, NOT SILENT ★
+   * `booked` is neither open nor lost, so counting only the open statuses
+   * made a cycle that had argued three rounds and shaken hands read as
+   * "0 brokers asked, none has answered" — on a truck already rolling on the
+   * load that conversation produced.
+   */
+  if (booked) {
+    const n = booked.negotiation;
+    const money = n.agreedRateCents ?? n.onTheTableCents;
+    return {
+      key: "brokers", title: "Talk to brokers", state: "done",
+      summary: `${n.brokerName} agreed`
+        + (money === undefined ? "" : ` $${(money / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
+        + ` after ${plural(n.rounds.length, "round")}.`,
+      count: live.length, caveat,
+    };
+  }
 
   if (agreed > 0) {
     return {

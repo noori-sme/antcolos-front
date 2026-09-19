@@ -107,6 +107,30 @@ function listingFixture(over: Partial<Listing> = {}): Listing {
   };
 }
 
+/**
+ * The pool as JSON, with the one field that is random by design taken out.
+ *
+ * ★ WHY THIS EXISTS ★
+ * The assertions below scan the whole serialized pool for a raw rate (262) or
+ * a raw mileage (781) to prove those numbers were banded rather than passed
+ * through. `contributionId` is a fresh random token — deliberately meaningless,
+ * as the comment on `PooledObservation` explains — and roughly one run in a
+ * few hundred mints one containing "262" or "781", failing a test about
+ * banding for a reason that has nothing to do with banding. (Observed:
+ * `obs_2e8xgzxs781m`.)
+ *
+ * Dropping it keeps the scan's strength over every field that carries meaning
+ * and stops a random token from deciding whether the suite is green.
+ */
+function poolWithoutTokens(): string {
+  return JSON.stringify(
+    networkPoolForTests().map(({ contributionId, ...rest }) => {
+      void contributionId;
+      return rest;
+    }),
+  );
+}
+
 function matchFixture(over: Partial<OpportunityMatch> = {}): OpportunityMatch {
   return {
     matchId: "mch_identifiable_1",
@@ -459,7 +483,7 @@ describe("anonymisation", () => {
 
   it("bands money and distance rather than passing them through", () => {
     observeDecision(ctxFor(ORG_A), matchFixture(), listingFixture(), true);
-    const serialized = JSON.stringify(networkPoolForTests());
+    const serialized = poolWithoutTokens();
     expect(serialized).not.toContain("262");
     expect(serialized).not.toContain("781");
   });
@@ -581,7 +605,7 @@ describe("the intelligence data boundary", () => {
     const owner = ctxFor(ORG_A, ["loads:view", "rates:view"]);
     observeDecision(owner, matchFixture(), listingFixture(), true);
 
-    const serialized = JSON.stringify(networkPoolForTests());
+    const serialized = poolWithoutTokens();
     // The exact rate and the customer's name are in the canonical record above
     // and in no row here.
     expect(serialized).not.toContain("262");

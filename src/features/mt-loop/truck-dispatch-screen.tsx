@@ -179,6 +179,9 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
               negotiations={opportunities.data?.negotiations ?? []}
               ctx={ctx}
               onChanged={refreshEverything}
+              // So a booked load whose paper is back is not told its paper is
+              // missing, two stages above the one that says it is signed.
+              rateConStatus={opportunities.data?.rateCon?.status}
             />
             {/* The messages belong to the conversation they are about, so they
                 open with it rather than as a panel of their own halfway down
@@ -223,10 +226,26 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
   }
 
   return (
-    <div className="flex gap-5">
+    /*
+     * ★ TWO COLUMNS, TWO SCROLLBARS ★
+     *
+     * The rail is a list you work down and the panel is a cycle you read down,
+     * and they are different lengths. Sharing one page scrollbar meant scrolling
+     * the truck you are reading off the screen to see the truck you might switch
+     * to — so each column gets its own, and the page itself does not scroll.
+     *
+     * The height is the viewport less the sticky topbar (3.5rem) and the page's
+     * own vertical padding, read from the same custom property the shell uses so
+     * this stays right when the density setting changes it.
+     *
+     * Only from `xl`, where the rail exists. Below that there is one column, a
+     * phone scrolls a page rather than a pane, and pinning the height would trap
+     * the content in a box inside a page that could not scroll either.
+     */
+    <div className="flex gap-5 xl:h-[calc(100dvh-3.5rem-2*var(--page-py))] xl:overflow-hidden">
       <TruckRail board={board.data} activeTruckId={truckId} />
 
-      <div className="min-w-0 flex-1 space-y-4">
+      <div className="min-w-0 min-h-0 flex-1 space-y-4 xl:overflow-y-auto xl:pr-1 xl:pb-4">
         {/* The rail is the way back where there is room for it. */}
         <div className="xl:hidden">
           <BackLink />

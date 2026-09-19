@@ -340,6 +340,35 @@ function buildFixtures(): DriverRecord[] {
       },
     },
     {
+      /*
+       * ★ THE DRIVER ON THE WALKTHROUGH TRUCK ★
+       *
+       * Deliberately unremarkable: active, hours available, every required
+       * document approved and none of them close to expiring. The end-to-end
+       * demo cycle has to show the HAPPY path from search to rolling, and a
+       * driver with a lapsing medical card would put a blocker on the board
+       * and stop the walkthrough at its first stage — which every other
+       * fixture in this file already demonstrates, on trucks built for it.
+       */
+      profile: profile("dp_nadia_r", "Nadia Reyes", "R7781044120", "IL",
+        { phone: "+1 (312) 555-0173", email: "nadia.reyes@example.com", cdlDays: 720, medicalDays: 400 }),
+      availability: {
+        status: "available", hoursNote: "Full hours. Reset finished overnight.",
+        homeTerminal: "Chicago, IL", currentCity: "Springfield", currentState: "IL",
+      },
+      preferences: { preferredStates: ["IL", "MO", "IN", "OH"], maxDaysOut: 6 },
+      engagements: [engagement("dp_nadia_r", "org_northline", "Northline Freight", "company_driver", "active", 320, FULL_SHARE, TRUCK_IDS.nl133)],
+      documents: {
+        org_northline: docs([
+          ["cdl_front", "approved", { expiresDays: 720 }],
+          ["cdl_back", "approved"],
+          ["medical_front", "approved", { expiresDays: 400 }],
+          ["w9", "approved"],
+          ["coi", "approved", { expiresDays: 280 }],
+        ]),
+      },
+    },
+    {
       profile: profile("dp_sam", "Sam Murtaza", "K4471182993", "IL",
         { phone: "+1 (312) 555-0148", email: "sam@antcolos.com", cdlDays: 210, medicalDays: 24 }),
       availability: {

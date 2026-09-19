@@ -47,9 +47,16 @@ export function TruckRail({
   };
 
   return (
+    /*
+     * Its own scrollbar, not the page's.
+     *
+     * A dispatcher scans this list while reading the panel beside it; one
+     * shared scrollbar meant moving one to see the other. The height comes from
+     * the parent, which pins the row to the viewport — see `TruckDispatchScreen`.
+     */
     <aside
       aria-label="Empty trucks"
-      className="hidden w-[22rem] shrink-0 flex-col gap-3 xl:flex"
+      className="hidden min-h-0 w-[22rem] shrink-0 flex-col gap-3 overflow-y-auto pr-1 pb-4 xl:flex"
     >
       <div>
         <Link

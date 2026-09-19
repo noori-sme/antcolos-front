@@ -91,7 +91,11 @@ test.describe("the Owner's Home", () => {
   });
 
   test("shows the delegated loops as one non-actionable line", async ({ page }) => {
-    await settled(page, "/home");
+    // `loopsRendered`, not `settled`: the skip below reads a count with no
+    // waiting of its own, so on a slow first paint it read zero and skipped a
+    // test that should have run. `settled` returns while React is still
+    // hydrating; this waits for the panel to actually be on the page.
+    await loopsRendered(page, "/home");
     test.skip(await handledLine(page).count() === 0, "nothing delegated");
 
     const line = handledLine(page);
@@ -122,7 +126,8 @@ test.describe("the Owner's Home", () => {
   });
 
   test("says so plainly when no empty truck needs the viewer", async ({ page }) => {
-    await settled(page, "/home");
+    // Same reason as above: an unwaited `count()` on a hydrating page is zero.
+    await loopsRendered(page, "/home");
     const section = mtLoopSection(page);
     test.skip(await section.count() === 0, "no panel");
     if (await loopCards(page).count() > 0) return;

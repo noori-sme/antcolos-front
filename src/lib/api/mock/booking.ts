@@ -18,6 +18,8 @@ import { createBookedLoad, recordLoadConsent } from "./load-commands";
 import {
   attributedActor, loadReachFor, requireLoadWriteAuthority,
 } from "./dispatch-delegation";
+// The shared simulated round trip. A seeder can suppress it; a person never does.
+import { sleep } from "./latency";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -49,7 +51,6 @@ import {
  * link it once that system is available.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const LATENCY_MS = 280;
 
 let seq = 0;

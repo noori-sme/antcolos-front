@@ -148,6 +148,8 @@ export const TRUCK_IDS = {
   nl131: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1009",
   nl124: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1007",
   nl127: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1008",
+  /* The truck the end-to-end walkthrough is seeded on. See `demo-cycle.ts`. */
+  nl133: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1010",
   mdA12: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2001",
   mdB04: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2002",
   mdC31: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2003",
@@ -162,6 +164,7 @@ export const TRUCK_IDS = {
 /** VINs the fixtures use. Reported to reviewers; never shown as hints in the UI. */
 export const FIXTURE_VINS = {
   nl104: "1FTBW2CM8NKA51234",
+  nl133: "1FTBW3XM4PKC70112",
   nl107: "WD3PE8CD5KP123456",
   nl111: "1FVACWDT4HHJK1234",
   nl115: "1XKYDP9X5MJ456789",
@@ -409,6 +412,17 @@ function buildFixtures(): RegistryState {
       plate("IL-1315N", "IL", 330, "Northline Freight LLC"), TRACTOR_SPECS,
       { city: "Chicago", state: "IL", homeTerminal: "Chicago, IL" },
       "org_northline", "White"),
+    /*
+     * ★ THE WALKTHROUGH TRUCK ★
+     * Nothing special about the vehicle — that is the point. It is here so one
+     * truck on the board can show the whole empty-to-empty cycle with every
+     * stage actually filled in, driven through the real services by
+     * `demo-cycle.ts` rather than written down as a finished state.
+     */
+    truck(T.nl133, V.nl133, "cargo_van", 2023, "Ford", "Transit 350", "available",
+      plate("IL-9033R", "IL", 90, "Northline Freight LLC"), VAN_SPECS,
+      { city: "Springfield", state: "IL", expectedAvailableAt: hoursFromNow(-7), homeTerminal: "Chicago, IL" },
+      "org_northline", "White"),
     truck(T.mdA12, V.mdA12, "tractor", 2020, "Peterbilt", "579", "loaded",
       plate("PA-2215T", "PA", 180, "Baxter Transit LLC"), TRACTOR_SPECS,
       { city: "Allentown", state: "PA", expectedAvailableAt: hoursFromNow(3) },
@@ -456,6 +470,7 @@ function buildFixtures(): RegistryState {
     own(T.mdB04, "organization", "Ridgeway Carriers", daysAgo(420), "active", undefined, "org_ridgeway"),
     own(T.crosswind, "organization", "Crosswind Freight", daysAgo(320), "active", undefined, "org_crosswind"),
     own(T.claimed, "organization", "Northline Freight LLC", daysAgo(260), "active", undefined, "org_northline"),
+    own(T.nl133, "organization", "Northline Freight LLC", daysAgo(90), "active", undefined, "org_northline"),
     own(T.mdA18, "organization", "Baxter Transit LLC", daysAgo(280), "active", undefined, "org_baxter"),
     own(T.cs47, "organization", "Cascade Haul Co.", daysAgo(340), "active", undefined, "org_cascade"),
     own(T.cs52, "organization", "Cascade Haul Co.", daysAgo(250), "active", undefined, "org_cascade"),
@@ -476,6 +491,7 @@ function buildFixtures(): RegistryState {
     rel(T.mdB04, "org_ridgeway", "Ridgeway Carriers", "carrier_owned", "B-04", "approved", daysAgo(420), 100, 25),
     rel(T.crosswind, "org_crosswind", "Crosswind Freight", "carrier_owned", "C-31", "approved", daysAgo(320), 125, 40),
     rel(T.claimed, "org_northline", "Northline Freight", "carrier_owned", "127", "approved", daysAgo(260), 120, 45),
+    rel(T.nl133, "org_northline", "Northline Freight", "carrier_owned", "133", "approved", daysAgo(90), 150, 60),
     rel(T.mdA18, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-18", "approved", daysAgo(280), 100, 30),
     rel(T.cs47, "org_cascade", "Cascade Haul", "carrier_owned", "47", "approved", daysAgo(340), 105, 30),
     rel(T.cs52, "org_cascade", "Cascade Haul", "carrier_owned", "52", "approved", daysAgo(250), 110, 35),
@@ -510,6 +526,7 @@ function buildFixtures(): RegistryState {
     assign(T.nl107, "org_northline", "dp_marisol", "Marisol Ortiz", daysAgo(7)),
     assign(T.nl115, "org_northline", "dp_amir", "Amir Haddad", daysAgo(290)),
     assign(T.nl118, "org_northline", "dp_marcus", "Marcus Hale", daysAgo(200)),
+    assign(T.nl133, "org_northline", "dp_nadia_r", "Nadia Reyes", daysAgo(88)),
     // History on 121: a driver who has moved on. The profile is untouched.
     assign(T.nl121, "org_northline", "dp_kelsey", "Kelsey Nguyen", daysAgo(180), daysAgo(60), "Left the carrier."),
     assign(T.claimed, "org_northline", "dp_ray", "Ray Bell", daysAgo(150), daysAgo(20), "Reassigned to another truck."),
@@ -538,6 +555,9 @@ function buildFixtures(): RegistryState {
     doc(T.nl118, "registration", "approved", "org_northline", "reg-118.pdf", daysFromNow(300));
     doc(T.nl118, "lease_agreement", "pending_review", "org_northline", "lease-hale.pdf");
     doc(T.claimed, "registration", "approved", "org_northline", "reg-127.pdf", daysFromNow(60));
+  // Everything the walkthrough truck needs, in order and nowhere near expiring.
+  doc(T.nl133, "registration", "approved", "org_northline", "reg-133.pdf", daysFromNow(300));
+  doc(T.nl133, "annual_inspection", "approved", "org_northline", "insp-133.pdf", daysFromNow(210));
     doc(T.nl131, "registration", "approved", "org_northline", "reg-131.pdf", daysFromNow(330));
     doc(T.nl131, "title", "approved", "org_northline", "title-131.pdf");
     doc(T.nl131, "insurance", "approved", "org_northline", "coi-131.pdf", daysFromNow(190));

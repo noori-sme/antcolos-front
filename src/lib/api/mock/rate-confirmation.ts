@@ -20,6 +20,8 @@ import { commitRateConfirmation } from "./rate-confirmation-record";
 import { mockLoadsService } from "./loads";
 import { readableProjectionsFor, retryProjection } from "@/lib/propagation";
 import { newCorrelationId, withCorrelation } from "@/lib/audit/correlation";
+// The shared simulated round trip. A seeder can suppress it; a person never does.
+import { sleep } from "./latency";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -48,7 +50,6 @@ import { newCorrelationId, withCorrelation } from "@/lib/audit/correlation";
  *     nowhere to go yet is listed as waiting rather than quietly dropped.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const LATENCY_MS = 320;
 
 let seq = 0;

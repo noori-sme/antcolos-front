@@ -2,6 +2,7 @@ import { resetAccessStore } from "./access-store";
 import { resetAgreementRegistry } from "./agreement-registry";
 import { resetAuditLedger } from "./audit-ledger";
 import { resetBookings } from "./booking";
+import { resetDemoCycle } from "./demo-cycle";
 import { resetCarrierRegistry } from "./carrier-registry";
 import { resetCommunications } from "./communications";
 import { resetComplianceNeedsYou } from "./compliance-needs-you";
@@ -157,6 +158,13 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   { id: "communications", holds: "Prepared and recorded messages", module: "communications.ts", reset: resetCommunications },
   { id: "driver_reviews", holds: "Opportunities sent to drivers, and their answers", module: "driver-review.ts", reset: resetDriverReviews },
   { id: "bookings", holds: "Agreed prices turned into loads", module: "booking.ts", reset: resetBookings },
+  /*
+   * Not a store of records — a memo saying the walkthrough has already run.
+   * It is registered all the same, because a world that resets its records and
+   * keeps the memo would leave the walkthrough truck with an empty cycle and
+   * nothing to re-fill it.
+   */
+  { id: "demo_cycle", holds: "Whether unit 133's end-to-end cycle has been walked", module: "demo-cycle.ts", reset: resetDemoCycle },
   { id: "rate_confirmations", holds: "Rate confirmation review workflows", module: "rate-confirmation.ts", reset: resetRateConfirmations },
   { id: "rate_confirmation_records", holds: "The immutable committed rate confirmations", module: "rate-confirmation-record.ts", reset: resetRateConfirmationRecords },
   { id: "extraction_queue", holds: "Confirmed parties waiting for directory resolution", module: "rate-con-extractions.ts", reset: resetExtractionQueue },

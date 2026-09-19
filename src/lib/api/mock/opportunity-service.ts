@@ -33,6 +33,8 @@ import { learningFor, rankingPreferences } from "./ranking";
 import { sessionForCycle, sessionsFor } from "./search-session";
 import { mtLoopById, openLoopsFor, type MtLoopContext } from "./mt-loop";
 import { policiesFor } from "./driver-visibility";
+// The shared simulated round trip. A seeder can suppress it; a person never does.
+import { sleep } from "./latency";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -54,7 +56,6 @@ import { policiesFor } from "./driver-visibility";
  * other is the bug this exists to prevent.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const LATENCY_MS = 300;
 
 /* -------------------------------------------------------------------------- */

@@ -5,6 +5,8 @@ import type {
 import { ingestListings, sampleListingsFor } from "./listing-registry";
 import { collectorFilterProfile, reconcileMatches, truckMatchContext } from "./opportunity-matching";
 import { openLoopsFor, type MtLoopContext } from "./mt-loop";
+// The shared simulated round trip. A seeder can suppress it; a person never does.
+import { sleep } from "./latency";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -29,7 +31,6 @@ import { openLoopsFor, type MtLoopContext } from "./mt-loop";
  * it.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const LATENCY_MS = 340;
 
 let seq = 0;

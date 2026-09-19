@@ -11,6 +11,8 @@ import { allMatches, estimateProfit } from "./opportunity-matching";
 import { effectiveVisibility, redact, sendsAnyMoney } from "./driver-visibility";
 import { recordDriverAnswer } from "./driver-workflow-adapter";
 import { truckContextFrom } from "./truck-registry";
+// The shared simulated round trip. A seeder can suppress it; a person never does.
+import { sleep } from "./latency";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -34,7 +36,6 @@ import { truckContextFrom } from "./truck-registry";
  * call would be, and carries its source everywhere it is shown.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const LATENCY_MS = 220;
 
 let seq = 0;
