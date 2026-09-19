@@ -136,7 +136,16 @@ export function DriverReviewPanel({
         </ul>
       )}
 
-      <p className="mt-3 text-[0.6875rem] leading-relaxed text-fg-subtle">{port.statement}</p>
+      {/*
+        ★ THE CLAIM STAYS, THE PARAGRAPH DOES NOT ★
+        "Nothing is delivered to a driver" is the one thing on this panel that
+        must never be missed, and it is three words. The module boundary behind
+        it is a tip, because it is the answer to a second question.
+      */}
+      <p className="mt-3 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-st-warning">
+        Not delivered
+        <InfoTip text={port.statement} />
+      </p>
     </section>
   );
 }
@@ -233,7 +242,7 @@ function ReviewRow({
               {d.wantedRateCents !== undefined ? (
                 <span className="font-medium tabular-nums text-fg">{money(d.wantedRateCents)}</span>
               ) : null}
-              <Badge tone="warning">Recorded by a dispatcher — no driver app is connected</Badge>
+              <Badge tone="warning">Recorded by hand</Badge>
               <span className="text-fg-subtle">{relativeTime(d.at)}</span>
               {d.comment ? <span className="w-full text-fg-muted">{d.comment}</span> : null}
             </li>

@@ -10,10 +10,12 @@ import { PageHeader } from "@/components/layout/page-header";
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
-  DistributionOutcome, ExtractedField, RateConFieldKey, RateConWorkflow,
+  DistributionOutcome, ExtractedField, RateConDocument, RateConDocumentKind,
+  RateConFieldKey, RateConWorkflow,
 } from "@/types";
 import {
-  PROJECTION_STATE_LABEL, RATECON_FIELD_LABEL, RATECON_STATUS_LABEL,
+  PROJECTION_STATE_LABEL, RATECON_DOCUMENT_KIND_LABEL, RATECON_FIELD_LABEL,
+  RATECON_STATUS_LABEL,
 } from "@/types";
 import { relativeTime } from "@/lib/utils/format";
 import { useMtLoopContext } from "@/features/mt-loop/use-mt-loop";
@@ -22,7 +24,7 @@ import {
   confirmAndSign, correctField, fieldsByPriority, progressOf,
   rejectRateConfirmation, returnToBroker, verifyField,
 } from "@/lib/api/mock/rate-confirmation";
-import { InfoTip } from "@/features/mt-loop/tip";
+import { InfoTip, Metric } from "@/features/mt-loop/tip";
 import { DocumentView } from "./document-view";
 import { PROJECTION_TONE } from "./projection-tone";
 import { useRateCon } from "./use-rate-con";
@@ -53,7 +55,7 @@ export function RateConReviewScreen({ rateConId }: { rateConId: string }) {
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
-  const [showSigned, setShowSigned] = useState(false);
+  const [view, setView] = useState<RateConDocumentKind>("original");
 
   const workflow = query.data ?? undefined;
 
@@ -102,7 +104,16 @@ export function RateConReviewScreen({ rateConId }: { rateConId: string }) {
   // second click and a second identical line in the audit.
   const current = workflow.fields.find((f) => f.key === (currentKey ?? progress.nextFieldKey));
   const done = workflow.status === "returned" || workflow.status === "rejected";
-  const shown = showSigned && workflow.signed ? workflow.signed : workflow.original;
+  /*
+   * ★ THREE VIEWS OF ONE PAGE ★
+   * The broker's document, our signature on it, and our marks on it. The last
+   * two are overlays — they hold nothing of the broker's — so each is rendered
+   * ON the original rather than instead of it.
+   */
+  const overlays: RateConDocument[] = [workflow.signed, workflow.markedUp]
+    .filter((d): d is RateConDocument => Boolean(d));
+  const shown = overlays.find((d) => d.kind === view) ?? workflow.original;
+  const onOriginal = shown.kind === "original";
   const conflicts = workflow.fields.filter((f) => f.disagrees);
   /*
    * ★ AN ANSWERED CONFLICT IS STILL A CONFLICT ★
@@ -173,27 +184,34 @@ export function RateConReviewScreen({ rateConId }: { rateConId: string }) {
         {/* The document stays put while the field list scrolls past it: the
             whole point of the screen is looking at both at once. */}
         <section className="rounded-lg border border-border bg-surface p-4 shadow-e1 lg:sticky lg:top-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-[0.875rem] font-semibold text-fg">
-              {shown.kind === "signed" ? "The signed copy" : "What they sent"}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h2 className="mr-auto text-[0.875rem] font-semibold text-fg">
+              {RATECON_DOCUMENT_KIND_LABEL[shown.kind]}
             </h2>
-            {workflow.signed ? (
-              <Button variant="ghost" size="sm" onClick={() => setShowSigned((v) => !v)}>
-                {showSigned ? "Show the original" : "Show the signed copy"}
-              </Button>
+            {overlays.length > 0 ? (
+              <>
+                <ViewChip active={onOriginal} onClick={() => setView("original")}>Original</ViewChip>
+                {workflow.signed ? (
+                  <ViewChip active={view === "signed"} onClick={() => setView("signed")}>Signed</ViewChip>
+                ) : null}
+                {workflow.markedUp ? (
+                  <ViewChip active={view === "marked_up"} onClick={() => setView("marked_up")}>Marked</ViewChip>
+                ) : null}
+              </>
             ) : null}
+            <InfoTip
+              text={onOriginal
+                ? "Click any value on the page to jump to that field."
+                : "An overlay on the broker's own page. Nothing of theirs is copied or re-typed — what goes back is their document with ours drawn on it."}
+            />
           </div>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            {shown.kind === "signed"
-              ? "The broker's own document with a signature block added. Their pages are carried across unchanged; the received original is kept as it arrived."
-              : "Click anything on the page to jump to that field."}
-          </p>
           <div className="mt-3">
             <DocumentView
               document={shown}
-              label={shown.kind === "signed" ? "Signed rate confirmation" : "Rate confirmation"}
-              highlightBlockId={shown.kind === "original" ? current?.blockId : undefined}
-              onBlockClick={shown.kind === "original" && !done
+              base={workflow.original}
+              label={RATECON_DOCUMENT_KIND_LABEL[shown.kind]}
+              highlightBlockId={current?.blockId}
+              onBlockClick={!done
                 ? (blockId) => {
                   const field = workflow.fields.find((f) => f.blockId === blockId);
                   if (field) { setCurrentKey(field.key); setCorrecting(false); }
@@ -556,17 +574,34 @@ function ConfirmPanel({
           <p className="text-[0.8125rem] font-medium text-fg">
             Sign {workflow.loadReference} as {workflow.carrierName}?
           </p>
-          <ul className="mt-1.5 space-y-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            <li>{progress.required} fields checked, {corrections.length} corrected.</li>
-            {corrections.map((c) => (
-              <li key={c.key}>
-                {c.label}: their document says &quot;{c.rawText}&quot; — signing says &quot;{c.value}&quot;.
-              </li>
-            ))}
-            <li>A separate signed copy is created. Their original is kept exactly as it arrived.</li>
-            <li>The signed copy is recorded as returned to {workflow.brokerName}. Antcolos has no mailbox, so nothing leaves this machine.</li>
-            <li>What it says goes to the load record, and everything else is listed as waiting.</li>
-          </ul>
+          {/*
+            ★ THE CORRECTIONS ARE THE CONFIRMATION ★
+            What a person has to read before signing is which values they are
+            signing something different from — that is data, and it stays. The
+            three sentences about overlays, mailboxes and projections were the
+            same three sentences on every signature; they are one tip now.
+          */}
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Metric label="Checked" value={String(progress.required)} tone="good" />
+            <Metric
+              label="Corrected"
+              value={String(corrections.length)}
+              tone={corrections.length > 0 ? "warn" : undefined}
+            />
+            <InfoTip text={`Your signature is laid on ${workflow.brokerName}'s own document; their original is kept exactly as it arrived. It is recorded as returned — Antcolos has no mailbox, so nothing leaves this machine — and what it says goes to the load record. Everything else is listed as waiting.`} />
+          </p>
+          {corrections.length > 0 ? (
+            <ul className="mt-1 space-y-0.5 text-[0.75rem] text-fg-muted">
+              {corrections.map((c) => (
+                <li key={c.key} className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-[0.625rem] tracking-wide text-fg-subtle uppercase">{c.label}</span>
+                  <span className="tabular-nums line-through">{c.rawText}</span>
+                  <span aria-hidden className="text-fg-subtle">→</span>
+                  <span className="font-medium tabular-nums text-fg">{c.value}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className="mt-2 flex flex-wrap gap-2">
             <Button variant="primary" size="sm" disabled={busy} onClick={onConfirm}>
               <FileSignature className="size-3.5" aria-hidden />
@@ -744,9 +779,17 @@ function AuditPanel({ workflow }: { workflow: RateConWorkflow }) {
  * dispatcher who opens a rate confirmation and presses Enter is not going to
  * click the page first, so the listener goes on the document.
  *
- * It stands aside wherever Enter already means something else — inside a text
- * box that is not the correction field, and on a focused button or link, where
- * the browser is about to press it.
+ * ★ AND WHY "SKIP IT ON A BUTTON" WAS NOT ENOUGH ★
+ * Clicking anything leaves that button focused. So the very first thing a
+ * dispatcher does — click a field on the page, or press "Theirs is right" once
+ * with the mouse — parked the focus on a <button>, and every Enter after it was
+ * swallowed. The screen looked broken in exactly the way it was reported.
+ *
+ * `:focus-visible` is the right test, and the browser already computes it: a
+ * button focused by CLICK does not match it, while one reached by Tab does. So
+ * Enter advances the queue after a mouse click, and still presses the button a
+ * keyboard user has just tabbed to — where the browser would fire its own click
+ * and doing both would answer two fields for one keystroke.
  */
 function EnterAdvances({ onEnter, active }: { onEnter: () => void; active: boolean }) {
   const latest = useRef(onEnter);
@@ -757,11 +800,13 @@ function EnterAdvances({ onEnter, active }: { onEnter: () => void; active: boole
     if (!active) return;
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Enter" || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.isComposing) return;
       const el = e.target as HTMLElement | null;
       const tag = el?.tagName;
-      if (tag === "TEXTAREA" || tag === "BUTTON" || tag === "A" || tag === "SELECT") return;
-      if (tag === "INPUT" && el?.getAttribute("data-ratecon") === null) return;
+      if (tag === "TEXTAREA" || tag === "SELECT") return;
       if (el?.isContentEditable) return;
+      if (tag === "INPUT" && el?.getAttribute("data-ratecon") === null) return;
+      if ((tag === "BUTTON" || tag === "A") && matchesFocusVisible(el)) return;
       e.preventDefault();
       latest.current();
     }
@@ -769,4 +814,45 @@ function EnterAdvances({ onEnter, active }: { onEnter: () => void; active: boole
     return () => document.removeEventListener("keydown", onKey);
   }, [active]);
   return null;
+}
+
+/**
+ * True when the browser would draw a focus ring on it — i.e. the focus got
+ * there from the keyboard. Wrapped because `:focus-visible` throws in engines
+ * that do not know the selector, and a thrown selector must not take the whole
+ * keyboard shortcut down with it.
+ */
+function matchesFocusVisible(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  try {
+    return el.matches(":focus-visible");
+  } catch {
+    return false;
+  }
+}
+
+
+/** One of the three views of the page. A chip, not a sentence. */
+function ViewChip({
+  active, onClick, children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium",
+        active
+          ? "border-accent bg-accent-subtle text-accent-strong"
+          : "border-border text-fg-muted hover:bg-surface-sunken",
+      )}
+    >
+      {children}
+    </button>
+  );
 }

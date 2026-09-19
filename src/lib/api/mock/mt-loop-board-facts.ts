@@ -1,10 +1,17 @@
 import type {
-  MtLoop, MtLoopBlocker, MtLoopInlineAction, MtLoopLane, MtLoopPosition,
-  MtLoopProgress, MtLoopService, MtLoopStage, Negotiation,
+  MtLoop, MtLoopActivity, MtLoopActivityKey, MtLoopBlocker, MtLoopInlineAction,
+  MtLoopLane, MtLoopPosition, MtLoopProgress, MtLoopService, MtLoopStage,
+  Negotiation,
 } from "@/types";
+import { MT_LOOP_ACTIVITY_LABEL } from "@/types";
+import { mockStore } from "./store";
+import { driverViewSync } from "./driver-registry";
+import { truckContextFrom } from "./truck-registry";
+import { fuelDb } from "./fuel-store";
 import { negotiationsForCycle } from "./negotiation";
 import { rateConForCycle } from "./rate-confirmation";
 import { sessionForCycle } from "./search-session";
+import { reviewsForCycle } from "./driver-review";
 import { cityPoint, latestLocationSignal } from "./tracking-signals";
 import {
   isOutOfService, listRequirementsSync, maintenanceContextFrom,
@@ -246,6 +253,40 @@ function progressFor(input: ProgressInput, ctx: MtLoopContext): {
     };
   }
 
+  /* ---- The driver, when the carrier asks them first ---- */
+  /*
+   * ★ ONLY REACHED WHEN NO BROKER IS IN THE CONVERSATION YET ★
+   * Once a negotiation is open the broker's rung above is the truer answer —
+   * the driver's yes is behind us and the money is the live question. What this
+   * catches is the gap a driver-first carrier genuinely sits in: the load is
+   * with the driver, or their answer is in and nobody has rung a broker.
+   */
+  const reviews = reviewsForCycle(loop.loopId, ctx).filter((r) => r.status !== "withdrawn");
+  const answered = reviews.filter((r) => r.status === "approved" || r.status === "declined");
+  if (answered.length > 0) {
+    const yes = answered.find((r) => r.status === "approved");
+    return {
+      progress: {
+        key: "driver_answered",
+        label: yes ? "Driver said yes" : "Driver said no",
+        note: yes ? "ring the broker" : "find another load",
+        detail: (yes ?? answered[0]).driverName,
+        yourTurn: true,
+      },
+    };
+  }
+  if (reviews.length > 0) {
+    return {
+      progress: {
+        key: "asked_driver",
+        label: "With the driver",
+        note: "waiting on them",
+        detail: reviews[0].driverName,
+        yourTurn: false,
+      },
+    };
+  }
+
   /* ---- Before anybody has been asked ---- */
   const session = sessionForCycle(loop.loopId, ctx);
   if (session && session.status === "running") {
@@ -472,12 +513,128 @@ function serviceFor(loop: MtLoop, ctx: MtLoopContext): MtLoopService | undefined
 
 export interface MtLoopBoardFacts {
   lane: MtLoopLane;
+  activity?: MtLoopActivity;
   headline: string;
   headlineDetail?: string;
   progress: MtLoopProgress;
   inlineAction?: MtLoopInlineAction;
   position?: MtLoopPosition;
   service?: MtLoopService;
+}
+
+/* -------------------------------------------------------------------------- */
+/* What a truck on a load is doing                                             */
+/* -------------------------------------------------------------------------- */
+
+/** A fuel purchase this recent, on this truck, means somebody is at a pump. */
+const FUELLING_WINDOW_MS = 45 * 60_000;
+/** A delay reported longer ago than this has been superseded by events. */
+const DELAY_WINDOW_MS = 12 * 60 * 60_000;
+
+/**
+ * What the truck is doing, for a cycle that is already on a load.
+ *
+ * ★ ORDER IS THE WHOLE DESIGN ★
+ * Several of these are true at once — a truck at a receiver is also not moving,
+ * and a driver out of hours may also be at a dock. The card has room for one,
+ * so they are read WORST FIRST: what threatens the appointment, then where the
+ * truck physically is, then why it is stopped, then the happy case. A dispatcher
+ * scanning the lane sees the trucks that need them at the top of each card.
+ *
+ * Nothing is invented. Each branch names the record it read and says whether it
+ * is a person's statement or a machine's.
+ */
+export function activityFor(
+  input: ProgressInput,
+  ctx: MtLoopContext,
+): MtLoopActivity | undefined {
+  const loop = input.loop;
+  /*
+   * Only a cycle that is actually UNDER WAY has an activity.
+   *
+   * An empty truck's answer is its stage, and repeating it here would say the
+   * same thing twice. A booked truck that has not left is not doing anything on
+   * the road either — and a card that said "Rolling" beside a badge saying
+   * "waiting on the rate confirmation" would be two answers to one question.
+   */
+  if (!loop.loadId || input.stage !== "running") return undefined;
+
+  const org = mockStore.org(loop.dispatchOrganizationId);
+  const load = org.loads.find((l) => l.id === loop.loadId);
+  const events = org.events.filter((e) => e.loadId === loop.loadId);
+  const now = Date.now();
+
+  const activity = (
+    key: MtLoopActivityKey,
+    tone: MtLoopActivity["tone"],
+    inferred: boolean,
+    detail?: string,
+  ): MtLoopActivity => ({ key, label: MT_LOOP_ACTIVITY_LABEL[key], tone, inferred, detail });
+
+  /* ---- 1. Late. Everything else can wait. -------------------------------- */
+  const delay = events.find((e) =>
+    e.kind === "exception.delay_reported"
+    && now - Date.parse(e.occurredAt) < DELAY_WINDOW_MS);
+  if (delay) {
+    return activity("delayed", "bad", false, delay.payload?.note);
+  }
+
+  /* ---- 2. On the ground somewhere. --------------------------------------- */
+  if (load?.status === "at_delivery") {
+    const stop = [...load.stops].reverse().find((st) => st.kind === "delivery");
+    return activity("at_receiver", "warn", false, dockDetail(stop, now));
+  }
+  if (load?.status === "at_pickup") {
+    const stop = load.stops.find((st) => st.kind === "pickup");
+    return activity("at_shipper", "warn", false, dockDetail(stop, now));
+  }
+
+  /* ---- 3. Stopped at a pump. --------------------------------------------- */
+  /*
+   * ★ THIS ONE IS AN INFERENCE AND SAYS SO ★
+   * A fuel card cleared forty minutes ago. That is very good evidence somebody
+   * is standing at a pump and no evidence at all that they still are — so the
+   * card is marked inferred and the tooltip says what was read.
+   */
+  const fuel = fuelDb().transactions
+    .filter((t) => t.truckId === loop.truckId && now - Date.parse(t.purchasedAt) < FUELLING_WINDOW_MS)
+    .sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt))[0];
+  if (fuel) {
+    const where = [fuel.location.merchantName, fuel.location.address.city, fuel.location.jurisdiction]
+      .filter(Boolean).join(" · ");
+    return activity("fuelling", "neutral", true, where || undefined);
+  }
+
+  /* ---- 4. Nobody is driving it. ------------------------------------------ */
+  if (loop.driverProfileId) {
+    const driver = driverViewSync(loop.driverProfileId, truckContextFrom(ctx));
+    const status = driver?.availability?.status;
+    if (status === "off_duty") {
+      /*
+       * The driver's OWN words about their hours, not our arithmetic. Antcolos
+       * holds no record of duty status, so it may report that a driver said
+       * they are out of hours and must not compute a 34-hour reset from it.
+       */
+      return activity("off_duty", "warn", false, driver?.availability?.hoursNote);
+    }
+  }
+
+  /* ---- 5. Moving. -------------------------------------------------------- */
+  if (load?.status === "in_transit" || load?.status === "dispatched") {
+    return activity("rolling", "good", false, undefined);
+  }
+  return activity("unknown", "neutral", false, undefined);
+}
+
+/** How long a truck has been sitting on a dock. The number that costs money. */
+function dockDetail(
+  stop: { arrivedAt?: string; facilityName?: string } | undefined,
+  now: number,
+): string | undefined {
+  if (!stop?.arrivedAt) return stop?.facilityName;
+  const minutes = Math.max(0, Math.round((now - Date.parse(stop.arrivedAt)) / 60_000));
+  const clock = minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  return [stop.facilityName, `on site ${clock}`].filter(Boolean).join(" · ");
 }
 
 /**
@@ -508,5 +665,6 @@ export function boardFactsFor(
     inlineAction,
     position: positionFor(input.loop, ctx),
     service,
+    activity: activityFor(input, ctx),
   };
 }

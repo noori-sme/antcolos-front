@@ -3,6 +3,7 @@ import { resetAgreementRegistry } from "./agreement-registry";
 import { resetAuditLedger } from "./audit-ledger";
 import { resetBookings } from "./booking";
 import { resetDemoCycle } from "./demo-cycle";
+import { resetDemoFleet } from "./demo-fleet";
 import { resetCarrierRegistry } from "./carrier-registry";
 import { resetCommunications } from "./communications";
 import { resetComplianceNeedsYou } from "./compliance-needs-you";
@@ -35,6 +36,7 @@ import { resetPartyRegistry } from "./party-registry";
 import { resetRanking } from "./ranking";
 import { resetExtractionQueue } from "./rate-con-extractions";
 import { resetRateConfirmationRecords } from "./rate-confirmation-record";
+import { resetListingCorrections } from "./listing-corrections";
 import { resetRateConfirmations } from "./rate-confirmation";
 import { resetResponsibility } from "./responsibility";
 import { resetRiskStore } from "./risk-store";
@@ -165,6 +167,8 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
    * nothing to re-fill it.
    */
   { id: "demo_cycle", holds: "Whether unit 133's end-to-end cycle has been walked", module: "demo-cycle.ts", reset: resetDemoCycle },
+  { id: "demo_fleet", holds: "Whether the ten demo trucks have been walked to their states", module: "demo-fleet.ts", reset: resetDemoFleet },
+  { id: "listing_corrections", holds: "What a broker corrected on a load board posting", module: "listing-corrections.ts", reset: resetListingCorrections },
   { id: "rate_confirmations", holds: "Rate confirmation review workflows", module: "rate-confirmation.ts", reset: resetRateConfirmations },
   { id: "rate_confirmation_records", holds: "The immutable committed rate confirmations", module: "rate-confirmation-record.ts", reset: resetRateConfirmationRecords },
   { id: "extraction_queue", holds: "Confirmed parties waiting for directory resolution", module: "rate-con-extractions.ts", reset: resetExtractionQueue },

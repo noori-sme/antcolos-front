@@ -18,14 +18,27 @@ import { cn } from "@/lib/utils";
  * the thing in their inbox.
  */
 export function DocumentView({
-  document, highlightBlockId, onBlockClick, label,
+  document, base, highlightBlockId, onBlockClick, label,
 }: {
   document: RateConDocument;
+  /**
+   * The page this one is drawn ON, when `document` is an overlay.
+   *
+   * ★ THE BASE IS RENDERED, NEVER MERGED ★
+   * A signed or marked-up rate confirmation holds only what was added to the
+   * broker's page. Drawing their page underneath is how it is shown; copying
+   * their blocks into the overlay to make one flat list would put us back to
+   * claiming a document we wrote out is the one they sent.
+   */
+  base?: RateConDocument;
   /** The block to light up. Usually the field being reviewed. */
   highlightBlockId?: string;
   onBlockClick?: (blockId: string) => void;
   label: string;
 }) {
+  const underlay = document.overlay && base?.documentId === document.overlay.baseDocumentId
+    ? base
+    : undefined;
   return (
     <figure className="m-0">
       <div
@@ -34,6 +47,14 @@ export function DocumentView({
         role="img"
         aria-label={`${label}: ${document.fileName}`}
       >
+        {underlay?.blocks.map((block) => (
+          <Block
+            key={block.id}
+            block={block}
+            highlighted={block.id === highlightBlockId}
+            onClick={onBlockClick ? () => onBlockClick(block.id) : undefined}
+          />
+        ))}
         {document.blocks.map((block) => (
           <Block
             key={block.id}
@@ -44,7 +65,11 @@ export function DocumentView({
         ))}
       </div>
       <figcaption className="mt-1.5 text-[0.6875rem] leading-relaxed text-fg-subtle">
-        {document.fileName} · {document.mockNotice}
+        {document.overlay
+          ? `${document.overlay.baseFileName} — their page, with ${document.kind === "signed" ? "our signature" : "our marks"} laid on it`
+          : document.fileName}
+        {" · "}
+        {document.mockNotice}
       </figcaption>
     </figure>
   );
@@ -64,6 +89,20 @@ function Block({
     width: `${region.wPct}%`,
     minHeight: `${region.hPct}%`,
   };
+
+  /*
+   * A dispute ring. Deliberately an OUTLINE with no fill and no text: it points
+   * at the broker's own value and must never cover it up.
+   */
+  if (block.style === "dispute") {
+    return (
+      <span
+        aria-hidden
+        className="absolute rounded-[3px] ring-2 ring-rose-500"
+        style={style}
+      />
+    );
+  }
 
   if (block.style === "rule") {
     return (

@@ -304,6 +304,21 @@ export interface DriverReview {
   decisions: DriverDecision[];
   updates: OutgoingProgressUpdate[];
   withdrawnReason?: string;
+
+  /**
+   * What the driver says they need for this load.
+   *
+   * ★ IT IS A FLOOR, NOT A COMMENT ★
+   * An owner-operator who says "not under $1,800" has set the bottom of the
+   * dispatcher's negotiation before it starts. Kept as a figure rather than
+   * buried in the decision's note so the negotiation can actually open at or
+   * above it — a requirement nobody could read would be a requirement nobody
+   * honoured, and the driver would find that out at the dock.
+   */
+  rateRequirementCents?: Cents;
+  rateRequirementNote?: string;
+  rateRequirementAt?: IsoDateTime;
+  rateRequirementByName?: string;
 }
 
 /** Whether a negotiation may begin, and why not when it may not. */

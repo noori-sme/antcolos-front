@@ -11,6 +11,7 @@ import { VISIBILITY_FIELD_LABEL } from "@/types";
 import type { DriverVisibilityField } from "@/types";
 import {
   previewForDriver, recordDriverDecision, sendOpportunityToDriver,
+  recordDriverRateRequirement,
 } from "@/lib/api/mock/driver-review";
 import type { DriverSendPreview } from "@/lib/api/mock/driver-review";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
@@ -53,6 +54,8 @@ export function SendToDriverDialog({
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** What the driver says they need. A floor, not a comment. See below. */
+  const [wants, setWants] = useState("");
 
   const q = useQuery({
     queryKey: ["driver-send-preview", matchId, ctx?.membershipId],
@@ -74,6 +77,21 @@ export function SendToDriverDialog({
             : "Nothing was sent.",
       );
       return;
+    }
+    /*
+     * ★ THE DRIVER'S NUMBER, SAVED WITH THE SEND ★
+     * "I'd run it but not under $1,800" is the most useful sentence in the
+     * whole exchange and the one most often lost: it arrives while the
+     * dispatcher is mid-call and there was nowhere to put it. It goes on the
+     * review, and `openNegotiation` will not open the broker conversation
+     * underneath it.
+     */
+    const cents = dollarsToCents(wants);
+    if (cents !== undefined) {
+      await recordDriverRateRequirement(
+        outcome.review.reviewId, cents, ctx,
+        channel === "phone" ? "Said on the phone." : "Given when the load was sent.",
+      ).catch(() => null);
     }
     setSent(outcome.review.reviewId);
     onChanged();
@@ -160,6 +178,22 @@ export function SendToDriverDialog({
                 )}
               </>
             )}
+
+            {!sent ? (
+              <label className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-[0.625rem] tracking-wide text-fg-subtle uppercase">
+                  They want
+                </span>
+                <Input
+                  value={wants}
+                  inputMode="decimal"
+                  placeholder="$"
+                  onChange={(e) => setWants(e.target.value)}
+                  className="h-7 w-24 px-1.5 text-[0.75rem]"
+                />
+                <InfoTip text="What this driver says they need for this load. Saved as the floor of the broker conversation: the negotiation will not open below it." />
+              </label>
+            ) : null}
 
             {error ? (
               <p role="alert" className="mt-2 text-[0.75rem] text-st-danger">{error}</p>
@@ -418,3 +452,14 @@ const SHORT_FIELD_LABEL: Record<DriverVisibilityField, string> = {
   commodity_and_weight: "Load",
   accessorial_terms: "Accessorials",
 };
+
+/**
+ * "1,800" or "$1800.00" to cents.
+ *
+ * `undefined` for anything that is not a number, so an empty box and a typo
+ * both mean "they did not name a price" rather than a floor of zero.
+ */
+function dollarsToCents(text: string): number | undefined {
+  const n = Number(text.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : undefined;
+}

@@ -401,6 +401,16 @@ export interface NegotiationSummary {
   equipmentLabel: string;
   /** The carrier's floor for this truck, so the screen can warn before we do. */
   carrierFloorPerMileCents?: Cents;
+  /**
+   * What the driver on this truck said they need, where they said one.
+   *
+   * A SECOND floor, and a different kind from the carrier's: the carrier's is a
+   * business rule, this one is a person who will otherwise turn the load down.
+   * Carried on the summary so the screen can show what the conversation opened
+   * against rather than making a dispatcher remember it.
+   */
+  driverFloorCents?: Cents;
+  driverFloorName?: string;
   /** Rate per loaded mile of whatever is on the table. */
   onTheTablePerMileCents?: Cents;
   totalMiles: number;

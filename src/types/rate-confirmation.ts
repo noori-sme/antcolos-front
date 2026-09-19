@@ -343,7 +343,9 @@ export interface DocumentRegion {
 }
 
 export type DocumentBlockStyle =
-  | "title" | "heading" | "label" | "value" | "body" | "small" | "rule" | "signature";
+  | "title" | "heading" | "label" | "value" | "body" | "small" | "rule" | "signature"
+  /** An outline ring drawn AROUND a value we are disputing. Carries no text. */
+  | "dispute";
 
 /** One positioned piece of the generated document. */
 export interface DocumentBlock {
@@ -355,14 +357,22 @@ export interface DocumentBlock {
   alignRight?: boolean;
 }
 
-export type RateConDocumentKind = "original" | "signed";
+export type RateConDocumentKind = "original" | "signed" | "marked_up";
+
+export const RATECON_DOCUMENT_KIND_LABEL: Record<RateConDocumentKind, string> = {
+  original: "What they sent",
+  signed: "Signed and returned",
+  marked_up: "Marked up for correction",
+};
 
 /**
  * A rate confirmation as Antcolos holds it.
  *
- * The original is never modified — not to add a signature, not to fix a typo.
- * Signing produces a SEPARATE document with its own id that carries the same
- * blocks plus the signature. Both are kept, and the screens can show either.
+ * The original is never modified — not to add a signature, not to fix a typo,
+ * not to mark a disputed line. Signing and marking up both produce an OVERLAY:
+ * a record that holds its own marks and names the page they sit on. What goes
+ * back to the broker is therefore always their own document with something
+ * drawn on it, never a document Antcolos wrote out again.
  */
 export interface RateConDocument {
   documentId: string;
@@ -371,7 +381,31 @@ export interface RateConDocument {
   /** Source of the original: the mock inbound email it was attached to. */
   receivedFrom?: string;
   pages: number;
+  /**
+   * The blocks this record itself holds.
+   *
+   * For a received document that is the whole page. For an OVERLAY — see
+   * `overlay` — it is only what was laid on top, and the base document's blocks
+   * are underneath it, untouched.
+   */
   blocks: DocumentBlock[];
+  /**
+   * ★ AN OVERLAY, NOT A REWRITE ★
+   *
+   * A signed rate confirmation and a marked-up one are both the BROKER's page
+   * with something added to it. Modelling them as fresh documents that happened
+   * to contain a copy of the original's text was the wrong shape twice over: a
+   * later change to how documents are built would silently change what we claim
+   * the broker sent, and nothing in the type stopped a "copy" from drifting.
+   *
+   * So an overlay holds only its own marks and points at the page it sits on.
+   * The base is never loaded for editing, only for drawing underneath — which
+   * is exactly what putting a signature on a PDF is.
+   */
+  overlay?: {
+    baseDocumentId: string;
+    baseFileName: string;
+  };
   createdAt: IsoDateTime;
   /** Signed documents only. */
   signature?: AppliedSignature;
@@ -630,7 +664,10 @@ export interface RateConWorkflow {
   evidence: RateConMatchEvidence;
 
   original: RateConDocument;
+  /** The signature, as an overlay on `original`. Present once signed. */
   signed?: RateConDocument;
+  /** Our marks on `original`, made when it went back for correction. */
+  markedUp?: RateConDocument;
 
   fields: ExtractedField[];
   status: RateConStatus;
@@ -653,6 +690,7 @@ export interface RateConWorkflow {
    */
   sentBackAt?: IsoDateTime;
   sentBackMessageId?: string;
+  sentBackByName?: string;
   distribution: DistributionOutcome[];
   audit: RateConAuditEntry[];
   createdAt: IsoDateTime;

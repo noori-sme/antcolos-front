@@ -552,6 +552,9 @@ export interface MtLoopCard {
    */
   service?: MtLoopService;
 
+  /** What a truck already on a load is doing. Absent for an empty truck. */
+  activity?: MtLoopActivity;
+
   /** What this viewer may actually do to it, decided by the service. */
   can: MtLoopAbilities;
 }
@@ -781,6 +784,17 @@ export type MtLoopProgressKey =
   | "not_started"
   /** A search is running and nobody has been contacted yet. */
   | "searching"
+  /**
+   * A load is in front of the driver and they have not answered.
+   *
+   * Its own rung because a carrier with a driver-first rule CANNOT negotiate
+   * until this is answered — so a board that folded it into "Searching" was
+   * hiding the one thing standing between the truck and a conversation, and
+   * pointing a dispatcher at a search that had already done its job.
+   */
+  | "asked_driver"
+  /** The driver has answered. Nothing has been asked of a broker yet. */
+  | "driver_answered"
   /** Brokers have been asked. The ball is with them. */
   | "asked_brokers"
   /** At least one came back. The ball is with this workspace. */
@@ -871,6 +885,66 @@ export interface MtLoopPosition {
  * recomputed here. The interval, the meter and the due arithmetic all belong
  * to Maintenance, and this holds their answer and a link back to it.
  */
+/**
+ * What a truck that is already on a load is DOING right now.
+ *
+ * ★ A ROLLING LANE THAT ONLY SAYS "ROLLING" IS A LIST OF TRUCKS ★
+ * Five trucks under way are not in the same situation: one is moving, one is
+ * parked out of hours, one is on a dock burning through free time, one is
+ * fuelling and one is going to miss its appointment. A dispatcher's morning is
+ * deciding which of those needs them, and a lane that said "Rolling" five times
+ * made them open five trucks to find out.
+ *
+ * ★ READ, NEVER WRITTEN ★
+ * Every one of these is derived from the module that owns the fact — the load's
+ * own status and events, the driver's availability, the fuel ledger — at read
+ * time. Nothing here is a field somebody set on the truck, because a truck with
+ * a hand-set "fuelling" on it stays fuelling for ever.
+ */
+export type MtLoopActivityKey =
+  /** Moving, on its way, nothing wanted. */
+  | "rolling"
+  /** On the ground at the pickup. */
+  | "at_shipper"
+  /** On the ground at the delivery. */
+  | "at_receiver"
+  /** Reported late against the appointment. */
+  | "delayed"
+  /** A fuel purchase went through minutes ago, at the truck. */
+  | "fuelling"
+  /** The driver is out of hours or off duty. */
+  | "off_duty"
+  /** On a load, and nothing says any more than that. */
+  | "unknown";
+
+export const MT_LOOP_ACTIVITY_LABEL: Record<MtLoopActivityKey, string> = {
+  rolling: "Rolling",
+  at_shipper: "At shipper",
+  at_receiver: "At receiver",
+  delayed: "Delayed",
+  fuelling: "Fuelling",
+  off_duty: "Off duty",
+  unknown: "On a load",
+};
+
+export interface MtLoopActivity {
+  key: MtLoopActivityKey;
+  /** Two words at most. The badge. */
+  label: string;
+  /** The facts behind it — a place, a clock, a reason. Never a sentence. */
+  detail?: string;
+  /**
+   * True when this was READ OFF a record rather than told to us by a person.
+   *
+   * It is on the card because the difference matters: "the driver said they are
+   * out of hours" and "no fuel purchase has cleared in six hours so they are
+   * probably parked" are not the same claim, and a screen that renders them
+   * identically is inventing certainty.
+   */
+  inferred: boolean;
+  tone: "good" | "warn" | "bad" | "neutral";
+}
+
 export interface MtLoopService {
   /** The requirement's own title — "Oil change", "Annual DOT inspection". */
   title: string;

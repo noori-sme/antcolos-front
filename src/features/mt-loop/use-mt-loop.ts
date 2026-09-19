@@ -7,6 +7,7 @@ import { useActiveMembership } from "@/lib/session/hooks";
 import { mtLoopBoard, type MtLoopContext } from "@/lib/api/mock/mt-loop";
 import { publishAvailability } from "@/lib/api/mock/tracking-board";
 import { ensureDemoCycle } from "@/lib/api/mock/demo-cycle";
+import { ensureDemoFleet } from "@/lib/api/mock/demo-fleet";
 
 /**
  * The context the MT Loop service needs: the service context, plus the
@@ -60,6 +61,7 @@ export function useMtLoopBoard() {
        * the workspace that dispatches that truck. See `demo-cycle.ts`.
        */
       await ensureDemoCycle(ctx!);
+      await ensureDemoFleet(ctx!);
       return mtLoopBoard(ctx!);
     },
     enabled: Boolean(ctx),

@@ -644,10 +644,10 @@ function StageSpine({
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Badge tone="neutral">Not built</Badge>
             <span className="text-[0.75rem] text-fg-muted">
-              {planned.map((p) => p.title).join(" · ")}
+              {planned.length} more {planned.length === 1 ? "stage" : "stages"}
             </span>
             <InfoTip
-              text={`Milestones ${planned[0]?.milestone ?? 9}–${planned[planned.length - 1]?.milestone ?? 12}. Each hangs off the cycle id already on this page. When they run, this cycle closes and a new loop opens for the same truck with its own id.`}
+              text={`${planned.map((p) => p.title).join(" · ")}. Milestones ${planned[0]?.milestone ?? 9}–${planned[planned.length - 1]?.milestone ?? 12}, each hanging off the cycle id already on this page. When they run, this cycle closes and a new loop opens for the same truck with its own id.`}
             />
           </p>
         </div>

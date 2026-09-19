@@ -142,8 +142,11 @@ test("sending it back refuses the paper, keeps the load, and marks THEIR page", 
 
   // ★ THEIR ORIGINAL GOES BACK, MARKED — NOT A DOCUMENT WE TYPED ★
   const attachment = message.attachments?.[0];
-  assert.ok(attachment, "their document is attached");
-  assert.equal(attachment.documentId, workflow.original.documentId);
+  assert.ok(attachment, "a document is attached");
+  // The attachment is the OVERLAY, and the overlay is drawn on their page. So
+  // what travels is still the broker's own document, with our marks on it.
+  assert.equal(attachment.documentId, after.markedUp?.documentId);
+  assert.equal(after.markedUp?.overlay?.baseDocumentId, workflow.original.documentId);
   assert.deepEqual(
     [...(attachment.highlightBlockIds ?? [])].sort(),
     conflicts.map((f) => f.blockId).sort(),
@@ -175,10 +178,11 @@ test("there is nothing to send back when nothing disagrees", async () => {
 /* Signing                                                                     */
 /* -------------------------------------------------------------------------- */
 
-test("the signature goes on the broker's own page, and the original survives it", async () => {
+test("the signature is an overlay on the broker's page, and their page is untouched", async () => {
   const ctx = loopContextFor(CTX);
   const { workflow } = await bookedLoadWithRateCon(ctx);
   const originalBlocks = workflow.original.blocks.map((b) => ({ ...b }));
+  const originalId = workflow.original.documentId;
 
   for (const field of workflow.fields.filter((f) => f.required)) {
     await verifyField(workflow.rateConId, field.key, ctx);
@@ -190,27 +194,59 @@ test("the signature goes on the broker's own page, and the original survives it"
   assert.ok(after?.signed, "there is a signed copy");
 
   /*
-   * ★ WHAT GOES BACK IS THEIRS, WITH A SIGNATURE ADDED ★
-   * Every block the broker produced is carried across in order and unchanged,
-   * and the signature is appended after them. A system-generated document that
-   * merely restated the same values would be refused by any broker's office,
-   * and would be worthless in a dispute.
+   * ★ WHAT GOES BACK IS THEIRS, WITH A SIGNATURE ON IT ★
+   * The signed record holds ONLY what was added, and names the page it sits
+   * on. This used to be a second document containing a copy of every one of
+   * the broker's blocks — which rendered identically and was the wrong claim:
+   * two records both asserting they were the broker's page, with nothing but a
+   * comment promising they agreed.
    */
-  // Ids are re-minted because the signed copy is its own document record; the
-  // CONTENT and the position on the page are what must be identical.
-  const withoutId = (b: { id: string }) => ({ ...b, id: "" });
-  const carried = after.signed.blocks.slice(0, originalBlocks.length);
-  assert.deepEqual(
-    carried.map(withoutId),
-    originalBlocks.map(withoutId),
-    "their page, block for block — every word, every position",
-  );
+  assert.equal(after.signed.overlay?.baseDocumentId, originalId, "it names their page");
+  assert.ok(after.signed.blocks.length > 0, "and carries its own marks");
+  const carried = new Set(originalBlocks.map((b) => b.id));
+  for (const block of after.signed.blocks) {
+    assert.ok(!carried.has(block.id), `${block.id} is ours, not a copy of theirs`);
+  }
   assert.ok(
-    after.signed.blocks.length > originalBlocks.length,
-    "with the signature added after it",
+    after.signed.blocks.some((b) => b.style === "signature"),
+    "a signature is what was added",
   );
 
   // And the received original is still exactly what arrived.
   assert.deepEqual(after.original.blocks, originalBlocks, "the original is untouched");
-  assert.notEqual(after.signed.documentId, after.original.documentId, "two records, not one edited");
+  assert.equal(after.original.documentId, originalId, "and it is the same record");
+});
+
+test("sending it back marks their page too, rather than writing one of ours", async () => {
+  const ctx = loopContextFor(CTX);
+  const { workflow } = await bookedLoadWithRateCon(ctx);
+  const conflicts = workflow.fields.filter((f) => f.disagrees);
+  const originalBlocks = workflow.original.blocks.map((b) => ({ ...b }));
+
+  assert.equal((await returnToBroker(workflow.rateConId, ctx)).status, "ok");
+  const after = rateConById(workflow.rateConId, ctx);
+  assert.ok(after?.markedUp, "their page was marked up");
+
+  assert.equal(after.markedUp.overlay?.baseDocumentId, after.original.documentId);
+  assert.deepEqual(after.original.blocks, originalBlocks, "and nothing of theirs changed");
+
+  /*
+   * ★ A RING, NOT A REDACTION ★
+   * Each disputed value gets an outline drawn on the region it occupies. A
+   * filled box would hide the very number being argued about, which is the one
+   * thing the broker has to look at.
+   */
+  const rings = after.markedUp.blocks.filter((b) => b.style === "dispute");
+  assert.equal(rings.length, conflicts.length, "one ring per disputed value");
+  const regions = new Set(conflicts.map((f) => {
+    const block = after.original.blocks.find((b) => b.id === f.blockId);
+    return `${block?.region.page}:${block?.region.xPct}:${block?.region.yPct}`;
+  }));
+  for (const ring of rings) {
+    assert.ok(
+      regions.has(`${ring.region.page}:${ring.region.xPct}:${ring.region.yPct}`),
+      "each ring sits exactly on a value that is in dispute",
+    );
+    assert.equal(ring.text, "", "and says nothing over the top of it");
+  }
 });

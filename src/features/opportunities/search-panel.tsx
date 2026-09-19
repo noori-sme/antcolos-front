@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Handshake, Radar, RefreshCw, Search, Unplug } from "lucide-react";
+import { ArrowRight, Handshake, Radar, RefreshCw, Search, Unplug, UserRound } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   type SearchOutcome,
 } from "@/lib/api/mock/search-session";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
+import { SendToDriverDialog } from "@/features/driver-review/send-to-driver-dialog";
 import { TalkToBrokerDialog } from "./talk-to-broker-dialog";
 import { InfoTip, Metric } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,7 @@ export function SearchPanel({
   onChanged: () => void;
 }) {
   const [talkTo, setTalkTo] = useState<MatchWithListing | null>(null);
+  const [sendTo, setSendTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -190,15 +192,23 @@ export function SearchPanel({
             <Stat label="Considered" value={String(session.counts.matchesCreated)} />
           </dl>
 
-          <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
-            Looking for {session.criteria.equipment.replace(/_/g, " ")}, up to{" "}
-            {session.criteria.maxDeadheadMiles} miles empty, at $
-            {(session.criteria.minRatePerMileCents / 100).toFixed(2)}/mi or better
-            {session.criteria.refusedStates.length
-              ? `, and not into ${session.criteria.refusedStates.join(", ")}`
-              : ""}
-            . These come from the truck and the carrier&rsquo;s own rules, not from a form.
-            {session.criteria.widened ? " You have widened this search." : ""}
+          {/*
+            ★ THE CRITERIA AS FIGURES, NOT AS A SENTENCE ★
+            It read "Looking for box truck, up to 150 miles empty, at $2.10/mi
+            or better, and not into NY. These come from the truck and the
+            carrier's own rules, not from a form." — thirty-one words to carry
+            four numbers a dispatcher checks at a glance. Where they come from
+            is worth saying once, in the tip, not on every read.
+          */}
+          <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Metric label="Equip" value={session.criteria.equipment.replace(/_/g, " ")} />
+            <Metric label="Empty" value={`≤ ${session.criteria.maxDeadheadMiles} mi`} />
+            <Metric label="Floor" value={`$${(session.criteria.minRatePerMileCents / 100).toFixed(2)}/mi`} />
+            {session.criteria.refusedStates.length ? (
+              <Metric label="Not into" value={session.criteria.refusedStates.join(", ")} tone="warn" />
+            ) : null}
+            {session.criteria.widened ? <Badge tone="info">widened</Badge> : null}
+            <InfoTip text="Read off this truck and this carrier's own rules — the equipment it is rated for, the deadhead the carrier accepts and its rate floor. Nothing here was typed into a form." />
           </p>
 
           {session.status !== "closed" ? (
@@ -247,11 +257,21 @@ export function SearchPanel({
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
-            The load boards will be read by a browser extension running in your own browser. It is
-            not built yet, so those two rows searched nothing — which is why they say so instead of
-            quietly returning an empty list.
-          </p>
+          {/*
+            ★ THE WARNING STAYS; THE ESSAY GOES ★
+            A dispatcher must not read an empty result as "there is no freight"
+            when the two places most of it lives were never searched. That is a
+            COUNT and a colour, on the sources themselves — the forty words
+            explaining browser extensions belong behind the tip.
+          */}
+          {session.sources.some((x) => x.status === "not_connected") ? (
+            <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-fg-muted">
+              <Badge tone="warning">
+                {session.sources.filter((x) => x.status === "not_connected").length} not searched
+              </Badge>
+              <InfoTip text="The load boards are read by a browser extension running in your own browser, and it is not built yet. Those rows searched nothing, and say so rather than quietly returning an empty list." />
+            </p>
+          ) : null}
 
           <h3 className="mt-4 text-[0.75rem] font-semibold text-fg">What happened</h3>
           <ol className="mt-2 space-y-1">
@@ -301,6 +321,18 @@ export function SearchPanel({
               <Metric label="Empty" value={`${row.match.deadheadMiles} mi`} />
               <Metric label="Score" value={String(row.match.score.total)} />
               <span className="flex-1" />
+              {/*
+                ★ THE DRIVER IS ASKED FROM HERE TOO ★
+                Northline's rule is driver-first, and the first moment a
+                dispatcher has something to ask about is this list. Making them
+                walk to the Opportunities stage to do it put a screen between
+                the decision and the question — and the driver's answer is what
+                the broker call is built on, so it belongs before it.
+              */}
+              <Button variant="secondary" size="sm" onClick={() => setSendTo(row.match.matchId)}>
+                <UserRound className="size-3.5" aria-hidden />
+                Driver
+              </Button>
               <Button variant="secondary" size="sm" onClick={() => setTalkTo(row)}>
                 <Handshake className="size-3.5" aria-hidden />
                 Broker
@@ -308,6 +340,15 @@ export function SearchPanel({
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {sendTo ? (
+        <SendToDriverDialog
+          matchId={sendTo}
+          ctx={ctx}
+          onClose={() => setSendTo(null)}
+          onChanged={onChanged}
+        />
       ) : null}
 
       {talkTo ? (

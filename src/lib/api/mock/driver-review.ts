@@ -9,6 +9,7 @@ import { driverViewSync } from "./driver-registry";
 import { mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
 import { allMatches, estimateProfit } from "./opportunity-matching";
+import { effectiveListing } from "./listing-corrections";
 import { effectiveVisibility, redact, sendsAnyMoney } from "./driver-visibility";
 import type { FullOpportunityFacts, RedactedFacts } from "./driver-visibility";
 import { recordDriverAnswer } from "./driver-workflow-adapter";
@@ -257,7 +258,7 @@ export async function sendOpportunityToDriver(
   const visibility = effectiveVisibility(carrier.organizationId, engagementType, ctx);
 
   const listing = row.listing;
-  const facts = factsFor(row, engagementType);
+  const facts = factsFor(row, engagementType, ctx);
 
   const reviewId = rowId("rev");
   const payload: OutgoingOpportunity = {
@@ -311,8 +312,20 @@ export async function sendOpportunityToDriver(
  * `previewForDriver` and `sendOpportunityToDriver` both come through here, so
  * what is shown is what goes.
  */
-function factsFor(row: MatchWithListing, engagementType: EngagementType): FullOpportunityFacts {
-  const listing = row.listing;
+function factsFor(
+  row: MatchWithListing,
+  engagementType: EngagementType,
+  ctx: MtLoopContext,
+): FullOpportunityFacts {
+  /*
+   * ★ THE CORRECTED LOAD, NOT THE POSTING ★
+   * If a broker said 30,000 lb on the phone where the board said 40,000, the
+   * driver is told 30,000. Reading `row.listing` straight would send a driver
+   * to a dock for a weight somebody already knew was wrong — which is the whole
+   * reason corrections exist rather than living in a note.
+   */
+  const { listing } = effectiveListing(row.listing, row.match.dispatchCycleId, ctx);
+  const loadedMiles = listing.loadedMiles ?? row.match.loadedMiles;
   return {
     originCity: listing.origin.city,
     originState: listing.origin.state,
@@ -321,7 +334,7 @@ function factsFor(row: MatchWithListing, engagementType: EngagementType): FullOp
     equipmentLabel: listing.equipment.replace(/_/g, " "),
     pickupAt: listing.pickupAt,
     deliverBy: listing.deliverBy,
-    loadedMiles: row.match.loadedMiles,
+    loadedMiles,
     deadheadMiles: row.match.deadheadMiles,
     commodity: listing.commodity,
     weightLbs: listing.weightLbs,
@@ -379,7 +392,7 @@ export function previewForDriver(
   if (!driver || !carrier) return undefined;
 
   const visibility = effectiveVisibility(carrier.organizationId, driver.engagementType, ctx);
-  const full = factsFor(row, driver.engagementType);
+  const full = factsFor(row, driver.engagementType, ctx);
 
   return {
     driverName: driver.legalName,
@@ -490,6 +503,53 @@ export async function recordDriverDecision(
   review.status = kind as DriverReviewStatus;
   review.answeredAt = decision.at;
   return { status: "ok", review };
+}
+
+/**
+ * What the driver says they need for this load.
+ *
+ * ★ RECORDED WHERE THE NEGOTIATION CAN SEE IT ★
+ * A dispatcher who asks an owner-operator "would you run this?" usually gets
+ * "not under $1,800" back, and that number is the floor of the conversation
+ * they are about to have with the broker. Kept on the review, which is where
+ * `openNegotiation` reads it — a requirement written into a comment would be a
+ * requirement the negotiation opened underneath.
+ *
+ * It is not a decision: a driver can name a price without saying yes, and
+ * saying yes later does not erase what they asked for.
+ */
+export async function recordDriverRateRequirement(
+  reviewId: string,
+  amountCents: number,
+  ctx: MtLoopContext,
+  note?: string,
+): Promise<ReviewOutcome> {
+  await sleep(LATENCY_MS);
+  if (!mayAct(ctx)) return { status: "not_permitted" };
+  const review = reviewById(reviewId, ctx);
+  if (!review) return { status: "not_found" };
+  if (review.status === "withdrawn") return { status: "closed" };
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return { status: "needs_reason" };
+
+  review.rateRequirementCents = Math.round(amountCents);
+  review.rateRequirementNote = note?.trim() || undefined;
+  review.rateRequirementAt = new Date().toISOString();
+  review.rateRequirementByName = ctx.actor.displayNameSnapshot;
+  return { status: "ok", review };
+}
+
+/** The driver's floor for one match, where a driver has named one. */
+export function driverRateRequirement(
+  matchId: string,
+  ctx: MtLoopContext,
+): { cents: number; driverName: string; note?: string } | undefined {
+  const review = reviewsFor(ctx).find((r) => r.matchId === matchId && r.rateRequirementCents);
+  if (!review?.rateRequirementCents) return undefined;
+  return {
+    cents: review.rateRequirementCents,
+    driverName: review.driverName,
+    note: review.rateRequirementNote,
+  };
 }
 
 /**

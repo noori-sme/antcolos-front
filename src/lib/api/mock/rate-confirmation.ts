@@ -14,7 +14,8 @@ import { mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
 import { negotiationsForCycle } from "./negotiation";
 import { prepareMessageSync, recordAutoSend, messageById } from "./communications";
-import { buildRateConDocument, documentDate, signDocument } from "./ratecon-document";
+import { annotateDocument, buildRateConDocument, documentDate, signDocument } from "./ratecon-document";
+import { effectiveListing } from "./listing-corrections";
 import { truckContextFrom } from "./truck-registry";
 import { commitRateConfirmation } from "./rate-confirmation-record";
 import { mockLoadsService } from "./loads";
@@ -323,6 +324,16 @@ export async function receiveRateConfirmation(
   // Same rule: the negotiation belongs to whoever ran it.
   const negotiation = negotiationOf(booking, ctx);
 
+  /*
+   * ★ CHECKED AGAINST WHAT WE WERE TOLD, NOT WHAT WAS POSTED ★
+   * The broker's document is built from the BOARD's figures, because that is
+   * what a broker's system prints. The expectations are built from the
+   * CORRECTED ones — so a weight a broker fixed on the phone and then forgot to
+   * fix on the paperwork lands on this screen as a disagreement, which is the
+   * entire point of having recorded the call.
+   */
+  const { listing: agreed } = effectiveListing(listing, booking.dispatchCycleId, ctx);
+
   /* ---- What the broker's document says ---------------------------------- */
 
   // Three deliberate differences from what was booked. Each one is a thing that
@@ -418,7 +429,9 @@ export async function receiveRateConfirmation(
   workflow.fields = extract(workflow, named, {
     booking,
     agreedRateCents: booking.agreedRateCents,
-    expectedPickupAt: listing.pickupAt,
+    expectedPickupAt: agreed.pickupAt,
+    expectedWeightLbs: agreed.weightLbs,
+    expectedCommodity: agreed.commodity,
     carrierLegalName: carrier.legalName,
     carrierMc: carrier.mcNumber,
     carrierDot: carrier.dotNumber,
@@ -454,6 +467,8 @@ interface ExpectedValues {
   booking: BookingRecord;
   agreedRateCents: number;
   expectedPickupAt: string;
+  expectedWeightLbs?: number;
+  expectedCommodity?: string;
   carrierLegalName: string;
   carrierMc?: string;
   carrierDot?: string;
@@ -527,8 +542,16 @@ function extract(
     ].filter(Boolean).join("   ") || undefined,
   });
   push("equipment", "equipment", { required: true, confidence: 0.94, expected: expected.equipment });
-  push("commodity", "commodity", { required: false, confidence: 0.9 });
-  push("weight", "weight", { required: false, confidence: 0.86 });
+  push("commodity", "commodity", {
+    required: false, confidence: 0.9, expected: expected.expectedCommodity,
+  });
+  push("weight", "weight", {
+    required: false,
+    confidence: 0.86,
+    expected: expected.expectedWeightLbs === undefined
+      ? undefined
+      : `${expected.expectedWeightLbs.toLocaleString("en-US")} lbs`,
+  });
   push("pickup_facility", "pickup_facility", { required: true, confidence: 0.91 });
   push("pickup_address", "pickup_address", { required: true, confidence: 0.84 });
   push("pickup_at", "pickup_at", {
@@ -812,7 +835,7 @@ export async function confirmAndSign(
   record(workflow, "confirmed", ctx.actor.displayNameSnapshot, signature.statement, ctx.membershipId);
   record(
     workflow, "signed", ctx.actor.displayNameSnapshot,
-    `${carrier.displayName}'s signature applied to ${workflow.brokerName}'s own document — every page of it carried across unchanged — and saved as ${workflow.signed.fileName}. The received original is kept as it arrived.`,
+    `${carrier.displayName}'s signature laid on ${workflow.brokerName}'s own document. Nothing of theirs was copied or re-typed: the signature is an overlay on ${workflow.original.fileName}, which is kept exactly as it arrived.`,
     ctx.membershipId,
   );
 
@@ -1006,6 +1029,23 @@ export async function returnToBroker(
     };
   }
 
+  /*
+   * ★ THEIR PAGE, MARKED — NOT A LIST OF COMPLAINTS ★
+   * The marks are an OVERLAY on the document the broker sent: a ring round each
+   * disputed value and the booked figure beside it. What travels is their own
+   * page with our pen on it, which is the only form of this a broker's office
+   * can act on without arguing about whose numbers are whose.
+   */
+  workflow.markedUp = annotateDocument(
+    workflow.original,
+    conflicts.map((f) => ({
+      blockId: f.blockId,
+      label: RATECON_FIELD_LABEL[f.key],
+      agreed: f.expected ?? "not recorded",
+    })),
+    ctx.actor.displayNameSnapshot,
+  );
+
   const prepared = prepareMessageSync(workflow.dispatchCycleId, "ratecon_discrepancy", ctx, {
     preparedBecause: `${conflicts.length} field${conflicts.length === 1 ? "" : "s"} on ${workflow.loadReference} disagree with the booking.`,
     extras: {
@@ -1018,15 +1058,16 @@ export async function returnToBroker(
       })),
     },
     attachments: [{
-      documentId: workflow.original.documentId,
-      fileName: workflow.original.fileName,
-      label: "Their original, with the disputed lines marked",
-      // The lines to mark up on the broker's own page.
+      documentId: workflow.markedUp.documentId,
+      fileName: workflow.markedUp.fileName,
+      label: "Their own document, with the disputed lines ringed",
+      // Which of THEIR blocks the marks sit on, for a screen showing the page.
       highlightBlockIds: conflicts.map((f) => f.blockId),
     }],
   });
 
   workflow.sentBackAt = nowIso();
+  workflow.sentBackByName = ctx.actor.displayNameSnapshot;
   if (prepared.status === "ok") workflow.sentBackMessageId = prepared.message.messageId;
   record(
     workflow,

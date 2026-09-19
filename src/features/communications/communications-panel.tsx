@@ -110,13 +110,10 @@ export function CommunicationsPanel({
       ) : null}
 
       {threads.length === 0 ? (
-        <div className="mt-3 rounded-md border border-dashed border-border px-3.5 py-3 text-center">
-          <p className="text-[0.8125rem] font-medium text-fg">Nothing written yet</p>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Approving a prepared inquiry, or writing one from a template, starts the conversation
-            here.
-          </p>
-        </div>
+        <p className="mt-3 flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-2 text-[0.8125rem] text-fg-muted">
+          Nothing written yet
+          <InfoTip text="Approving a prepared inquiry, or writing one from a template, starts the conversation here." />
+        </p>
       ) : (
         <ul className="mt-3 space-y-2">
           {threads.map((summary) => (

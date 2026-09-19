@@ -5,7 +5,7 @@ import type {
 import { isNegotiationOpen, UNARGUABLE_CHECKS } from "@/types";
 import { listingById } from "./listing-registry";
 import { allMatches, matchById, truckMatchContext } from "./opportunity-matching";
-import { driverGate } from "./driver-review";
+import { driverGate, driverRateRequirement } from "./driver-review";
 import { mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
 // The shared simulated round trip. A seeder can suppress it; a person never does.
@@ -224,7 +224,17 @@ export async function openNegotiation(
   const tc = truckMatchContext(loop, ctx);
   if (!tc) return { status: "not_found" };
 
-  const ask = askCents ?? suggestedAsk(row, tc.minRatePerMileCents);
+  /*
+   * ★ THE DRIVER'S NUMBER IS THE BOTTOM OF THIS CONVERSATION ★
+   * If the driver said they need $1,800 and the suggested ask comes out at
+   * $1,650, opening at $1,650 is opening below the only person who has to agree
+   * to run it. A dispatcher who passes an explicit ask is still obeyed — they
+   * may know something the review does not — but the default never starts under
+   * what the driver asked for.
+   */
+  const driverFloor = driverRateRequirement(matchId, ctx)?.cents;
+  const suggested = suggestedAsk(row, tc.minRatePerMileCents);
+  const ask = askCents ?? (driverFloor === undefined ? suggested : Math.max(suggested, driverFloor));
   const at = nowIso();
   const negotiation: Negotiation = {
     negotiationId: rowId("neg"),
@@ -655,6 +665,8 @@ export function summarize(
     pickupAt: listing.pickupAt,
     equipmentLabel: listing.equipment.replace(/_/g, " "),
     carrierFloorPerMileCents: carrierFloorPerMile(negotiation, ctx),
+    driverFloorCents: driverRateRequirement(negotiation.matchId, ctx)?.cents,
+    driverFloorName: driverRateRequirement(negotiation.matchId, ctx)?.driverName,
     onTheTablePerMileCents: onTable === undefined ? undefined : Math.round(onTable / miles),
     totalMiles: match.totalMiles,
     loadedMiles: match.loadedMiles,

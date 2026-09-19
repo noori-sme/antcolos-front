@@ -48,7 +48,31 @@ import { confirmAndSign, receiveRateConfirmation, verifyField } from "./rate-con
 
 /** The truck the walkthrough runs on, and the workspace that dispatches it. */
 const DEMO_TRUCK_ID = TRUCK_IDS.nl133;
-const DEMO_ORG = "org_northline";
+export const DEMO_ORG = "org_northline";
+
+/**
+ * How far to walk one cycle.
+ *
+ * ★ THE STATES A BOARD HAS TO BE ABLE TO SHOW ★
+ * Each of these is a real place a dispatcher's morning finds a truck in, and
+ * each is reached by stopping the SAME walk at a different point rather than by
+ * writing the state down. So a cycle "waiting on a broker's reply" genuinely
+ * has an open conversation with our ask in it and nothing back — and if the
+ * negotiation module ever stopped producing that, the board would show it.
+ */
+export type CycleStop =
+  /** A search has run. Nothing has been asked about. */
+  | "searched"
+  /** The driver has been asked and has said yes. No broker contacted. */
+  | "driver_accepted"
+  /** We have asked a broker for a number. Nothing has come back. */
+  | "asked_broker"
+  /** They have come back with a counter nobody has answered. */
+  | "broker_replied"
+  /** Booked, and a rate confirmation is sitting unchecked. */
+  | "ratecon_received"
+  /** Checked, signed and returned. The end of the desk work. */
+  | "signed";
 
 /**
  * Once per store lifetime.
@@ -88,12 +112,40 @@ export function ensureDemoCycle(ctx: MtLoopContext): Promise<void> {
 /* -------------------------------------------------------------------------- */
 
 async function walk(ctx: MtLoopContext): Promise<void> {
+  await walkCycle(DEMO_TRUCK_ID, "signed", ctx);
+}
+
+/**
+ * Walk one truck's cycle as far as `stop`, through the real services.
+ *
+ * Returns the booking's load id once there is one, so a caller that wants to
+ * put the truck on the road can carry on from a load that genuinely exists.
+ */
+export async function walkCycle(
+  truckId: string,
+  stop: CycleStop,
+  ctx: MtLoopContext,
+  /**
+   * Listings another demo cycle has already taken.
+   *
+   * ★ TEN TRUCKS SHARE ONE MARKET ★
+   * Every cycle ranks the same sample market, so `top[0]` is frequently the
+   * same load for two trucks. The first to book it stands the other's driver
+   * review and conversation DOWN — correctly, and exactly as it would in real
+   * life — and the demo ends up with several trucks showing a withdrawn review
+   * instead of the state they were supposed to show. Picking a load nobody else
+   * in this run has taken is how a dispatcher would do it too.
+   *
+   * Mutated as it goes, so the caller's set carries across the whole run.
+   */
+  taken: Set<string> = new Set(),
+): Promise<{ loadId?: string; cycleId?: string }> {
   /* ---- 0. The cycle itself, opened by the truck going empty ------------- */
   syncMtLoops(ctx);
-  const loop = openLoopsFor(ctx).find((l) => l.truckId === DEMO_TRUCK_ID);
-  if (!loop) return;
+  const loop = openLoopsFor(ctx).find((l) => l.truckId === truckId);
+  if (!loop) return {};
   // Already walked — a reload rebuilt the stores but something got here first.
-  if (loop.loadId) return;
+  if (loop.loadId) return { loadId: loop.loadId, cycleId: loop.loopId };
 
   const cycleId = loop.loopId;
 
@@ -105,12 +157,14 @@ async function walk(ctx: MtLoopContext): Promise<void> {
 
   /* ---- 2. Load search --------------------------------------------------- */
   const search = await startSearch(cycleId, ctx);
-  if (search.status !== "ok" && search.status !== "already_running") return;
+  if (search.status !== "ok" && search.status !== "already_running") return { cycleId };
+  if (stop === "searched") return { cycleId };
 
   /* ---- 3. Opportunities: the one worth asking about --------------------- */
   const found = truckOpportunitiesSync(cycleId, ctx);
-  const pick = found.top[0];
-  if (!pick) return;
+  const pick = found.top.find((m) => !taken.has(m.listing.listingId)) ?? found.top[0];
+  if (!pick) return { cycleId };
+  taken.add(pick.listing.listingId);
   const matchId = pick.match.matchId;
 
   // The prepared message a person reads and releases. Nothing is sent — no
@@ -141,12 +195,16 @@ async function walk(ctx: MtLoopContext): Promise<void> {
       comment: "Works for me. I can be there for the pickup window.",
     });
   }
+  if (stop === "driver_accepted") return { cycleId };
 
   /* ---- 5. Talking to brokers -------------------------------------------- */
   const opened = await openNegotiation(matchId, ctx);
-  if (opened.status !== "ok") return;
+  if (opened.status !== "ok") return { cycleId };
   const negotiationId = opened.negotiation.negotiationId;
   const asked = opened.negotiation.askedRateCents;
+  // Asked, and nothing back. The conversation is genuinely open and genuinely
+  // one-sided, which is what "waiting on a broker" has to mean on the board.
+  if (stop === "asked_broker") return { cycleId };
 
   // A real conversation: they come back under, we hold, they meet us. Three
   // rounds rather than one, because a single "agreed" teaches nobody what the
@@ -168,6 +226,9 @@ async function walk(ctx: MtLoopContext): Promise<void> {
     },
     ctx,
   );
+  // Their number is on the table and nobody has answered it. The board's
+  // "read the reply" state, and the one a dispatcher is paid to notice.
+  if (stop === "broker_replied") return { cycleId };
 
   await recordOurOffer(
     negotiationId,
@@ -189,14 +250,14 @@ async function walk(ctx: MtLoopContext): Promise<void> {
   );
 
   const agreed = await acceptOnTheTable(negotiationId, ctx);
-  if (agreed.status !== "ok") return;
+  if (agreed.status !== "ok") return { cycleId };
 
   /* ---- 6. Book it ------------------------------------------------------- */
   // Goes through `canBook`, which re-checks every blocker at the moment of
   // commitment. A walkthrough that wrote the booking directly would skip the
   // one check the whole module exists for.
   const booked = await bookNegotiation(negotiationId, ctx);
-  if (booked.status !== "ok") return;
+  if (booked.status !== "ok") return { cycleId };
 
   /*
    * ★ ASKED BEFORE, COMMITTED NOW — AND THEY ARE NOT THE SAME QUESTION ★
@@ -218,7 +279,10 @@ async function walk(ctx: MtLoopContext): Promise<void> {
   const workflow = arrived.status === "ok"
     ? arrived.workflow
     : arrived.status === "already_open" ? arrived.workflow : undefined;
-  if (!workflow) return;
+  if (!workflow) return { cycleId, loadId: booked.booking.loadId };
+  // It has landed and nobody has looked at it. Every field unchecked, and the
+  // two that disagree with the booking still disagreeing.
+  if (stop === "ratecon_received") return { cycleId, loadId: booked.booking.loadId };
 
   // Every required field looked at by a person, which is what moves the
   // workflow to `ready_to_confirm`. Checking them one at a time is the actual
@@ -237,4 +301,5 @@ async function walk(ctx: MtLoopContext): Promise<void> {
    * it like anybody else.
    */
   await confirmAndSign(workflow.rateConId, ctx);
+  return { cycleId, loadId: booked.booking.loadId };
 }

@@ -4,7 +4,11 @@ import { loopContextFor, resetPropagationWorld } from "./propagation-harness.ts"
 import { buildMtLoopBoard, syncMtLoops } from "@/lib/api/mock/mt-loop";
 import { startSearch } from "@/lib/api/mock/search-session";
 import { allMatches } from "@/lib/api/mock/opportunity-matching";
-import { previewForDriver } from "@/lib/api/mock/driver-review";
+import {
+  driverRateRequirement, previewForDriver, recordDriverDecision,
+  recordDriverRateRequirement, sendOpportunityToDriver,
+} from "@/lib/api/mock/driver-review";
+import { openNegotiation } from "@/lib/api/mock/negotiation";
 import { prepareMessageSync } from "@/lib/api/mock/communications";
 import { FINANCIAL_FIELDS } from "@/types";
 
@@ -171,4 +175,70 @@ test("a first email to a broker can be drafted before any conversation exists", 
     listing.broker.contactName ?? listing.broker.name,
     "the named draft goes to THIS load's broker",
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* The driver's own number                                                     */
+/* -------------------------------------------------------------------------- */
+
+test("what the driver says they need becomes the floor of the broker conversation", async () => {
+  const ctx = loopContextFor(CTX);
+  const { rows } = await searchedCycle(ctx);
+  const matchId = rows[0].match.matchId;
+
+  const sent = await sendOpportunityToDriver(matchId, ctx, "Would you run this?");
+  assert.ok(sent.status === "ok" || sent.status === "already_sent", sent.status);
+  const review = sent.status === "ok" || sent.status === "already_sent" ? sent.review : undefined;
+  assert.ok(review);
+
+  /*
+   * ★ A FLOOR, NOT A COMMENT ★
+   * "I'd run it but not under $1,800" is the most useful sentence in the whole
+   * exchange and the one most often lost — it arrives mid-call and there was
+   * nowhere to put it. A requirement nobody could read would be a requirement
+   * nobody honoured, and the driver would find that out at the dock.
+   */
+  const asked = 180_000;
+  assert.equal(
+    (await recordDriverRateRequirement(review.reviewId, asked, ctx, "Said on the phone.")).status,
+    "ok",
+  );
+  const answered = await recordDriverDecision(review.reviewId, "approved", ctx, {
+    comment: "Yes, at that number.",
+  });
+  assert.equal(answered.status, "ok");
+  // Saying yes later does not erase what they asked for.
+  assert.equal(driverRateRequirement(matchId, ctx)?.cents, asked);
+
+  const opened = await openNegotiation(matchId, ctx);
+  assert.equal(opened.status, "ok", JSON.stringify(opened));
+  const negotiation = opened.status === "ok" ? opened.negotiation : undefined;
+  assert.ok(negotiation);
+  assert.ok(
+    negotiation.askedRateCents >= asked,
+    `opened at ${negotiation.askedRateCents}, under the driver's ${asked}`,
+  );
+  assert.equal(negotiation.rounds[0].amountCents, negotiation.askedRateCents);
+});
+
+test("a dispatcher who names their own ask is still obeyed", async () => {
+  const ctx = loopContextFor(CTX);
+  const { rows } = await searchedCycle(ctx);
+  const matchId = rows[0].match.matchId;
+
+  const sent = await sendOpportunityToDriver(matchId, ctx, "Would you run this?");
+  const review = sent.status === "ok" || sent.status === "already_sent" ? sent.review : undefined;
+  assert.ok(review);
+  await recordDriverRateRequirement(review.reviewId, 180_000, ctx);
+  await recordDriverDecision(review.reviewId, "approved", ctx);
+
+  /*
+   * The floor is a DEFAULT, not a lock. A dispatcher passing an explicit ask
+   * may know something the review does not — the broker has already moved, the
+   * driver has changed their mind on the phone — and the service must not
+   * quietly overrule a number a person typed.
+   */
+  const opened = await openNegotiation(matchId, ctx, 120_000);
+  assert.equal(opened.status, "ok");
+  assert.equal(opened.status === "ok" ? opened.negotiation.askedRateCents : 0, 120_000);
 });

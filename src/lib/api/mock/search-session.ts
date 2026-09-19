@@ -114,15 +114,15 @@ const SOURCES: SourceDefinition[] = [
   // anything to do.
   {
     key: "sample_board", source: "load_board", sourceName: "Sample board",
-    connection: "mock", skip: 0, take: 9, rateDrift: 0,
+    connection: "mock", skip: 0, take: 16, rateDrift: 0,
   },
   {
     key: "sample_broker", source: "broker_direct", sourceName: "Brokers you work with",
-    connection: "mock", skip: 5, take: 9, rateDrift: 0.04,
+    connection: "mock", skip: 9, take: 16, rateDrift: 0.04,
   },
   {
     key: "sample_email", source: "email", sourceName: "Sample broker emails",
-    connection: "mock", skip: 2, take: 6, rateDrift: -0.03,
+    connection: "mock", skip: 4, take: 14, rateDrift: -0.03,
   },
 ];
 
@@ -288,9 +288,14 @@ function runSources(session: SearchSession, ctx: MtLoopContext): void {
 
     if (definition.connection !== "mock" && definition.connection !== "manual_entry") {
       run.status = "not_connected";
-      run.note = definition.connection === "browser_extension"
-        ? "The browser extension is not built yet, so nothing was read from this board."
-        : "No mailbox is connected yet, so nothing was read from it.";
+      /*
+       * ★ SHORT, AND STILL THE WHOLE TRUTH ★
+       * The row is already marked `not_connected` and badged "not built", so
+       * the note does not have to repeat it in a sentence. What it must never
+       * do is imply the source was searched and came back empty — hence
+       * "nothing read", which is the fact, in two words.
+       */
+      run.note = "Nothing read";
       continue;
     }
 
@@ -312,10 +317,10 @@ function runSources(session: SearchSession, ctx: MtLoopContext): void {
     run.listingsReturned = raw.length;
     run.duplicatesFolded = result.foldedIntoExisting;
     run.note = raw.length === 0
-      ? "Nothing on this lane right now."
+      ? "Nothing on this lane"
       : result.foldedIntoExisting > 0
-        ? `${result.accepted} new, ${result.foldedIntoExisting} already in the inbox.`
-        : `${result.accepted} new.`;
+        ? `${result.accepted} new · ${result.foldedIntoExisting} known`
+        : `${result.accepted} new`;
 
     seen += raw.length;
     folded += result.foldedIntoExisting;

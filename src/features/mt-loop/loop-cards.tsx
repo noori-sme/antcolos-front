@@ -1,10 +1,13 @@
 "use client";
 
-import { AlertTriangle, MessageSquare, MoreHorizontal, Truck, Wrench } from "lucide-react";
+import {
+  AlertTriangle, Fuel, MessageSquare, Moon, MoreHorizontal, Navigation, PackageOpen,
+  TriangleAlert, Truck, Wrench,
+} from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { MtLoopCard, MtLoopProgress } from "@/types";
+import type { MtLoopActivity, MtLoopActivityKey, MtLoopCard, MtLoopProgress } from "@/types";
 import { MiniMap, PositionCaption } from "./mini-map";
 import { Tip } from "./tip";
 import { cn, useNow } from "@/lib/utils";
@@ -214,12 +217,21 @@ export function FullCard({
       {card.service ? <ServiceChip card={card} /> : null}
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Badge tone={progressTone(card.progress)}>
-          {card.progress.key === "broker_replied" ? (
-            <MessageSquare className="size-3" aria-hidden />
-          ) : null}
-          {card.progress.label}
-        </Badge>
+        {/*
+          ★ A TRUCK ON THE ROAD IS ASKED A DIFFERENT QUESTION ★
+          "Rolling" is the answer to "where is this cycle up to", and five
+          trucks under way all answer it the same way. What a dispatcher wants
+          from this lane is which of them needs them — so where an activity is
+          known it takes the badge, and the cycle's own state stays underneath.
+        */}
+        {card.activity ? <ActivityChip activity={card.activity} /> : (
+          <Badge tone={progressTone(card.progress)}>
+            {card.progress.key === "broker_replied" ? (
+              <MessageSquare className="size-3" aria-hidden />
+            ) : null}
+            {card.progress.label}
+          </Badge>
+        )}
         <span className="text-[0.6875rem] text-fg-muted">{card.progress.note}</span>
         {card.progress.detail ? (
           <span className="text-[0.6875rem] text-fg-subtle">· {card.progress.detail}</span>
@@ -380,14 +392,26 @@ export function CompactRow({
         answer it — and a rolling row leads with the fact that it is rolling,
         because a truck that has gone is not stopped by anything.
       */}
+      {/*
+        ★ THE COLOUR COMES FROM THE ACTIVITY, NOT FROM THE LANE ★
+        Every row in Rolling used to be green, so a truck that had reported a
+        delay looked exactly like one running on time. The lane says the truck
+        has gone; the colour has to say whether it needs anybody.
+      */}
       <span
         className={cn(
           "text-[0.75rem] leading-snug",
-          rolling ? "text-st-success" : "text-st-danger",
+          !rolling ? "text-st-danger"
+            : card.activity?.tone === "bad" ? "text-st-danger"
+              : card.activity?.tone === "warn" ? "text-st-warning"
+                : card.activity?.tone === "neutral" ? "text-fg-muted"
+                  : "text-st-success",
         )}
-        title={rolling ? card.headline : lead?.detail ?? card.headline}
+        title={rolling ? card.activity?.detail ?? card.headline : lead?.detail ?? card.headline}
       >
-        {rolling ? card.progress.label : lead?.label ?? card.progress.label}
+        {rolling
+          ? card.activity?.label ?? card.progress.label
+          : lead?.label ?? card.progress.label}
         {card.emptyNow && !rolling ? (
           <span className="text-fg-muted"> · <Dwell card={card} compact /></span>
         ) : null}
@@ -491,3 +515,47 @@ export function Responsibility({ card, compact }: { card: MtLoopCard; compact?: 
   );
 }
 
+/* -------------------------------------------------------------------------- */
+
+const ACTIVITY_TONE: Record<MtLoopActivity["tone"], "success" | "warning" | "danger" | "info"> = {
+  good: "success",
+  warn: "warning",
+  bad: "danger",
+  neutral: "info",
+};
+
+const ACTIVITY_ICON: Partial<Record<MtLoopActivityKey, typeof Truck>> = {
+  rolling: Navigation,
+  at_shipper: PackageOpen,
+  at_receiver: PackageOpen,
+  delayed: TriangleAlert,
+  fuelling: Fuel,
+  off_duty: Moon,
+};
+
+/**
+ * What the truck is doing, in one badge.
+ *
+ * The detail goes in the tooltip rather than on the card: "Stopped on I-80
+ * eastbound at the Indiana line" is exactly what somebody needs once they have
+ * decided this is the truck to look at, and noise on every other card until
+ * then. An inferred activity says so there too — the difference between a
+ * driver telling us they are out of hours and a fuel card clearing at a pump is
+ * worth a word.
+ */
+export function ActivityChip({ activity }: { activity: MtLoopActivity }) {
+  const Icon = ACTIVITY_ICON[activity.key];
+  const tip = [
+    activity.detail,
+    activity.inferred ? "Read off a record, not reported by anybody." : undefined,
+  ].filter(Boolean).join(" — ");
+
+  const badge = (
+    <Badge tone={ACTIVITY_TONE[activity.tone]}>
+      {Icon ? <Icon className="size-3" aria-hidden /> : null}
+      {activity.label}
+      {activity.inferred ? <span aria-hidden className="opacity-60">~</span> : null}
+    </Badge>
+  );
+  return tip ? <Tip text={tip} className="no-underline">{badge}</Tip> : badge;
+}
