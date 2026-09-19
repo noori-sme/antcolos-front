@@ -1,0 +1,145 @@
+"use client";
+
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import {
+  MT_LOOP_LANE_LABEL,
+  type MtLoopBoard, type MtLoopCard, type MtLoopLane,
+} from "@/types";
+import { CompactRow, FullCard } from "./loop-cards";
+import { cn } from "@/lib/utils";
+
+/**
+ * The board, kept beside the truck you opened from it.
+ *
+ * ★ WHY THE LIST DOES NOT GO AWAY ★
+ * Opening a truck used to replace the board, so choosing a different one meant
+ * going back, finding your place and reading the lane again. A dispatcher works
+ * a list: they open the most expensive truck, find it is waiting on a broker,
+ * and move to the next one. The rail is that list, still there, with the truck
+ * they are on marked.
+ *
+ * ★ AND IT IS THE SAME CARD, NOT A SMALLER ONE ★
+ * `Needs a load` keeps the whole card — the clock, the map, the badge, the
+ * sentence, the blocker — because that is the lane somebody might switch INTO,
+ * and a stripped-down version would mean deciding on less than the board
+ * showed. `Rolling` and `Not ready` are one line each, because those are
+ * trucks being watched rather than worked. Both come from `loop-cards`, so
+ * the rail and the board cannot drift apart.
+ *
+ * The rail is hidden below the extra-large breakpoint. On a narrower screen
+ * the truck's own page is the whole job, and a list squeezed beside it would
+ * make both unreadable — "Back to MT Loop" is the way out there.
+ */
+export function TruckRail({
+  board, activeTruckId,
+}: {
+  board?: MtLoopBoard;
+  /** The truck whose page this is, marked in the list. */
+  activeTruckId: string;
+}) {
+  if (!board || board.loops.length === 0) return null;
+
+  const lanes: Record<MtLoopLane, MtLoopCard[]> = {
+    needs_load: board.loops.filter((c) => c.lane === "needs_load"),
+    rolling: board.loops.filter((c) => c.lane === "rolling"),
+    not_ready: board.loops.filter((c) => c.lane === "not_ready"),
+  };
+
+  return (
+    <aside
+      aria-label="Empty trucks"
+      className="hidden w-[22rem] shrink-0 flex-col gap-3 xl:flex"
+    >
+      <div>
+        <Link
+          href="/dispatch/loops"
+          className="inline-flex items-center gap-1.5 text-[0.75rem] text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <ArrowLeft className="size-3" aria-hidden />
+          MT Loop
+        </Link>
+        <p className="mt-1 text-[0.9375rem] font-semibold text-fg">Empty trucks</p>
+        <p className="text-[0.6875rem] text-fg-muted">
+          {lanes.needs_load.length} needing a load · {lanes.rolling.length} rolling ·{" "}
+          {lanes.not_ready.length} not ready
+        </p>
+      </div>
+
+      <RailLane lane="needs_load" cards={lanes.needs_load} activeTruckId={activeTruckId}>
+        {lanes.needs_load.map((card) => (
+          <FullCard
+            key={card.loopId}
+            card={card}
+            busy={false}
+            active={card.truckId === activeTruckId}
+            /*
+             * ★ NO PANELS FROM THE RAIL ★
+             * The inline action and the actions sheet both open something over
+             * the page you are already on, which is the wrong place for them
+             * when that page is a DIFFERENT truck. From here a card is a way in
+             * and nothing else, so its buttons are not rendered rather than
+             * rendered and made to do something surprising.
+             */
+            linkOnly
+          />
+        ))}
+      </RailLane>
+
+      <RailLane lane="rolling" cards={lanes.rolling} activeTruckId={activeTruckId}>
+        {lanes.rolling.map((card) => (
+          <CompactRow
+            key={card.loopId}
+            card={card}
+            active={card.truckId === activeTruckId}
+            linkOnly
+          />
+        ))}
+      </RailLane>
+
+      <RailLane lane="not_ready" cards={lanes.not_ready} activeTruckId={activeTruckId}>
+        {lanes.not_ready.map((card) => (
+          <CompactRow
+            key={card.loopId}
+            card={card}
+            active={card.truckId === activeTruckId}
+            linkOnly
+          />
+        ))}
+      </RailLane>
+
+      <p className="rounded-md border border-dashed border-border px-3 py-2 text-[0.6875rem] leading-relaxed text-fg-subtle">
+        A truck needing a load keeps its whole card — it is the one you might switch to.
+        Rolling and Not ready are one line each: you are watching them, not working them.
+      </p>
+    </aside>
+  );
+}
+
+const LANE_ACCENT: Record<MtLoopLane, string> = {
+  needs_load: "border-st-warning text-st-warning",
+  rolling: "border-st-success text-st-success",
+  not_ready: "border-border-strong text-fg-muted",
+};
+
+function RailLane({
+  lane, cards, children,
+}: {
+  lane: MtLoopLane;
+  cards: MtLoopCard[];
+  activeTruckId: string;
+  children: React.ReactNode;
+}) {
+  if (cards.length === 0) return null;
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className={cn("flex items-center gap-2 border-b-2 pb-1", LANE_ACCENT[lane])}>
+        <span className="text-[0.6875rem] font-semibold tracking-wide uppercase">
+          {MT_LOOP_LANE_LABEL[lane]}
+        </span>
+        <span className="text-[0.6875rem] tabular-nums">{cards.length}</span>
+      </div>
+      <ul className="flex flex-col gap-1.5">{children}</ul>
+    </div>
+  );
+}
