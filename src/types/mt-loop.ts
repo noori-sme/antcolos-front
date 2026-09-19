@@ -502,15 +502,25 @@ export interface MtLoopCard {
    */
   lane: MtLoopLane;
   /**
-   * The current operational conclusion, in one sentence a dispatcher can act
-   * on without opening anything.
+   * The current operational conclusion, as facts rather than a sentence.
+   *
+   * ★ WHAT CHANGED, AND WHY ★
+   * This used to be a sentence: "Harbor Point came back at $2.54/mi on Chicago
+   * → Kansas City." True, useful, and something a dispatcher has to READ — on
+   * a card that already carries a badge saying the same state. It is now the
+   * facts alone, `Harbor Point · $2.54/mi`, scanned rather than read, with the
+   * sentence moved to `headlineDetail` for anybody who wants it.
    *
    * Written from the records this cycle reads — the negotiation, the booking,
    * the rate confirmation, the blocker that stops it — and never a restatement
-   * of the truck, trailer or driver profile. Those have their own pages; this
-   * says what it MEANS for the next hour of work.
+   * of the truck, trailer or driver profile. Those have their own pages.
+   *
+   * Empty when the badge already says everything there is to say. A card is
+   * not obliged to repeat itself in a second typeface.
    */
   headline: string;
+  /** The long form, for a tooltip. Never required to understand the card. */
+  headlineDetail?: string;
   /** Where the cycle has got to, as the one badge a card carries. */
   progress: MtLoopProgress;
   /**

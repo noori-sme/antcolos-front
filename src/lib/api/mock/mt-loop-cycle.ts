@@ -406,7 +406,13 @@ export function blockersFor(input: BlockerInput): MtLoopBlocker[] {
   for (const kind of loop ? loadMissingDocuments(loop.dispatchOrganizationId, loop.loadId) : []) {
     out.push({
       key: `load_document:${kind}`,
-      label: "Paperwork outstanding",
+      /*
+       * ★ THE DOCUMENT, NOT THE CATEGORY ★
+       * Every one of these was labelled "Paperwork outstanding", so a load
+       * owing both a bill of lading and a proof of delivery produced two rows
+       * a reader could not tell apart. The label names which one.
+       */
+      label: kind.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()),
       detail: `${loop!.loadReference ?? "The load"} still owes ${kind.replace(/_/g, " ")} before it can be invoiced.`,
       owner: "dispatcher",
       severity: "medium",

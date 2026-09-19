@@ -7,6 +7,7 @@ import {
   type MtLoopBoard, type MtLoopCard, type MtLoopLane,
 } from "@/types";
 import { CompactRow, FullCard } from "./loop-cards";
+import { InfoTip } from "./tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,10 +67,18 @@ export function TruckRail({
           <ArrowLeft className="size-3" aria-hidden />
           MT Loop
         </Link>
-        <p className="mt-1 text-[0.9375rem] font-semibold text-fg">Empty trucks</p>
-        <p className="text-[0.6875rem] text-fg-muted">
-          {lanes.needs_load.length} needing a load · {lanes.rolling.length} rolling ·{" "}
-          {lanes.not_ready.length} not ready
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[0.9375rem] font-semibold text-fg">
+          Empty trucks
+          {/* Counts, not a sentence about counts. */}
+          <span className="text-[0.6875rem] font-normal text-st-warning tabular-nums">
+            {lanes.needs_load.length} load
+          </span>
+          <span className="text-[0.6875rem] font-normal text-st-success tabular-nums">
+            {lanes.rolling.length} rolling
+          </span>
+          <span className="text-[0.6875rem] font-normal text-fg-muted tabular-nums">
+            {lanes.not_ready.length} held
+          </span>
         </p>
       </div>
 
@@ -115,10 +124,6 @@ export function TruckRail({
         ))}
       </RailLane>
 
-      <p className="rounded-md border border-dashed border-border px-3 py-2 text-[0.6875rem] leading-relaxed text-fg-subtle">
-        A truck needing a load keeps its whole card — it is the one you might switch to.
-        Rolling and Not ready are one line each: you are watching them, not working them.
-      </p>
     </aside>
   );
 }
@@ -145,6 +150,11 @@ function RailLane({
           {MT_LOOP_LANE_LABEL[lane]}
         </span>
         <span className="text-[0.6875rem] tabular-nums">{cards.length}</span>
+        <span className="flex-1" />
+        {/* Why these lanes look different, for anybody who wonders. */}
+        {lane === "needs_load" ? (
+          <InfoTip text="The lane you might switch into, so these keep their whole card. Rolling and Not ready are one line each — you are watching them, not working them." />
+        ) : null}
       </div>
       <ul className="flex flex-col gap-1.5">{children}</ul>
     </div>

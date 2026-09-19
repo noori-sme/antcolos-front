@@ -2,7 +2,7 @@
 
 import {
   AlertTriangle, ArrowLeft, Building2, Check, ChevronDown, CircleCheck, Clock3,
-  Container, FileText, Lock, Phone, Mail, RefreshCw, Truck as TruckIcon, User,
+  ArrowUpRight, Container, FileText, Lock, Phone, Mail, RefreshCw, Truck as TruckIcon, User,
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -33,10 +33,11 @@ import { useTruckDispatchWorkspace } from "./use-truck-dispatch";
 // it was opened from cannot say different things about the same truck.
 import { Dwell, ServiceChip, TruckMark, progressTone } from "./loop-cards";
 import { MiniMap } from "./mini-map";
+import { InfoTip, Metric, Tip } from "./tip";
 import { TruckRail } from "./truck-rail";
 import {
   cycleStages, openStageOf,
-  type CycleStage, type CycleStageKey, type CycleStageState,
+  type CycleStage, type CycleStageKey,
 } from "./cycle-stages";
 
 /**
@@ -205,11 +206,9 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
          * the things it has to be made against.
          */
         return (
-          <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-[0.8125rem] leading-relaxed text-fg-muted">
-            Booking happens inside the conversation that agreed the price, so the rate, the
-            deadhead and the driver&rsquo;s answer are all on screen when the truck is
-            committed. Every blocker is re-checked at that moment — not from this page and
-            not from this list.
+          <p className="flex items-center gap-2 rounded-md border border-dashed border-border px-3.5 py-2 text-[0.8125rem] text-fg-muted">
+            Booked from the agreed conversation
+            <InfoTip text="The rate, the deadhead and the driver's answer are all on screen there when the truck is committed, and every blocker is re-checked at that moment — not from this page." />
           </p>
         );
       case "ratecon":
@@ -351,17 +350,27 @@ function TruckHeader({
         <h1 className="font-mono text-[1.25rem] leading-tight font-semibold text-fg">
           Unit {w.fleetTruck.unit}
         </h1>
-        <p className="text-[0.75rem] leading-snug text-fg-muted">
-          {w.fleetTruck.equipment.replace(/_/g, " ")}
-          {w.carrier ? ` · ${w.carrier.displayName}` : " · carrier not established"}
-          {card && cycleAge(card.openedAt, now) ? ` · ${cycleAge(card.openedAt, now)}` : ""}
-          {card?.claimed
-            ? card.claimed.isMine
-              ? " · you have it"
-              : ` · ${card.claimed.displayName} has it`
-            : card
-              ? " · nobody has accepted it"
-              : ""}
+        {/* Equipment, carrier, holder — three facts, not a clause each. */}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.75rem] leading-snug text-fg-muted">
+          <span>{w.fleetTruck.equipment.replace(/_/g, " ")}</span>
+          <span aria-hidden className="text-border-strong">·</span>
+          <span>{w.carrier?.displayName ?? "No carrier"}</span>
+          {card ? (
+            <>
+              <span aria-hidden className="text-border-strong">·</span>
+              <span className={card.claimed ? undefined : "text-st-warning"}>
+                {card.claimed
+                  ? card.claimed.isMine ? "yours" : card.claimed.displayName
+                  : "unclaimed"}
+              </span>
+            </>
+          ) : null}
+          {card && cycleAge(card.openedAt, now) ? (
+            <>
+              <span aria-hidden className="text-border-strong">·</span>
+              <span className="tabular-nums">{cycleAge(card.openedAt, now)}</span>
+            </>
+          ) : null}
         </p>
       </div>
 
@@ -391,8 +400,8 @@ function TruckHeader({
 function cycleAge(openedAt: string, now: number | null): string {
   if (now === null) return "";
   const hours = Math.max(0, Math.floor((now - Date.parse(openedAt)) / 3_600_000));
-  if (hours >= 24) return `cycle open ${Math.floor(hours / 24)}d`;
-  if (hours >= 1) return `cycle open ${hours}h`;
+  if (hours >= 24) return `${Math.floor(hours / 24)}d open`;
+  if (hours >= 1) return `${hours}h open`;
   /*
    * Under an hour, say nothing.
    *
@@ -442,52 +451,53 @@ function RigStrip({
   const trailerNeeded = w.fleetTruck.equipment === "tractor";
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-surface px-4 py-2.5">
-      <RigDot
-        tone={truckProblem ? "bad" : "good"}
-        label={truckProblem
-          ? `Truck ${w.fleetTruck.unit} · ${truckProblem.label.toLowerCase()}`
-          : `Truck ${w.fleetTruck.unit} · in order`}
-      />
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-surface px-3.5 py-2">
       {/*
-        ★ WHAT IS ACTUALLY HOOKED UP, NOT WHAT THE EQUIPMENT TYPE IMPLIES ★
-        A hotshot does not REQUIRE a trailer and frequently has one. Reading
-        the requirement instead of the record put "No trailer on a hotshot" on
-        a truck whose own records chip, two inches below, linked the trailer
-        that was on it.
+        ★ FOUR DOTS, FOUR WORDS ★
+        These read "Truck 133 · in order", "Northline Freight · authority
+        active" — a sentence per dot, four sentences to answer one yes/no
+        question. The dot carries the answer; the label carries the name; the
+        problem, when there is one, carries its own words in the tip.
       */}
       <RigDot
+        icon={TruckIcon}
+        tone={truckProblem ? "bad" : "good"}
+        label={w.fleetTruck.unit}
+        detail={truckProblem?.detail ?? "Paperwork in order."}
+      />
+      <RigDot
+        icon={Container}
         tone={w.trailer ? "good" : trailerNeeded ? "bad" : "none"}
-        label={w.trailer
-          ? `Trailer ${w.trailer.unit}`
+        label={w.trailer?.unit ?? "No trailer"}
+        detail={w.trailer
+          ? `Trailer ${w.trailer.unit} is hooked up.`
           : trailerNeeded
-            ? "No trailer"
-            : `No trailer needed on a ${w.fleetTruck.equipment.replace(/_/g, " ")}`}
+            ? "This is a tractor and has no trailer on it. It cannot be dispatched."
+            : `A ${w.fleetTruck.equipment.replace(/_/g, " ")} does not need one.`}
       />
       <RigDot
+        icon={User}
         tone={driverProblem ? "bad" : "good"}
-        label={w.driver
-          ? driverProblem
-            ? `${w.driver.legalName} · ${driverProblem.label.toLowerCase()}`
-            : w.driver.legalName
-          : "No driver"}
+        label={w.driver?.legalName ?? "No driver"}
+        detail={driverProblem?.detail ?? "Available, and their paperwork is in order."}
       />
       <RigDot
+        icon={Building2}
         tone={carrierProblem ? "bad" : w.carrierWithheld ? "unknown" : "good"}
-        label={w.carrier
-          ? carrierProblem
-            ? `${w.carrier.displayName} · ${carrierProblem.label.toLowerCase()}`
-            : `${w.carrier.displayName} · authority active`
-          : w.carrierWithheld
-            ? "Carrier not readable from here"
-            : "Carrier not established"}
+        label={w.carrier?.displayName ?? (w.carrierWithheld ? "Withheld" : "Not established")}
+        detail={carrierProblem?.detail
+          ?? (w.carrier
+            ? "Operating authority is active."
+            : w.carrierWithheld
+              ? "This workspace has no relationship that entitles it to the carrier's record."
+              : "The canonical records name no carrier for this cycle.")}
       />
 
       {card?.service ? <ServiceChip card={card} /> : null}
 
       <span className="flex-1" />
-      <Button variant="secondary" size="sm" onClick={onToggle} aria-expanded={open}>
-        The rig
+      <Button variant="ghost" size="sm" onClick={onToggle} aria-expanded={open}>
+        Detail
         <ChevronDown
           className={cn("size-3.5 transition-transform", open && "rotate-180")}
           aria-hidden
@@ -500,37 +510,41 @@ function RigStrip({
 /**
  * One thing, and whether it is in order.
  *
- * `none` is its own tone and not a quiet `good`: a cargo van with no trailer
- * is not a van whose trailer checks out, and `unknown` is not a quiet `bad` —
+ * `none` is its own tone and not a quiet `good` — a cargo van with no trailer
+ * is not a van whose trailer checks out — and `unknown` is not a quiet `bad`:
  * a carrier this workspace may not read is a permission outcome, not a
  * carrier with a problem.
  */
 function RigDot({
-  tone, label,
+  tone, label, detail, icon: Icon,
 }: {
   tone: "good" | "bad" | "none" | "unknown";
   label: string;
+  detail: string;
+  icon: typeof TruckIcon;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 text-[0.75rem]",
-        tone === "bad" ? "font-medium text-st-danger"
-          : tone === "unknown" ? "text-st-warning"
-            : tone === "none" ? "text-fg-subtle" : "text-fg-muted",
-      )}
-    >
+    <Tip text={detail} className="no-underline">
       <span
-        aria-hidden
         className={cn(
-          "size-2 rounded-full",
-          tone === "bad" ? "bg-st-danger"
-            : tone === "unknown" ? "bg-st-warning"
-              : tone === "none" ? "bg-border-strong" : "bg-st-success",
+          "inline-flex items-center gap-1.5 text-[0.75rem]",
+          tone === "bad" ? "font-medium text-st-danger"
+            : tone === "unknown" ? "text-st-warning"
+              : tone === "none" ? "text-fg-subtle" : "text-fg-muted",
         )}
-      />
-      {label}
-    </span>
+      >
+        <Icon
+          className={cn(
+            "size-3.5 shrink-0",
+            tone === "bad" ? "text-st-danger"
+              : tone === "unknown" ? "text-st-warning"
+                : tone === "none" ? "text-border-strong" : "text-st-success",
+          )}
+          aria-hidden
+        />
+        {label}
+      </span>
+    </Tip>
   );
 }
 
@@ -538,16 +552,7 @@ function RigDot({
 /* The spine                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const STAGE_STATE_LABEL: Record<CycleStageState, string> = {
-  done: "done",
-  active: "your turn",
-  waiting: "waiting",
-  upcoming: "not yet",
-  skipped: "skipped",
-  stopped: "refused",
-};
-
-const STAGE_TONE: Record<CycleStageState, "success" | "info" | "warning" | "neutral" | "danger"> = {
+const STAGE_TONE: Record<CycleStage["state"], "success" | "info" | "warning" | "neutral" | "danger"> = {
   done: "success",
   active: "info",
   waiting: "warning",
@@ -614,14 +619,15 @@ function StageSpine({
             <RefreshCw className="size-3 text-fg-subtle" aria-hidden />
           </span>
         </span>
-        <div className="min-w-0 flex-1 rounded-md border border-dashed border-border bg-surface-sunken px-3.5 py-3">
-          <p className="text-[0.8125rem] font-medium text-fg">
-            The rest of the cycle is not built yet
-          </p>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            {planned.map((p) => p.title).join(" · ")} — then this cycle closes and a new
-            loop opens for the same truck, with its own id. Every one of them hangs off the
-            cycle id already on this page.
+        <div className="min-w-0 flex-1 rounded-md border border-dashed border-border bg-surface-sunken px-3.5 py-2">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Badge tone="neutral">Not built</Badge>
+            <span className="text-[0.75rem] text-fg-muted">
+              {planned.map((p) => p.title).join(" · ")}
+            </span>
+            <InfoTip
+              text={`Milestones ${planned[0]?.milestone ?? 9}–${planned[planned.length - 1]?.milestone ?? 12}. Each hangs off the cycle id already on this page. When they run, this cycle closes and a new loop opens for the same truck with its own id.`}
+            />
           </p>
         </div>
       </div>
@@ -705,7 +711,8 @@ function StageCard({
         className="flex w-full items-start gap-2 px-3.5 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2">
+          {/* Title, state, and the numbers — one line where there is room. */}
+          <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <span
               className={cn(
                 "text-[0.8125rem] font-semibold",
@@ -716,26 +723,28 @@ function StageCard({
             >
               {stage.title}
             </span>
-            <Badge tone={STAGE_TONE[stage.state]}>{STAGE_STATE_LABEL[stage.state]}</Badge>
+            <Badge tone={STAGE_TONE[stage.state]}>{stage.summary}</Badge>
+            {stage.metrics?.map((m) => (
+              <Metric key={m.label} label={m.label} value={m.value} tone={m.tone} title={m.title} />
+            ))}
+            {/*
+              ★ WHAT STAYS ON THE PAGE, AND WHAT MOVES TO A HOVER ★
+              A refusal's cause and a carrier's rule are the two notes a reader
+              has to act on, so they stay visible. Everything else — what is
+              not connected, what is never emailed, when the blockers are
+              re-checked — is an explanation of something already on screen,
+              and lives in the tip.
+            */}
+            {stage.note && !stage.noteVisible ? <InfoTip text={stage.note} /> : null}
           </span>
-          <span className="mt-0.5 block text-[0.75rem] leading-relaxed text-fg-muted">
-            {stage.summary}
-          </span>
-          {/* A skipped stage without its reason reads as a step somebody
-              forgot, and a refusal without one reads as a broken button. */}
-          {stage.reason ? (
+          {stage.note && stage.noteVisible ? (
             <span
               className={cn(
-                "mt-1 block text-[0.75rem] leading-relaxed",
+                "mt-1 block text-[0.75rem] leading-snug",
                 stopped ? "text-st-danger" : "text-fg-subtle",
               )}
             >
-              {stage.reason}
-            </span>
-          ) : null}
-          {stage.caveat ? (
-            <span className="mt-1 block text-[0.6875rem] leading-relaxed text-st-warning">
-              {stage.caveat}
+              {stage.note}
             </span>
           ) : null}
         </span>
@@ -774,9 +783,6 @@ function RecordsChips({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-      <span className="text-[0.6875rem] font-medium tracking-wide text-fg-subtle uppercase">
-        Records
-      </span>
       <RecordChip href={`/fleet/trucks/${w.truck.truckId}`}>
         Truck {w.fleetTruck.unit}
       </RecordChip>
@@ -882,10 +888,11 @@ const EmptyNote = ({ children }: { children: React.ReactNode }) => (
 /* Blockers                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** Whose it is to clear. Two words — the row has no room for a sentence. */
 const OWNER_LABEL: Record<MtLoopBlocker["owner"], string> = {
-  carrier: "The carrier has to fix this",
-  driver: "The driver has to fix this",
-  dispatcher: "Yours to sort out",
+  carrier: "carrier",
+  driver: "driver",
+  dispatcher: "yours",
 };
 
 /**
@@ -910,16 +917,11 @@ function BlockerPanel({ blockers }: { blockers: MtLoopBlocker[] }) {
 
   if (blockers.length === 0) {
     return (
-      <section className="flex items-start gap-2.5 rounded-lg border border-st-success/40 bg-st-success-bg/50 px-4 py-3">
-        <CircleCheck className="mt-0.5 size-4 shrink-0 text-st-success" aria-hidden />
-        <div>
-          <h2 className="text-[0.875rem] font-semibold text-fg">Nothing is standing in the way</h2>
-          <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-fg-muted">
-            The carrier&rsquo;s authority, the paperwork, the driver and the equipment all check out for
-            this truck right now.
-          </p>
-        </div>
-      </section>
+      <p className="flex items-center gap-2 rounded-lg border border-st-success/40 bg-st-success-bg/40 px-3.5 py-2 text-[0.8125rem] font-medium text-fg">
+        <CircleCheck className="size-4 shrink-0 text-st-success" aria-hidden />
+        Clear to dispatch
+        <InfoTip text="Authority, paperwork, driver and equipment all check out for this truck right now." />
+      </p>
     );
   }
 
@@ -927,76 +929,69 @@ function BlockerPanel({ blockers }: { blockers: MtLoopBlocker[] }) {
     <section
       aria-labelledby="blockers-heading"
       className={cn(
-        "rounded-lg border p-4",
+        "rounded-lg border px-3.5 py-2.5",
         stopping.length > 0
-          ? "border-st-danger/45 bg-st-danger-bg/40"
+          ? "border-st-danger/45 bg-st-danger-bg/35"
           : "border-border bg-surface-sunken",
       )}
     >
-      <h2 id="blockers-heading" className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
+      <h2
+        id="blockers-heading"
+        className="flex items-center gap-2 text-[0.8125rem] font-semibold text-fg"
+      >
         {stopping.length > 0 ? (
-          <AlertTriangle className="size-4 text-st-danger" aria-hidden />
+          <AlertTriangle className="size-4 shrink-0 text-st-danger" aria-hidden />
         ) : null}
-        {stopping.length === 0
-          ? other.length === 1 ? "One thing is unresolved" : `${other.length} things are unresolved`
-          : stopping.length === 1
-            ? "One thing stops this truck being dispatched"
-            : `${stopping.length} things stop this truck being dispatched`}
-      </h2>
-      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
         {stopping.length > 0
-          ? "No load may be booked on this truck until every one of these is cleared."
-          : "None of these stops a dispatch. They still belong to somebody."}
-      </p>
-
-      {stopping.length > 0 ? (
-        <ul className="mt-3 space-y-2">
-          {stopping.map((b) => <BlockerRow key={b.key} blocker={b} stops />)}
-        </ul>
-      ) : null}
-
-      {other.length > 0 ? (
-        <>
-          {stopping.length > 0 ? (
-            <p className="mt-4 text-[0.6875rem] font-medium tracking-wide text-fg-subtle uppercase">
-              Also unresolved — none of these stops a dispatch
-            </p>
-          ) : null}
-          <ul className={cn("space-y-2", stopping.length > 0 ? "mt-2" : "mt-3")}>
-            {other.map((b) => <BlockerRow key={b.key} blocker={b} />)}
-          </ul>
-        </>
-      ) : null}
-    </section>
-  );
-}
-
-function BlockerRow({ blocker: b, stops }: { blocker: MtLoopBlocker; stops?: boolean }) {
-  return (
-    <li className="rounded-md border border-border bg-surface px-3.5 py-2.5">
-      <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium text-fg">
-        {b.label}
-        {/*
-          ★ THE BADGE SAYS WHAT IT DOES, NOT HOW BAD IT FEELS ★
-          "No trailer" is severity `medium` and stops a dispatch outright;
-          labelling it "Needs a look" beside a rate confirmation marked
-          "Serious" told the reader the opposite of what is true. Severity
-          orders this list. `stopsDispatch` is what gets said out loud.
-        */}
-        <Badge tone={stops ? "danger" : "neutral"}>
-          {stops ? "Stops dispatch" : "Does not stop a dispatch"}
-        </Badge>
-      </p>
-      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">{b.detail}</p>
-      <p className="mt-1 flex flex-wrap items-center gap-x-3 text-[0.75rem] text-fg-subtle">
-        <span>{OWNER_LABEL[b.owner]}</span>
-        {b.href ? (
-          <Link href={b.href} className="underline underline-offset-4 hover:text-fg">
-            Open it
-          </Link>
+          ? `${stopping.length} blocking`
+          : `${other.length} open`}
+        {other.length > 0 && stopping.length > 0 ? (
+          <span className="font-normal text-fg-muted">· {other.length} non-blocking</span>
         ) : null}
-      </p>
-    </li>
+        <InfoTip
+          text={stopping.length > 0
+            ? "No load may be booked on this truck until every blocking item is cleared. The rest are open work and do not stop a dispatch."
+            : "None of these stops a dispatch. They still belong to somebody."}
+        />
+      </h2>
+
+      {/*
+        ★ ONE ROW EACH, AND THE BLOCKER ITSELF NEVER MOVES ★
+        Each row used to carry a label, a badge, a sentence and an owner line —
+        four lines for a fact whose whole content is "no trailer, yours". The
+        label, the colour and the owner stay on the page; the SENTENCE moved to
+        the tip. What stops a dispatch is still visible without hovering, which
+        is the rule this panel exists to keep.
+      */}
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+        {[...stopping, ...other].map((b) => (
+          <li key={b.key} className="flex items-center gap-1.5 text-[0.75rem]">
+            <span
+              aria-hidden
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                b.stopsDispatch ? "bg-st-danger" : "bg-border-strong",
+              )}
+            />
+            <Tip text={b.detail}>
+              <span className={b.stopsDispatch ? "font-medium text-st-danger" : "text-fg-muted"}>
+                {b.label}
+              </span>
+            </Tip>
+            <span className="text-fg-subtle">{OWNER_LABEL[b.owner]}</span>
+            {b.href ? (
+              <Link
+                href={b.href}
+                className="text-primary underline-offset-4 hover:underline"
+                aria-label={`Open ${b.label}`}
+              >
+                <ArrowUpRight className="size-3.5" aria-hidden />
+              </Link>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

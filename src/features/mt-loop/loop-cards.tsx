@@ -1,11 +1,12 @@
 "use client";
 
-import { MessageSquare, MoreHorizontal, Truck, Wrench } from "lucide-react";
+import { AlertTriangle, MessageSquare, MoreHorizontal, Truck, Wrench } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { MtLoopCard, MtLoopProgress } from "@/types";
 import { MiniMap, PositionCaption } from "./mini-map";
+import { Tip } from "./tip";
 import { cn, useNow } from "@/lib/utils";
 
 /**
@@ -49,6 +50,22 @@ export function Dwell({ card, compact }: { card: MtLoopCard; compact?: boolean }
   // The clock ticks, and "now" comes from a hydration-safe store so the server
   // and the client never disagree about how long a truck has been sitting.
   const now = useNow();
+
+  /*
+   * ★ THE CLOCK STOPS WHEN THE TRUCK ROLLS ★
+   * `emptyNow` only means the expected empty time has passed, so a truck that
+   * went empty this morning and is now loaded and moving kept counting: the
+   * header read "Rolling · 6h empty" about a truck that had stopped costing
+   * money hours ago. The empty clock is the one number on this board nobody
+   * should have to second-guess.
+   */
+  if (card.lane === "rolling") {
+    return (
+      <span className={cn("font-medium text-st-success", compact ? "text-[0.75rem]" : "text-[0.8125rem]")}>
+        clock stopped
+      </span>
+    );
+  }
 
   if (!card.emptyNow) {
     return (
@@ -209,37 +226,37 @@ export function FullCard({
         ) : null}
       </div>
 
-      <p className="text-[0.8125rem] leading-snug text-fg">{card.headline}</p>
+      {/* Facts, and only when they add something the badge has not said. */}
+      {card.headline ? (
+        card.headlineDetail ? (
+          <Tip text={card.headlineDetail} className="w-fit no-underline">
+            <span className="text-[0.8125rem] font-medium text-fg">{card.headline}</span>
+          </Tip>
+        ) : (
+          <p className="text-[0.8125rem] font-medium text-fg">{card.headline}</p>
+        )
+      ) : null}
 
       {/* Never collapsed, never behind a disclosure, whatever else is on the
           card. A dispatch-stopping conflict is the one thing that has to be
           readable without opening anything. */}
+      {/*
+        ★ THE BLOCKER STAYS. ITS PARAGRAPH DOES NOT. ★
+        Anything that stops a dispatch is on the face of the card, in red, by
+        name — that rule has not moved. What moved is the SENTENCE behind it,
+        into the tip and the actions panel, because printing it under a
+        headline that already said it is what made these cards unreadable.
+      */}
       {stopping.length > 0 ? (
-        <ul className="flex flex-col gap-0.5">
-          {stopping.map((b) => {
-            /*
-             * The blocker always shows. Its SENTENCE does not, when the card
-             * has just said it — the headline is written from the leading
-             * stopping blocker, and the badge names an outstanding rate
-             * confirmation in three words. Printing the paragraph again under
-             * both is what made these cards unreadable. The full text is one
-             * click away, in the panel, with the evidence beside it.
-             */
-            const echoed = b.detail === card.headline
-              || (b.key === "unconfirmed_load"
-                && (card.progress.key === "waiting_rate_con"
-                  || card.progress.key === "rate_con_ready"));
-            return (
-              <li
-                key={b.key}
-                title={b.detail}
-                className="text-[0.75rem] leading-relaxed text-st-danger"
-              >
+        <ul className="flex flex-wrap gap-x-3 gap-y-1">
+          {stopping.map((b) => (
+            <li key={b.key} className="flex items-center gap-1 text-[0.75rem] text-st-danger">
+              <AlertTriangle className="size-3 shrink-0" aria-hidden />
+              <Tip text={b.detail}>
                 <span className="font-medium">{b.label}</span>
-                {echoed ? null : <>: {b.detail}</>}
-              </li>
-            );
-          })}
+              </Tip>
+            </li>
+          ))}
         </ul>
       ) : null}
 
@@ -409,6 +426,9 @@ export function ServiceChip({ card }: { card: MtLoopCard }) {
   const hard = s.outOfService || s.state === "overdue";
   return (
     <span
+      title={s.outOfService
+        ? `${s.title}. The truck may not move until the hold is lifted.`
+        : `${s.title} — ${s.due}. Read from the Maintenance module.`}
       className={cn(
         "inline-flex w-fit items-center gap-1.5 rounded-sm border px-2 py-0.5 text-[0.6875rem]",
         hard
@@ -417,9 +437,7 @@ export function ServiceChip({ card }: { card: MtLoopCard }) {
       )}
     >
       <Wrench className="size-3" aria-hidden />
-      {s.outOfService
-        ? `Out of service · ${s.title}`
-        : `${s.title} ${s.due}`}
+      {s.outOfService ? "Out of service" : `${s.title}: ${s.due}`}
     </span>
   );
 }
@@ -438,30 +456,38 @@ export function ServiceChip({ card }: { card: MtLoopCard }) {
  */
 export function Responsibility({ card, compact }: { card: MtLoopCard; compact?: boolean }) {
   return (
-    <span
-      className={cn(
-        "block text-fg-subtle",
-        compact ? "text-[0.6875rem] leading-snug" : "truncate text-[0.75rem]",
-      )}
+    /*
+     * ★ TWO FACTS, AND THE ORDER STILL MATTERS — IN FOUR WORDS ★
+     * "Paige Ellery is responsible · not claimed yet" is eight words for two
+     * facts: whose it is, and whether they have picked it up. The name carries
+     * the first; the dot carries the second; the tip carries the distinction
+     * for anybody who needs it spelled out.
+     */
+    <Tip
+      className={cn("block no-underline", compact ? "text-[0.6875rem]" : "text-[0.75rem]")}
+      text={card.responsible
+        ? `${card.responsible.displayName} is responsible for this cycle`
+          + (card.claimed ? " and has accepted it." : " and has not accepted it yet.")
+          + (card.responsible.noEligibleAssignee
+            ? " Nobody in this workspace holds what this needs."
+            : "")
+        : "The responsibility layer could not be read for this cycle."}
     >
-      {card.responsible ? (
-        <>
-          <span className={card.isMine ? "font-medium text-fg-muted" : undefined}>
-            {card.isMine ? "You are" : `${card.responsible.displayName} is`} responsible
-          </span>
-        </>
-      ) : (
-        <span className="text-st-warning">Could not read who is responsible</span>
-      )}
-      {card.claimed
-        ? card.claimed.isMine
-          ? " · you claimed it"
-          : ` · claimed by ${card.claimed.displayName}`
-        : " · not claimed yet"}
-      {card.responsible?.noEligibleAssignee ? (
-        <span className="text-st-warning"> · nobody here holds what this needs</span>
-      ) : null}
-    </span>
+      <span className="flex items-center gap-1 text-fg-subtle">
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            card.claimed ? "bg-st-success" : "bg-st-warning",
+          )}
+        />
+        <span className={cn("truncate", card.isMine && "text-fg-muted")}>
+          {card.responsible
+            ? card.isMine ? "You" : card.responsible.displayName
+            : "Unknown"}
+        </span>
+      </span>
+    </Tip>
   );
 }
 

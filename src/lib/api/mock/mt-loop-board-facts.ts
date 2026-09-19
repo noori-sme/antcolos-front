@@ -295,21 +295,21 @@ function headlineFor(
   input: ProgressInput,
   progress: MtLoopProgress,
   ctx: MtLoopContext,
-): string {
+): { headline: string; detail?: string } {
   const { loop, blockers } = input;
 
   /*
-   * Whatever stops the truck is the headline, whatever else is true. A cycle
-   * that cannot be dispatched has exactly one thing worth saying about it.
+   * Whatever stops the truck leads, whatever else is true — as the blocker's
+   * own LABEL, with its sentence in the detail. A cycle that cannot be
+   * dispatched has exactly one thing worth saying about it, and it is already
+   * said in three words.
    *
    * `unconfirmed_load` is the one exclusion, and not because it matters less:
-   * it is what the dispatcher is actively working, the badge above already
-   * names it, and the blocker itself is still listed on the card and still
-   * stops the dispatch. Repeating it here would spend the one sentence on
-   * something the reader has just read.
+   * it is what the dispatcher is actively working, the badge already names it,
+   * and the blocker is still listed on the card and still stops the dispatch.
    */
   const stopping = blockers.find((b) => b.stopsDispatch && b.key !== "unconfirmed_load");
-  if (stopping) return stopping.detail;
+  if (stopping) return { headline: stopping.label, detail: stopping.detail };
 
   switch (progress.key) {
     case "broker_replied":
@@ -320,48 +320,56 @@ function headlineFor(
           .sort((a, b) => lastRoundAt(b).localeCompare(lastRoundAt(a)))[0];
       if (!n) break;
       const money = n.agreedRateCents ?? n.onTheTableCents;
-      const amount = money === undefined ? "a price" : dollars(money);
-      return progress.key === "price_agreed"
-        ? `${n.brokerName} agreed ${amount}. Nothing is committed until it is booked.`
-        : `${n.brokerName} came back at ${amount}.`;
+      // ★ The two facts that decide whether to take it: who, and how much. ★
+      return {
+        headline: [n.brokerName, money === undefined ? undefined : dollars(money)]
+          .filter(Boolean).join(" · "),
+        detail: progress.key === "price_agreed"
+          ? `${n.brokerName} agreed ${money === undefined ? "a price" : dollars(money)}. Nothing is committed until it is booked.`
+          : `${n.brokerName} came back at ${money === undefined ? "a price" : dollars(money)}.`,
+      };
     }
 
     case "waiting_rate_con":
-      return `Booked on ${loop.loadReference ?? "a load"}. Not final until the paper is back.`;
+      // The badge says "Waiting on the rate con" and the detail chip carries
+      // the reference. There is nothing left for a sentence to add.
+      return {
+        headline: "",
+        detail: `Booked on ${loop.loadReference ?? "a load"}. Not final until the signed confirmation is back from the broker.`,
+      };
 
     case "rate_con_ready":
-      return `${loop.loadReference ?? "The load"}'s rate confirmation is here. It is not final until it is signed and returned.`;
+      return {
+        headline: "",
+        detail: `${loop.loadReference ?? "The load"}'s rate confirmation is here. It is not final until it is signed and returned.`,
+      };
 
     case "rolling":
-      return `${loop.driverName ?? "The driver"} has ${loop.loadReference ?? "the load"} and is moving. The empty clock has stopped.`;
+      return {
+        headline: [loop.driverName, loop.loadReference].filter(Boolean).join(" · "),
+        detail: `${loop.driverName ?? "The driver"} has ${loop.loadReference ?? "the load"} and is moving. The empty clock has stopped.`,
+      };
 
     case "asked_brokers":
-      return "Asked and waiting. Nothing has come back yet.";
-
     case "searching":
-      return progress.detail
-        ? "The search has found something worth looking at."
-        : "Searching. Nothing worth taking has come up yet.";
+    case "not_started":
+      // Every one of these is already fully stated by the badge and its note.
+      // A second line saying it again in prose is the clutter this pass removed.
+      return { headline: "" };
 
     case "stopped":
-      return loop.pauseReason ?? loop.blockReason ?? "This cycle has been set aside.";
-
-    case "not_started":
-      break;
+      return {
+        headline: loop.status === "paused" ? "Paused by a person" : "Held",
+        detail: loop.pauseReason ?? loop.blockReason ?? "This cycle has been set aside.",
+      };
   }
 
-  return loop.expectedEmptyAt && Date.parse(loop.expectedEmptyAt) > Date.now()
-    ? `Free from ${short(loop.expectedEmptyAt)}. Nobody has started looking.`
-    : "Empty and earning nothing. Nobody has started looking.";
+  return { headline: "" };
 }
 
 const dollars = (cents: number) =>
   `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
-const short = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    weekday: "short", hour: "numeric", minute: "2-digit",
-  });
 
 /* -------------------------------------------------------------------------- */
 /* Where it is                                                                 */
@@ -465,6 +473,7 @@ function serviceFor(loop: MtLoop, ctx: MtLoopContext): MtLoopService | undefined
 export interface MtLoopBoardFacts {
   lane: MtLoopLane;
   headline: string;
+  headlineDetail?: string;
   progress: MtLoopProgress;
   inlineAction?: MtLoopInlineAction;
   position?: MtLoopPosition;
@@ -485,6 +494,7 @@ export function boardFactsFor(
 ): MtLoopBoardFacts {
   const { progress, inlineAction } = progressFor(input, ctx);
   const service = serviceFor(input.loop, ctx);
+  const { headline, detail } = headlineFor(input, progress, ctx);
   return {
     // A truck the shop has taken out of service cannot be dispatched whatever
     // the cycle thinks, and the Maintenance module — not this one — is what
@@ -492,7 +502,8 @@ export function boardFactsFor(
     lane: service?.outOfService
       ? "not_ready"
       : laneFor(input.stage, input.blockers, input.confirmed),
-    headline: headlineFor(input, progress, ctx),
+    headline,
+    headlineDetail: detail,
     progress,
     inlineAction,
     position: positionFor(input.loop, ctx),

@@ -77,16 +77,17 @@ test.describe("the Owner's Home", () => {
     // Whoever the line names is handling loops, and not one of their loops is
     // on this screen as a card.
     const line = await summary.innerText();
-    const who = line.match(/handled by ([^.]+)\./)?.[1];
+    // The line no longer ends in a sentence, so the name runs to the end of it.
+    const who = line.match(/handled by (.+?)\s*$/m)?.[1]?.trim();
     expect(who, "the line should name who is holding them").toBeTruthy();
 
     for (const card of await loopCards(page).all()) {
       const text = await card.innerText();
       // Every card left on Home says the viewer is responsible, is the
       // fallback, or that it reached them — never that it is somebody else's.
-      expect(text, "a card on Home belongs to somebody else").not.toContain(
-        `${who} is responsible`,
-      );
+      // The responsibility line is a name now, not "X is responsible" — so the
+      // check is that a colleague's NAME is not on a card on this person's Home.
+      expect(text, "a card on Home belongs to somebody else").not.toContain(who!);
     }
   });
 
@@ -100,7 +101,8 @@ test.describe("the Owner's Home", () => {
 
     const line = handledLine(page);
     await expect(line).toBeVisible();
-    await expect(line).toContainText(/Nothing there is waiting on you/);
+    // "Nothing there is waiting on you" is in the tip beside the count now.
+    // What has to be ON the line is who is holding them, which is below.
 
     // A summary, not a control. Nothing in it can be pressed; the only way
     // out of it is to go and look.

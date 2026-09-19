@@ -17,6 +17,7 @@ import {
 } from "./loop-dialogs";
 // One card implementation, shared with the rail beside a truck's own page.
 import { CompactRow, FullCard } from "./loop-cards";
+import { InfoTip } from "./tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -175,15 +176,16 @@ export function MtLoopPanel({
           >
             <RefreshCw className="size-4 text-fg-subtle" aria-hidden />
             MT Loop
+            <InfoTip
+              text={personal
+                ? "Empty trucks that need you — yours to work, fallen to you, escalated to you, or waiting on your decision."
+                : "Every truck this workspace covers that is empty or about to be, from the moment it goes empty until its next load has run."}
+            />
             <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
               {shown.length}
             </span>
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            {personal
-              ? "Empty trucks that need you — yours to work, fallen to you, escalated to you, or waiting on your decision."
-              : "Every truck this workspace covers that is empty or about to be, from the moment it goes empty until its next load has run."}
-          </p>
+
         </div>
         {shown.length > 0 ? (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.75rem] text-fg-subtle">
@@ -219,15 +221,15 @@ export function MtLoopPanel({
 
       <div className="mt-3">
         {shown.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border px-3.5 py-4 text-center">
+          <div className="flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-4">
             <p className="text-[0.8125rem] font-medium text-fg">
               {personal ? "No empty truck needs you" : "No trucks going empty"}
             </p>
-            <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-              {personal
+            <InfoTip
+              text={personal
                 ? "A loop lands here when it is yours to work, when nobody else can take it, when somebody escalates it to you or asks for your help, or when it is waiting on your decision."
-                : "A loop opens by itself the moment one of your trucks becomes available or is expected to go empty. Nothing here is waiting on you."}
-            </p>
+                : "A loop opens by itself the moment one of your trucks becomes available or is expected to go empty."}
+            />
           </div>
         ) : (
           /*
@@ -243,7 +245,7 @@ export function MtLoopPanel({
               lane="needs_load"
               cards={lanes.needs_load}
               className="lg:col-span-2"
-              empty="Nothing is waiting for work."
+              empty="Nothing waiting for work"
             >
               {lanes.needs_load.map((card) => (
                 <FullCard
@@ -260,7 +262,8 @@ export function MtLoopPanel({
             <Lane
               lane="rolling"
               cards={lanes.rolling}
-              empty="Nothing has left yet. A truck moves here only when the rate confirmation is signed and back AND the driver has started for the pickup."
+              empty="Nothing has left yet"
+              emptyWhy="A truck moves here only when the rate confirmation is signed and back AND the driver has started for the pickup."
             >
               {lanes.rolling.map((card) => (
                 <CompactRow
@@ -274,8 +277,7 @@ export function MtLoopPanel({
             <Lane
               lane="not_ready"
               cards={lanes.not_ready}
-              empty="Every open cycle can be dispatched."
-              note="Still real cycles, still counting, still somebody's."
+              empty="All cycles dispatchable"
             >
               {lanes.not_ready.map((card) => (
                 <CompactRow
@@ -292,12 +294,14 @@ export function MtLoopPanel({
       {personal ? <HandledByOthers board={board} /> : null}
       <DispatchedOut board={board} />
 
-      <p className="mt-3 text-[0.75rem] leading-relaxed text-fg-subtle">
-        A card is the conclusion, not the file: the truck, the driver, the trailer and the
-        load keep their own records and this reads them. Contacting brokers is not built
-        yet — messages can be prepared and read, but nothing is sent, and a broker&rsquo;s
-        reply is recorded by a person. What is real here is the cycle itself: who is
-        responsible, what is standing in the way, and what happened to it.
+      {/*
+        ★ THE HONESTY NOTE IS STILL HERE, IN ONE LINE ★
+        Five sentences of it sat under every board. What a dispatcher has to
+        know is that nothing is sent; the rest explains a design they can see.
+      */}
+      <p className="mt-3 flex items-center gap-1.5 text-[0.6875rem] text-fg-subtle">
+        Nothing is emailed from Antcolos
+        <InfoTip text="Messages are prepared and read here, and a person sends them. A broker's reply is recorded by a person too. A card is the conclusion, not the file — the truck, driver, trailer and load keep their own records and this reads them." />
       </p>
 
       {open?.kind === "broker_reply" && open.id ? (
@@ -328,6 +332,13 @@ export function MtLoopPanel({
 /* Lanes                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/** What each lane MEANS, one hover away rather than printed under it. */
+const LANE_WHY: Record<MtLoopLane, string> = {
+  needs_load: "Empty or going empty, dispatchable, and still without work. These are the ones somebody acts on.",
+  rolling: "The rate confirmation is signed and back AND the driver has started. The empty clock has stopped.",
+  not_ready: "Something stops the dispatch, so searching would be wasted effort. Still open cycles, still counting, still somebody's.",
+};
+
 const LANE_ACCENT: Record<MtLoopLane, string> = {
   needs_load: "border-st-warning text-st-warning",
   rolling: "border-st-success text-st-success",
@@ -335,7 +346,7 @@ const LANE_ACCENT: Record<MtLoopLane, string> = {
 };
 
 function Lane({
-  lane, cards, children, className, empty, note,
+  lane, cards, children, className, empty, emptyWhy,
 }: {
   lane: MtLoopLane;
   cards: MtLoopCard[];
@@ -343,7 +354,8 @@ function Lane({
   className?: string;
   /** What this lane being empty MEANS. Never just "nothing here". */
   empty: string;
-  note?: string;
+  /** The rule behind that, where it needs one. Tooltip, not layout. */
+  emptyWhy?: string;
 }) {
   return (
     <div className={cn("flex min-w-0 flex-col gap-2", className)}>
@@ -357,21 +369,19 @@ function Lane({
           {MT_LOOP_LANE_LABEL[lane]}
         </span>
         <span className="text-[0.75rem] tabular-nums">{cards.length}</span>
+        <span className="flex-1" />
+        <InfoTip text={LANE_WHY[lane]} />
       </div>
 
       {cards.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border px-3 py-3 text-[0.75rem] leading-relaxed text-fg-muted">
+        <p className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2.5 text-[0.75rem] text-fg-muted">
           {empty}
+          {emptyWhy ? <InfoTip text={emptyWhy} /> : null}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">{children}</ul>
       )}
 
-      {note && cards.length > 0 ? (
-        <p className="rounded-md border border-dashed border-border px-3 py-2 text-[0.6875rem] leading-relaxed text-fg-subtle">
-          {note}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -404,11 +414,9 @@ function DispatchedOut({ board }: { board: MtLoopBoard }) {
       aria-label="Dispatched by another organization"
       className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-dashed border-border px-3.5 py-2.5"
     >
-      <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-fg-muted">
-        <span className="font-medium text-fg">
-          {count} of your {count === 1 ? "trucks is" : "trucks are"} dispatched by {who}
-        </span>
-        . They will ask if they need you.
+      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-[0.8125rem] text-fg-muted">
+        <span className="font-medium text-fg">{count} dispatched by {who}</span>
+        <InfoTip text="Those cycles are not yours to work. They reach you when the dispatcher asks, as an item in Needs You with a name and a reason on it." />
       </p>
       <Link
         href="/needs-you"
@@ -449,11 +457,11 @@ function HandledByOthers({ board }: { board: MtLoopBoard }) {
       aria-label="Handled by your team"
       className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-sunken px-3.5 py-2.5"
     >
-      <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-[0.8125rem] text-fg-muted">
         <span className="font-medium text-fg">
-          {count} Empty {count === 1 ? "Loop is" : "Loops are"} being handled by {who}
+          {count} Empty {count === 1 ? "Loop" : "Loops"} handled by {who}
         </span>
-        . Nothing there is waiting on you.
+        <InfoTip text="Nothing there is waiting on you. They are on the dispatch board and in Team oversight, where they can be inspected." />
       </p>
       <span className="flex items-center gap-3">
         <Link

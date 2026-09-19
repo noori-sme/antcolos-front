@@ -110,8 +110,11 @@ test.describe("the Carrier Owner who granted trucks out", () => {
 
     const summary = dispatchedOut(page);
     await expect(summary).toBeVisible();
-    await expect(summary).toContainText(/of your trucks (is|are) dispatched by/);
-    await expect(summary).toContainText(/They will ask if they need you/);
+    // The line is a count and a name now, not a sentence — "2 dispatched by
+    // Summit Dispatch". What it MEANS ("they will ask if they need you") moved
+    // into the tip beside it, which is where every explanation on this board
+    // now lives.
+    await expect(summary).toContainText(/\d+ dispatched by/);
 
     // ★ The rule. ★ Somebody else's dispatchers are working these trucks, so
     // the carrier gets no card and nothing to press.
@@ -161,8 +164,14 @@ test.describe("the employee Dispatcher", () => {
 
     for (const card of await cards.all()) {
       const text = await card.innerText();
-      // A card on a Home is one that needs this person: it says so.
-      expect(text).toMatch(/You are responsible|you claimed it|Nobody else|escalat/i);
+      /*
+       * A card on a Home is one that needs this person, and it still says so —
+       * in a word rather than a clause. The responsibility line reads "You"
+       * when it is the viewer's, and the person's name when it is not, with
+       * the distinction between being responsible and having accepted it in
+       * the tip. `data-loop-id` finds the card; this checks whose it is.
+       */
+      expect(text).toMatch(/\bYou\b|Nobody else|escalat/i);
     }
   });
 
@@ -173,7 +182,7 @@ test.describe("the employee Dispatcher", () => {
 
     const team = handledByTeam(page);
     test.skip(await team.count() === 0, "nobody else is holding anything");
-    await expect(team).toContainText(/being handled by/);
+    await expect(team).toContainText(/handled by/);
     await expect(team.getByRole("button")).toHaveCount(0);
 
     // Cards plus line is the whole board — nothing hidden.

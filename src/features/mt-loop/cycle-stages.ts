@@ -66,24 +66,51 @@ export type CycleStageState =
   /** Something is in the way. Nothing here can start until it is cleared. */
   | "stopped";
 
+/** One number, with what it counts. The unit this spine is read in. */
+export interface StageMetric {
+  /** Two or three characters where possible: "Rate", "Dupes", "Rounds". */
+  label: string;
+  value: string;
+  tone?: "muted" | "good" | "warn" | "bad";
+  /** The long form, for the tooltip on the metric. */
+  title?: string;
+}
+
 export interface CycleStage {
   key: CycleStageKey;
   title: string;
   state: CycleStageState;
-  /** One line: what has happened, or what is being waited on. */
+  /**
+   * The state, in three or four words. Never a sentence.
+   *
+   * ★ THE RULE THIS FILE WAS REWRITTEN UNDER ★
+   * A stage used to read "24 listings from 3 sources, 10 the same load" — a
+   * sentence a dispatcher has to READ. The numbers now live in `metrics`,
+   * where they are SEEN, and line up between one stage and the next. What is
+   * left here is the label for the state itself.
+   */
   summary: string;
+  /** The numbers behind the state. Rendered as key-value pairs, not prose. */
+  metrics?: StageMetric[];
   /** Shown in the node when the stage has a countable thing in it. */
   count?: number;
-  /** Required when `state` is "skipped" or "stopped". Never a bare label. */
-  reason?: string;
   /**
-   * Something the stage has to admit.
+   * The long form: a carrier's rule, a refusal's cause, what is not connected.
    *
-   * Two search sources are not connected; nothing is emailed from Antcolos.
-   * These are not footnotes — a dispatcher reading "6 sources searched" without
-   * them would believe the market had been covered when a third of it was not.
+   * Lives in a tooltip, NOT in the layout — except where `noteVisible` says
+   * otherwise. Anything in here is also in the actions panel, so nothing is
+   * reachable only by hovering.
    */
-  caveat?: string;
+  note?: string;
+  /**
+   * Keep `note` on the page rather than in the tooltip.
+   *
+   * Set for a refusal and for a skipped stage, and for nothing else: "this
+   * stage will never run on this carrier" and "Antcolos refused to search"
+   * are the two cases where a reader who does not hover would be left
+   * guessing at something they have to act on.
+   */
+  noteVisible?: boolean;
 }
 
 export interface CycleSpineInput {
@@ -108,9 +135,6 @@ function haltingBlocker(blockers: readonly MtLoopBlocker[]): MtLoopBlocker | und
   return blockers.find((b) => b.stopsDispatch && b.key !== "unconfirmed_load");
 }
 
-const plural = (n: number, one: string, many = `${one}s`) =>
-  `${n} ${n === 1 ? one : many}`;
-
 /* -------------------------------------------------------------------------- */
 
 export function cycleStages(input: CycleSpineInput): CycleStage[] {
@@ -129,7 +153,7 @@ export function cycleStages(input: CycleSpineInput): CycleStage[] {
     // waiting on the halt. Saying so once, at the top, beats repeating the
     // blocker on six cards.
     halt && stage.state === "upcoming" && !o
-      ? { ...stage, summary: `Waiting on the one thing above.` }
+      ? { ...stage, summary: "Blocked upstream" }
       : stage,
   );
 }
@@ -140,71 +164,75 @@ function searchStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
   const session = input.opportunities?.session;
 
   // ★ A REFUSAL, NOT A GREYED-OUT BUTTON ★
-  // Antcolos will not look for freight it could not dispatch, and it says that
-  // rather than letting somebody spend an hour finding a load for a truck with
-  // nobody on it.
+  // Antcolos will not look for freight it could not dispatch. The label says
+  // refused and the cause stays on the page — it is the one thing a reader has
+  // to act on, so it is not put behind a hover.
   if (halt && !session) {
     return {
       key: "search",
-      title: "Search for a load",
+      title: "Load search",
       state: "stopped",
-      summary: "Antcolos will not look for freight it could not dispatch.",
-      reason: halt.detail,
+      summary: "Refused",
+      note: halt.detail,
+      noteVisible: true,
     };
   }
 
   if (!session) {
-    return {
-      key: "search",
-      title: "Search for a load",
-      state: "active",
-      summary: "Nothing has been searched for this truck yet.",
-    };
+    return { key: "search", title: "Load search", state: "active", summary: "Not started" };
   }
 
   const sources = session.sources ?? [];
   const searched = sources.filter((s) => s.status === "searched").length;
   const unconnected = sources.filter((s) => s.status === "not_connected").length;
   const failed = sources.filter((s) => s.status === "failed").length;
+  const c = session.counts;
 
-  const caveat = [
-    unconnected > 0 ? `${unconnected} not connected` : undefined,
-    failed > 0 ? `${failed} failed` : undefined,
-  ].filter(Boolean).join(" · ") || undefined;
-
-  const summary = `${plural(session.counts.listingsSeen, "listing")} from ${plural(searched, "source")}`
-    + (session.counts.duplicatesFolded > 0
-      ? `, ${session.counts.duplicatesFolded} the same load`
-      : "");
+  const metrics: StageMetric[] = [
+    { label: "Seen", value: String(c.listingsSeen) },
+    {
+      label: "Sources",
+      value: `${searched}/${sources.length}`,
+      // Not a footnote. A source that was never read is a slice of the market
+      // nobody looked at, and a bare "3 sources" implies it was covered.
+      tone: unconnected + failed > 0 ? "warn" : "good",
+      title: unconnected + failed > 0
+        ? `${unconnected} not connected${failed > 0 ? `, ${failed} failed` : ""}`
+        : undefined,
+    },
+    ...(c.duplicatesFolded > 0
+      ? [{ label: "Dupes", value: String(c.duplicatesFolded) } as StageMetric]
+      : []),
+    { label: "Matched", value: String(c.matchesCreated), tone: c.matchesCreated > 0 ? "good" : "muted" },
+  ];
 
   if (session.status === "paused") {
     return {
-      key: "search", title: "Search for a load", state: "waiting",
-      summary, count: session.counts.matchesCreated,
-      reason: session.pauseReason ?? "Paused by a person.",
-      caveat,
+      key: "search", title: "Load search", state: "waiting", summary: "Paused",
+      metrics, count: c.matchesCreated, note: session.pauseReason ?? "Paused by a person.",
     };
   }
   if (session.status === "closed") {
     return {
-      key: "search", title: "Search for a load", state: "done",
-      summary, count: session.counts.matchesCreated,
-      reason: session.closeReason, caveat,
+      key: "search", title: "Load search", state: "done", summary: "Closed",
+      metrics, count: c.matchesCreated, note: session.closeReason,
     };
   }
 
   return {
     key: "search",
-    title: "Search for a load",
+    title: "Load search",
     // Running with nothing found is still where the work is.
-    state: session.counts.matchesCreated > 0 ? "done" : "active",
-    summary,
-    count: session.counts.matchesCreated,
-    caveat,
+    state: c.matchesCreated > 0 ? "done" : "active",
+    summary: c.matchesCreated > 0 ? "Searched" : "Nothing found",
+    metrics,
+    count: c.matchesCreated,
   };
 }
 
 /* ---- 2. The shortlist ---------------------------------------------------- */
+
+const NOT_SENT = "Nothing is emailed from Antcolos. A message is prepared and a person sends it.";
 
 function shortlistStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
   const o = input.opportunities;
@@ -214,45 +242,50 @@ function shortlistStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStag
 
   if (!o || o.counts.considered === 0) {
     return {
-      key: "shortlist", title: "Pick the ones worth asking about", state: "upcoming",
-      summary: halt
-        ? "Nothing can be shortlisted until the truck can be dispatched."
-        : "Nothing has been found to shortlist yet.",
+      key: "shortlist", title: "Opportunities", state: "upcoming",
+      summary: halt ? "Blocked upstream" : "Nothing found yet",
     };
   }
+
+  const metrics: StageMetric[] = [
+    { label: "Seen", value: String(o.counts.considered) },
+    { label: "Eligible", value: String(eligible), tone: eligible > 0 ? "good" : "muted" },
+    ...(ineligible > 0
+      ? [{
+        label: "Refused",
+        value: String(ineligible),
+        tone: "warn",
+        title: "Loads this truck may not legally haul. Open the list for which check each failed.",
+      } as StageMetric]
+      : []),
+  ];
 
   /*
-   * ★ ONCE ONE IS TAKEN, THE COUNT IS HISTORY ★
-   * A booked match stops being "eligible" — it is spoken for — so the live
-   * count falls to zero and the honest-looking sentence "0 loads this truck
-   * can legally take, 13 it cannot" appears on a truck that is already
-   * rolling. What this stage did is pick one, and that is what it should say.
+   * ★ ONCE ONE IS TAKEN, THE LIVE COUNT IS HISTORY ★
+   * A booked match stops being "eligible", so the count falls to zero and an
+   * honest-looking "0 eligible" appears on a truck that is already rolling.
+   * What this stage did is pick one.
    */
-  if (input.card?.loadReference || input.opportunities?.booking) {
+  if (input.card?.loadReference || o.booking) {
     return {
-      key: "shortlist", title: "Pick the ones worth asking about", state: "done",
-      summary: `${plural(o.counts.considered, "load")} considered, one taken`
-        + (ineligible > 0 ? `, ${ineligible} this truck could not legally haul` : "") + ".",
-      count: o.counts.considered,
+      key: "shortlist", title: "Opportunities", state: "done", summary: "One taken",
+      metrics, count: o.counts.considered,
     };
   }
-
-  const summary = `${plural(eligible, "load")} this truck can legally take`
-    + (ineligible > 0 ? `, ${ineligible} it cannot` : "");
 
   if (asked > 0) {
     return {
-      key: "shortlist", title: "Pick the ones worth asking about", state: "done",
-      summary, count: eligible,
-      caveat: "Nothing is emailed from Antcolos — a message is prepared, and a person sends it.",
+      key: "shortlist", title: "Opportunities", state: "done", summary: "Shortlisted",
+      metrics, count: eligible, note: NOT_SENT,
     };
   }
 
   return {
     key: "shortlist",
-    title: "Pick the ones worth asking about",
+    title: "Opportunities",
     state: eligible > 0 ? "active" : "waiting",
-    summary: eligible > 0 ? summary : `${summary}. Nothing is worth asking about yet.`,
+    summary: eligible > 0 ? "Ready to ask" : "Nothing eligible",
+    metrics,
     count: eligible,
   };
 }
@@ -264,29 +297,27 @@ function driverStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
 
   /*
    * ★ A CARRIER'S RULE, NAMED AS THEIRS ★
-   * Whether a driver is asked before a price is agreed is `driver_consent_
-   * required` on the carrier's own record — not a setting in this workspace and
-   * not something a dispatcher may turn off. A skipped stage that did not say
-   * whose rule it was would read like a step somebody forgot.
+   * Whether a driver is asked at all is `driver_consent_required` on the
+   * carrier's own record — not a setting in this workspace. A skipped stage
+   * with no reason on the page reads as a step somebody forgot, so this one
+   * keeps its note visible rather than hiding it behind a hover.
    */
   if (input.driverConsentRequired === false && reviews.length === 0) {
     return {
       key: "driver",
-      title: "Ask the driver",
+      title: "Driver",
       state: "skipped",
-      summary: "This carrier does not ask its drivers before a price is agreed.",
-      reason: input.driverConsentRule
-        ?? `${input.carrierName ?? "The carrier"} has no driver-consent rule on its record. `
-          + "Read from their carrier record — not a setting in this workspace.",
+      summary: "Not required",
+      note: input.driverConsentRule
+        ?? `${input.carrierName ?? "This carrier"} has no driver-consent rule. Read from their carrier record, not set here.`,
+      noteVisible: true,
     };
   }
 
   if (reviews.length === 0) {
     return {
-      key: "driver", title: "Ask the driver", state: "upcoming",
-      summary: halt
-        ? "Nobody can be asked until the truck can be dispatched."
-        : "No load has been put to the driver yet.",
+      key: "driver", title: "Driver", state: "upcoming",
+      summary: halt ? "Blocked upstream" : "Not asked",
     };
   }
 
@@ -296,28 +327,25 @@ function driverStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
     (r) => r.status === "declined" || r.status === "countered" || r.status === "paused",
   ).length;
 
+  const metrics: StageMetric[] = [
+    { label: "Sent", value: String(reviews.length) },
+    ...(approved > 0 ? [{ label: "Accepted", value: String(approved), tone: "good" } as StageMetric] : []),
+    ...(waiting > 0 ? [{ label: "Waiting", value: String(waiting), tone: "warn" } as StageMetric] : []),
+    ...(answered > 0 ? [{ label: "Replies", value: String(answered), tone: "warn" } as StageMetric] : []),
+  ];
+
   if (waiting > 0) {
-    return {
-      key: "driver", title: "Ask the driver", state: "waiting",
-      summary: `${plural(waiting, "load")} with the driver, unanswered.`,
-      count: reviews.length,
-    };
+    return { key: "driver", title: "Driver", state: "waiting", summary: "Waiting on driver", metrics, count: reviews.length };
   }
   if (answered > 0) {
-    return {
-      key: "driver", title: "Ask the driver", state: "active",
-      summary: `${plural(answered, "answer")} to read.`,
-      count: reviews.length,
-    };
+    return { key: "driver", title: "Driver", state: "active", summary: "Answer to read", metrics, count: reviews.length };
   }
-  return {
-    key: "driver", title: "Ask the driver", state: "done",
-    summary: `${plural(approved, "load")} the driver accepted.`,
-    count: reviews.length,
-  };
+  return { key: "driver", title: "Driver", state: "done", summary: "Driver accepted", metrics, count: reviews.length };
 }
 
 /* ---- 4. The brokers ------------------------------------------------------ */
+
+const NOT_EMAILED = "Nothing is emailed from Antcolos. A broker's reply is recorded by a person.";
 
 function brokerStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
   const rows = input.opportunities?.negotiations ?? [];
@@ -329,12 +357,9 @@ function brokerStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
 
   if (live.length === 0) {
     return {
-      key: "brokers", title: "Talk to brokers", state: "upcoming",
-      summary: halt
-        ? "No conversation can be opened until the truck can be dispatched."
-        : rows.length > 0
-          ? `${plural(rows.length, "conversation")} finished, none open.`
-          : "No conversation has been opened yet.",
+      key: "brokers", title: "Brokers", state: "upcoming",
+      summary: halt ? "Blocked upstream" : rows.length > 0 ? "All closed" : "None open",
+      metrics: rows.length > 0 ? [{ label: "Closed", value: String(rows.length) }] : undefined,
     };
   }
 
@@ -343,58 +368,68 @@ function brokerStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
   const outstanding = live.filter((r) => r.negotiation.status === "waiting_on_broker").length;
   const booked = live.find((r) => r.negotiation.status === "booked");
 
-  const caveat = "Nothing is emailed from Antcolos — a reply is recorded by a person.";
+  const rounds = live.reduce((n, r) => n + r.negotiation.rounds.length, 0);
+  const base: StageMetric[] = [
+    { label: "Open", value: String(live.length) },
+    { label: "Rounds", value: String(rounds) },
+  ];
 
   /*
    * ★ A CONVERSATION THAT ENDED IN A BOOKING IS FINISHED, NOT SILENT ★
-   * `booked` is neither open nor lost, so counting only the open statuses
-   * made a cycle that had argued three rounds and shaken hands read as
-   * "0 brokers asked, none has answered" — on a truck already rolling on the
-   * load that conversation produced.
+   * `booked` is neither open nor lost, so counting only the open statuses made
+   * a cycle that had argued five rounds read as "none open" — on a truck
+   * already rolling on the load that conversation produced.
    */
   if (booked) {
     const n = booked.negotiation;
     const money = n.agreedRateCents ?? n.onTheTableCents;
     return {
-      key: "brokers", title: "Talk to brokers", state: "done",
-      summary: `${n.brokerName} agreed`
-        + (money === undefined ? "" : ` $${(money / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
-        + ` after ${plural(n.rounds.length, "round")}.`,
-      count: live.length, caveat,
+      key: "brokers", title: "Brokers", state: "done", summary: "Agreed",
+      metrics: [
+        { label: "With", value: n.brokerName },
+        { label: "Rounds", value: String(n.rounds.length) },
+        ...(money === undefined ? [] : [{ label: "Rate", value: money_(money), tone: "good" } as StageMetric]),
+      ],
+      count: live.length, note: NOT_EMAILED,
     };
   }
 
   if (agreed > 0) {
     return {
-      key: "brokers", title: "Talk to brokers", state: "active",
-      summary: `${plural(agreed, "price")} agreed. Nothing is committed until it is booked.`,
-      count: live.length, caveat,
+      key: "brokers", title: "Brokers", state: "active", summary: "Agreed, not booked",
+      metrics: base, count: live.length, note: NOT_EMAILED,
     };
   }
   if (yourTurn > 0) {
     return {
-      key: "brokers", title: "Talk to brokers", state: "active",
-      summary: `${yourTurn} of ${live.length} have come back. Your turn.`,
-      count: live.length, caveat,
+      key: "brokers", title: "Brokers", state: "active", summary: "Your turn",
+      metrics: [{ label: "Replied", value: `${yourTurn}/${live.length}`, tone: "good" }, ...base.slice(1)],
+      count: live.length, note: NOT_EMAILED,
     };
   }
   return {
-    key: "brokers", title: "Talk to brokers", state: "waiting",
-    summary: `${plural(outstanding, "broker")} asked, none has answered.`,
-    count: live.length, caveat,
+    key: "brokers", title: "Brokers", state: "waiting", summary: "Waiting on brokers",
+    metrics: [{ label: "Asked", value: String(outstanding), tone: "warn" }, ...base.slice(1)],
+    count: live.length, note: NOT_EMAILED,
   };
 }
 
+const money_ = (cents: number) =>
+  `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
 /* ---- 5. The booking ------------------------------------------------------ */
+
+const BOOK_GATE = "Every blocker is re-checked at the moment of booking, not from this screen.";
 
 function bookStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
   const booking = input.opportunities?.booking;
   const reference = input.card?.loadReference;
 
-  if (booking || input.card?.loadReference) {
+  if (booking || reference) {
     return {
-      key: "book", title: "Book it", state: "done",
-      summary: `${reference ?? "A load"} is booked onto this truck.`,
+      key: "book", title: "Booking", state: "done", summary: "Booked",
+      metrics: reference ? [{ label: "Load", value: reference, tone: "good" }] : undefined,
+      note: BOOK_GATE,
     };
   }
 
@@ -404,65 +439,69 @@ function bookStage(input: CycleSpineInput, halt?: MtLoopBlocker): CycleStage {
 
   return {
     key: "book",
-    title: "Book it",
+    title: "Booking",
     state: agreed && !halt ? "active" : "upcoming",
-    summary: agreed && !halt
-      ? "A price is agreed and nothing is committed yet."
-      : "Needs a price agreed first.",
-    // ★ SAID BEFORE THE BUTTON, NOT AFTER THE REFUSAL ★
-    caveat: "Every blocker is re-checked at the moment of booking, not from this screen.",
+    summary: agreed && !halt ? "Ready to book" : "Needs a price",
+    note: BOOK_GATE,
   };
 }
 
 /* ---- 6. The paper -------------------------------------------------------- */
 
+const NO_MAILBOX = "No mailbox is connected, so a rate confirmation is recorded when somebody puts it in.";
+
 function rateConStage(input: CycleSpineInput): CycleStage {
   const workflow = input.opportunities?.rateCon;
   const booked = Boolean(input.card?.loadReference || input.opportunities?.booking);
-  const outstanding = input.blockers.find((b) => b.key === "unconfirmed_load");
 
   if (!booked) {
-    return {
-      key: "ratecon", title: "Rate confirmation", state: "upcoming",
-      summary: "The load is not final until the signed copy is back.",
-    };
+    return { key: "ratecon", title: "Rate con", state: "upcoming", summary: "Not booked yet" };
   }
 
   if (!workflow) {
     return {
-      key: "ratecon",
-      title: "Rate confirmation",
-      state: "waiting",
-      summary: outstanding
-        ? "Nothing has come back from the broker. The load is not final and the driver has nothing to run."
-        : "Nothing has come back from the broker yet.",
-      caveat: "No mailbox is connected, so one is recorded when somebody puts it in.",
+      key: "ratecon", title: "Rate con", state: "waiting", summary: "Not arrived",
+      note: NO_MAILBOX,
     };
   }
 
+  /*
+   * ★ THE REQUIRED ONES, WHICH ARE THE ONES THAT GATE IT ★
+   * Counting every extracted field read "Checked 14/19" beside "Signed &
+   * returned" — a confirmation that looked incomplete on a load that was
+   * final. A rate confirmation cannot be confirmed until every REQUIRED field
+   * has been looked at; the optional ones never blocked anything.
+   */
+  const required = workflow.fields.filter((f) => f.required);
+  const reviewed = required.filter((f) => f.reviewedAt).length;
+  const fields: StageMetric = {
+    label: "Checked",
+    value: `${reviewed}/${required.length}`,
+    tone: reviewed === required.length ? "good" : "warn",
+    title: `${workflow.fields.length} fields were extracted; ${required.length} are required before it can be confirmed.`,
+  };
+
   if (workflow.status === "returned") {
     return {
-      key: "ratecon", title: "Rate confirmation", state: "done",
-      summary: "Signed with the carrier's authorized signature and returned to the broker.",
+      key: "ratecon", title: "Rate con", state: "done", summary: "Signed & returned",
+      metrics: [fields],
     };
   }
   if (workflow.status === "rejected") {
     return {
-      key: "ratecon", title: "Rate confirmation", state: "stopped",
-      summary: "A person stopped this rate confirmation. The original is kept.",
-      reason: workflow.rejectedReason ?? "No reason was recorded.",
+      key: "ratecon", title: "Rate con", state: "stopped", summary: "Stopped",
+      note: workflow.rejectedReason ?? "No reason was recorded.",
+      noteVisible: true,
     };
   }
 
-  const reviewed = workflow.fields.filter((f) => f.reviewedAt).length;
   return {
     key: "ratecon",
-    title: "Rate confirmation",
-    state: workflow.status === "ready_to_confirm" ? "active" : "active",
-    summary: workflow.status === "ready_to_confirm"
-      ? "Every required field has been looked at. One confirmation left."
-      : `${reviewed} of ${workflow.fields.length} fields checked.`,
-    count: workflow.fields.length - reviewed || undefined,
+    title: "Rate con",
+    state: "active",
+    summary: workflow.status === "ready_to_confirm" ? "Ready to sign" : "Checking",
+    metrics: [fields],
+    count: required.length - reviewed || undefined,
   };
 }
 

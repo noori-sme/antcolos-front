@@ -141,8 +141,15 @@ test("a hold a person puts on demotes the cycle and says so on the card", async 
   assert.ok(held, "the cycle is still on the board — a hold is not a disappearance");
   assert.equal(held.lane, "not_ready");
   assert.equal(held.progress.key, "stopped");
-  // The words the person used, not a generic label.
-  assert.equal(held.headline, reason);
+  /*
+   * ★ THE HOLD IS NAMED ON THE CARD; ITS WORDS ARE ONE HOVER AWAY ★
+   * The card carries the blocker's LABEL — a hold is visible without hovering,
+   * which is the rule. The reason the person typed is in `headlineDetail`, and
+   * again in the blocker list and the actions panel, so it is never reachable
+   * only by pointing at something.
+   */
+  assert.equal(held.headline, "Stopped by a person");
+  assert.equal(held.headlineDetail, reason, "in the words the person who held it used");
   assert.ok(
     held.blockers.some((b) => b.key === "loop_blocked" && b.stopsDispatch),
     "and the hold is still a blocker that stops the dispatch",
@@ -162,9 +169,19 @@ test("every card says where the cycle has got to, and whose turn it is", async (
     assert.ok(card.progress.label, `unit ${card.truckUnit} has a state`);
     assert.ok(card.progress.note, `unit ${card.truckUnit} says whose turn it is`);
     assert.equal(typeof card.progress.yourTurn, "boolean");
-    // One sentence, always. "There is nothing to say" is not an answer a board
-    // about empty trucks is allowed to give.
-    assert.ok(card.headline.length > 0, `unit ${card.truckUnit} has a conclusion`);
+    /*
+     * ★ THE BADGE IS THE ANSWER; THE HEADLINE ONLY ADDS FACTS ★
+     * The headline used to be a mandatory sentence, which meant a card whose
+     * badge already said everything ("Find work for it · nobody has started")
+     * carried a second line restating it in prose. It is now the FACTS the
+     * badge cannot hold — a broker and a rate, a driver and a load — and it is
+     * empty when there are none. What is never empty is the state itself.
+     */
+    assert.ok(
+      card.headline.split(/\s+/).filter(Boolean).length <= 6,
+      `unit ${card.truckUnit}: "${card.headline}" is a sentence, not facts`,
+    );
+    assert.ok(!card.headline.endsWith("."), `unit ${card.truckUnit}: facts do not end in a full stop`);
     // A truck the cycle is waiting on a broker for is never "your turn".
     if (card.progress.key === "asked_brokers") {
       assert.equal(card.progress.yourTurn, false);
