@@ -418,6 +418,15 @@ export interface NeedsYouItem {
    * which is the only honest way to close it.
    */
   derived?: boolean;
+  /**
+   * What the system already did, and the one decision it stopped on.
+   *
+   * Optional on the type and never optional in practice: the service attaches
+   * one to every item it returns. It stays optional so a producer that has not
+   * been taught its own playbook yet still type-checks, and so a stored record
+   * from before this existed still reads.
+   */
+  automation?: NeedsYouAutomation;
   createdAt: string;
   snoozedUntil?: string;
   snoozeReason?: string;
@@ -533,3 +542,127 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
 export const MAX_SNOOZE_HOURS: Record<NeedsYouSeverity, number> = {
   critical: 2, high: 8, medium: 24, low: 72,
 };
+
+/* -------------------------------------------------------------------------- */
+/* Automation: what the system already did, and the one decision left          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ NEEDS YOU IS A DECISION QUEUE, NOT A WORK QUEUE ★
+ *
+ * An item earns its place here only when the system has already run everything
+ * that can be run unattended — found the condition, gathered the evidence,
+ * contacted whoever had to be contacted, priced the options — and has stopped
+ * at the one step a rule must not take on somebody's behalf.
+ *
+ * So every item carries its own automation record: the steps already done, the
+ * options already worked out, and, once a person picks one, what the system did
+ * next. A person's whole job on this screen is one press.
+ */
+
+export type NeedsYouAutomationStage =
+  /** Pre-work is finished and the system is stopped on a human decision. */
+  | "awaiting_decision"
+  /** A decision was taken; the downstream steps are running. */
+  | "executing"
+  /** Everything downstream of the decision has finished. */
+  | "done"
+  /**
+   * Nothing here can execute it: the item is a view of another module's state,
+   * so the single action is to open that module. One press either way.
+   */
+  | "handoff";
+
+/** One thing the system did on its own, before anybody was asked. */
+export interface NeedsYouPreworkStep {
+  id: string;
+  /** Five words at most. "3 quotes collected", "Broker reply parsed". */
+  label: string;
+  /** The long version. Rendered on hover, never inline. */
+  detail?: string;
+  at: string;
+}
+
+export type NeedsYouMetricTone = "good" | "warn" | "bad" | "neutral";
+
+/**
+ * One number worth comparing across options, already formatted.
+ *
+ * Formatted at the source on purpose: the currency, the interval and the
+ * rounding are facts about the quote, and a screen that re-derives them is a
+ * screen that can disagree with the document the number came from.
+ */
+export interface NeedsYouMetric {
+  /** "Premium", "Coverage", "Rating". One word where possible. */
+  label: string;
+  value: string;
+  tone?: NeedsYouMetricTone;
+  /** Hover-only context. Never rendered inline. */
+  detail?: string;
+}
+
+export type NeedsYouOptionIntent =
+  /** Take it. The system resumes and finishes the workflow. */
+  | "approve"
+  /** Take none of them. The system stands down and records why. */
+  | "decline"
+  /** The decision belongs in the module that owns the record. */
+  | "open";
+
+export interface NeedsYouDecisionOption {
+  id: string;
+  /**
+   * The button. Carries the commitment: "Approve $1,840/mo", not "Approve".
+   * Somebody must be able to act on it without opening anything.
+   */
+  label: string;
+  /** Column heading when options are compared side by side. */
+  name?: string;
+  intent: NeedsYouOptionIntent;
+  /** The system's own pick. Exactly one option may carry it. */
+  recommended?: boolean;
+  /**
+   * Comparable numbers. Present only where real records back them — an option
+   * never invents a figure to fill a column.
+   */
+  metrics: NeedsYouMetric[];
+  /** What runs, unattended, the moment this is pressed. Short phrases. */
+  downstream: string[];
+  /** For `open`: where a person finishes it. */
+  href?: string;
+}
+
+export type NeedsYouExecutionState = "queued" | "running" | "done";
+
+export interface NeedsYouExecutionStep {
+  label: string;
+  state: NeedsYouExecutionState;
+  at?: string;
+}
+
+/** What a person chose, and what the system did about it. */
+export interface NeedsYouDecisionRecord {
+  optionId: string;
+  optionLabel: string;
+  decidedAt: string;
+  actor: ActorRef;
+  steps: NeedsYouExecutionStep[];
+}
+
+export interface NeedsYouAutomation {
+  stage: NeedsYouAutomationStage;
+  /** Steps the system ran unattended. */
+  stepsDone: number;
+  /** Steps in the whole workflow, the human decision included. */
+  stepsTotal: number;
+  prework: NeedsYouPreworkStep[];
+  /** Empty only for a handoff. Otherwise at least one press finishes it. */
+  options: NeedsYouDecisionOption[];
+  decision?: NeedsYouDecisionRecord;
+}
+
+/** Share of the workflow the system carried, as a whole percentage. */
+export function automationProgress(a: NeedsYouAutomation): number {
+  if (a.stepsTotal <= 0) return 0;
+  return Math.min(100, Math.round((a.stepsDone / a.stepsTotal) * 100));
+}

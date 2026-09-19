@@ -4,8 +4,9 @@ import { Inbox } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
-import { Badge } from "@/components/ui/badge";
-import { useActiveMembership } from "@/lib/session/hooks";
+import { canAll } from "@/lib/permissions/can";
+import { usePermissions, useActiveMembership } from "@/lib/session/hooks";
+import { cn, isOverdue, useNow } from "@/lib/utils";
 import type { NeedsYouItem } from "@/types";
 import { NeedsYouDrawer } from "./detail-drawer";
 import { NeedsYouToolbar } from "./filter-bar";
@@ -15,7 +16,7 @@ import {
   activeFilterCount, defaultQuery, sortItems, type NeedsYouQuery,
 } from "./query";
 import {
-  NEEDS_YOU_VIEW_ORDER, NeedsYouViewNote, NeedsYouViewSwitcher, type NeedsYouView,
+  NEEDS_YOU_VIEW_ORDER, NeedsYouViewSwitcher, type NeedsYouView,
 } from "./view-switcher";
 import {
   useAssignableMembers, useNeedsYouAction, useNeedsYouList,
@@ -37,8 +38,24 @@ export function NeedsYouWorkspace() {
   // move it out of the current filter, and the panel must stay open showing the
   // result rather than vanishing under the user.
   const [selected, setSelected] = useState<NeedsYouItem | null>(null);
+  // Which row is mid-decision. Per item rather than one page-wide flag, so
+  // pressing one option does not freeze every other row's buttons.
+  const [deciding, setDeciding] = useState<string | null>(null);
+  /**
+   * Rows somebody has just decided, held in place.
+   *
+   * Deciding resolves an item, and the default queue is open work — so without
+   * this the row a person just pressed disappears under their hand and the only
+   * evidence the system carried on is a number in the header dropping by one.
+   * Holding it shows the result where the press happened. The hold is for this
+   * screen only: it is dropped the moment the view or the filters change, and
+   * it survives no reload, because the queue is the record and this is not.
+   */
+  const [decided, setDecided] = useState<{ item: NeedsYouItem; index: number }[]>([]);
   const [view, setView] = useState<NeedsYouView>("my_needs_you");
   const { isDriverMembership, membership } = useActiveMembership();
+  const permissions = usePermissions();
+  const now = useNow();
 
   // ★ THE shared derivation. ★
   // Home reads exactly this, through the same service call, so the two surfaces
@@ -149,31 +166,70 @@ export function NeedsYouWorkspace() {
     () => allItems.filter((i) => viewIds[activeView].has(i.id)),
     [allItems, viewIds, activeView],
   );
-  const openCount = inView.filter(
-    (i) => i.status === "open" || i.status === "escalated",
-  ).length;
-  const criticalCount = inView.filter(
-    (i) => i.severity === "critical" && (i.status === "open" || i.status === "escalated"),
-  ).length;
+  const open = inView.filter((i) => i.status === "open" || i.status === "escalated");
+  const counts = {
+    open: open.length,
+    critical: open.filter((i) => i.severity === "critical").length,
+    overdue: open.filter((i) => i.dueAt && now !== null && isOverdue(i.dueAt, now)).length,
+    // The headline claim of the whole surface, stated as a number: how many of
+    // these the system carried to the point of a single press.
+    ready: open.filter((i) => i.automation?.stage === "awaiting_decision").length,
+  };
 
   const narrowed = activeFilterCount(query) > 0;
 
+  /** Changing what is on screen drops the held rows: they belong to the old list. */
+  const changeQuery = (next: NeedsYouQuery) => {
+    setDecided([]);
+    setQuery(next);
+  };
+  const changeView = (next: NeedsYouView) => {
+    setDecided([]);
+    setView(next);
+  };
+
+  /**
+   * The list actually rendered: the queue, with the just-decided rows put back
+   * where they were pressed.
+   */
+  const display = useMemo(() => {
+    if (decided.length === 0) return items;
+    const out = items.filter((i) => !decided.some((d) => d.item.id === i.id));
+    for (const { item, index } of decided) {
+      out.splice(Math.min(index, out.length), 0, item);
+    }
+    return out;
+  }, [items, decided]);
+
+  /** One press. The service runs everything downstream of it. */
+  const decide = (item: NeedsYouItem, optionId: string) => {
+    const index = items.findIndex((i) => i.id === item.id);
+    setDeciding(item.id);
+    action.mutate(
+      { id: item.id, action: { kind: "decide", input: { optionId } } },
+      {
+        onSettled: () => setDeciding(null),
+        onSuccess: (next) => {
+          setDecided((held) => [
+            ...held.filter((d) => d.item.id !== next.id),
+            { item: next, index: Math.max(index, 0) },
+          ]);
+          if (selected?.id === item.id) setSelected(next);
+        },
+      },
+    );
+  };
+
   return (
-    <div className="space-y-section">
+    <div className="space-y-4">
       <PageHeader
         title="Needs You"
-        description={
-          isDriverMembership
-            ? "Decisions and exceptions on your own loads."
-            : "What needs you, what your team is holding, and the whole workspace — kept apart."
-        }
         actions={
-          <div className="flex items-center gap-2">
-            {criticalCount > 0 ? (
-              <Badge tone="danger">{criticalCount} critical</Badge>
-            ) : null}
-            <Badge tone="outline">{openCount} open</Badge>
-          </div>
+          <StatStrip
+            counts={counts}
+            scoped={membership?.scope.loads === "assigned"}
+            driver={isDriverMembership}
+          />
         }
       />
 
@@ -183,31 +239,36 @@ export function NeedsYouWorkspace() {
       */}
       <NeedsYouToolbar
         query={query}
-        onChange={setQuery}
+        onChange={changeQuery}
         onOpenFilters={() => setFiltersOpen(true)}
         filtersButtonRef={filtersButton}
         views={
           <NeedsYouViewSwitcher
             view={activeView}
-            onChange={setView}
+            onChange={changeView}
             counts={viewCounts}
             available={availableViews}
           />
         }
       />
-      <NeedsYouViewNote view={activeView} />
 
       <NeedsYouFilterPanel
         open={filtersOpen}
         onOpenChange={setFiltersOpen}
         query={query}
-        onChange={setQuery}
+        onChange={changeQuery}
         // Counted over the view on screen, unfiltered, so the numbers beside
         // each option hold still while you tick them.
         items={inView}
         resultCount={items.length}
         returnFocusTo={filtersButton}
       />
+
+      {action.isError ? (
+        <p role="alert" className="text-[0.8125rem] text-st-danger">
+          {action.error.message}
+        </p>
+      ) : null}
 
       {list.isPending ? (
         <LoadingSkeleton rows={5} />
@@ -217,7 +278,7 @@ export function NeedsYouWorkspace() {
           description={list.error.message}
           onRetry={() => list.refetch()}
         />
-      ) : items.length === 0 ? (
+      ) : display.length === 0 ? (
         <EmptyState
           icon={Inbox}
           title={
@@ -226,31 +287,26 @@ export function NeedsYouWorkspace() {
               : "Nothing matches these filters"
           }
           description={
-            inView.length === 0 && !narrowed
-              ? emptyDescription(activeView)
-              : "Clear a filter to widen the queue."
+            inView.length === 0 && !narrowed ? emptyDescription(activeView) : undefined
           }
         />
       ) : (
-        <ul aria-label="Needs You queue" className="space-y-2.5">
-          {items.map((item) => (
+        <ul aria-label="Needs You queue" className="space-y-2">
+          {display.map((item) => (
             <li key={item.id}>
               <NeedsYouCard
                 item={item}
                 selected={item.id === selected?.id}
                 assigneeName={memberName(item)}
                 onOpen={() => setSelected(item)}
+                onDecide={(optionId) => decide(item, optionId)}
+                pending={deciding === item.id}
+                mayAct={canAll(permissions, item.recommendedAction.requires)}
               />
             </li>
           ))}
         </ul>
       )}
-
-      {membership?.scope.loads === "assigned" ? (
-        <p className="text-[0.75rem] text-fg-subtle">
-          Showing only items about loads assigned to you.
-        </p>
-      ) : null}
 
       <NeedsYouDrawer
         item={selected}
@@ -268,6 +324,56 @@ export function NeedsYouWorkspace() {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* The header numbers                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The state of the queue in four numbers, and no sentence.
+ *
+ * `Ready` is the one that matters and is deliberately first among the neutral
+ * pair: it counts the items the system carried all the way to a single press.
+ * A queue where that number equals the open count is a queue that can be
+ * cleared without opening anything.
+ */
+function StatStrip({
+  counts, scoped, driver,
+}: {
+  counts: { open: number; critical: number; overdue: number; ready: number };
+  /** This membership only sees its own loads. Said once, as a mark. */
+  scoped?: boolean;
+  driver?: boolean;
+}) {
+  const stats: { label: string; value: number; tone: string }[] = [
+    { label: "Open", value: counts.open, tone: "text-fg" },
+    { label: "1-click", value: counts.ready, tone: "text-st-progress" },
+    { label: "Overdue", value: counts.overdue, tone: "text-st-danger" },
+    { label: "Critical", value: counts.critical, tone: "text-st-danger" },
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {stats
+        .filter((s) => s.value > 0 || s.label === "Open")
+        .map((s) => (
+          <span key={s.label} className="flex items-baseline gap-1">
+            <span className={cn("tnum text-[0.9375rem] font-semibold", s.tone)}>
+              {s.value}
+            </span>
+            <span className="text-[0.6875rem] tracking-wide text-fg-subtle uppercase">
+              {s.label}
+            </span>
+          </span>
+        ))}
+      {scoped || driver ? (
+        <span className="rounded-sm bg-surface-sunken px-1.5 py-0.5 text-[0.6875rem] text-fg-muted">
+          {driver ? "Your loads" : "Assigned loads only"}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * An empty view that means something good says so.
  *
@@ -276,19 +382,16 @@ export function NeedsYouWorkspace() {
  */
 function emptyTitle(view: NeedsYouView): string {
   switch (view) {
-    case "my_needs_you": return "Nothing needs you right now";
+    case "my_needs_you": return "Nothing needs you";
     case "team_oversight": return "Your team is holding nothing";
-    case "all_organization": return "This workspace has no open work";
+    case "all_organization": return "No open work";
   }
 }
 
-function emptyDescription(view: NeedsYouView): string {
+function emptyDescription(view: NeedsYouView): string | undefined {
   switch (view) {
-    case "my_needs_you":
-      return "Work lands here when it is yours to do, when somebody escalates it to you or asks for your help, when it is waiting on your approval, or when nobody else can do it. Everything else is being handled — look under Team oversight.";
-    case "team_oversight":
-      return "Nobody you answer for has anything open right now.";
-    case "all_organization":
-      return "Antcolos watches loads, trucks, drivers and documents, and puts anything that needs a decision here.";
+    case "my_needs_you": return "Everything else is being handled.";
+    case "team_oversight": return undefined;
+    case "all_organization": return undefined;
   }
 }

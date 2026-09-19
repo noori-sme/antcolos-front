@@ -20,6 +20,7 @@ export const httpServices: AntcolosServices = {
     snooze: notImplemented("needsYou.snooze"),
     unsnooze: notImplemented("needsYou.unsnooze"),
     escalate: notImplemented("needsYou.escalate"),
+    decide: notImplemented("needsYou.decide"),
     resolve: notImplemented("needsYou.resolve"),
     reopen: notImplemented("needsYou.reopen"),
   },

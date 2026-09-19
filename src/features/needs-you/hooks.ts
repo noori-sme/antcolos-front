@@ -4,7 +4,9 @@ import {
   useMutation, useQuery, useQueryClient, type UseMutationResult,
 } from "@tanstack/react-query";
 import { services } from "@/lib/api";
-import type { EscalateInput, SnoozeInput } from "@/lib/api/contracts/needs-you";
+import type {
+  DecideInput, EscalateInput, SnoozeInput,
+} from "@/lib/api/contracts/needs-you";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { queryKeys } from "@/lib/query/keys";
 import type { NeedsYouFilters, NeedsYouItem } from "@/types";
@@ -57,7 +59,12 @@ type Action =
   | { kind: "assign"; membershipId: string }
   | { kind: "snooze"; input: SnoozeInput }
   | { kind: "unsnooze" }
-  | { kind: "escalate"; input: EscalateInput };
+  | { kind: "escalate"; input: EscalateInput }
+  /**
+   * The one press. Names the pre-analysed option a person chose; the service
+   * runs everything downstream of it.
+   */
+  | { kind: "decide"; input: DecideInput };
 
 export type NeedsYouMutation = UseMutationResult<
   NeedsYouItem,
@@ -80,6 +87,7 @@ export function useNeedsYouAction(): NeedsYouMutation {
         case "snooze": return services.needsYou.snooze(ctx, id, action.input);
         case "unsnooze": return services.needsYou.unsnooze(ctx, id);
         case "escalate": return services.needsYou.escalate(ctx, id, action.input);
+        case "decide": return services.needsYou.decide(ctx, id, action.input);
       }
     },
     onSuccess: () => {
