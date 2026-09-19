@@ -23,6 +23,10 @@ import { nowIso } from "./time";
 import {
   blockersFor, cycleInputFor, evidenceFor, nextActionFor, stageOf,
 } from "./mt-loop-cycle";
+// What the BOARD adds on top of the cycle: the lane, the badge, the sentence,
+// the position and anything the shop is waiting for. Read from the modules that
+// own each, never recomputed here. See `mt-loop-board-facts.ts`.
+import { boardFactsFor } from "./mt-loop-board-facts";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -778,6 +782,18 @@ function toCard(
     driver,
     driverProblems: driver ? driverDocumentProblems(driver) : [],
   };
+  /*
+   * Worked out ONCE and handed on.
+   *
+   * The stage and the blocker list are the cycle's own answers. The board's
+   * lane, badge, sentence and inline action are all read FROM them rather than
+   * derived again from the records underneath — which is the whole reason this
+   * module has one blocker engine instead of two. Recomputing either below
+   * would be the same bug wearing a different hat.
+   */
+  const stage = stageOf(cycle);
+  const blockers = blockersFor(cycle);
+  const facts = boardFactsFor({ loop, stage, blockers, confirmed: cycle.confirmed }, ctx);
   return {
     loopId: loop.loopId,
     truckId: loop.truckId,
@@ -815,7 +831,8 @@ function toCard(
     pauseReason: loop.pauseReason,
     openedAt: loop.openedAt,
     handoffCount: loop.assignments.length,
-    stage: stageOf(cycle),
+    ...facts,
+    stage,
     evidence: evidenceFor(cycle),
     nextAction: nextActionFor(cycle, {
       // "Is the next thing mine to do?" is a question about the canonical
@@ -825,7 +842,7 @@ function toCard(
       claimed: Boolean(loop.claimedByMembershipId),
       responsibleName: responsible?.displayName,
     }),
-    blockers: blockersFor(cycle),
+    blockers,
     can: abilitiesFor(loop, ctx, workspace),
   };
 }

@@ -51,6 +51,34 @@ async function loopsRendered(page: Page, path: string) {
   ).toBeVisible();
 }
 
+/**
+ * Open one card's actions panel.
+ *
+ * ★ WHY A CLICK IS NEEDED AT ALL ★
+ * The board carries ONE action per card — the next thing — and keeps the rest
+ * of the cycle's controls (take it, hand over, pause, block, ask the carrier,
+ * close) together one click away, beside the evidence for the state they act
+ * on. That is deliberate: a board offering six buttons on every card is a board
+ * nobody works from. Nothing is hidden by it — every button is still rendered
+ * from `card.can`, and the panel below proves each one is reachable.
+ */
+async function openActions(page: Page, index = 0) {
+  await page.keyboard.press("Escape");
+  const card = loopCards(page).nth(index);
+  await card.scrollIntoViewIfNeeded();
+  await card.getByRole("button", { name: /Everything you can do to unit/ }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+}
+
+/** Whether one card's panel offers a named action. Closes the panel again. */
+async function offersAction(page: Page, index: number, name: string) {
+  await openActions(page, index);
+  const found = await page.getByRole("dialog").getByRole("button", { name }).count() > 0;
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  return found;
+}
+
 const dispatchedOut = (page: Page) =>
   page.locator('section[aria-label="Dispatched by another organization"]');
 const handledByTeam = (page: Page) =>
@@ -160,13 +188,25 @@ test.describe("the employee Dispatcher", () => {
     await switchTo(page, "Meridian Dispatch");
     await loopsRendered(page, "/dispatch/loops");
     // Meridian dispatches other people's trucks, so the action is offered.
-    expect(await page.getByRole("button", { name: "Ask the carrier" }).count())
-      .toBeGreaterThan(0);
+    const meridian = await loopCards(page).count();
+    expect(meridian, "Meridian has cycles to check").toBeGreaterThan(0);
+    let offered = false;
+    for (let i = 0; i < meridian && !offered; i += 1) {
+      offered = await offersAction(page, i, "Ask the carrier");
+    }
+    expect(offered, "at least one granted truck can be raised to its carrier").toBe(true);
 
     await switchTo(page, "Northline Freight");
     await loopsRendered(page, "/dispatch/loops");
-    // Northline dispatches its own: there is nobody above it to ask.
-    await expect(page.getByRole("button", { name: "Ask the carrier" })).toHaveCount(0);
+    // Northline dispatches its own: there is nobody above it to ask. Not on any
+    // card, so every one of them is checked rather than the first.
+    const northline = await loopCards(page).count();
+    for (let i = 0; i < northline; i += 1) {
+      expect(
+        await offersAction(page, i, "Ask the carrier"),
+        "a carrier dispatching its own trucks has nobody to ask",
+      ).toBe(false);
+    }
   });
 });
 
@@ -183,9 +223,20 @@ test.describe("a genuine escalation crosses the boundary", () => {
     // The dispatcher asks.
     await switchTo(page, "Meridian Dispatch");
     await loopsRendered(page, "/dispatch/loops");
-    const ask = page.getByRole("button", { name: "Ask the carrier" }).first();
-    await ask.scrollIntoViewIfNeeded();
-    await ask.click();
+    const cards = await loopCards(page).count();
+    let asked = false;
+    for (let i = 0; i < cards && !asked; i += 1) {
+      await openActions(page, i);
+      const ask = page.getByRole("dialog").getByRole("button", { name: "Ask the carrier" });
+      if (await ask.count() === 0) {
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        continue;
+      }
+      await ask.click();
+      asked = true;
+    }
+    expect(asked, "a truck this dispatcher may raise to its carrier").toBe(true);
     const reason = page.getByPlaceholder(/Broker wants/);
     await expect(reason).toBeVisible();
     await reason.fill("Broker wants $200 over your floor. Your call.");

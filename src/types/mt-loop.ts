@@ -1,9 +1,10 @@
-import type { IsoDateTime } from "./common";
+import type { GeoPoint, IsoDateTime } from "./common";
 import type {
   AssignmentSource, AssignmentState, AttentionReason,
 } from "./responsibility";
 import type { FactVerification } from "./propagation";
-import type { AvailabilityBasis, AvailabilityState } from "./tracking";
+import type { MaintenanceState } from "./maintenance";
+import type { AvailabilityBasis, AvailabilityState, LocationPrecision } from "./tracking";
 import type { TruckEquipmentType } from "./truck";
 
 /**
@@ -492,6 +493,55 @@ export interface MtLoopCard {
   /** Everything unresolved standing in the cycle's way. */
   blockers: MtLoopBlocker[];
 
+  /**
+   * Which of the board's three lanes this cycle belongs in.
+   *
+   * Derived from the stage and the blocker list, never typed in and never a
+   * fourth status. See `MtLoopLane` for what each one means and why a truck
+   * nobody can dispatch still gets a lane rather than dropping off the board.
+   */
+  lane: MtLoopLane;
+  /**
+   * The current operational conclusion, in one sentence a dispatcher can act
+   * on without opening anything.
+   *
+   * Written from the records this cycle reads — the negotiation, the booking,
+   * the rate confirmation, the blocker that stops it — and never a restatement
+   * of the truck, trailer or driver profile. Those have their own pages; this
+   * says what it MEANS for the next hour of work.
+   */
+  headline: string;
+  /** Where the cycle has got to, as the one badge a card carries. */
+  progress: MtLoopProgress;
+  /**
+   * The one thing the progress state makes next, opened WITHOUT leaving the
+   * board. Absent when the next thing is a whole page rather than a message.
+   *
+   * Separate from `nextAction`, which is a deep link: reading a broker's reply
+   * or looking at an outstanding rate confirmation is a glance, and making a
+   * dispatcher lose the board to take it is how a board stops being scanned.
+   */
+  inlineAction?: MtLoopInlineAction;
+  /**
+   * Where the truck is, at the precision this membership is allowed to know.
+   *
+   * Absent means no position is readable at all — no ELD share, no permission,
+   * no signal — which is a different statement from a position withheld to
+   * city level. `precision` says which, and the board draws them differently:
+   * a filled dot for an exact fix, a dashed ring for city-only. Nothing here
+   * is ever a guessed coordinate standing in for a withheld one.
+   */
+  position?: MtLoopPosition;
+  /**
+   * Service falling due on the truck, where this workspace may read it.
+   *
+   * Read from the Maintenance module's own requirements and its own due
+   * arithmetic — this computes no interval and keeps no copy. Absent when
+   * nothing is due, and equally when this workspace is not the operator and
+   * therefore may not see the truck's maintenance at all.
+   */
+  service?: MtLoopService;
+
   /** What this viewer may actually do to it, decided by the service. */
   can: MtLoopAbilities;
 }
@@ -663,6 +713,166 @@ export interface MtLoopBlocker {
   stopsDispatch: boolean;
   /** Straight to where it is fixed. */
   href?: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* The board's three lanes                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Which lane of the board a cycle belongs in.
+ *
+ * Three, because a dispatcher opening the board at 6am is asking three
+ * questions in order: what needs me, what is already moving, and what cannot
+ * move at all. Deliberately NOT a fourth status and not stored — it is read
+ * off the stage and the blocker list, so fixing the underlying record moves
+ * the card by itself.
+ *
+ * ★ NOTHING IS HIDDEN BY LANING ★
+ * `not_ready` exists so a truck nobody may dispatch stops competing for
+ * attention with trucks somebody can actually work — not so it disappears. Its
+ * cycle is still open, its id is still fixed, its empty clock is still running
+ * and somebody is still answerable for it. Dropping it off the board would
+ * have stopped all four.
+ */
+export type MtLoopLane =
+  /** Empty or going empty, dispatchable, and still without a load. */
+  | "needs_load"
+  /**
+   * Gone. Both have to be true: the rate confirmation is signed and back, AND
+   * the driver has the post and has started. A booked load whose paper is
+   * still out is not rolling — somebody is still working it.
+   */
+  | "rolling"
+  /** Something stops dispatch. Searching for freight would be wasted effort. */
+  | "not_ready";
+
+export const MT_LOOP_LANE_LABEL: Record<MtLoopLane, string> = {
+  needs_load: "Needs a load",
+  rolling: "Rolling",
+  not_ready: "Not ready",
+};
+
+/** Left to right, as the board reads. */
+export const MT_LOOP_LANE_ORDER: readonly MtLoopLane[] = [
+  "needs_load", "rolling", "not_ready",
+];
+
+/**
+ * How far the cycle has got, as one badge.
+ *
+ * One truck, one badge at a time, all of it inside a single lane — because a
+ * dispatcher wants to know whose turn it is, and a row of six chips does not
+ * answer that. Every value is read off a record another module owns: the
+ * search session, the negotiation, the booking, the rate confirmation.
+ */
+export type MtLoopProgressKey =
+  /** No search has been started for this cycle. */
+  | "not_started"
+  /** A search is running and nobody has been contacted yet. */
+  | "searching"
+  /** Brokers have been asked. The ball is with them. */
+  | "asked_brokers"
+  /** At least one came back. The ball is with this workspace. */
+  | "broker_replied"
+  /** A price is agreed and nothing is booked against it yet. */
+  | "price_agreed"
+  /** Booked, and the signed rate confirmation has not come back. */
+  | "waiting_rate_con"
+  /** The rate confirmation is here and checked. One signature left. */
+  | "rate_con_ready"
+  /** Signed and moving. */
+  | "rolling"
+  /** Held, paused, or stopped by something in the way. */
+  | "stopped";
+
+export interface MtLoopProgress {
+  key: MtLoopProgressKey;
+  /** The state itself — "Broker replied", "Waiting on the rate con". */
+  label: string;
+  /** Whose turn it is, in three or four words. */
+  note: string;
+  /** What the records add, where they add anything: "2 of 4 have come back". */
+  detail?: string;
+  /**
+   * True when the ball is with this workspace rather than with a broker, a
+   * driver or a carrier. The board colours these and nothing else, so a scan
+   * lands on the trucks waiting on the person doing the scanning.
+   */
+  yourTurn: boolean;
+}
+
+/**
+ * Something to open in place, without leaving the board.
+ *
+ * ★ WHY THIS IS NOT JUST ANOTHER LINK ★
+ * The whole card is a link to the truck's own page, which is right: clicking a
+ * truck should open that truck. But reading the reply a broker just sent is a
+ * glance, not a destination, and a dispatcher who loses the board to take that
+ * glance stops scanning the board. So these open a panel over it and the card's
+ * link does not fire.
+ */
+export interface MtLoopInlineAction {
+  label: string;
+  /** Which panel opens. The board knows how to render each. */
+  kind: "broker_reply" | "rate_con";
+  /** The record it opens on — a negotiation, or the booked load. */
+  id: string;
+}
+
+/**
+ * Where the truck is, at the precision this membership may know it.
+ *
+ * ★ CITY-ONLY IS A PERMISSION OUTCOME, NOT A GAP ★
+ * `point` is present only when `precision` is "exact", and is never a city
+ * centroid standing in for a withheld coordinate: the board would draw a
+ * confident dot on a guess. Where the precision is city-only the map says so.
+ */
+export interface MtLoopPosition {
+  city?: string;
+  state?: string;
+  precision: LocationPrecision;
+  /** Present ONLY at exact precision. Never inferred, never zeroed. */
+  point?: GeoPoint;
+  /**
+   * Where to DRAW the truck on a map, and nothing else.
+   *
+   * ★ NOT A POSITION. A PLACE TO PUT A MARK. ★
+   * At exact precision this is the fix itself. At city precision it is the
+   * CITY's own coordinates, looked up from the city name this membership is
+   * already allowed to read — it is not the withheld coordinate and it is not
+   * an estimate of it, and the map draws it as a dashed ring rather than a dot
+   * so nobody reads it as one.
+   *
+   * Absent when the place cannot be put on a map at all. Nothing derived from
+   * geometry — distance, deadhead, proximity, geofence — may ever read this
+   * field; those must read `point`, and decline when it is absent.
+   */
+  mapPoint?: GeoPoint;
+  /** When the position was true in the world, not when it was written up. */
+  observedAt: IsoDateTime;
+}
+
+/**
+ * Service falling due on the truck, as the Maintenance module reports it.
+ *
+ * Carried on the card because a load booked onto a truck that is about to go
+ * into the shop is a load somebody has to move again — but it is READ, never
+ * recomputed here. The interval, the meter and the due arithmetic all belong
+ * to Maintenance, and this holds their answer and a link back to it.
+ */
+export interface MtLoopService {
+  /** The requirement's own title — "Oil change", "Annual DOT inspection". */
+  title: string;
+  /** How far off, in the trigger's own unit: "in ~700 mi", "4 days over". */
+  due: string;
+  state: MaintenanceState;
+  /**
+   * The truck must not move. A hard stop the Maintenance module owns, not a
+   * warning this module decided to escalate — and it is why the cycle is in
+   * the Not ready lane rather than a reason to hide the chip.
+   */
+  outOfService: boolean;
 }
 
 /** The MT Loop section of the dispatch dashboard. */
