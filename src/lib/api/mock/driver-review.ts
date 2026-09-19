@@ -1,6 +1,7 @@
 import type {
   DriverDecisionKind, DriverGate, DriverReview, DriverReviewStatus,
-  EngagementType, OutgoingOpportunity, OutgoingProgressUpdate,
+  DriverSendChannel, EffectiveVisibility, EngagementType, MatchWithListing,
+  OutgoingOpportunity, OutgoingProgressUpdate,
 } from "@/types";
 import { driverWorkflowPort } from "../contracts/driver-workflow";
 import { carrierViewSync } from "./carrier-registry";
@@ -8,9 +9,13 @@ import { driverViewSync } from "./driver-registry";
 import { mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
 import { allMatches, estimateProfit } from "./opportunity-matching";
+import { effectiveListing } from "./listing-corrections";
 import { effectiveVisibility, redact, sendsAnyMoney } from "./driver-visibility";
+import type { FullOpportunityFacts, RedactedFacts } from "./driver-visibility";
 import { recordDriverAnswer } from "./driver-workflow-adapter";
 import { truckContextFrom } from "./truck-registry";
+// The shared simulated round trip. A seeder can suppress it; a person never does.
+import { sleep } from "./latency";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -34,7 +39,6 @@ import { truckContextFrom } from "./truck-registry";
  * call would be, and carries its source everywhere it is shown.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const LATENCY_MS = 220;
 
 let seq = 0;
@@ -225,6 +229,7 @@ export async function sendOpportunityToDriver(
   matchId: string,
   ctx: MtLoopContext,
   note?: string,
+  channel: DriverSendChannel = "app",
 ): Promise<ReviewOutcome> {
   await sleep(LATENCY_MS);
   if (!mayAct(ctx)) return { status: "not_permitted" };
@@ -253,31 +258,7 @@ export async function sendOpportunityToDriver(
   const visibility = effectiveVisibility(carrier.organizationId, engagementType, ctx);
 
   const listing = row.listing;
-  const profit = estimateProfit(listing, row.match.deadheadMiles);
-  const facts = {
-    originCity: listing.origin.city,
-    originState: listing.origin.state,
-    destinationCity: listing.destination.city,
-    destinationState: listing.destination.state,
-    equipmentLabel: listing.equipment.replace(/_/g, " "),
-    pickupAt: listing.pickupAt,
-    deliverBy: listing.deliverBy,
-    loadedMiles: row.match.loadedMiles,
-    deadheadMiles: row.match.deadheadMiles,
-    commodity: listing.commodity,
-    weightLbs: listing.weightLbs,
-    brokerName: listing.broker.name,
-    brokerContact: [listing.broker.contactName, listing.broker.phone].filter(Boolean).join(" · ") || undefined,
-    totalRateCents: listing.offeredRateCents,
-    ratePerMileCents: listing.ratePerMileCents,
-    estimatedProfitCents: profit,
-    // A company driver's own pay is theirs to see even where the load's rate is
-    // not. Estimated from the load, and labelled an estimate wherever shown.
-    driverPayEstimateCents: listing.offeredRateCents === undefined
-      ? undefined
-      : Math.round(listing.offeredRateCents * (engagementType === "owner_operator" ? 0.88 : 0.27)),
-    accessorialTerms: undefined,
-  };
+  const facts = factsFor(row, engagementType, ctx);
 
   const reviewId = rowId("rev");
   const payload: OutgoingOpportunity = {
@@ -289,6 +270,7 @@ export async function sendOpportunityToDriver(
     truckUnit: row.match.truckUnit,
     ...redact(facts, visibility),
     note: note?.trim() || undefined,
+    channel,
     sentAt: nowIso(),
     sentByName: ctx.actor.displayNameSnapshot,
     isMockDelivery: true,
@@ -319,6 +301,109 @@ export async function sendOpportunityToDriver(
   };
   bucket(ctx.organizationId).push(review);
   return { status: "ok", review };
+}
+
+/**
+ * Everything Dispatch knows about one opportunity, before the policy applies.
+ *
+ * ★ ONE BUILDER, SO A PREVIEW CANNOT LIE ★
+ * A dialog that shows a dispatcher "this is what the driver will get" and then
+ * sends something assembled somewhere else is worse than no preview at all.
+ * `previewForDriver` and `sendOpportunityToDriver` both come through here, so
+ * what is shown is what goes.
+ */
+function factsFor(
+  row: MatchWithListing,
+  engagementType: EngagementType,
+  ctx: MtLoopContext,
+): FullOpportunityFacts {
+  /*
+   * ★ THE CORRECTED LOAD, NOT THE POSTING ★
+   * If a broker said 30,000 lb on the phone where the board said 40,000, the
+   * driver is told 30,000. Reading `row.listing` straight would send a driver
+   * to a dock for a weight somebody already knew was wrong — which is the whole
+   * reason corrections exist rather than living in a note.
+   */
+  const { listing } = effectiveListing(row.listing, row.match.dispatchCycleId, ctx);
+  const loadedMiles = listing.loadedMiles ?? row.match.loadedMiles;
+  return {
+    originCity: listing.origin.city,
+    originState: listing.origin.state,
+    destinationCity: listing.destination.city,
+    destinationState: listing.destination.state,
+    equipmentLabel: listing.equipment.replace(/_/g, " "),
+    pickupAt: listing.pickupAt,
+    deliverBy: listing.deliverBy,
+    loadedMiles,
+    deadheadMiles: row.match.deadheadMiles,
+    commodity: listing.commodity,
+    weightLbs: listing.weightLbs,
+    brokerName: listing.broker.name,
+    brokerContact: [listing.broker.contactName, listing.broker.phone].filter(Boolean).join(" · ") || undefined,
+    totalRateCents: listing.offeredRateCents,
+    ratePerMileCents: listing.ratePerMileCents,
+    estimatedProfitCents: estimateProfit(listing, row.match.deadheadMiles),
+    // A company driver's own pay is theirs to see even where the load's rate is
+    // not. Estimated from the load, and labelled an estimate wherever shown.
+    driverPayEstimateCents: listing.offeredRateCents === undefined
+      ? undefined
+      : Math.round(listing.offeredRateCents * (engagementType === "owner_operator" ? 0.88 : 0.27)),
+    accessorialTerms: undefined,
+  };
+}
+
+export interface DriverSendPreview {
+  driverName: string;
+  driverPhone?: string;
+  engagementType: EngagementType;
+  carrierName: string;
+  truckUnit: string;
+  /** Exactly what would travel: the facts with the policy already applied. */
+  facts: RedactedFacts;
+  /** What was removed, and why. Shown so a dispatcher is not surprised. */
+  visibility: EffectiveVisibility;
+  /** The whole truth, for the dispatcher's own eyes on a phone call. */
+  full: FullOpportunityFacts;
+}
+
+/**
+ * What a driver would be told about this load, before anybody sends it.
+ *
+ * ★ TWO AUDIENCES, ONE CALL ★
+ * `facts` is the driver's version — redacted by the carrier's policy and
+ * narrowed again by what the sender may themselves see. `full` is the
+ * dispatcher's, for reading off during a phone call. They are returned
+ * together and never confused: only `facts` is ever sent.
+ */
+export function previewForDriver(
+  matchId: string,
+  ctx: MtLoopContext,
+): DriverSendPreview | undefined {
+  if (!mayAct(ctx)) return undefined;
+  const row = allMatches(ctx).find((r) => r.match.matchId === matchId);
+  if (!row) return undefined;
+
+  const loop = mtLoopById(row.match.dispatchCycleId, ctx);
+  if (!loop?.driverProfileId) return undefined;
+
+  const truckCtx = truckContextFrom(ctx);
+  const carrier = carrierViewSync(row.match.carrierOrganizationId, truckCtx);
+  const driver = driverViewSync(loop.driverProfileId, truckCtx, carrier?.organizationId);
+  if (!driver || !carrier) return undefined;
+
+  const visibility = effectiveVisibility(carrier.organizationId, driver.engagementType, ctx);
+  const full = factsFor(row, driver.engagementType, ctx);
+
+  return {
+    driverName: driver.legalName,
+    driverPhone: driver.phone,
+    engagementType: driver.engagementType,
+    carrierName: carrier.displayName,
+    truckUnit: row.match.truckUnit,
+    facts: redact(full, visibility),
+    visibility,
+    full,
+  };
 }
 
 /**
@@ -418,6 +503,53 @@ export async function recordDriverDecision(
   review.status = kind as DriverReviewStatus;
   review.answeredAt = decision.at;
   return { status: "ok", review };
+}
+
+/**
+ * What the driver says they need for this load.
+ *
+ * ★ RECORDED WHERE THE NEGOTIATION CAN SEE IT ★
+ * A dispatcher who asks an owner-operator "would you run this?" usually gets
+ * "not under $1,800" back, and that number is the floor of the conversation
+ * they are about to have with the broker. Kept on the review, which is where
+ * `openNegotiation` reads it — a requirement written into a comment would be a
+ * requirement the negotiation opened underneath.
+ *
+ * It is not a decision: a driver can name a price without saying yes, and
+ * saying yes later does not erase what they asked for.
+ */
+export async function recordDriverRateRequirement(
+  reviewId: string,
+  amountCents: number,
+  ctx: MtLoopContext,
+  note?: string,
+): Promise<ReviewOutcome> {
+  await sleep(LATENCY_MS);
+  if (!mayAct(ctx)) return { status: "not_permitted" };
+  const review = reviewById(reviewId, ctx);
+  if (!review) return { status: "not_found" };
+  if (review.status === "withdrawn") return { status: "closed" };
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return { status: "needs_reason" };
+
+  review.rateRequirementCents = Math.round(amountCents);
+  review.rateRequirementNote = note?.trim() || undefined;
+  review.rateRequirementAt = new Date().toISOString();
+  review.rateRequirementByName = ctx.actor.displayNameSnapshot;
+  return { status: "ok", review };
+}
+
+/** The driver's floor for one match, where a driver has named one. */
+export function driverRateRequirement(
+  matchId: string,
+  ctx: MtLoopContext,
+): { cents: number; driverName: string; note?: string } | undefined {
+  const review = reviewsFor(ctx).find((r) => r.matchId === matchId && r.rateRequirementCents);
+  if (!review?.rateRequirementCents) return undefined;
+  return {
+    cents: review.rateRequirementCents,
+    driverName: review.driverName,
+    note: review.rateRequirementNote,
+  };
 }
 
 /**

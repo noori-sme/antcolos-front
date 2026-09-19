@@ -1,6 +1,9 @@
 "use client";
 
-import { ArrowRight, Check, Circle, Mail, Minus, TriangleAlert, X } from "lucide-react";
+import {
+  ArrowRight, Check, Circle, Handshake, Mail, Minus, Star, TriangleAlert,
+  UserCheck, X,
+} from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +12,7 @@ import {
   CHECK_LABEL, FACTOR_LABEL, MATCH_STATUS_LABEL, SOURCE_LABEL,
   type MatchCheck, type MatchCheckOutcome, type MatchWithListing,
 } from "@/types";
+import { Metric, Tip } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,8 +29,8 @@ import { cn } from "@/lib/utils";
  * ring the carrier about the authority.
  */
 export function MatchCard({
-  row, rank, busy, onShortlist, onDismiss, onRestore, onOpenDraft, onAskForIt,
-  askBlockedBecause, onSendToDriver, driverNote,
+  row, rank, busy, onShortlist, onDismiss, onRestore, onOpenDraft, onTalkToBroker,
+  askBlockedBecause, onSendToDriver, driverState,
 }: {
   row: MatchWithListing;
   /** 1-based place in the short list. Absent for everything below it. */
@@ -36,8 +40,8 @@ export function MatchCard({
   onDismiss: (reason: string) => void;
   onRestore: () => void;
   onOpenDraft?: (draftId: string) => void;
-  /** Start a conversation with the broker. Absent where one cannot be started. */
-  onAskForIt?: () => void;
+  /** Open the broker dialog — email or phone. Absent where neither may start. */
+  onTalkToBroker?: () => void;
   /**
    * Why there is no "Ask for it" button.
    *
@@ -48,8 +52,15 @@ export function MatchCard({
   askBlockedBecause?: string;
   /** Put this load in front of the driver before anybody negotiates it. */
   onSendToDriver?: () => void;
-  /** Where the driver review has got to, or why the load is waiting on one. */
-  driverNote?: string;
+  /**
+   * Where the driver review has got to.
+   *
+   * A label and the sentence behind it, kept apart: "Driver first" is what a
+   * dispatcher scanning five loads needs, and "Northline Freight asks that the
+   * driver sees a load before it is negotiated" is what they need once, when
+   * they wonder why there is no Broker button.
+   */
+  driverState?: { label: string; detail: string };
 }) {
   const [showChecks, setShowChecks] = useState(false);
   const [dismissing, setDismissing] = useState(false);
@@ -71,8 +82,9 @@ export function MatchCard({
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium text-fg">
+        <div className="min-w-0 flex-1">
+          {/* The lane, the state, the truck. One line, always. */}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem] font-medium text-fg">
             {rank !== undefined ? (
               <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/12 text-[0.6875rem] font-semibold tabular-nums text-primary">
                 {rank}
@@ -84,77 +96,95 @@ export function MatchCard({
               {listing.destination.city}, {listing.destination.state}
             </span>
             <StatusChip status={match.status} listingStatus={listing.status} />
-            <span className="text-[0.75rem] font-normal text-fg-muted">
-              Unit {match.truckUnit}
-            </span>
+            <span className="text-[0.75rem] font-normal text-fg-muted">{match.truckUnit}</span>
           </p>
 
-          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.75rem] text-fg-subtle">
-            <span>{listing.broker.name}</span>
-            <span>{listing.equipment.replace(/_/g, " ")}</span>
-            <span>
-              {match.deadheadMiles} mi empty · {listing.loadedMiles.toLocaleString()} mi loaded
-            </span>
-            {listing.offeredRateCents !== undefined ? (
-              <span>
-                ${(listing.offeredRateCents / 100).toLocaleString()}
-                {match.allInRatePerMileCents !== undefined
-                  ? ` · $${(match.allInRatePerMileCents / 100).toFixed(2)}/mi all in`
-                  : ""}
-              </span>
-            ) : (
-              <span>No rate posted</span>
-            )}
-            {match.estimatedProfitCents !== undefined ? (
-              <span
-                className={match.estimatedProfitCents < 0 ? "text-st-danger" : undefined}
-              >
-                ~${Math.round(match.estimatedProfitCents / 100).toLocaleString()} left
-              </span>
+          {/*
+            ★ THE NUMBERS, AS NUMBERS ★
+            These were three sentences of comma-separated clauses. A dispatcher
+            comparing five loads reads the same six figures on each, so they
+            are labelled and they line up.
+          */}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Metric label="Rate" value={money(listing.offeredRateCents) ?? "—"} tone={listing.offeredRateCents === undefined ? "muted" : "good"} />
+            {match.allInRatePerMileCents !== undefined ? (
+              <Metric label="/mi" value={`$${(match.allInRatePerMileCents / 100).toFixed(2)}`} />
             ) : null}
+            {match.estimatedProfitCents !== undefined ? (
+              <Metric
+                label="Left"
+                value={`$${Math.round(match.estimatedProfitCents / 100).toLocaleString()}`}
+                tone={match.estimatedProfitCents < 0 ? "bad" : "muted"}
+                title="What is left after the estimated cost of running it."
+              />
+            ) : null}
+            <Metric label="Empty" value={`${match.deadheadMiles} mi`} tone={match.deadheadMiles > 100 ? "warn" : "muted"} />
+            <Metric label="Loaded" value={`${listing.loadedMiles.toLocaleString()} mi`} />
+            <Metric label="PU" value={shortWhen(listing.pickupAt)} />
+            {listing.deliverBy ? <Metric label="DEL" value={shortWhen(listing.deliverBy)} /> : null}
+          </div>
+
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.6875rem] text-fg-subtle">
+            <span className="text-fg-muted">{listing.broker.name}</span>
+            <span>{listing.equipment.replace(/_/g, " ")}</span>
+            <Tip text={`${SOURCE_LABEL[listing.source]}${listing.sightings.length > 1 ? `, seen on ${listing.sightings.length} sources` : ` — ${listing.sourceName}`}`}>
+              <span>{listing.sightings.length > 1 ? `${listing.sightings.length} sources` : listing.sourceName}</span>
+            </Tip>
           </p>
 
-          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.75rem] text-fg-subtle">
-            <span>
-              Picks up {new Date(listing.pickupAt).toLocaleString(undefined, {
-                weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-              })}
-            </span>
-            <span>
-              {SOURCE_LABEL[listing.source]}
-              {listing.sightings.length > 1
-                ? ` · seen on ${listing.sightings.length} sources`
-                : ` · ${listing.sourceName}`}
-            </span>
-          </p>
+          {/*
+            ★ PROBLEMS AS CHIPS, NOT PARAGRAPHS ★
+            A failing check still stops the load and is still red and still
+            named. Its sentence is in the tip, and the full working is behind
+            "Why" — which is where it always was.
+          */}
+          {failed.length > 0 || warned.length > 0 ? (
+            <ul className="mt-1.5 flex flex-wrap gap-1.5">
+              {failed.map((c) => (
+                <li key={c.key}>
+                  <Tip text={c.detail}>
+                    <span className="inline-flex items-center gap-1 rounded-sm border border-st-danger/45 bg-st-danger-bg/40 px-1.5 py-0.5 text-[0.6875rem] font-medium text-st-danger">
+                      <X className="size-3" aria-hidden />
+                      {CHECK_LABEL[c.key]}
+                    </span>
+                  </Tip>
+                </li>
+              ))}
+              {failed.length === 0 ? warned.slice(0, 3).map((c) => (
+                <li key={c.key}>
+                  <Tip text={c.detail}>
+                    <span className="inline-flex items-center gap-1 rounded-sm border border-st-warning/45 bg-st-warning-bg/35 px-1.5 py-0.5 text-[0.6875rem] text-st-warning">
+                      <TriangleAlert className="size-3" aria-hidden />
+                      {CHECK_LABEL[c.key]}
+                    </span>
+                  </Tip>
+                </li>
+              )) : null}
+            </ul>
+          ) : null}
 
-          {failed.length > 0 ? (
-            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-st-danger">
-              {failed.map((c) => c.detail).join(" ")}
+          {/* One muted line for anything that has happened TO this row. */}
+          {match.dismissReason || gone || askBlockedBecause || driverState ? (
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[0.6875rem]">
+              {match.dismissReason ? (
+                <Tip text={match.dismissReason}><span className="text-fg-muted">Dismissed</span></Tip>
+              ) : null}
+              {gone ? (
+                <Tip text={listing.closeReason ?? "This load has gone."}>
+                  <span className="text-fg-muted">Gone</span>
+                </Tip>
+              ) : null}
+              {askBlockedBecause ? (
+                <Tip text={askBlockedBecause}>
+                  <span className="text-fg-muted">No conversation will fix it</span>
+                </Tip>
+              ) : null}
+              {driverState ? (
+                <Tip text={driverState.detail}>
+                  <span className="text-primary">{driverState.label}</span>
+                </Tip>
+              ) : null}
             </p>
-          ) : null}
-          {failed.length === 0 && warned.length > 0 ? (
-            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-st-warning">
-              {warned.slice(0, 2).map((c) => c.detail).join(" ")}
-            </p>
-          ) : null}
-          {match.dismissReason ? (
-            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-muted">
-              Dismissed: {match.dismissReason}
-            </p>
-          ) : null}
-          {gone ? (
-            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-muted">
-              {listing.closeReason ?? "This load has gone."}
-            </p>
-          ) : null}
-          {askBlockedBecause ? (
-            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-muted">
-              {askBlockedBecause}
-            </p>
-          ) : null}
-          {driverNote ? (
-            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-primary">{driverNote}</p>
           ) : null}
         </div>
 
@@ -163,8 +193,8 @@ export function MatchCard({
           <div className="flex flex-wrap justify-end gap-1.5">
             {!gone && match.status !== "dismissed" && match.status !== "booked"
               && match.status !== "shortlisted" ? (
-                <Button variant="secondary" size="sm" disabled={busy} onClick={onShortlist}>
-                  Short-list
+                <Button variant="ghost" size="sm" disabled={busy} onClick={onShortlist} title="Short-list">
+                  <Star className="size-3.5" aria-hidden />
                 </Button>
               ) : null}
             {match.status === "dismissed" ? (
@@ -173,28 +203,36 @@ export function MatchCard({
               </Button>
             ) : null}
             {!gone && match.status !== "dismissed" && match.status !== "booked" ? (
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDismissing(true)}>
-                No
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDismissing(true)} title="Not this one">
+                <X className="size-3.5" aria-hidden />
               </Button>
             ) : null}
+            {/*
+              ★ BOTH CONVERSATIONS START HERE ★
+              Talking to the broker and putting it to the driver are the two
+              things a dispatcher does with an opportunity, and both used to be
+              somewhere else on the page. Each opens its own dialog with the
+              load already in it.
+            */}
             {onSendToDriver ? (
               <Button variant="secondary" size="sm" disabled={busy} onClick={onSendToDriver}>
-                Send to driver
+                <UserCheck className="size-3.5" aria-hidden />
+                Driver
               </Button>
             ) : null}
-            {onAskForIt ? (
-              <Button variant="primary" size="sm" disabled={busy} onClick={onAskForIt}>
-                Ask for it
+            {onTalkToBroker ? (
+              <Button variant="primary" size="sm" disabled={busy} onClick={onTalkToBroker}>
+                <Handshake className="size-3.5" aria-hidden />
+                Broker
               </Button>
             ) : null}
             {row.draftId && onOpenDraft ? (
-              <Button variant="ghost" size="sm" onClick={() => onOpenDraft(row.draftId!)}>
+              <Button variant="ghost" size="sm" onClick={() => onOpenDraft(row.draftId!)} title="Prepared message">
                 <Mail className="size-3.5" aria-hidden />
-                Draft
               </Button>
             ) : null}
             <Button variant="ghost" size="sm" onClick={() => setShowChecks((v) => !v)}>
-              {showChecks ? "Hide checks" : "Why"}
+              {showChecks ? "Hide" : "Why"}
             </Button>
           </div>
         </div>
@@ -336,6 +374,15 @@ function CheckIcon({ outcome }: { outcome: MatchCheckOutcome }) {
   if (outcome === "warn") return <TriangleAlert className={cn(common, "text-st-warning")} aria-label="worth a look" />;
   return <Minus className={cn(common, "text-fg-subtle")} aria-label="not known" />;
 }
+
+const money = (c?: number) =>
+  c === undefined ? undefined : `$${(c / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+/** "Sat 10:56" — a dispatcher reading five of these needs them the same width. */
+const shortWhen = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, {
+    weekday: "short", hour: "numeric", minute: "2-digit",
+  });
 
 export { Circle as MatchDot };
 export type { MatchCheck };

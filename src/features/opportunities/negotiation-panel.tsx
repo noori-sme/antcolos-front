@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { BookingRecord, NegotiationSummary } from "@/types";
+import type { BookingRecord, NegotiationSummary, RateConStatus } from "@/types";
 import {
   CONSENT_LABEL, NEGOTIATION_ROUND_LABEL, NEGOTIATION_STATUS_LABEL,
 } from "@/types";
@@ -15,6 +15,7 @@ import {
   acceptOnTheTable, recordBrokerRound, recordOurOffer, sampleBrokerReply, walkAway,
 } from "@/lib/api/mock/negotiation";
 import { bookNegotiation, canBook, recordDriverConsent } from "@/lib/api/mock/booking";
+import { InfoTip } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -31,11 +32,17 @@ import { cn } from "@/lib/utils";
  * and each round says which it was.
  */
 export function NegotiationPanel({
-  negotiations, ctx, onChanged,
+  negotiations, ctx, onChanged, rateConStatus,
 }: {
   negotiations: NegotiationSummary[];
   ctx: MtLoopContext | null;
   onChanged: () => void;
+  /**
+   * Where the paper on this cycle's booked load has got to, when it has got
+   * anywhere. Absent means nothing has arrived — which is a state this panel
+   * used to assert unconditionally. See `BookedSummary`.
+   */
+  rateConStatus?: RateConStatus;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,15 +71,13 @@ export function NegotiationPanel({
           <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
             <Handshake className="size-4 text-fg-subtle" aria-hidden />
             Talking to brokers
+            <InfoTip text="Every number either side has put on the table, in order. Nothing is emailed from here — a reply is recorded by a person." />
             {live.length > 0 ? (
               <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
                 {live.length}
               </span>
             ) : null}
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Every number either side has put on the table, in order. Nothing is emailed from here.
-          </p>
         </div>
       </div>
 
@@ -84,10 +89,9 @@ export function NegotiationPanel({
 
       {negotiations.length === 0 ? (
         <div className="mt-3 rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-          <p className="text-[0.8125rem] font-medium text-fg">No conversation is open</p>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Pick a load above and ask for it. What you ask, what they say back and what you settle
-            on all stay here.
+          <p className="flex items-center justify-center gap-1.5 text-[0.8125rem] font-medium text-fg">
+            None open
+            <InfoTip text="Use Broker on a load above. What you ask, what they say back and what you settle on all stay here." />
           </p>
         </div>
       ) : (
@@ -98,6 +102,7 @@ export function NegotiationPanel({
               summary={summary}
               booking={summary.booking}
               busy={busy}
+              rateConStatus={rateConStatus}
               onCounter={(amount, note) =>
                 void act(() => recordOurOffer(summary.negotiation.negotiationId, amount, ctx!, note))}
               onTheirReply={(input) =>
@@ -130,10 +135,12 @@ type BookCheckLike = ReturnType<typeof canBook>;
 
 function NegotiationRow({
   summary, booking, busy, onCounter, onTheirReply, onSampleReply, onAccept,
-  onWalkAway, onBook, bookCheck, onConsent,
+  onWalkAway, onBook, bookCheck, onConsent, rateConStatus,
 }: {
   summary: NegotiationSummary;
   booking?: BookingRecord;
+  /** Where this cycle's rate confirmation has got to, if anywhere. */
+  rateConStatus?: RateConStatus;
   busy: boolean;
   onCounter: (amountCents: number, note?: string) => void;
   onTheirReply: (input: {
@@ -265,7 +272,14 @@ function NegotiationRow({
         </div>
       </div>
 
-      {booking ? <BookedSummary booking={booking} busy={busy} onConsent={onConsent} /> : null}
+      {booking ? (
+        <BookedSummary
+          booking={booking}
+          busy={busy}
+          onConsent={onConsent}
+          rateConStatus={rateConStatus}
+        />
+      ) : null}
 
       {form === "counter" || form === "their_reply" ? (
         <div className="mt-3 rounded-md border border-border bg-surface px-3 py-2.5">
@@ -498,11 +512,12 @@ function BookConfirm({
 
 /** What happened after booking, and what it is still waiting for. */
 function BookedSummary({
-  booking, busy, onConsent,
+  booking, busy, onConsent, rateConStatus,
 }: {
   booking: BookingRecord;
   busy: boolean;
   onConsent: (answer: "accepted" | "declined") => void;
+  rateConStatus?: RateConStatus;
 }) {
   return (
     <div className="mt-3 rounded-md border border-st-success/40 bg-surface px-3 py-2.5">
@@ -541,9 +556,22 @@ function BookedSummary({
           ring the broker.
         </p>
       ) : null}
+      {/*
+        ★ WRITTEN WHEN NOTHING COULD GET PAST HERE ★
+        This said "the rate confirmation has not arrived" unconditionally,
+        because when it was written no cycle in the app had ever reached a
+        signed one. A cycle can now, and a booked load whose paper is back was
+        being told its paper was missing — on the same page as the stage that
+        said it was signed and returned.
+      */}
       <p className="mt-2 text-[0.6875rem] leading-relaxed text-fg-subtle">
-        The rate confirmation has not arrived. Receiving it, checking it and signing it is the next
-        milestone; nothing about this load is emailed to anybody yet.
+        {rateConStatus === "returned"
+          ? "The rate confirmation has been checked, signed and returned to the broker. This load is final."
+          : rateConStatus === "rejected"
+            ? "A person stopped this load's rate confirmation. The original is kept, and the load is not final."
+            : rateConStatus
+              ? "The rate confirmation has arrived and is being checked. The load is not final until it is signed and returned."
+              : "The rate confirmation has not arrived. Receiving it, checking it and signing it is the next milestone; nothing about this load is emailed to anybody yet."}
       </p>
     </div>
   );

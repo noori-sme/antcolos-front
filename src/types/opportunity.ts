@@ -1,3 +1,4 @@
+import type { DriverReviewStatus } from "./driver-review";
 import type { Cents, IsoDateTime } from "./common";
 import type { EquipmentType } from "./load";
 
@@ -131,6 +132,90 @@ export interface ListingPlace {
   /** Rough coordinates, used for deadhead. Never presented as exact. */
   lat?: number;
   lon?: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Corrections                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A fact on a load that a broker can correct on the phone.
+ *
+ * Deliberately a short list. These are the values that get argued about and
+ * that everything downstream depends on — what goes to the driver, what the
+ * rate confirmation is checked against. A free-text "notes" field would have
+ * been easier and would have corrected nothing.
+ */
+export type LoadFactKey =
+  | "weight_lbs"
+  | "commodity"
+  | "pickup_at"
+  | "deliver_by"
+  | "loaded_miles"
+  | "rate_cents";
+
+export const LOAD_FACT_LABEL: Record<LoadFactKey, string> = {
+  weight_lbs: "Weight",
+  commodity: "Commodity",
+  pickup_at: "PU at",
+  deliver_by: "DEL by",
+  loaded_miles: "Loaded miles",
+  rate_cents: "Rate",
+};
+
+/**
+ * ★ WHY THE ADDRESS AND THE EQUIPMENT ARE NOT ON THAT LIST ★
+ * A load board posting carries a city and a state, not a dock address, so there
+ * is nowhere for a corrected address to go and a "correction" to it would be a
+ * value no downstream reader could use. Equipment is worse: the matcher reasons
+ * about it, and re-typing it on a phone call would make a truck eligible for a
+ * load it cannot legally take. Both are argued out with the broker and land on
+ * the rate confirmation, which is where they become facts.
+ */
+
+/** Where a correction came from. Never "the system". */
+export type LoadFactCorrectionSource = "broker_call" | "broker_email";
+
+/**
+ * What the load board said, and what the broker says it actually is.
+ *
+ * ★ THE LISTING IS NEVER EDITED ★
+ * A load board posting is a record of what a source published, and a dispatcher
+ * arguing with a broker does not get to rewrite it. So a correction is its own
+ * record, kept beside the listing, carrying BOTH values and who heard the
+ * second one. The listing still says 40,000 lb six weeks later, and the reason
+ * the truck was sent for 30,000 is on the file next to it.
+ *
+ * ★ AND IT IS WHAT EVERYTHING DOWNSTREAM USES ★
+ * Once a correction is in force, `effectiveListing` is what the driver is told,
+ * what the rate confirmation is checked against, and what the screens show. A
+ * correction that only lived in a note would be a correction nobody applied.
+ */
+export interface LoadFactCorrection {
+  correctionId: string;
+  organizationId: string;
+  dispatchCycleId: string;
+  listingId: string;
+  key: LoadFactKey;
+  /** As posted, verbatim. Absent when the board never said. */
+  listingValue?: string;
+  /** What the broker said. For display; `value` carries the typed form. */
+  correctedValue: string;
+  /** The typed value, where the fact is a number. Cents, pounds or miles. */
+  numericValue?: number;
+  source: LoadFactCorrectionSource;
+  byName: string;
+  byMembershipId: string;
+  at: IsoDateTime;
+  note?: string;
+  /**
+   * Set when a later correction replaced this one.
+   *
+   * Superseded corrections are kept and never deleted: "we were told 30,000 at
+   * 2pm and 34,000 at 4pm" is the history that matters when a truck turns up at
+   * a dock and the weight is wrong again.
+   */
+  supersededByCorrectionId?: string;
 }
 
 /**
@@ -515,7 +600,14 @@ export interface MatchDriverState {
   reviewRequired: boolean;
   /** True when this may be sent right now. */
   canSend: boolean;
-  status?: string;
+  /**
+   * Where the review got to, when one has been sent.
+   *
+   * Typed rather than a bare string: this is assigned straight from
+   * `DriverGate.status`, and a screen labelling it had to widen a
+   * `Record<DriverReviewStatus, string>` lookup to do so.
+   */
+  status?: DriverReviewStatus;
   driverName?: string;
   /** Why the negotiation is waiting, or where the review got to. */
   note?: string;

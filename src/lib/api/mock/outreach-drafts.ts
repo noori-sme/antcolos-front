@@ -6,6 +6,8 @@ import { listingById } from "./listing-registry";
 import { allMatches, rankMatches } from "./opportunity-matching";
 import { truckContextFrom } from "./truck-registry";
 import type { MtLoopContext } from "./mt-loop";
+// The shared simulated round trip. A seeder can suppress it; a person never does.
+import { sleep } from "./latency";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -39,7 +41,6 @@ import type { MtLoopContext } from "./mt-loop";
  * went.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const LATENCY_MS = 240;
 
 let seq = 0;

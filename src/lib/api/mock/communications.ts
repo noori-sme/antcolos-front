@@ -143,6 +143,17 @@ export function contextForCycle(
   dispatchCycleId: string,
   ctx: MtLoopContext,
   extras?: MessageExtras,
+  /**
+   * Write about THIS listing, whether or not a conversation is open on it.
+   *
+   * ★ WHY THIS EXISTS ★
+   * The broker used to be reachable only through a negotiation, so a draft
+   * could not be prepared until one had been opened — and the first message a
+   * dispatcher sends IS how a conversation opens. Asking to see the message
+   * first is not the same as having started one, so the listing can be named
+   * directly and the negotiation stays un-opened until somebody sends.
+   */
+  aboutListingId?: string,
 ): MessageContext | undefined {
   const loop = mtLoopById(dispatchCycleId, ctx);
   if (!loop) return undefined;
@@ -159,9 +170,8 @@ export function contextForCycle(
   const negotiation = negotiations.find((n) => n.status === "booked")
     ?? negotiations.find((n) => n.status === "agreed")
     ?? negotiations[0];
-  const listing = negotiation
-    ? listingById(ctx.organizationId, negotiation.listingId)
-    : undefined;
+  const listing = (aboutListingId ? listingById(ctx.organizationId, aboutListingId) : undefined)
+    ?? (negotiation ? listingById(ctx.organizationId, negotiation.listingId) : undefined);
 
   // Same rule: the booking is the carrier's, so its load is reached, not owned.
   const load = booking ? reachableLoadById(ctx, booking.loadId) : undefined;
@@ -174,9 +184,13 @@ export function contextForCycle(
   return {
     writer: writerFor(carrier),
     broker: {
-      name: negotiation?.brokerName ?? listing?.broker.name ?? load?.customer.name ?? "",
-      contactName: negotiation?.brokerContactName ?? listing?.broker.contactName,
-      email: negotiation?.brokerEmail ?? listing?.broker.email,
+      // The named listing wins: it is the load being written about.
+      name: (aboutListingId ? listing?.broker.name : undefined)
+        ?? negotiation?.brokerName ?? listing?.broker.name ?? load?.customer.name ?? "",
+      contactName: (aboutListingId ? listing?.broker.contactName : undefined)
+        ?? negotiation?.brokerContactName ?? listing?.broker.contactName,
+      email: (aboutListingId ? listing?.broker.email : undefined)
+        ?? negotiation?.brokerEmail ?? listing?.broker.email,
       phone: listing?.broker.phone,
       mcNumber: listing?.broker.mcNumber,
     },
@@ -274,11 +288,19 @@ export type MessageOutcome =
  * approved: approval means a person read it, and no code path may claim that
  * on their behalf.
  */
+export interface PrepareOptions {
+  extras?: MessageExtras;
+  preparedBecause?: string;
+  attachments?: MessageAttachment[];
+  /** Write about one listing, even before a conversation is open on it. */
+  aboutListingId?: string;
+}
+
 export async function prepareMessage(
   dispatchCycleId: string,
   templateKey: MessageTemplateKey,
   ctx: MtLoopContext,
-  options: { extras?: MessageExtras; preparedBecause?: string; attachments?: MessageAttachment[] } = {},
+  options: PrepareOptions = {},
 ): Promise<MessageOutcome> {
   await sleep(LATENCY_MS);
   return prepareMessageSync(dispatchCycleId, templateKey, ctx, options);
@@ -288,7 +310,7 @@ export function prepareMessageSync(
   dispatchCycleId: string,
   templateKey: MessageTemplateKey,
   ctx: MtLoopContext,
-  options: { extras?: MessageExtras; preparedBecause?: string; attachments?: MessageAttachment[] } = {},
+  options: PrepareOptions = {},
 ): MessageOutcome {
   if (!mayRead(ctx)) return { status: "not_permitted" };
   const loop = mtLoopById(dispatchCycleId, ctx);
@@ -297,7 +319,7 @@ export function prepareMessageSync(
   const carrier = carrierViewSync(loop.carrierOrganizationId, truckContextFrom(ctx));
   if (!carrier) return { status: "not_found" };
 
-  const context = contextForCycle(dispatchCycleId, ctx, options.extras);
+  const context = contextForCycle(dispatchCycleId, ctx, options.extras, options.aboutListingId);
   if (!context) return { status: "not_found" };
   if (!context.broker.name) {
     return { status: "incomplete", missing: ["there is no broker on this cycle to write to"] };
@@ -667,6 +689,7 @@ function describeMissing(requirement: string): string {
     case "driver": return "no driver is on the truck";
     case "rate": return "no rate has been agreed";
     case "signed_document": return "there is no signed rate confirmation yet";
+    case "discrepancies": return "nothing on the rate confirmation disagrees with the booking";
     case "delay_reason": return "say what the delay or detention is first";
     case "eta": return "there is no ETA recorded";
     default: return requirement;

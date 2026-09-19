@@ -83,6 +83,13 @@ export const TEMPLATES: Record<MessageTemplateKey, MessageTemplate> = {
     requires: ["load", "signed_document"],
     autoDraftsWhen: "A rate confirmation is confirmed and signed. This one is recorded as sent at that moment.",
   },
+  ratecon_discrepancy: {
+    key: "ratecon_discrepancy",
+    label: TEMPLATE_LABEL.ratecon_discrepancy,
+    purpose: "Send the rate confirmation back unsigned, quoting each line that disagrees with what was booked.",
+    requires: ["load", "discrepancies"],
+    autoDraftsWhen: "A dispatcher chooses to return a rate confirmation whose fields disagree with the booking.",
+  },
 };
 
 export function templateList(): MessageTemplate[] {
@@ -172,6 +179,9 @@ export function missingFor(key: MessageTemplateKey, ctx: MessageContext): Templa
       case "signed_document":
         if (!e.signedDocumentName) out.push(need);
         break;
+      case "discrepancies":
+        if (!e.discrepancies || e.discrepancies.length === 0) out.push(need);
+        break;
       case "delay_reason":
         if (!e.delayReason && e.detentionHours === undefined) out.push(need);
         break;
@@ -208,6 +218,8 @@ function subjectFor(key: MessageTemplateKey, ctx: MessageContext): string {
       return `Thank you — ${s.lane}${tail}`;
     case "signed_rate_confirmation":
       return `Signed rate confirmation${tail ? ` —${tail.slice(2)}` : ""} — ${writer.displayName}`;
+    case "ratecon_discrepancy":
+      return `Rate confirmation does not match${tail} — ${writer.displayName}`;
   }
 }
 
@@ -343,6 +355,22 @@ function bodyFor(key: MessageTemplateKey, ctx: MessageContext): string[] {
         "",
         "Thanks again,",
       ];
+
+    case "ratecon_discrepancy": {
+      const rows = e.discrepancies ?? [];
+      return [
+        hello,
+        "",
+        `We have your rate confirmation${load} and cannot sign it as written — ${rows.length === 1 ? "one line does" : `${rows.length} lines do`} not match what we booked.`,
+        "",
+        // Quoted, not described: the broker has to be able to see the two
+        // numbers side by side without going back to their own system.
+        ...rows.map((r) => `  • ${r.label} — agreed ${r.agreed}, the confirmation says ${r.onDocument}`),
+        "",
+        "The original is attached with those lines marked. Send a corrected copy and we will sign it straight back; the truck is holding for it.",
+        "",
+      ];
+    }
 
     case "signed_rate_confirmation":
       return [

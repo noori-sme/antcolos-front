@@ -15,6 +15,7 @@ import type { CycleCommunications } from "@/lib/api/mock/communications";
 import {
   approveMessage, cancelMessage, markMessageSent, prepareMessage,
 } from "@/lib/api/mock/communications";
+import { InfoTip } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,16 +67,13 @@ export function CommunicationsPanel({
           <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
             <Mail className="size-4 text-fg-subtle" aria-hidden />
             Messages
+            <InfoTip text="Written as the carrier, under their MC. Antcolos never sends anything — you send it and mark it here." />
             {counts.waitingForYou > 0 ? (
               <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
                 {counts.waitingForYou}
               </span>
             ) : null}
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Written as the carrier, under their MC. Antcolos never sends anything — you send it and
-            mark it here.
-          </p>
         </div>
         <Button variant="secondary" size="sm" disabled={busy} onClick={() => setPicking((v) => !v)}>
           <Plus className="size-3.5" aria-hidden />
@@ -112,13 +110,10 @@ export function CommunicationsPanel({
       ) : null}
 
       {threads.length === 0 ? (
-        <div className="mt-3 rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-          <p className="text-[0.8125rem] font-medium text-fg">Nothing has been written yet</p>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Approving a prepared inquiry, or writing one from a template, starts the conversation
-            here.
-          </p>
-        </div>
+        <p className="mt-3 flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-2 text-[0.8125rem] text-fg-muted">
+          Nothing written yet
+          <InfoTip text="Approving a prepared inquiry, or writing one from a template, starts the conversation here." />
+        </p>
       ) : (
         <ul className="mt-3 space-y-2">
           {threads.map((summary) => (

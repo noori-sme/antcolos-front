@@ -1,7 +1,8 @@
 import type {
-  FleetTruck, MtLoop, MtLoopBlocker, MtLoopEvidence, MtLoopNextAction,
-  MtLoopStage,
+  CarrierView, DriverView, FleetTruck, MtLoop, MtLoopBlocker, MtLoopEvidence,
+  MtLoopNextAction, MtLoopStage,
 } from "@/types";
+import { CARRIER_DOCUMENT_LABEL } from "@/types";
 import { rateConfirmationForLoad } from "./rate-confirmation-record";
 import { driverWorkflowStore } from "./driver-workflow-store";
 import { truckDocumentProblems } from "./truck-registry";
@@ -29,7 +30,51 @@ import { mockStore } from "./store";
 /* Stage                                                                       */
 /* -------------------------------------------------------------------------- */
 
-export interface CycleInput {
+/** One entry of `driverDocumentProblems`, without importing the registry for it. */
+export interface DriverDocumentProblem {
+  requirementKey: string;
+  label: string;
+  status: string;
+  expiresAt?: string;
+  rejectionReason?: string;
+}
+
+/**
+ * What it takes to work out everything standing in a truck's way.
+ *
+ * ★ THE LOOP IS OPTIONAL, AND THAT IS THE POINT ★
+ * A truck with no open cycle still has an expired registration and a driver
+ * whose medical card lapsed. Its dispatch workspace is reachable directly, and
+ * before this type existed that page computed a second, private blocker list of
+ * its own so it could say something on those trucks. Making the loop optional
+ * here is what let that second list be deleted: one function answers for a truck
+ * whether or not a cycle is open on it, and both screens ask it.
+ */
+export interface BlockerInput {
+  loop?: MtLoop;
+  truck?: FleetTruck;
+  /**
+   * The carrier whose authority the truck runs under, AS THIS VIEWER MAY SEE IT.
+   *
+   * A scoped projection, never the registry record: a dispatch workspace that
+   * may not read a carrier's paperwork must not be handed a blocker naming it.
+   * Absent means "not established or not visible", which is why nothing below
+   * treats its absence as "the carrier is fine".
+   */
+  carrier?: CarrierView;
+  /** The driver on the truck, as this viewer may see them. Same rule. */
+  driver?: DriverView;
+  /** Computed from `driver` by its own registry, which knows what is required. */
+  driverProblems?: readonly DriverDocumentProblem[];
+  /**
+   * Whether a trailer is hooked up. Only consulted when there is no loop to read
+   * it from — a loop carries its own `trailerId`.
+   */
+  trailerAttached?: boolean;
+  responsibleName?: string;
+}
+
+export interface CycleInput extends BlockerInput {
   loop: MtLoop;
   truck?: FleetTruck;
   /** Whether a committed rate confirmation exists for the booked load. */
@@ -190,35 +235,79 @@ export function evidenceFor(input: CycleInput): MtLoopEvidence[] {
  * and no driver on it, and a board showing only whichever one stopped it hides
  * the other until the first is fixed.
  */
-export function blockersFor(input: CycleInput): MtLoopBlocker[] {
+export function blockersFor(input: BlockerInput): MtLoopBlocker[] {
   // The truck's own operational status is deliberately not read here: the loop's
   // reconciliation already turns "in the shop" and "unavailable" into
   // `blockReason`, and reading it again would list the same problem twice.
-  const { loop } = input;
+  const { loop, truck, carrier, driver } = input;
   const out: MtLoopBlocker[] = [];
 
-  if (loop.blockReason) {
+  const truckId = loop?.truckId ?? truck?.truckId;
+  const unit = loop?.truckUnit ?? truck?.unit ?? "this truck";
+
+  /* ---- The cycle's own state. Only a loop has one. ---- */
+
+  if (loop?.blockReason) {
     out.push({
       key: "loop_blocked",
       label: loop.blockOrigin === "system" ? "Stopped by the records" : "Stopped by a person",
       detail: loop.blockReason,
+      // A block the records raised is the carrier's to clear; one a person put
+      // on is the workspace's own hold, and only a person takes it off again.
+      owner: loop.blockOrigin === "system" ? "carrier" : "dispatcher",
+      severity: "critical",
       stopsDispatch: true,
-      href: loop.blockOrigin === "system" ? `/fleet/trucks/${loop.truckId}` : undefined,
+      href: loop.blockOrigin === "system" && truckId ? `/fleet/trucks/${truckId}` : undefined,
     });
   }
 
-  if (loop.pauseReason) {
+  if (loop?.pauseReason) {
     out.push({
       key: "loop_paused",
       label: "Paused",
       detail: loop.pauseReason,
+      owner: "dispatcher",
+      severity: "medium",
       stopsDispatch: false,
     });
   }
 
+  /* ---- The carrier whose authority the truck runs under ---- */
+
+  if (carrier && !carrier.canHaul) {
+    out.push({
+      key: "carrier_authority",
+      label: "Operating authority",
+      detail:
+        carrier.authority.note
+        ?? `${carrier.displayName}'s operating authority is ${carrier.authority.status.replace(/_/g, " ")}. Nothing should be booked on this carrier's trucks until it is confirmed.`,
+      owner: "carrier",
+      severity: "critical",
+      stopsDispatch: true,
+    });
+  }
+
+  for (const doc of carrier?.documents ?? []) {
+    if (doc.status !== "expired" && doc.status !== "missing") continue;
+    out.push({
+      key: `carrier_document:${doc.kind}`,
+      label: "Carrier paperwork",
+      detail:
+        doc.status === "missing"
+          ? `${carrier!.displayName} has no ${CARRIER_DOCUMENT_LABEL[doc.kind]} on file, so there is nothing to check against.`
+          : `${carrier!.displayName}'s ${CARRIER_DOCUMENT_LABEL[doc.kind]} lapsed${doc.expiresAt ? ` (${doc.expiresAt.slice(0, 10)})` : ""}.`,
+      owner: "carrier",
+      // Insurance is the one that stops everything; the rest are serious.
+      severity: doc.kind === "certificate_of_insurance" ? "critical" : "high",
+      stopsDispatch: true,
+    });
+  }
+
+  /* ---- The truck's own paperwork ---- */
+
   // Document problems come from the truck registry's own rules, not from a
   // second opinion held here.
-  for (const problem of truckDocumentProblems(loop.truckId)) {
+  for (const problem of truckId ? truckDocumentProblems(truckId) : []) {
     // Expired and rejected stop a truck; expiring soon is a warning. The truck
     // registry decides which status is which — this only reads it.
     const stops = problem.status === "expired" || problem.status === "rejected";
@@ -226,71 +315,131 @@ export function blockersFor(input: CycleInput): MtLoopBlocker[] {
       key: `truck_document:${problem.kind}`,
       label: "Truck paperwork",
       detail: `${DOCUMENT_LABEL[problem.kind] ?? problem.kind} is ${problem.status.replace(/_/g, " ")}${problem.expiresAt ? ` (${problem.expiresAt.slice(0, 10)})` : ""}.${problem.rejectionReason ? ` ${problem.rejectionReason}` : ""}`,
+      owner: "carrier",
+      severity: stops ? "high" : "medium",
       stopsDispatch: stops,
-      href: `/dispatch/trucks/${loop.truckId}`,
+      href: truckId ? `/dispatch/trucks/${truckId}` : undefined,
     });
   }
 
-  if (loop.trailerRequired && !loop.trailerId) {
+  /* ---- The equipment ---- */
+
+  const trailerRequired = loop ? loop.trailerRequired : truck?.equipment === "tractor";
+  const trailerAttached = loop ? Boolean(loop.trailerId) : Boolean(input.trailerAttached);
+  if (trailerRequired && !trailerAttached) {
     out.push({
       key: "no_trailer",
       label: "No trailer",
-      detail: `Unit ${loop.truckUnit} is a tractor and has no trailer on it. It cannot be dispatched.`,
+      detail: `Unit ${unit} is a tractor and has no trailer on it. It cannot be dispatched.`,
+      owner: "dispatcher",
+      severity: "medium",
       stopsDispatch: true,
       href: `/fleet/trailers`,
     });
   }
 
-  if (!loop.driverProfileId) {
+  /* ---- The person ---- */
+
+  // The ID, not the view: a driver this viewer may not READ is not the same
+  // thing as a truck with nobody on it, and saying "nobody is on unit 118"
+  // about somebody's colleague is worse than saying nothing.
+  const driverId = loop?.driverProfileId ?? truck?.currentDriverId;
+  if (!driverId) {
     out.push({
       key: "no_driver",
       label: "No driver",
-      detail: `Nobody is on unit ${loop.truckUnit}. A load cannot be dispatched, and no Driver Load Post can be published.`,
+      detail: `Nobody is on unit ${unit}. A load cannot be dispatched, and no Driver Load Post can be published.`,
+      owner: "carrier",
+      severity: "medium",
       stopsDispatch: true,
       href: `/people/drivers`,
     });
   }
 
-  if (loop.loadId && !loop.rateConfirmationId) {
+  for (const problem of input.driverProblems ?? []) {
+    // Expiring soon is a warning the driver's own profile carries. Only what has
+    // actually lapsed or been rejected stops a dispatch.
+    if (problem.status === "expiring_soon" || problem.status === "approved") continue;
+    out.push({
+      key: `driver_document:${problem.requirementKey}`,
+      label: "Driver paperwork",
+      detail: `${driver?.legalName ?? "The driver"}'s ${problem.label.toLowerCase()} ${
+        problem.status === "rejected" ? "was rejected" : problem.status === "expired" ? "has expired" : "is missing"
+      }.${problem.rejectionReason ? ` ${problem.rejectionReason}` : ""}`,
+      owner: "driver",
+      severity: "high",
+      stopsDispatch: true,
+    });
+  }
+
+  if (driver?.availability.status === "inactive") {
+    out.push({
+      key: "driver_inactive",
+      label: "Driver not working",
+      detail: `${driver.legalName} is not working. The truck needs a driver before anything can be booked on it.`,
+      owner: "carrier",
+      severity: "high",
+      stopsDispatch: true,
+    });
+  }
+
+  /* ---- The load on the cycle ---- */
+
+  if (loop?.loadId && !loop.rateConfirmationId) {
     out.push({
       key: "unconfirmed_load",
       label: "Rate confirmation outstanding",
       detail: `${loop.loadReference ?? "The booked load"} has no signed rate confirmation back from the broker. Until it does, the load is not final and the driver has nothing to run.`,
+      owner: "dispatcher",
+      severity: "high",
       stopsDispatch: true,
       // The truck's own dispatch workspace, which is where THIS cycle's rate
       // confirmation panel is. There is no rate-confirmation index route, and
       // linking to one that does not exist is worse than linking one level up.
-      href: `/dispatch/trucks/${loop.truckId}`,
+      href: truckId ? `/dispatch/trucks/${truckId}` : undefined,
     });
   }
 
   // Paperwork the load still owes. Not a dispatch blocker — a truck can roll
   // without a POD — but it is what stops the load being billed, and a cycle that
   // ends with an unbillable load is not a cycle that paid for itself.
-  for (const kind of loadMissingDocuments(loop.dispatchOrganizationId, loop.loadId)) {
+  for (const kind of loop ? loadMissingDocuments(loop.dispatchOrganizationId, loop.loadId) : []) {
     out.push({
       key: `load_document:${kind}`,
-      label: "Paperwork outstanding",
-      detail: `${loop.loadReference ?? "The load"} still owes ${kind.replace(/_/g, " ")} before it can be invoiced.`,
+      /*
+       * ★ THE DOCUMENT, NOT THE CATEGORY ★
+       * Every one of these was labelled "Paperwork outstanding", so a load
+       * owing both a bill of lading and a proof of delivery produced two rows
+       * a reader could not tell apart. The label names which one.
+       */
+      label: kind.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()),
+      detail: `${loop!.loadReference ?? "The load"} still owes ${kind.replace(/_/g, " ")} before it can be invoiced.`,
+      owner: "dispatcher",
+      severity: "medium",
       stopsDispatch: false,
-      href: loop.loadId ? `/loads/${loop.loadId}` : undefined,
+      href: loop!.loadId ? `/loads/${loop!.loadId}` : undefined,
     });
   }
 
-  if (!loop.claimedByMembershipId) {
+  if (loop && !loop.claimedByMembershipId) {
     out.push({
       key: "unclaimed",
       // NOT "Nobody on it". Somebody is responsible for every open loop; what
       // is missing is a person saying they have accepted it.
       label: "Not claimed",
       detail: input.responsibleName
-        ? `${input.responsibleName} is responsible for unit ${loop.truckUnit}'s cycle and has not accepted it yet.`
-        : `Nobody has accepted unit ${loop.truckUnit}'s cycle yet.`,
+        ? `${input.responsibleName} is responsible for unit ${unit}'s cycle and has not accepted it yet.`
+        : `Nobody has accepted unit ${unit}'s cycle yet.`,
+      owner: "dispatcher",
+      severity: "medium",
       stopsDispatch: false,
     });
   }
 
-  return out;
+  // Hardest first, so a page can lead with the one that means nothing can move.
+  // `sort` is stable, so entries of equal severity keep the order above.
+  const ORDER = { critical: 0, high: 1, medium: 2 } as const;
+  return out.sort((a, b) => ORDER[a.severity] - ORDER[b.severity]);
 }
 
 /* -------------------------------------------------------------------------- */

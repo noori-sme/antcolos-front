@@ -1,19 +1,22 @@
 "use client";
 
-import { Radar, RefreshCw, Search, Unplug } from "lucide-react";
+import { ArrowRight, Handshake, Radar, RefreshCw, Search, Unplug, UserRound } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   CONNECTION_IS_PLANNED, CONNECTION_LABEL, SEARCH_STATUS_LABEL, SOURCE_LABEL,
-  type SearchSession,
+  type MatchWithListing, type SearchSession,
 } from "@/types";
 import {
   closeSearch, pauseSearch, resumeSearch, searchAgain, startSearch, widenSearch,
   type SearchOutcome,
 } from "@/lib/api/mock/search-session";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
+import { SendToDriverDialog } from "@/features/driver-review/send-to-driver-dialog";
+import { TalkToBrokerDialog } from "./talk-to-broker-dialog";
+import { InfoTip, Metric } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,13 +29,26 @@ import { cn } from "@/lib/utils";
  * source says how it reaches Antcolos and whether that is built.
  */
 export function SearchPanel({
-  dispatchCycleId, session, ctx, onChanged,
+  dispatchCycleId, session, top = [], ctx, onChanged,
 }: {
   dispatchCycleId: string;
   session?: SearchSession;
+  /**
+   * The best few this search turned up.
+   *
+   * ★ WHY THE SEARCH STAGE SHOWS LOADS AT ALL ★
+   * It lists SOURCES, which answers "did anybody look?" and not "what did they
+   * find?". A dispatcher who has just watched a search finish wants the second
+   * question, and making them scroll to the next stage to ring a broker about
+   * the top result is a step that exists for no reason. Three rows, and the
+   * full list with its working is still one stage down.
+   */
+  top?: MatchWithListing[];
   ctx: MtLoopContext | null;
   onChanged: () => void;
 }) {
+  const [talkTo, setTalkTo] = useState<MatchWithListing | null>(null);
+  const [sendTo, setSendTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -72,17 +88,14 @@ export function SearchPanel({
           <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
             <Radar className="size-4 text-fg-subtle" aria-hidden />
             Load search
+            <InfoTip text="Every connected source, what each one had, and what was already in the inbox. Two are not built yet and say so." />
             {session ? (
               <Badge tone={session.status === "running" ? "info" : session.status === "paused" ? "warning" : "neutral"}>
                 {SEARCH_STATUS_LABEL[session.status]}
               </Badge>
             ) : null}
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            {session
-              ? "Every source that was searched for this truck, and what each one had."
-              : "Nothing is looking for a load for this truck yet."}
-          </p>
+
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -179,15 +192,23 @@ export function SearchPanel({
             <Stat label="Considered" value={String(session.counts.matchesCreated)} />
           </dl>
 
-          <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
-            Looking for {session.criteria.equipment.replace(/_/g, " ")}, up to{" "}
-            {session.criteria.maxDeadheadMiles} miles empty, at $
-            {(session.criteria.minRatePerMileCents / 100).toFixed(2)}/mi or better
-            {session.criteria.refusedStates.length
-              ? `, and not into ${session.criteria.refusedStates.join(", ")}`
-              : ""}
-            . These come from the truck and the carrier&rsquo;s own rules, not from a form.
-            {session.criteria.widened ? " You have widened this search." : ""}
+          {/*
+            ★ THE CRITERIA AS FIGURES, NOT AS A SENTENCE ★
+            It read "Looking for box truck, up to 150 miles empty, at $2.10/mi
+            or better, and not into NY. These come from the truck and the
+            carrier's own rules, not from a form." — thirty-one words to carry
+            four numbers a dispatcher checks at a glance. Where they come from
+            is worth saying once, in the tip, not on every read.
+          */}
+          <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Metric label="Equip" value={session.criteria.equipment.replace(/_/g, " ")} />
+            <Metric label="Empty" value={`≤ ${session.criteria.maxDeadheadMiles} mi`} />
+            <Metric label="Floor" value={`$${(session.criteria.minRatePerMileCents / 100).toFixed(2)}/mi`} />
+            {session.criteria.refusedStates.length ? (
+              <Metric label="Not into" value={session.criteria.refusedStates.join(", ")} tone="warn" />
+            ) : null}
+            {session.criteria.widened ? <Badge tone="info">widened</Badge> : null}
+            <InfoTip text="Read off this truck and this carrier's own rules — the equipment it is rated for, the deadhead the carrier accepts and its rate floor. Nothing here was typed into a form." />
           </p>
 
           {session.status !== "closed" ? (
@@ -236,11 +257,21 @@ export function SearchPanel({
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-subtle">
-            The load boards will be read by a browser extension running in your own browser. It is
-            not built yet, so those two rows searched nothing — which is why they say so instead of
-            quietly returning an empty list.
-          </p>
+          {/*
+            ★ THE WARNING STAYS; THE ESSAY GOES ★
+            A dispatcher must not read an empty result as "there is no freight"
+            when the two places most of it lives were never searched. That is a
+            COUNT and a colour, on the sources themselves — the forty words
+            explaining browser extensions belong behind the tip.
+          */}
+          {session.sources.some((x) => x.status === "not_connected") ? (
+            <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-fg-muted">
+              <Badge tone="warning">
+                {session.sources.filter((x) => x.status === "not_connected").length} not searched
+              </Badge>
+              <InfoTip text="The load boards are read by a browser extension running in your own browser, and it is not built yet. Those rows searched nothing, and say so rather than quietly returning an empty list." />
+            </p>
+          ) : null}
 
           <h3 className="mt-4 text-[0.75rem] font-semibold text-fg">What happened</h3>
           <ol className="mt-2 space-y-1">
@@ -261,14 +292,73 @@ export function SearchPanel({
           </ol>
         </>
       ) : (
-        <div className="mt-3 rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-          <p className="text-[0.8125rem] font-medium text-fg">No search running</p>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Starting one looks at every connected source and puts what it finds in the Opportunity
-            Inbox, against this truck&rsquo;s cycle.
-          </p>
-        </div>
+        <p className="mt-3 flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-4 text-[0.8125rem] font-medium text-fg">
+          Not running
+          <InfoTip text="Starting one looks at every connected source and puts what it finds in the Opportunity Inbox, against this truck's cycle." />
+        </p>
       )}
+
+      {/* The best few, with the one action a finished search leads to. */}
+      {top.length > 0 ? (
+        <ul className="mt-3 flex flex-col gap-1.5 border-t border-border pt-3">
+          {top.slice(0, 3).map((row) => (
+            <li
+              key={row.match.matchId}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-sunken px-2.5 py-1.5"
+            >
+              <span className="inline-flex min-w-0 items-center gap-1.5 text-[0.75rem] font-medium text-fg">
+                {row.listing.origin.city}, {row.listing.origin.state}
+                <ArrowRight className="size-3 shrink-0 text-fg-subtle" aria-hidden />
+                {row.listing.destination.city}, {row.listing.destination.state}
+              </span>
+              {row.listing.offeredRateCents !== undefined ? (
+                <Metric
+                  label="Rate"
+                  value={`$${(row.listing.offeredRateCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                  tone="good"
+                />
+              ) : null}
+              <Metric label="Empty" value={`${row.match.deadheadMiles} mi`} />
+              <Metric label="Score" value={String(row.match.score.total)} />
+              <span className="flex-1" />
+              {/*
+                ★ THE DRIVER IS ASKED FROM HERE TOO ★
+                Northline's rule is driver-first, and the first moment a
+                dispatcher has something to ask about is this list. Making them
+                walk to the Opportunities stage to do it put a screen between
+                the decision and the question — and the driver's answer is what
+                the broker call is built on, so it belongs before it.
+              */}
+              <Button variant="secondary" size="sm" onClick={() => setSendTo(row.match.matchId)}>
+                <UserRound className="size-3.5" aria-hidden />
+                Driver
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setTalkTo(row)}>
+                <Handshake className="size-3.5" aria-hidden />
+                Broker
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {sendTo ? (
+        <SendToDriverDialog
+          matchId={sendTo}
+          ctx={ctx}
+          onClose={() => setSendTo(null)}
+          onChanged={onChanged}
+        />
+      ) : null}
+
+      {talkTo ? (
+        <TalkToBrokerDialog
+          row={talkTo}
+          ctx={ctx}
+          onClose={() => setTalkTo(null)}
+          onChanged={onChanged}
+        />
+      ) : null}
     </section>
   );
 }

@@ -1,6 +1,6 @@
 import type {
   CarrierRelationship, DriverAccessReason, DriverAvailability, DriverDocument,
-  DriverPreferences, DriverProfile, DriverView,
+  DriverAvailabilityStatus, DriverPreferences, DriverProfile, DriverView,
   EngagementType, PermissionKey, RelationshipStatus,
 } from "@/types";
 import { driverRequirements } from "@/lib/documents/requirements";
@@ -267,8 +267,72 @@ function docs(
 
 const FULL_SHARE = ["cdl_front", "cdl_back", "medical_front", "w9", "coi"];
 
+/**
+ * ★ THE DEMO FLEET'S DRIVERS ★
+ *
+ * One per truck in `DEMO_FLEET`, and deliberately unremarkable: active, hours
+ * available, every required document approved and nowhere near expiring.
+ *
+ * That is a decision, not laziness. A lapsing medical card puts a blocker on
+ * the cycle and stops the walkthrough at its first stage — and this fixture set
+ * already demonstrates every one of those states, on the trucks built for them.
+ * These ten exist so the STAGES can be seen; the blockers have their own trucks.
+ *
+ * `hoursNote` is the exception and it is per driver, because what the truck is
+ * doing is read off records like this one rather than written on the card: the
+ * driver parked on a 34-hour reset is out of cycle hours here, and that is why
+ * the board says so.
+ */
+const DEMO_DRIVERS: {
+  id: string;
+  name: string;
+  truck: keyof typeof TRUCK_IDS;
+  phone: string;
+  city: string;
+  state: string;
+  status: DriverAvailabilityStatus;
+  hoursNote: string;
+}[] = [
+  { id: "dp_owen_k", name: "Owen Kessler", truck: "nl140", phone: "+1 (312) 555-0190", city: "Peoria", state: "IL", status: "available", hoursNote: "Full hours. Ready when there is a load." },
+  { id: "dp_tasha_b", name: "Tasha Bell", truck: "nl141", phone: "+1 (312) 555-0191", city: "Rockford", state: "IL", status: "available", hoursNote: "Full hours." },
+  { id: "dp_luis_m", name: "Luis Moreno", truck: "nl142", phone: "+1 (312) 555-0192", city: "Gary", state: "IN", status: "available", hoursNote: "Full hours. Wants to be moving today." },
+  { id: "dp_erin_v", name: "Erin Vance", truck: "nl143", phone: "+1 (312) 555-0193", city: "Aurora", state: "IL", status: "available", hoursNote: "Full hours." },
+  { id: "dp_hank_p", name: "Hank Pruitt", truck: "nl144", phone: "+1 (312) 555-0194", city: "Joliet", state: "IL", status: "available", hoursNote: "Full hours." },
+  { id: "dp_grace_l", name: "Grace Lindqvist", truck: "nl150", phone: "+1 (312) 555-0195", city: "Effingham", state: "IL", status: "driving", hoursNote: "5h 40m of drive time left." },
+  { id: "dp_ivan_s", name: "Ivan Sorokin", truck: "nl151", phone: "+1 (312) 555-0196", city: "Sidney", state: "NE", status: "off_duty", hoursNote: "Out of cycle hours. 34-hour reset finishes tomorrow morning." },
+  { id: "dp_maya_f", name: "Maya Farrell", truck: "nl152", phone: "+1 (312) 555-0197", city: "Walcott", state: "IA", status: "driving", hoursNote: "7h 10m of drive time left." },
+  { id: "dp_devon_r", name: "Devon Rhodes", truck: "nl153", phone: "+1 (312) 555-0198", city: "Gary", state: "IN", status: "driving", hoursNote: "4h 05m of drive time left." },
+  { id: "dp_priya_n", name: "Priya Nair", truck: "nl154", phone: "+1 (312) 555-0199", city: "Columbus", state: "OH", status: "driving", hoursNote: "On duty, not driving — on a dock." },
+];
+
 function buildFixtures(): DriverRecord[] {
   return [
+    ...DEMO_DRIVERS.map((d, i): DriverRecord => ({
+      profile: profile(d.id, d.name, `D${4100000000 + i * 137}`, d.state, {
+        phone: d.phone, cdlDays: 600 + i * 11, medicalDays: 330 + i * 7,
+      }),
+      availability: {
+        status: d.status,
+        hoursNote: d.hoursNote,
+        homeTerminal: "Chicago, IL",
+        currentCity: d.city,
+        currentState: d.state,
+      },
+      preferences: { preferredStates: [d.state, "IL", "IN"], maxDaysOut: 5 },
+      engagements: [engagement(
+        d.id, "org_northline", "Northline Freight", "company_driver", "active", 190,
+        FULL_SHARE, TRUCK_IDS[d.truck],
+      )],
+      documents: {
+        org_northline: docs([
+          ["cdl_front", "approved", { expiresDays: 600 + i * 11 }],
+          ["cdl_back", "approved"],
+          ["medical_front", "approved", { expiresDays: 330 + i * 7 }],
+          ["w9", "approved"],
+          ["coi", "approved", { expiresDays: 260 }],
+        ]),
+      },
+    })),
     {
       profile: profile("dp_dmitri", "Dmitri Kovalenko", "K2210094471", "IL",
         { phone: "+1 (312) 555-0181", cdlDays: 520, medicalDays: 160 }),
@@ -336,6 +400,35 @@ function buildFixtures(): DriverRecord[] {
           ["medical_front", "approved", { expiresDays: 320 }],
           ["w9", "approved"],
           ["coi", "expiring_soon", { expiresDays: 22 }],
+        ]),
+      },
+    },
+    {
+      /*
+       * ★ THE DRIVER ON THE WALKTHROUGH TRUCK ★
+       *
+       * Deliberately unremarkable: active, hours available, every required
+       * document approved and none of them close to expiring. The end-to-end
+       * demo cycle has to show the HAPPY path from search to rolling, and a
+       * driver with a lapsing medical card would put a blocker on the board
+       * and stop the walkthrough at its first stage — which every other
+       * fixture in this file already demonstrates, on trucks built for it.
+       */
+      profile: profile("dp_nadia_r", "Nadia Reyes", "R7781044120", "IL",
+        { phone: "+1 (312) 555-0173", email: "nadia.reyes@example.com", cdlDays: 720, medicalDays: 400 }),
+      availability: {
+        status: "available", hoursNote: "Full hours. Reset finished overnight.",
+        homeTerminal: "Chicago, IL", currentCity: "Bloomington", currentState: "IL",
+      },
+      preferences: { preferredStates: ["IL", "MO", "IN", "OH"], maxDaysOut: 6 },
+      engagements: [engagement("dp_nadia_r", "org_northline", "Northline Freight", "company_driver", "active", 320, FULL_SHARE, TRUCK_IDS.nl133)],
+      documents: {
+        org_northline: docs([
+          ["cdl_front", "approved", { expiresDays: 720 }],
+          ["cdl_back", "approved"],
+          ["medical_front", "approved", { expiresDays: 400 }],
+          ["w9", "approved"],
+          ["coi", "approved", { expiresDays: 280 }],
         ]),
       },
     },

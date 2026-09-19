@@ -242,6 +242,125 @@ export function recordLoadConsent(args: {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Execution                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What a load does once it is somebody's to drive.
+ *
+ * ★ WHY THIS EXISTS AT ALL ★
+ * Every other state in this mock is reached by a command. Execution was not: a
+ * load could be BOOKED through the real path and then had to be written out by
+ * hand in `seed.ts` to be in transit. So "a truck that is rolling" could only
+ * ever be a fixture, and no seeder could walk one there the way a dispatcher's
+ * week actually does.
+ *
+ * The transitions are deliberately few, and each one is a thing a driver or an
+ * ELD genuinely reports. There is no `setStatus(anything)` here, because the
+ * point is that a status is the CONSEQUENCE of something happening.
+ */
+export type LoadMilestone =
+  /** Given to the driver. */
+  | "dispatched"
+  /** On the ground at the pickup. */
+  | "at_pickup"
+  /** Loaded and away. */
+  | "departed_pickup"
+  /** On the ground at the delivery. */
+  | "at_delivery"
+  /** Off, and the paperwork is next. */
+  | "delivered";
+
+const MILESTONE_STATUS: Record<LoadMilestone, LoadStatus> = {
+  dispatched: "dispatched",
+  at_pickup: "at_pickup",
+  departed_pickup: "in_transit",
+  at_delivery: "at_delivery",
+  delivered: "delivered",
+};
+
+const MILESTONE_EVENT: Record<LoadMilestone, LoadEventKind> = {
+  dispatched: "load.dispatched",
+  at_pickup: "stop.arrived",
+  departed_pickup: "stop.departed",
+  at_delivery: "stop.arrived",
+  delivered: "load.delivered",
+};
+
+export function recordLoadMilestone(args: {
+  organizationId: string;
+  actor: ActorRef;
+  loadId: string;
+  milestone: LoadMilestone;
+  at?: string;
+  note?: string;
+  source?: LoadEvent["source"];
+}): Load {
+  const org = mockStore.org(args.organizationId);
+  const load = org.loads.find((l) => l.id === args.loadId);
+  if (!load) throw new Error("That load could not be read.");
+
+  const at = args.at ?? nowIso();
+  const previous = load.status;
+  load.status = MILESTONE_STATUS[args.milestone];
+  load.updatedAt = at;
+
+  // The stop itself records the arrival, so a screen reading stops rather than
+  // events gets the same answer. A milestone that only existed as an event
+  // would leave the stop saying nobody had turned up.
+  const stop = args.milestone === "at_pickup" || args.milestone === "departed_pickup"
+    ? load.stops.find((st) => st.kind === "pickup")
+    : args.milestone === "at_delivery" || args.milestone === "delivered"
+      ? [...load.stops].reverse().find((st) => st.kind === "delivery")
+      : undefined;
+  if (stop) {
+    if (args.milestone === "at_pickup" || args.milestone === "at_delivery") stop.arrivedAt = at;
+    if (args.milestone === "departed_pickup" || args.milestone === "delivered") stop.departedAt = at;
+  }
+
+  appendLoadEvent(
+    args.organizationId, load.id, MILESTONE_EVENT[args.milestone], args.actor, at,
+    { previousValue: previous, newValue: load.status, note: args.note },
+    args.source ?? "eld",
+  );
+  return load;
+}
+
+/**
+ * Something has gone wrong with the timing.
+ *
+ * Kept apart from the milestones because a delay is not a step forward: the
+ * load is exactly where it was and the appointment is now at risk, which is a
+ * different sentence and a different colour on every screen that reads it.
+ */
+export function recordLoadDelay(args: {
+  organizationId: string;
+  actor: ActorRef;
+  loadId: string;
+  note: string;
+  newEtaAt?: string;
+  at?: string;
+}): Load {
+  const org = mockStore.org(args.organizationId);
+  const load = org.loads.find((l) => l.id === args.loadId);
+  if (!load) throw new Error("That load could not be read.");
+  const at = args.at ?? nowIso();
+
+  appendLoadEvent(
+    args.organizationId, load.id, "exception.delay_reported", args.actor, at,
+    { note: args.note }, "eld",
+  );
+  if (args.newEtaAt) {
+    appendLoadEvent(
+      args.organizationId, load.id, "load.eta_updated", args.actor, at,
+      { etaAt: args.newEtaAt, note: args.note }, "eld",
+    );
+  }
+  load.updatedAt = at;
+  return load;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Finalize                                                                   */
 /* -------------------------------------------------------------------------- */
 
