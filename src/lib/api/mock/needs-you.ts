@@ -7,7 +7,7 @@ import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
 } from "../contracts/context";
 import type {
-  EscalateInput, NeedsYouService, SnoozeInput,
+  DecideInput, EscalateInput, NeedsYouService, SnoozeInput,
 } from "../contracts/needs-you";
 import {
   complianceNeedsYouItems, isComplianceItemId, replaceComplianceNeedsYou,
@@ -43,6 +43,7 @@ import {
 import { isWorkforceNeedsYouId, workforceNeedsYouItems } from "./workforce-needs-you";
 import { accessNeedsYouItems, isAccessNeedsYouId } from "./access-needs-you";
 import { importNeedsYouItems, isImportNeedsYouId } from "./import-needs-you";
+import { attachAutomation, executeDecision } from "./needs-you-automation";
 
 const LATENCY_MS = 180;
 const wait = () => new Promise<void>((r) => setTimeout(r, LATENCY_MS));
@@ -398,11 +399,14 @@ export const mockNeedsYouService: NeedsYouService = {
     // a second one of its own. Its ids are ny_inv*, so the ny_d_ prune above
     // leaves them alone.
     ensureInvoiceNeedsYou(ctx.organizationId);
-    return allItems(ctx)
-      .map(autoUnsnooze)
-      .filter((i) => visibleTo(ctx, i))
-      .filter((i) => matches(ctx, i, filters))
-      .sort((a, b) => urgencyScore(a) - urgencyScore(b));
+    return attachAutomation(
+      ctx,
+      allItems(ctx)
+        .map(autoUnsnooze)
+        .filter((i) => visibleTo(ctx, i))
+        .filter((i) => matches(ctx, i, filters))
+        .sort((a, b) => urgencyScore(a) - urgencyScore(b)),
+    );
   },
 
   async get(ctx, itemId) {
@@ -411,7 +415,7 @@ export const mockNeedsYouService: NeedsYouService = {
     // Fuel items are derived from the ledger, not seeded, so the queue is
     // brought into line with it before anything is read.
     syncFuelNeedsYou(ctx);
-    return autoUnsnooze(find(ctx, itemId));
+    return attachAutomation(ctx, [autoUnsnooze(find(ctx, itemId))])[0];
   },
 
   async openCount(ctx) {
@@ -501,6 +505,48 @@ export const mockNeedsYouService: NeedsYouService = {
       history: appendHistory(item, {
         actor: ctx.actor, action: "escalated", note: input.note.trim(),
       }),
+    };
+    return persist(ctx, item, next);
+  },
+
+  /**
+   * ★ THE ONE PRESS ★
+   *
+   * Everything up to here ran without anybody being asked. This records which
+   * pre-analysed option a person chose, runs every downstream step that
+   * choosing it implies, and closes the item with the result written into its
+   * history — so the next read shows what the system did rather than only that
+   * somebody ticked something.
+   *
+   * An item that is a view of another module's state has no executable option
+   * and says so: `find` refuses the ones that cannot be written to at all, and
+   * `executeDecision` refuses a handoff. Neither is an error a screen has to
+   * guess at — both carry the sentence a person should read.
+   */
+  async decide(ctx, itemId, input: DecideInput) {
+    await wait();
+    const item = find(ctx, itemId);
+    // Deciding IS acting, so it needs exactly what the recommended action needs.
+    requirePermissions(ctx, ...item.recommendedAction.requires);
+
+    // ★ PLANNED THE SAME WAY A READ PLANS IT ★
+    // Through `attachAutomation`, never `planAutomation` alone: the options a
+    // person was shown include the ones a domain supplied — the three renewal
+    // quotes priced off the policy — and re-planning without that market would
+    // refuse the very option the row offered.
+    const planned = attachAutomation(ctx, [item])[0];
+    const outcome = executeDecision(planned, input.optionId, ctx.actor);
+    const note = input.note?.trim() ? `${outcome.note} ${input.note.trim()}` : outcome.note;
+
+    const next: NeedsYouItem = {
+      ...item,
+      status: "resolved",
+      resolvedAt: nowIso(),
+      resolutionNote: note,
+      snoozedUntil: undefined,
+      snoozeReason: undefined,
+      automation: outcome.automation,
+      history: appendHistory(item, { actor: ctx.actor, action: "resolved", note }),
     };
     return persist(ctx, item, next);
   },

@@ -85,18 +85,3 @@ export function NeedsYouViewSwitcher({
     </div>
   );
 }
-
-/** One line under the tabs saying what this view is, and what it is not. */
-export function NeedsYouViewNote({ view }: { view: NeedsYouView }) {
-  return (
-    <p className="text-[0.8125rem] text-fg-subtle">
-      {QUEUE_DESCRIPTION[view]}
-      {view === "my_needs_you" ? null : (
-        <span className="text-fg-subtle">
-          {" "}
-          Nothing here is counted as your own work.
-        </span>
-      )}
-    </p>
-  );
-}

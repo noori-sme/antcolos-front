@@ -55,6 +55,7 @@ export type * from "./workforce";
 export type * from "./qualification";
 export {
   SEVERITY_ORDER, SEVERITY_LABEL, CATEGORY_LABEL, MAX_SNOOZE_HOURS,
+  automationProgress,
 } from "./needs-you";
 export { DRIVER_AVAILABILITY_LABEL } from "./driver-profile";
 export { INVITATION_REFUSAL_REASON } from "./access";
