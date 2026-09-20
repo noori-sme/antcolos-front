@@ -16,6 +16,7 @@ import { mockDriverWorkflowService } from "./mock/driver-workflow";
 import { mockInvoicesService } from "./mock/invoices";
 import { mockLoadsService } from "./mock/loads";
 import { mockNeedsYouService } from "./mock/needs-you";
+import { mockProfileService } from "./mock/profile";
 import { mockReportsService } from "./mock/reports";
 import { mockResponsibilityService } from "./mock/responsibility";
 import { mockSettlementsService } from "./mock/settlements";
@@ -50,6 +51,7 @@ const mockServices: AntcolosServices = {
   qualification: mockQualificationService,
   access: mockAccessService,
   import: mockImportService,
+  profile: mockProfileService,
 };
 
 export const services: AntcolosServices =

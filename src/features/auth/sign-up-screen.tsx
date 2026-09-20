@@ -100,9 +100,17 @@ export function SignUpScreen() {
         <StepPassword
           email={email}
           username={username}
-          // An invited person already has a place to go; onboarding is for
-          // people arriving on their own.
-          onCreated={() => router.push(invitationReturn ?? "/onboarding")}
+          // Everybody goes to the profile step: the permanent record is
+          // created for every account, not only for people arriving on their
+          // own. An invitation is not lost, it rides through in `?next=` and
+          // the profile step hands off to it instead of to role selection.
+          onCreated={() =>
+            router.push(
+              invitationReturn
+                ? `/onboarding/profile?next=${encodeURIComponent(invitationReturn)}`
+                : "/onboarding/profile",
+            )
+          }
           onBack={() => setStep("username")}
         />
       )}

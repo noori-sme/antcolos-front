@@ -34,6 +34,7 @@ import { resetNegotiations } from "./negotiation";
 import { resetMatches } from "./opportunity-matching";
 import { resetDrafts } from "./outreach-drafts";
 import { resetPartyRegistry } from "./party-registry";
+import { resetProfileStore } from "./profile-store";
 import { resetRanking } from "./ranking";
 import { resetExtractionQueue } from "./rate-con-extractions";
 import { resetRateConfirmationRecords } from "./rate-confirmation-record";
@@ -136,6 +137,12 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // person, no truck and no organization of its own — only what a carrier
   // asserted, and what somebody decided about it.
   { id: "import", holds: "Import batches, their immutable claims, the current plan and each run", module: "import-store.ts", reset: resetImportStore },
+  // The permanent profile. It belongs to no organization, so it sits outside
+  // every ordering rule above: nothing here is derived from a roster, and
+  // resetting it does not disturb any workspace. It holds no permission, no
+  // membership and no stored metric — only the person's own record, where they
+  // have worked, and the append-only ledger every figure is folded from.
+  { id: "profile", holds: "Permanent profiles, workplace history, the contribution ledger and conferred awards", module: "profile-store.ts", reset: resetProfileStore },
 
   /* -- The canonical equipment meter ------------------------------------- */
   // Before the operational layers, because maintenance and fleet both PROJECT

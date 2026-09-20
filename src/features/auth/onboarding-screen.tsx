@@ -4,7 +4,7 @@ import { Building2, Headset, Plus, Truck, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthShell } from "./shell";
-import { BackLink, ChoiceCard } from "./controls";
+import { AccountFlowProgress, BackLink, ChoiceCard } from "./controls";
 import { CarrierVerification } from "./carrier-verification";
 import { DispatchCreation } from "./dispatch-creation";
 import { IndividualDispatcherSetup } from "./individual-dispatcher";
@@ -15,7 +15,13 @@ type Stage = "role" | "carrier" | "driver" | "dispatch-fork" | "create-org" | "i
 type Role = "carrier-owner" | "driver" | "dispatch";
 
 /**
- * Onboarding — asked once, right after the account is created.
+ * Onboarding — asked once, after the account and the permanent profile exist.
+ *
+ * It is the THIRD stage of getting an account, not the second: signup creates
+ * the account, `/onboarding/profile` creates the permanent career record, and
+ * only then does anybody get asked how they will use Antcolos. The order is
+ * the product saying that a person is not their role — the profile set up a
+ * step ago survives every answer given here, and every later change of answer.
  *
  * A returning user never lands here: Sign In goes straight to the product,
  * because their role and organization were settled the first time.
@@ -106,6 +112,8 @@ export function OnboardingScreen() {
       description={heading[stage].description}
       headingRef={headingRef}
     >
+      {stage === "role" ? <AccountFlowProgress stage={3} /> : null}
+
       {stage === "role" ? (
         <div className="space-y-2.5">
           <ChoiceCard

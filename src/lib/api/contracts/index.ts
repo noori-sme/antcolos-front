@@ -18,6 +18,11 @@ export type * from "./responsibility";
 export type * from "./access";
 export type * from "./workforce";
 export type * from "./qualification";
+export type * from "./profile";
+export {
+  AvatarRejectedError, NotProfileOwnerError, ProfileAlreadyInitializedError,
+  ProfileInputError, ProfileNotFoundError, UsernameImmutableError,
+} from "./profile";
 export type * from "./import";
 
 
@@ -43,6 +48,7 @@ import type { NeedsYouService } from "./needs-you";
 import type { ReportsService } from "./reports";
 import type { ResponsibilityService } from "./responsibility";
 import type { WorkforceService } from "./workforce";
+import type { ProfileService } from "./profile";
 import type { QualificationService } from "./qualification";
 
 /** The seam Taqi implements against. The UI only ever sees this shape. */
@@ -122,4 +128,17 @@ export interface AntcolosServices {
    * rather than becoming a second registry of people and trucks.
    */
   import: ImportService;
+  /**
+   * The permanent, organization-independent career record.
+   *
+   * ★ THE ONE SERVICE WHOSE READS TAKE NO ServiceContext ★
+   * Every other entry on this interface is read AS A MEMBERSHIP, INSIDE AN
+   * ORGANIZATION, because every other record belongs to one. A profile belongs
+   * to a person: it is read by signed-out strangers following a link and by
+   * link-preview crawlers, and it outlives every organization the person ever
+   * joins. Its reads take a viewer — an optional user id, and no permission —
+   * which is what makes it structurally impossible for an employer to unlock a
+   * profile section its owner chose to hide. See contracts/profile.ts.
+   */
+  profile: ProfileService;
 }

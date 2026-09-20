@@ -125,6 +125,39 @@ export function StepProgress({ current, total }: { current: number; total: numbe
   );
 }
 
+/**
+ * The three stages of getting an Antcolos account: the ACCOUNT, the PROFILE,
+ * then the ROLE.
+ *
+ * Named rather than numbered, and deliberately a different component from
+ * `StepProgress` above. That one counts the four fields inside signup; this one
+ * counts the three things somebody is being asked for, at a coarser scale.
+ * Showing "step 4 of 4" and then "step 2 of 3" with no names would read as the
+ * flow going backwards.
+ */
+export const ACCOUNT_STAGES = ["Account", "Profile", "Role"] as const;
+
+export function AccountFlowProgress({ stage }: { stage: 1 | 2 | 3 }) {
+  return (
+    <div className="mb-5">
+      <p className="text-[0.75rem] font-medium tracking-wide text-fg-subtle uppercase">
+        {ACCOUNT_STAGES[stage - 1]} · step {stage} of {ACCOUNT_STAGES.length}
+      </p>
+      <div aria-hidden className="mt-2 flex gap-1.5">
+        {ACCOUNT_STAGES.map((name, i) => (
+          <span
+            key={name}
+            className={cn(
+              "h-1 flex-1 rounded-full transition-colors",
+              i < stage ? "bg-primary" : "bg-surface-sunken",
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** A quiet "go back one step" control for multi-step flows. */
 export function BackLink({ onClick, label = "Back" }: { onClick: () => void; label?: string }) {
   return (
