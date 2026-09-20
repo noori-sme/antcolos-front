@@ -63,6 +63,7 @@ files rather than a copy. `npm test` runs both.
 | Hierarchical responsibility, delegation & escalation | `/work`, `/settings/responsibility` |
 | Roles and permissions | `/settings/permissions` — the permission catalog, reusable role templates, and applying one to a Membership |
 | Permanent user profile & onboarding | `/onboarding/profile`, `/profile/[username]`, `/profile/[username]/a/[key]`, `/account/profile` |
+| Broker identity, authority & claiming | `/directory` — FMCSA verified, unclaimed, permanent |
 
 Everything else is a placeholder screen that says so.
 
@@ -730,6 +731,44 @@ recorded safety event, plus 2 per clean inspection, clamped to 0–100, and
 `null` rather than 100 for a driver with no history. It is Antcolos's own
 summary of what carriers recorded here; it is not a CSA or SMS score and has no
 regulatory meaning.
+
+## Broker identity, authority and claiming
+
+A broker profile is a **permanent canonical record that may stay unclaimed for
+years**. A rate confirmation does not create one — it discovers a candidate, and
+the candidate becomes a profile only when the FMCSA authority service confirms
+who the MC number belongs to. Full notes in
+`docs/broker-identity-and-claiming.md`.
+
+**Three axes, never one badge.** Identity (`verified` / `pending` /
+`conflicted`, answered by FMCSA and nothing else), ownership (`claimed` /
+`unclaimed`), and authority (`active` / `inactive` / `revoked` / `unknown`,
+which changes over time). Every combination is real, and
+**"FMCSA verified, unclaimed" is the ordinary, permanent state of a good broker
+who has never heard of Antcolos**. An unclaimed profile is never labelled
+unverified.
+
+**Layers of fact stay apart.** The register's fields are written only by an
+authority lookup; rate-con observations are append-only and never rewritten;
+what a claimed brokerage says about itself is its own layer; a carrier's
+experience — standing, payment terms, factoring — is private to that carrier and
+is never a global broker fact. `BrokerSelfReportedInput` has no `legalName` or
+`mcNumber` field, so a broker cannot overwrite an official value because no
+input reaches one.
+
+**One profile, forever.** Every later rate confirmation for that MC resolves to
+the same record. Two names on one MC produce a conflict recorded on the
+observation, not a second company. One name on two MCs stays two companies and
+is never auto-merged. A brokerage that joins later *claims* the existing record;
+there is no path that creates a second one, and claiming erases no observation,
+no carrier-private record and no provenance.
+
+**What this build does.** The FMCSA service is a typed extension point that is
+**not connected** — `notConnectedAuthority` answers `unavailable` to everything
+and no code path can answer otherwise. So every rate confirmation processed here
+holds its observation pending and creates nothing, which is the correct
+behaviour rather than a gap. The confirmed and conflicted paths are driven in
+tests through a stub authority.
 
 ## Try the permission and identity model
 
@@ -1844,6 +1883,11 @@ to redesign later:
 - `docs/zero-entry-data-audit.md` — where data enters, which facts are
   canonical, and the persistence, ordering, delivery and authorization
   guarantees the frontend describes but cannot provide.
+- `docs/broker-identity-and-claiming.md` — the permanent broker record: why a
+  rate confirmation discovers a candidate rather than creating an identity, the
+  three axes and why they are never one badge, which layer of fact each actor
+  may write, and the six things the backend owes it (starting with the FMCSA
+  authority service itself).
 - `docs/permanent-user-profile.md` — the permanent career record: the four
   tables behind it, why its reads are the one place a `ServiceContext` is wrong,
   why no figure is stored, and the six things the backend still owes the seam

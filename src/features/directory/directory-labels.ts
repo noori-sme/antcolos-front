@@ -1,6 +1,7 @@
 import type {
-  MatchConfidence, PartyContactKind, PartyRecordStatus, PartyRole, PartyStanding,
-  PartyVerificationState, ResolutionRecommendation,
+  AuthorityStatus, BrokerIdentityState, BrokerObservationState, MatchConfidence,
+  PartyClaimState, PartyContactKind, PartyProvenanceKind, PartyRecordStatus,
+  PartyRole, PartyStanding, PartyVerificationState, ResolutionRecommendation,
 } from "@/types";
 
 /**
@@ -153,3 +154,96 @@ export function formatCityState(address?: { city?: string; state?: string }): st
   if (!address?.city) return "—";
   return address.state ? `${address.city}, ${address.state}` : address.city;
 }
+
+/* -------------------------------------------------------------------------- */
+/* The three broker axes                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Three questions, three vocabularies, and no word shared between them.
+ *
+ * ★ "UNCLAIMED" IS NEVER WRITTEN AS "UNVERIFIED" ★
+ * A profile the federal register confirmed, that no brokerage has signed up to
+ * claim, is `FMCSA verified` and `Unclaimed`. Both are true, they are about
+ * different things, and calling such a record unverified would be a falsehood
+ * about a company whose identity is a matter of public record.
+ */
+export const IDENTITY_LABEL: Record<BrokerIdentityState, string> = {
+  verified: "FMCSA verified",
+  pending: "Identity pending",
+  conflicted: "Identity conflict",
+};
+
+export const IDENTITY_DESCRIPTION: Record<BrokerIdentityState, string> = {
+  verified:
+    "FMCSA returned a record for this MC number and Antcolos took the legal name, address " +
+    "and authority status from it. It says nothing about whether anybody from the company " +
+    "has an account here.",
+  pending:
+    "The MC number on the paperwork has not been resolved against FMCSA yet. Until it is, " +
+    "everything on this profile is what a document said rather than what the register says.",
+  conflicted:
+    "The register and the paperwork disagree, or two documents disagree with each other. " +
+    "Somebody has to settle it; nothing was merged or overwritten in the meantime.",
+};
+
+export const AUTHORITY_LABEL: Record<AuthorityStatus, string> = {
+  active: "Authority active",
+  inactive: "Authority inactive",
+  revoked: "Authority revoked",
+  unknown: "Authority unknown",
+};
+
+export const AUTHORITY_DESCRIPTION: Record<AuthorityStatus, string> = {
+  active: "FMCSA showed active operating authority when this was last checked.",
+  inactive:
+    "FMCSA showed the operating authority as not currently active. Check before booking.",
+  revoked:
+    "FMCSA showed the operating authority as revoked. This company should not be brokering " +
+    "freight.",
+  unknown:
+    "The authority status has not been checked. Not a warning — simply a question nobody " +
+    "has asked yet.",
+};
+
+export const CLAIM_LABEL: Record<PartyClaimState, string> = {
+  unclaimed: "Unclaimed",
+  claim_pending: "Claim pending",
+  claimed: "Claimed",
+};
+
+export const CLAIM_DESCRIPTION: Record<PartyClaimState, string> = {
+  unclaimed:
+    "Nobody from this company has an Antcolos account tied to this profile. That is the " +
+    "ordinary state of a broker who has never heard of us, and it says nothing about " +
+    "whether their details are right.",
+  claim_pending:
+    "Somebody has asserted they represent this company. It has not been proved yet, and it " +
+    "grants them nothing until it is.",
+  claimed:
+    "Somebody at this company proved control of the profile. They may correct their own " +
+    "contact details and description. They cannot change the register's fields, delete a " +
+    "rate confirmation observation, or see your loads, rates, notes or payment history.",
+};
+
+export const OBSERVATION_LABEL: Record<BrokerObservationState, string> = {
+  resolved: "Matched",
+  pending_authority: "Awaiting FMCSA",
+  conflicted: "Disagrees with the register",
+  needs_review: "Needs review",
+};
+
+/**
+ * Where a record came from, in words rather than in enum spelling.
+ *
+ * The two rate-confirmation kinds read differently on purpose: one had a person
+ * in it and the other did not.
+ */
+export const PROVENANCE_LABEL: Record<PartyProvenanceKind, string> = {
+  rate_confirmation: "A rate confirmation, confirmed by a person",
+  rate_confirmation_auto: "Discovered on a rate confirmation, resolved against FMCSA",
+  manual_entry: "Typed in by hand",
+  import: "An import",
+  carrier_packet: "A carrier packet",
+  system: "Antcolos",
+};

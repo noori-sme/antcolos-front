@@ -8,6 +8,8 @@ import { mockStore } from "../store";
 import { finalizeLoad, finalizationBlockers } from "../driver-workflow-finalize";
 import { integrations } from "@/lib/integrations";
 import { enqueueExtraction } from "../rate-con-extractions";
+import { observeBrokersFromRateCon } from "../party-registry";
+import { authorityService } from "@/lib/directory/authority";
 import { recordFinalizationOnLoop } from "../mt-loop";
 import { rateConfirmationForLoad } from "../rate-confirmation-record";
 
@@ -31,9 +33,18 @@ import { rateConfirmationForLoad } from "../rate-confirmation-record";
  *     names why nothing was written. It never claims a write it did not make.
  *
  * And one rule that only applies to the directory: **it may not create a party
- * profile.** Matching belongs to the Directory, which requires a person to
- * confirm every proposal, because a rate confirmation that mints a broker is how
- * a carrier ends up with four profiles for one broker.
+ * profile from soft evidence.** Matching belongs to the Directory, which requires
+ * a person to confirm every proposal, because a rate confirmation that mints a
+ * shipper off a name and an address is how a carrier ends up with four profiles
+ * for one dock.
+ *
+ * A BROKER block is the one thing that takes a different route, and it is not a
+ * relaxation of that rule — it is a stricter one. The document does not create
+ * anything. It produces an OBSERVATION, and a canonical broker profile exists
+ * only when the FMCSA authority service confirms the MC number, populated from
+ * the register's fields rather than the document's. On this branch that service
+ * is not connected, so nothing is created at all and every observation is held
+ * pending. See `src/lib/directory/broker-resolution.ts`.
  */
 
 type Event = DomainEvent<LoadFinalizedPayload>;
@@ -224,26 +235,32 @@ export const invoicePreparationProjection = subscriber({
 /* -------------------------------------------------------------------------- */
 
 /**
- * The parties on the confirmation, handed to the Directory for resolution.
+ * The parties on the confirmation, handed to the Directory.
  *
- * This is the projection that must NOT be clever. The Directory's matching rules
- * have four confidence tiers and deliberately no tier meaning "sure enough to
- * merge without asking" — every tier above `none` produces a proposal a
- * dispatcher confirms. So this projection plans nothing and creates nothing: it
- * queues the reviewed extraction for the existing confirmation screen and reports
- * `needs_review`.
+ * **The broker is OBSERVED, not created.** What this document said — the name,
+ * the MC number, the address — is preserved with its provenance and then
+ * resolved against the FMCSA authority service. A permanent broker profile
+ * appears only if the register confirms the MC, and it is populated from the
+ * register rather than from the document. If the service is unavailable, says
+ * no such entity, or contradicts the paperwork, the observation is kept and
+ * nothing canonical is written.
  *
- * That is the correct outcome, not a limitation. A rate confirmation that created
- * a broker profile on its own is precisely how a carrier ends up with four
- * profiles for one broker, and this is the one place in the whole flow where
- * stopping to ask is worth more than finishing.
+ * **Everything else still waits for a person.** Shippers, receivers,
+ * facilities, contacts, and every LINK between this load and any of them. A
+ * shipper matched on a name and an address is exactly the case that produces
+ * four profiles for one dock.
+ *
+ * So the projection reports `needs_review`: the queue entry is still there and
+ * the dispatcher still confirms the links. What changed is that a broker the
+ * register knows is already one permanent profile that every future
+ * confirmation for that MC resolves to.
  */
 export const directoryProjection = subscriber({
   id: "directory_parties",
   label: "Broker, Shipper, Receiver, Facility and Contact links",
   targetModule: "load",
   mock: false,
-  project(event: Event): ProjectionOutcome {
+  async project(event: Event): Promise<ProjectionOutcome> {
     const { parties, loadId, loadReference, originalDocumentId } = event.payload;
 
     const extraction: RateConfirmationExtraction = {
@@ -276,18 +293,49 @@ export const directoryProjection = subscriber({
       reviewedAt: event.payload.signature.signedAt,
     };
 
+    // Observed BEFORE queueing, so a dispatcher who opens the review finds a
+    // resolved broker proposed for linking rather than for creation. Both the
+    // queue entry and the observation recorder are idempotent enough to replay:
+    // the queue keys on the rate confirmation, and a second observation for an
+    // MC that already resolved attaches rather than creating.
+    const discovery = await observeBrokersFromRateCon(event.scope.organizationId, extraction);
+
     const queued = enqueueExtraction(event.scope.organizationId, extraction, {
       loadReference,
       rateConfirmationId: event.payload.rateConfirmationId,
     });
 
+    const createdNames = discovery.created.map((p) => p.legalName).join(", ");
+    const heldCount = discovery.held.length;
+
+    const brokerLine = discovery.created.length > 0
+      ? `FMCSA confirmed ${createdNames}, so ${discovery.created.length === 1 ? "it is" : "they are"} now a permanent broker profile — verified and unclaimed. `
+      : discovery.attached.length > 0
+        ? `The broker on ${loadReference} resolved to the permanent profile that already exists for its MC number. `
+        : heldCount > 0
+          ? `The broker on ${loadReference} was recorded as an observation; no profile was created. `
+          : "";
+
+    const reason = discovery.created.length > 0
+      ? "The identity came from the federal register, not from the document — the rate "
+        + "confirmation only said which MC number to look up. Nobody from the brokerage has "
+        + "claimed the profile."
+      : heldCount > 0
+        ? `${discovery.held.map((o) => o.detail).filter(Boolean).join(" ")} The document's values are kept with their provenance and will resolve when the authority answers.`
+        : "Every party on this confirmation still needs a person: the Directory refuses to "
+          + "create or merge on a name-and-address match.";
+
     return {
       state: "needs_review",
-      detail: `The broker, shipper and receiver on ${loadReference} are queued for resolution in Directory → Review.`,
-      reason: "The Directory matches against every canonical record and refuses to create or merge a profile without a person confirming it. Nothing was created or linked here — confirm the proposals and the permanent links are made then.",
+      detail: `${brokerLine}The parties on ${loadReference} are queued for resolution in Directory → Review.`,
+      reason: authorityService().connected
+        ? reason
+        : `${reason} The FMCSA authority data service is not connected on this build, so no MC number can be confirmed here.`,
       retryable: false,
       producedRefs: [
         externalRef("load", queued.id, { entityId: queued.id, entityKind: "resolution_queue_entry" }),
+        ...discovery.created.map((p) =>
+          externalRef("load", p.partyId, { entityId: p.partyId, entityKind: "party" })),
       ],
     };
   },
