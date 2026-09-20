@@ -40,6 +40,7 @@ import { resetRateConfirmationRecords } from "./rate-confirmation-record";
 import { resetListingCorrections } from "./listing-corrections";
 import { resetRateConfirmations } from "./rate-confirmation";
 import { resetResponsibility } from "./responsibility";
+import { resetReferralStore } from "./referral-store";
 import { resetRiskStore } from "./risk-store";
 import { resetSearchSessions } from "./search-session";
 import { settlementStore } from "./settlement-registry";
@@ -141,6 +142,14 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // person, no truck and no organization of its own — only what a carrier
   // asserted, and what somebody decided about it.
   { id: "import", holds: "Import batches, their immutable claims, the current plan and each run", module: "import-store.ts", reset: resetImportStore },
+  // AFTER the workforce store, because the handoff out of an accepted referral
+  // asks Workforce whether an engagement for this person already exists, and a
+  // referral read against a stale roster would offer to connect a record that
+  // is no longer there. It holds no person, no organization, no seat, no
+  // permission and no engagement of its own — an introduction, the two
+  // decisions taken about it, and the addresses that asked to stop receiving
+  // referral email.
+  { id: "referrals", holds: "Introductions, their candidate and company decisions, the opt-out list and abuse reports", module: "referral-store.ts", reset: resetReferralStore },
 
   /* -- The canonical equipment meter ------------------------------------- */
   // Before the operational layers, because maintenance and fleet both PROJECT

@@ -102,6 +102,23 @@ export type PermissionKey =
   | "members:view" | "members:edit" | "members:suspend" | "permissions:manage"
   // Invitations
   | "invitations:view" | "invitations:create" | "invitations:resend" | "invitations:revoke"
+  // Referrals — deciding whether this company is interested in somebody a
+  // person outside it introduced.
+  //
+  // ★ ONE NEW KEY, AND HERE IS WHY IT HAD TO BE NEW ★
+  // Nothing existing means "triage an introduction". `invitations:create` is
+  // strictly STRONGER — it hands out access — so gating the inbox on it would
+  // mean only people who can grant permissions may read a name somebody sent
+  // in, which over-grants the common case badly. `workforce:view` is about
+  // people the organization already has a relationship with, and a referred
+  // stranger is definitionally not one. `members:view` is the roster.
+  //
+  // So: ONE key, covering both reading the inbox and deciding, because the
+  // inbox exists in order to decide and the submitted contact details are the
+  // sensitive part of both. It grants nothing else, anywhere — accepting a
+  // referral still cannot create a seat, and the handoff into the invitation
+  // flow is gated by `invitations:create` exactly as it always was.
+  | "referrals:review"
   // Organization settings
   | "organization:manage" | "integrations:view" | "integrations:manage" | "audit:view"
   // Audit & Risk — the one ledger, and the cases opened off it.

@@ -42,6 +42,7 @@ import {
 } from "./risk-needs-you";
 import { isWorkforceNeedsYouId, workforceNeedsYouItems } from "./workforce-needs-you";
 import { accessNeedsYouItems, isAccessNeedsYouId } from "./access-needs-you";
+import { isReferralNeedsYouId, referralNeedsYouItems } from "./referral-needs-you";
 import { importNeedsYouItems, isImportNeedsYouId } from "./import-needs-you";
 import { attachAutomation, executeDecision } from "./needs-you-automation";
 
@@ -122,6 +123,10 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // An acceptance that did not finish. Derived from the run itself, so it
     // stops existing the moment the person accepts again and it completes.
     ...accessNeedsYouItems(ctx),
+    // An introduction nobody has answered. Derived from the referral, so
+    // recording a decision — or the referrer withdrawing it — is what makes the
+    // item stop existing.
+    ...referralNeedsYouItems(ctx),
     // An imported row the matcher would not decide. Derived from the claim, so
     // answering it is what makes the item stop existing — and until somebody
     // does, the row is visibly not imported rather than quietly guessed at.
@@ -182,6 +187,13 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // case for an invitation, so without this a manager would silently lose the
   // one item that says somebody is half-joined.
   if (isAccessNeedsYouId(item.id)) return true;
+
+  // Referral items are gated at the source on `referrals:review` and scoped to
+  // the organization the referral was SENT TO. The entity-kind narrowing below
+  // has no case for a referral — deliberately, because a referral is not a
+  // person and not a load — so without this the item would silently vanish for
+  // exactly the reviewer it is addressed to.
+  if (isReferralNeedsYouId(item.id)) return true;
 
   // Import items are gated at the source on `workforce:manage` and scoped to
   // the caller's own organization there. The entity-kind narrowing below has no
@@ -324,6 +336,16 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
   if (isAgreementNeedsYouId(itemId)) {
     throw new Error(
       "This item is worked out from the contract itself. Open the contract and do what it is asking for — it clears on its own.",
+    );
+  }
+  // And the same for a referral item: it is worked out from the referral, so
+  // the only thing that clears it is somebody recording a decision. Snoozing it
+  // would hide an introduction nobody has answered, which is the one thing the
+  // item exists to stop happening.
+  if (isReferralNeedsYouId(itemId)) {
+    throw new Error(
+      "This item is worked out from the referral itself. Open it and record "
+      + "whether this company is interested \u2014 it clears on its own.",
     );
   }
   ensureInvoiceNeedsYou(ctx.organizationId);

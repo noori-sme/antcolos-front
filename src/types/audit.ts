@@ -87,6 +87,16 @@ export type AuditModule =
    * to be asked for.
    */
   | "workforce"
+  /**
+   * One person introducing another to a company.
+   *
+   * Its own module rather than a corner of `access`, because a referral grants
+   * nothing: filing it under access would put "Sam suggested we meet Alex" in
+   * the same feed an auditor reads to find out who was given what, and the
+   * whole domain boundary this module keeps is that those are different kinds
+   * of event.
+   */
+  | "referrals"
   | "risk";
 
 /* -------------------------------------------------------------------------- */
@@ -205,6 +215,18 @@ export type AuditAction =
   | "risk.case_note_added"
   | "risk.case_evidence_added"
   | "risk.case_decision_recorded"
+  /* Introductions. None of these grants anything, and the vocabulary is
+     chosen so that reading the feed cannot suggest otherwise: a company
+     "expressed interest", it did not hire, admit or authorize. ------------- */
+  | "referrals.submitted"
+  | "referrals.withdrawn"
+  | "referrals.candidate_claimed"
+  | "referrals.candidate_declined"
+  | "referrals.reported_unwanted"
+  | "referrals.interest_recorded"
+  | "referrals.declined_by_company"
+  | "referrals.invitation_started"
+  | "referrals.email_delivery_failed"
   | "audit.event_corrected"
   | "audit.export_prepared";
 
@@ -241,6 +263,8 @@ export type AuditEntityKind =
   | "integration"
   | "risk_signal"
   | "risk_case"
+  /** One introduction. NEVER the person, the company or the seat it may lead to. */
+  | "referral"
   | "audit_event";
 
 export interface AuditEntityRef {
