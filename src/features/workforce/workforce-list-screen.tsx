@@ -17,6 +17,28 @@ import { ClassificationChip, EngagementStateChip } from "./chips";
 import { CreateEngagementDialog } from "./create-engagement-dialog";
 import { useCreateEngagement, useWorkforceList } from "./hooks";
 
+export interface AmbiguousCandidate {
+  engagementId: string;
+  label: string;
+  detail: string;
+}
+
+/**
+ * The refusal-to-guess, recognised WITHOUT importing the mock's error class.
+ *
+ * A screen that did `instanceof` against `@/lib/api/mock` would work against
+ * the browser adapter and silently stop working against the HTTP one, which
+ * throws its own type over the wire. The service contract is the shape, so the
+ * shape is what this reads.
+ */
+function ambiguousCandidatesOf(error: unknown): AmbiguousCandidate[] | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const candidate = error as { name?: unknown; candidates?: unknown };
+  if (candidate.name !== "AmbiguousPersonError") return undefined;
+  if (!Array.isArray(candidate.candidates) || candidate.candidates.length === 0) return undefined;
+  return candidate.candidates as AmbiguousCandidate[];
+}
+
 /**
  * One organization's workforce.
  *
@@ -44,6 +66,7 @@ export function WorkforceListScreen() {
   const create = useCreateEngagement();
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | undefined>();
+  const [ambiguous, setAmbiguous] = useState<AmbiguousCandidate[] | undefined>();
 
   return (
     <div className="space-y-section">
@@ -186,19 +209,30 @@ export function WorkforceListScreen() {
 
       <CreateEngagementDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(next) => {
+          setCreateOpen(next);
+          if (!next) { setCreateError(undefined); setAmbiguous(undefined); }
+        }}
         pending={create.isPending}
         error={createError}
+        ambiguous={ambiguous}
         onSubmit={(input) => {
           setCreateError(undefined);
+          setAmbiguous(undefined);
           create.mutate(input, {
             onSuccess: () => setCreateOpen(false),
-            // Surfaced rather than swallowed: the duplicate refusal is a real
-            // product answer ("they already have a live engagement"), and a
-            // dialog that closed on it would look like it had worked.
-            onError: (e) => setCreateError(
-              e instanceof Error ? e.message : "That did not work.",
-            ),
+            // Surfaced rather than swallowed. The two refusals say different
+            // things and the dialog has to keep them apart: a duplicate is
+            // Antcolos knowing, and an ambiguity is Antcolos refusing to guess
+            // — which needs the candidates on screen, not a red sentence.
+            onError: (e) => {
+              const candidates = ambiguousCandidatesOf(e);
+              if (candidates) {
+                setAmbiguous(candidates);
+                return;
+              }
+              setCreateError(e instanceof Error ? e.message : "That did not work.");
+            },
           });
         }}
       />

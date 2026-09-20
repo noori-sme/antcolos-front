@@ -271,6 +271,113 @@ a second queue, so a badge can never say 3 while the list shows 1.
 for it would be this module quietly agreeing that recording what somebody does
 is the same kind of act as changing what they may do.
 
+## How the five overlapping concepts compose
+
+Five things in Antcolos look like "what somebody is". They are not the same
+thing and none of them is a role. Each has exactly one canonical owner:
+
+| Concept | Canonical owner | Answers | Example |
+|---|---|---|---|
+| `WorkforceClassification` | `WorkforceEngagement` | on what **basis** this organization engages them | `employee` |
+| `EngagementType` | `DriverProfile` / `CarrierRelationship` | a driver's **paperwork and pay** basis | `company_driver` |
+| `ResponsibilityFunction` | the work itself; recorded per person on the engagement, per seat on `MembershipProfile` | what **kind of work** they do | `driver_action` |
+| Permissions + `AppliedTemplate` | `Membership` | what they **may do** in Antcolos | `loads:view`, `dispatch:view` |
+| `positionTitle` / `Membership.title` | the organization's own words | what they are **called** | "Company driver" |
+
+Worked examples, none of which needs a duplicate field:
+
+**A company driver.** Classification `employee` · `EngagementType` `company_driver`
+on their driver record · function `driver_action` · permissions whatever their
+seat was granted, or **none at all** if they never sign in · title "Company
+driver". The words "company driver" appear twice — once as the driver
+registry's pay basis and once as a human-readable title — and neither is the HR
+classification, which is `employee`. That is why `company_driver` was **not**
+added to `WorkforceClassification`: it would be a third copy, and three copies
+drift.
+
+**An owner-operator.** Classification `owner_operator` · `EngagementType`
+`owner_operator` · function `driver_action` · settled through Settlements. Here
+the two vocabularies genuinely agree, because an owner-operator is both a basis
+of engagement and a basis of pay. They still answer different questions and are
+read by different modules.
+
+**A non-driving employee.** Tess Ferraro: classification `employee` · **no
+`DriverProfile`, no `EngagementType`, no `CarrierRelationship`** · functions
+`safety`, `compliance`, `documents` · a seat with `compliance:view` · title
+"Safety & compliance lead". Her driver-shaped onboarding rows resolve
+`not_applicable`. Nothing forces a driver record onto somebody who does not
+drive.
+
+**An outsourced dispatcher.** Classification `external_worker` · no driver
+record · function `dispatch` · a seat scoped by the access system to particular
+trucks or carriers. Recording the function does **not** widen that scope;
+`workforce-hr-regressions.test.ts` asserts it.
+
+**Somebody with no account at all.** Priya Raman: classification `employee` ·
+no `User`, no `Membership`, no `DriverProfile` · function `maintenance` · which
+raises a function gap whose remedy is an invitation, not a grant.
+
+**The UI never calls any of these a "role".** The engagement screens say
+classification, position, and function; "role" appears only in Access, where it
+means a saved permission template, and in ARIA attributes.
+
+## The defects an adversarial review found, and what changed
+
+All seven were in this milestone's own new surface. Each has a test that fails
+without its fix in `workforce-hr-regressions.test.ts`.
+
+**Ending leave forced `available`.** It now restores what the leave
+*displaced*, carried on `WorkforceLeaveRecord.seatAvailabilityBefore`.
+`MembershipAvailability` is single-valued, so a person who was `off_shift`
+before going on leave had that overwritten, and ending the leave announced them
+available on a decision nobody made.
+
+**Ending or cancelling an old leave on a suspended or offboarded engagement
+returned them to work routing.** The worst of the seven. `leaveManagesSeat`
+now gates every write: only an `active` engagement is leave's to speak for, and
+that includes undoing leave's own earlier mark. A non-active engagement's seat
+is whatever the access system left it as, and the projection reports `inSync`
+rather than tempting somebody into "fixing" a suspension.
+
+**Nothing reconciled the projection.** The seat's availability is written by a
+*command*, and a command is a moment in time. Three things separate the HR fact
+from the routing signal afterwards: a future-dated leave becoming effective with
+no scheduler, somebody changing availability through the directory's own public
+command, and the projection write failing while the HR record succeeded. All
+three were silent. `availabilityProjection` now derives the disagreement on
+every read, `WorkforceEngagementView.availability.projection` carries it, a
+`workforce_availability_drift` item raises it, and `reconcileAvailability`
+applies it — idempotently, so retrying is safe and a run that finds nothing
+wrong writes nothing.
+
+**The duplicate check compared raw email strings.** `Priya.Raman@Example.com`
+created a second live engagement for somebody already on the roster.
+`liveEngagementFor` now normalizes through `@/lib/directory/normalize`, the
+normalizer the import path, the party registry and the identity matcher already
+share.
+
+**The new Create form had no ambiguity check.** The roster import refuses to
+guess when somebody on the roster may already be this person; the form did not,
+so a name already on the roster with no address to settle it silently created a
+second person. `create` now runs the *same* `scorePerson`/`rank` over this
+organization's live engagements and refuses with `AmbiguousPersonError`, naming
+the candidates. Passing `confirmedDistinctFrom` is a person saying "I looked,
+these are different people" — an acknowledgement, never a merge. The import
+carries its own human decision through the same field, so neither path
+re-asks a question the other already answered.
+
+**Overlapping future leave was accepted.** Two leaves over one week both
+recorded, and on the Monday one started the other still claimed the same
+absence. The overlap check is now over intervals, not just today.
+
+**Three UI defects.** The ambiguity refusal rendered above the scroll position,
+so on a phone pressing submit looked like it did nothing — it now scrolls into
+view and carries `role="alert"`. The "invite them to this workspace" remedy
+linked to the roster instead of the invitation screen. And a missing
+start-date basis was raised as a *next action*, which put the same nudge on
+nearly every row in the directory; it is data hygiene rather than blocked work,
+and now appears only beside the date on the engagement's own page.
+
 ## Frontend mock limitations
 
 - **No cross-module transaction.** Activation reads Safety, Contracts, the
@@ -293,6 +400,23 @@ is the same kind of act as changing what they may do.
   hand-written map of what a kind of work ordinarily needs. It is not derived
   from route coverage and is not enforced anywhere; an organization is free to
   disagree with it.
+- **The identity matcher does not catch misspellings.** `scorePerson` scores a
+  one-character name difference as no signal at all. That is the canonical
+  matcher's existing calibration, shared with the roster import, and this
+  module deliberately does not retune it — a second opinion about what counts
+  as a near-miss would be the second identity matcher the boundaries forbid,
+  and loosening it here would change how every imported roster resolves. A
+  typo therefore creates a second live engagement; the test asserting this is
+  named for the limitation rather than hiding it.
+- **Availability drift is not reachable from the UI.** Nothing in the product
+  changes a seat's availability from outside Workforce — the directory's
+  command has no screen — so the browser suite can only assert that the
+  banner stays away while the two agree. Drift itself is asserted at the
+  service layer. Mounting a test-only bridge to reach it would make a granted
+  seat observable without anything that grants one.
+- **Reconciliation is manual and on-read.** Nothing runs on a timer, so a
+  future-dated leave becomes effective in the HR projection the moment somebody
+  looks and in the routing signal only when somebody applies it.
 - **Availability is written to an in-memory override.**
   `setMembershipAvailability` changes a mock directory for the life of the tab.
 
@@ -335,6 +459,21 @@ is the same kind of act as changing what they may do.
   that decides somebody is back.
 - **A decision about `assertionRef`**: the engagement points at an import run
   and row, and nothing yet guarantees that row still exists.
+- **A scheduler.** Leave that starts on a future date has to become effective
+  on that date without anybody looking at the screen. This is the single
+  largest thing the reconciliation stands in for: it makes the gap visible and
+  resumable, and it does not close it.
+- **A transaction or durable saga** around the two writes `recordLeave`,
+  `endLeave`, `cancelLeave` and `reconcileAvailability` perform — the HR record
+  and the seat's availability — with per-step retry. The reconciliation is the
+  frontend's honest substitute and depends on somebody reading a queue.
+- **Server-side reconciliation**, so the projection converges without a client
+  deciding anything.
+- **A real identity matcher** behind the Create/Connect command, with phone and
+  address signals and a proper near-miss threshold, plus the unique constraint
+  that makes two browsers racing impossible rather than merely unlikely.
+- **Optimistic concurrency on leave**, so two people recording overlapping
+  absences cannot both pass the interval check.
 
 ### Explicitly still not built
 

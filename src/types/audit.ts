@@ -184,6 +184,7 @@ export type AuditAction =
   | "workforce.leave_recorded"
   | "workforce.leave_ended"
   | "workforce.leave_cancelled"
+  | "workforce.availability_reconciled"
   | "workforce.start_date_recorded"
   /**
    * Somebody said which real person an imported row is, or that it is nobody

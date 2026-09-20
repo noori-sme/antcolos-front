@@ -171,6 +171,16 @@ export type NeedsYouCategory =
    * is how work reaches somebody who is still away.
    */
   | "workforce_leave_return_due"
+  /**
+   * A recorded leave and the work-routing signal disagree.
+   *
+   * Raised because the projection is written by a command and a command is a
+   * moment in time: a future leave becoming effective, somebody changing
+   * availability independently, and a failed projection write all leave the
+   * two out of step with nothing else to notice. Resumable — applying it is
+   * idempotent.
+   */
+  | "workforce_availability_drift"
 
   /* ---- Driver qualification file. Derived from the custody records. ---- */
   /** A driver shared a document this carrier has not reviewed or adopted. */
@@ -537,6 +547,7 @@ export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   workforce_start_approval: "Ready to start",
   workforce_offboarding_incomplete: "Offboarding unfinished",
   workforce_leave_return_due: "Expected back from leave",
+  workforce_availability_drift: "Leave and work routing disagree",
   qualification_review_required: "Qualification document to review",
   qualification_replacement_available: "Newer version available",
   risk_case_assigned: "Risk case assigned to you",

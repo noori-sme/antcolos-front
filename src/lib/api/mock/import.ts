@@ -662,6 +662,21 @@ async function commitPerson(
         id: claim.id,
         label: IMPORT_ASSERTION_BASIS,
       },
+      /*
+       * ★ A PERSON ALREADY ANSWERED THIS ★
+       * The workforce module refuses to create somebody its matcher thinks is
+       * probably already on the roster — the same matcher this module runs, on
+       * the same evidence, so it would refuse every contested row a person had
+       * explicitly resolved as `create`.
+       *
+       * Getting here means either nothing plausible was found, or a human
+       * looked at this exact candidate list and said these are different
+       * people. Passing the candidates back is that decision being carried,
+       * not being bypassed: it acknowledges the ones a person set aside and
+       * nothing else, so a candidate that appears AFTER they decided still
+       * stops the write.
+       */
+      confirmedDistinctFrom: resolution.candidates.map((c) => c.entityId.replace(/^weng:/, "")),
     });
     return {
       claimId: claim.id,

@@ -195,6 +195,7 @@ export function EngagementDetailScreen({ engagementId }: { engagementId: string 
           pending={action.isPending}
           onRecordLeave={() => setLeaveOpen(true)}
           onEndLeave={(leaveId) => run({ kind: "endLeave", input: { leaveId } })}
+          onReconcile={() => run({ kind: "reconcileAvailability" })}
         />
       </section>
 

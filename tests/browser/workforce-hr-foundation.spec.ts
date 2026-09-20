@@ -174,8 +174,10 @@ test.describe("functions on a person", () => {
     await expect(row.getByText(/maintenance:view/)).toBeVisible();
 
     // ★ THE ONLY ROUTE OUT IS ACCESS ★ There is no grant button here.
+    // Somebody with no seat cannot be granted a key — there is nothing to
+    // grant it to — so the route is the invitation screen, not the roster.
     await expect(row.getByRole("link", { name: /Invite them to this workspace/ }))
-      .toHaveAttribute("href", "/settings/users");
+      .toHaveAttribute("href", "/settings/invitations/new");
     await expect(panel.getByRole("button", { name: /Grant/ })).toHaveCount(0);
   });
 
@@ -230,6 +232,36 @@ test.describe("leave and coming back", () => {
     await expect(availability).toContainText("Dispatch, Maintenance, Safety and the ELD");
   });
 
+  test("shows no drift banner while leave and work routing agree", async ({ page }) => {
+    await openPerson(page, TESS, "Tess Ferraro");
+    await page.getByTestId("record-leave").click();
+    await page.getByLabel("Reason").selectOption("medical");
+    await page.getByTestId("record-leave-submit").click();
+
+    await expect(page.getByTestId("availability-panel")
+      .locator('[data-availability="on_leave"]')).toBeVisible();
+
+    /*
+     * ★ WHAT THIS CAN AND CANNOT PROVE ★
+     * In step, so no banner — a real assertion, and the one a browser is for.
+     *
+     * Producing an actual DRIFT needs the seat's availability changed from
+     * outside Workforce, and nothing in the product's UI does that: the
+     * directory's command has no screen. The only way to reach it from here
+     * would be a test-only bridge into the mocks, which this build deliberately
+     * does not mount — a granted seat made observable without anything that
+     * grants one is how a browser suite starts proving its own fixtures.
+     *
+     * So drift itself is asserted where it lives, at the service layer, in
+     * `workforce-hr-regressions.test.ts`: the independent change, the future
+     * leave becoming effective, the stale `on_leave`, idempotency and the
+     * audit line. What is checked here is that the banner stays out of the way
+     * when there is nothing to say.
+     */
+    await expect(page.getByTestId("availability-drift")).toHaveCount(0);
+    await expect(page.getByTestId("reconcile-availability")).toHaveCount(0);
+  });
+
   test("needs somebody to say they came back", async ({ page }) => {
     await openPerson(page, PRIYA, "Priya Raman");
     await expect(page.getByTestId("availability-panel")
@@ -240,6 +272,66 @@ test.describe("leave and coming back", () => {
       .locator('[data-availability="working"]')).toBeVisible();
     // And the summary claims only what it knows.
     await expect(page.getByText(/HR knows of no reason not to route work/)).toBeVisible();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The refusal to guess who somebody is                                        */
+/* -------------------------------------------------------------------------- */
+
+test.describe("a name is evidence, not identity", () => {
+  test("shows who it found instead of creating a second person", async ({ page }) => {
+    await openWorkforce(page);
+    await page.getByTestId("record-engagement").click();
+
+    // Somebody already on the roster, entered by name with nothing to settle it.
+    await page.getByLabel("Name").fill("Dmitri Kovalenko");
+    await page.getByLabel("Position").fill("Company driver");
+    await page.getByTestId("create-engagement-submit").click();
+
+    const panel = page.getByTestId("ambiguous-person");
+    await expect(panel).toBeVisible();
+    // ★ IN VIEW, NOT MERELY IN THE DOM ★ On a phone the submit button sits far
+    // below the top of this scrolling dialog, and a refusal rendered off screen
+    // is a form that looks like it did nothing.
+    await expect(panel).toBeInViewport();
+    // Named, with enough detail to tell two people apart, and linked so the
+    // existing record can actually be looked at before deciding.
+    await expect(panel.getByRole("link", { name: /Dmitri Kovalenko/ })).toBeVisible();
+    // ★ NO MERGE BUTTON ★ The two honest ways out and no third.
+    await expect(panel.getByRole("button", { name: /merge/i })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "These are different people" }))
+      .toBeVisible();
+  });
+
+  test("records a separate engagement once somebody says they are different", async ({ page }) => {
+    await openWorkforce(page);
+    await page.getByTestId("record-engagement").click();
+    await page.getByLabel("Name").fill("Dmitri Kovalenko");
+    await page.getByLabel("Position").fill("Yard hand");
+    await page.getByTestId("create-engagement-submit").click();
+    await expect(page.getByTestId("ambiguous-person")).toBeVisible();
+
+    await page.getByTestId("confirm-distinct").click();
+
+    // Two rows now, and the original is untouched.
+    const list = page.getByTestId("workforce-list");
+    await expect(list.getByText("Dmitri Kovalenko")).toHaveCount(2);
+    await expect(list.locator('[data-engagement-id="weng_nl_dmitri"]')).toBeVisible();
+  });
+
+  test("keeps the duplicate refusal separate from the ambiguity", async ({ page }) => {
+    await openWorkforce(page);
+    await page.getByTestId("record-engagement").click();
+    // A known address is Antcolos KNOWING, not guessing — a different answer
+    // with a different shape.
+    await page.getByLabel("Name").fill("Priya Raman");
+    await page.getByLabel("Email (optional)").fill("PRIYA.RAMAN@example.com");
+    await page.getByLabel("Position").fill("Yard hand");
+    await page.getByTestId("create-engagement-submit").click();
+
+    await expect(page.getByText(/already has a live engagement/)).toBeVisible();
+    await expect(page.getByTestId("ambiguous-person")).toHaveCount(0);
   });
 });
 
@@ -257,14 +349,18 @@ test.describe("what happens next", () => {
       .toHaveAttribute("href", "/settings/users");
   });
 
-  test("notices a start date nobody recorded the source of", async ({ page }) => {
+  test("notices a start date nobody recorded the source of, without nagging", async ({ page }) => {
     await openPerson(page, DMITRI, "Dmitri Kovalenko");
     // Dmitri pre-dates the provenance field. The page says so rather than
     // quietly presenting his date as something Antcolos observed.
     await expect(page.getByTestId("start-date-panel"))
       .toContainText("Nobody recorded where this came from");
-    await expect(page.getByTestId("next-action"))
-      .toHaveAttribute("data-action", "record_start_date_basis");
+    // ★ AND IT IS NOT A NEXT ACTION ★ Almost every pre-existing engagement has
+    // one, so raising it put the same nudge on nearly every row in the
+    // directory. It is data hygiene, not blocked work, and it lives beside the
+    // date where somebody fixing it is already looking.
+    await expect(page.getByTestId("next-action")).toHaveCount(0);
+    await expect(page.getByTestId("next-action-none")).toBeVisible();
   });
 
   test("says nothing at all when nothing is waiting", async ({ page }) => {

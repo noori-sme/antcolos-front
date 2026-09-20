@@ -1,5 +1,6 @@
 export type * from "./common";
 export type * from "./permission";
+export { AVAILABILITY_LABEL, AVAILABILITY_TAKES_WORK } from "./membership";
 export type * from "./user";
 export type * from "./organization";
 export type * from "./membership";

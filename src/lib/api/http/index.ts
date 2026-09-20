@@ -304,6 +304,7 @@ export const httpServices: AntcolosServices = {
     recordLeave: notImplemented("workforce.recordLeave"),
     endLeave: notImplemented("workforce.endLeave"),
     cancelLeave: notImplemented("workforce.cancelLeave"),
+    reconcileAvailability: notImplemented("workforce.reconcileAvailability"),
     changeManager: notImplemented("workforce.changeManager"),
     linkContract: notImplemented("workforce.linkContract"),
     requestAccessStep: notImplemented("workforce.requestAccessStep"),

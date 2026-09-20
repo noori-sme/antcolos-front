@@ -67,6 +67,22 @@ export interface CreateEngagementInput {
    * path from it to one — see `WorkforceFunctionAssignment`.
    */
   functions?: ResponsibilityFunction[];
+  /**
+   * Engagements a person has LOOKED AT and decided are somebody else.
+   *
+   * ★ WHY A CREATE COMMAND ASKS THIS ★
+   * A name, an email and a phone number are evidence, not identity. When the
+   * roster already holds somebody who plausibly IS this person — same name,
+   * different address; same address, different name — Antcolos refuses to
+   * decide it either way, exactly as the roster import refuses. Linking the
+   * wrong record and creating a second one are both permanent, and only
+   * somebody who knows these people can tell them apart.
+   *
+   * So the command is refused with the candidates named, and passing their ids
+   * back here is a person saying "I looked, and these are different people".
+   * It is an acknowledgement, never a merge: nothing is linked by it.
+   */
+  confirmedDistinctFrom?: string[];
 }
 
 /**
@@ -284,6 +300,31 @@ export interface WorkforceService {
   ): Promise<WorkforceEngagementView>;
   cancelLeave(
     ctx: ServiceContext, engagementId: string, input: CancelLeaveInput,
+  ): Promise<WorkforceEngagementView>;
+
+  /**
+   * Put the work-routing signal back in step with the recorded leave.
+   *
+   * ★ THE RESUMABLE HALF OF A NON-TRANSACTIONAL WRITE ★
+   * Recording leave writes an HR record and then asks the access system to
+   * change the seat. There is no transaction around those two, and three
+   * things routinely separate them afterwards: a future leave becoming
+   * effective with no scheduler to notice, somebody changing availability
+   * independently, and the second write simply failing. Each leaves the HR
+   * fact and the routing signal disagreeing.
+   *
+   * `WorkforceEngagementView.availability.projection` reports the
+   * disagreement, Needs You raises it, and this applies it. IDEMPOTENT: it
+   * computes the desired value from leave and writes only if the seat differs,
+   * so running it twice is running it once and running it when nothing is
+   * wrong does nothing at all.
+   *
+   * It writes exactly one field through the membership directory's own
+   * command, and only when leave has an opinion — it never speaks for an
+   * engagement that is not active, and never invents `available`.
+   */
+  reconcileAvailability(
+    ctx: ServiceContext, engagementId: string,
   ): Promise<WorkforceEngagementView>;
 
   /** Asks the access system for something, and records only that it asked. */

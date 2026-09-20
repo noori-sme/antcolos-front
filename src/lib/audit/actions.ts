@@ -100,6 +100,7 @@ export const AUDIT_ACTIONS: readonly AuditActionMeta[] = [
   { key: "workforce.leave_recorded", label: "Leave recorded", module: "workforce" },
   { key: "workforce.leave_ended", label: "Returned from leave", module: "workforce" },
   { key: "workforce.leave_cancelled", label: "Leave cancelled", module: "workforce" },
+  { key: "workforce.availability_reconciled", label: "Work routing put back in step with leave", module: "workforce" },
   // High value: the date a regulator asks about, and the one field an
   // activation must never silently rewrite.
   { key: "workforce.start_date_recorded", label: "Start date recorded", module: "workforce", highValue: true },

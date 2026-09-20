@@ -3,7 +3,8 @@ import {
   type NeedsYouCategory, type NeedsYouItem, type NeedsYouRecommendedAction,
   type NeedsYouSeverity, type PermissionKey, type WorkforceEngagement,
 } from "@/types";
-import { currentLeave } from "@/lib/workforce/availability";
+import { availabilityProjection, currentLeave } from "@/lib/workforce/availability";
+import { memberIn } from "./membership-directory";
 import type { ServiceContext } from "../contracts/context";
 import { buildOnboardingChecklist } from "./workforce-onboarding";
 import { recordsWithNewerVersion } from "./qualification";
@@ -273,6 +274,52 @@ function engagementItems(ctx: ServiceContext, engagement: WorkforceEngagement): 
         dueAt: live.expectedReturnDate,
       }));
     }
+  }
+
+  // 6. The HR fact and the work-routing signal disagree.
+  //
+  //    ★ THE ITEM THAT MAKES A NON-TRANSACTIONAL WRITE SURVIVABLE ★
+  //    Recording leave writes an engagement and then asks the access system to
+  //    change a seat, with no transaction around the two. Three things
+  //    routinely separate them afterwards and none of them is exotic: a leave
+  //    recorded for next Monday becoming effective with no scheduler to notice,
+  //    somebody marking the person available through the directory's own
+  //    command, and the second write failing outright.
+  //
+  //    Each leaves somebody who is away still being offered work, or somebody
+  //    who is back still invisible to it — and before this item, nothing
+  //    anywhere could tell. Applying it is idempotent, so it is safe to retry
+  //    and it stops existing the moment the two agree.
+  const drift = availabilityProjection(
+    engagement,
+    engagement.membershipId
+      ? memberIn(engagement.organizationId, engagement.membershipId)?.availability
+      : undefined,
+    nowIso(),
+  );
+  if (!drift.inSync) {
+    out.push(item({
+      id: `${WORKFORCE_ITEM_PREFIX}drift_${engagement.id}`,
+      organizationId: engagement.organizationId,
+      category: "workforce_availability_drift",
+      // High rather than critical: work may be routed to somebody who is away,
+      // which is bad and is not a former worker still holding their access.
+      severity: "high",
+      title: `Work routing disagrees with ${engagement.person.displayName}'s recorded leave`,
+      reason: drift.summary,
+      detail: "Leave is the recorded fact and the seat's availability is the operational "
+        + "projection of it. Putting them back in step changes only that projection — it "
+        + "grants nothing, revokes nothing and declares no dispatch readiness.",
+      entity,
+      action: {
+        kind: "update_availability",
+        label: "Put work routing back in step",
+        requires: ["workforce:manage"],
+        href: `/workforce/${engagement.id}`,
+      },
+      requires: ["workforce:view"],
+      createdAt: engagement.updatedAt,
+    }));
   }
 
   void ctx;

@@ -1,3 +1,4 @@
+import { normalizeEmail } from "@/lib/directory/normalize";
 import type {
   OffboardingResultStep, OnboardingWaiver, WorkforceEngagement,
   WorkforceEngagementEvent,
@@ -108,12 +109,23 @@ export function liveEngagementFor(
   organizationId: string,
   person: { userId?: string; driverProfileId?: string; email?: string },
 ): WorkforceEngagement | undefined {
+  /*
+   * ★ NORMALIZED THROUGH THE ONE NORMALIZER ★
+   * This compared raw strings, so `Priya.Raman@Example.com` did not match the
+   * `priya.raman@example.com` already on the roster and a second live
+   * engagement was created for a person the carrier already had. Case and
+   * surrounding whitespace are not identity, and deciding that here with a
+   * hand-rolled `.toLowerCase()` would be a second opinion about what an email
+   * address is — `@/lib/directory/normalize` is the one the import path, the
+   * party registry and the identity matcher all already use.
+   */
+  const wanted = normalizeEmail(person.email);
   return state.engagements.find((e) => {
     if (e.organizationId !== organizationId) return false;
     if (e.state === "ended" || e.state === "rejected" || e.state === "withdrawn") return false;
     if (person.driverProfileId && e.driverProfileId === person.driverProfileId) return true;
     if (person.userId && e.person.userId === person.userId) return true;
-    if (person.email && e.person.email && e.person.email === person.email) return true;
+    if (wanted && normalizeEmail(e.person.email) === wanted) return true;
     return false;
   });
 }

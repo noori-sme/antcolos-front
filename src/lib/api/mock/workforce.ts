@@ -1,5 +1,6 @@
 import {
   RESPONSIBILITY_FUNCTION_LABEL, WORKFORCE_CLASSIFICATION_LABEL,
+  WORKFORCE_TERMINAL_STATES,
   WORKFORCE_LEAVE_REASON_LABEL, WORKFORCE_START_BASIS_LABEL,
   WORKFORCE_STATE_LABEL,
   type ActorRef, type AuditAction, type OffboardingResult,
@@ -7,11 +8,16 @@ import {
   isRestrictedQualificationCategory,
   type WorkforceEngagement, type WorkforceEngagementState,
   type WorkforceEngagementView, type WorkforceEventKind, type WorkforceFilters,
+  type MembershipAvailability,
   type WorkforceFunctionAssignment, type WorkforceLeaveRecord,
   type WorkforceLink, type WorkforceNextAction, type WorkforceSummary,
 } from "@/types";
 import { assertTransition } from "@/lib/workforce/lifecycle";
-import { availabilityFor, currentLeave, isLeaveCurrent } from "@/lib/workforce/availability";
+import { rank, scorePerson, type PersonRecord } from "@/lib/setup/identity-matching";
+import {
+  availabilityFor, availabilityProjection, currentLeave, desiredSeatAvailability,
+  isLeaveCurrent, leaveManagesSeat,
+} from "@/lib/workforce/availability";
 import { functionGapsFor } from "@/lib/workforce/functions";
 import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
@@ -36,6 +42,7 @@ import { engagementNeedsYouCount } from "./workforce-needs-you";
 import { memberIn, setMembershipAvailability } from "./membership-directory";
 import { sharePackageById } from "./document-store";
 import { recordsForDriver } from "./qualification-store";
+import { driverProfileUnscoped } from "./driver-registry";
 import { nowIso } from "./time";
 
 /**
@@ -132,6 +139,35 @@ export class LeaveNotFoundError extends Error {
   constructor(readonly leaveId: string) {
     super(`No open leave record ${leaveId} on this engagement.`);
     this.name = "LeaveNotFoundError";
+  }
+}
+
+/**
+ * Refusing to decide, either way, whether this is somebody the roster has.
+ *
+ * ★ NOT A DUPLICATE ERROR ★
+ * `DuplicateEngagementError` means Antcolos KNOWS: the same account, driver
+ * profile or address. This one means the opposite — the evidence is strong
+ * enough that creating a second person would probably be wrong, and weak
+ * enough that linking them would probably be wrong too. A name, an email and a
+ * phone number are evidence, not identity.
+ *
+ * Both outcomes are permanent and only somebody who knows these people can
+ * tell them apart, so the command stops and names what it found. This is the
+ * same rule the roster import already keeps, using the same matcher.
+ */
+export class AmbiguousPersonError extends Error {
+  constructor(
+    readonly candidates: { engagementId: string; label: string; detail: string }[],
+    readonly rationale: string,
+  ) {
+    super(
+      `This organization already has somebody who may be this person: `
+      + candidates.map((c) => c.label).join(", ")
+      + `. ${rationale} Open the existing record if it is them, or confirm they are different `
+      + "people — Antcolos will not decide it for you.",
+    );
+    this.name = "AmbiguousPersonError";
   }
 }
 
@@ -269,6 +305,72 @@ function transition(
 }
 
 /* -------------------------------------------------------------------------- */
+/* The one place leave touches the routing signal                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Put the seat where leave says it should be, and nowhere else.
+ *
+ * ███ EVERY RULE HERE IS A DEFECT THIS REPLACED ███
+ *
+ *  1. **It never writes `available` blindly.** It restores what the leave
+ *     DISPLACED. Somebody who was `off_shift` before going on leave is
+ *     `off_shift` again afterwards, not handed back to the routing engine on a
+ *     decision nobody made.
+ *  2. **It asks `desiredSeatAvailability`, which refuses to speak for an
+ *     engagement that is not active.** Ending an old leave record on somebody
+ *     suspended or offboarded used to return them to work routing. Now leave
+ *     has no opinion about them at all, and their seat is left exactly as the
+ *     access system left it.
+ *  3. **It will not overwrite a newer independent decision.** If the seat no
+ *     longer reads `on_leave`, somebody else has since decided something, and
+ *     leave ending is not a reason to undo it. The disagreement is reported by
+ *     `availabilityProjection` instead of being silently resolved.
+ *  4. **A failure is caught and left visible.** There is no cross-module
+ *     transaction in this build, so the write can fail with the HR record
+ *     already committed. The projection derivation then reports the drift and
+ *     Needs You raises it — a resumable state rather than a silent one.
+ *
+ * Returns whether the seat now matches, so a caller can say so honestly.
+ */
+function applyLeaveProjection(
+  engagement: WorkforceEngagement,
+  displaced?: MembershipAvailability,
+): void {
+  if (!engagement.membershipId) return;
+  const member = memberIn(engagement.organizationId, engagement.membershipId);
+  if (!member) return;
+
+  // ★ THE GUARD THAT COMES FIRST ★
+  // A suspended or ended engagement is not leave's to speak for, and that
+  // includes undoing leave's own earlier mark. Closing an old leave record on
+  // somebody who has been stood down used to walk straight into the branch
+  // below and write `available`, handing them back to the routing engine.
+  if (!leaveManagesSeat(engagement)) return;
+
+  const desired = desiredSeatAvailability(engagement, nowIso());
+
+  try {
+    if (desired !== undefined) {
+      if (member.availability !== desired) {
+        setMembershipAvailability(engagement.membershipId, desired);
+      }
+      return;
+    }
+    // Leave has no opinion. The ONLY thing it may undo is its own mark, and
+    // only back to what it displaced.
+    if (member.availability === "on_leave") {
+      setMembershipAvailability(engagement.membershipId, displaced ?? "available");
+    }
+  } catch {
+    // Deliberately swallowed, and deliberately not rolled back. The HR record
+    // is the canonical fact and is already written; the projection is derived
+    // and re-derivable. `availabilityProjection` reports the mismatch on the
+    // next read and Needs You keeps asking until somebody applies it.
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Projection                                                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -334,6 +436,7 @@ function nextActionFor(
   engagement: WorkforceEngagement,
   functionGapCount: number,
   now: string,
+  drift: boolean,
 ): WorkforceNextAction | undefined {
   const href = `/workforce/${engagement.id}`;
 
@@ -377,6 +480,21 @@ function nextActionFor(
       };
   }
 
+  // Outranks everything below it, and deliberately is NOT limited to an active
+  // engagement: a seat left reading `on_leave` for somebody who has been
+  // suspended is exactly as wrong as one taking work for somebody who is away,
+  // and both are one idempotent command from correct.
+  if (drift) {
+    return {
+      kind: "reconcile_availability",
+      label: "Put work routing back in step with the recorded leave",
+      detail: "The recorded leave and the work-routing signal disagree. Applying this changes "
+        + "only that signal — it grants nothing and declares no dispatch readiness.",
+      requires: ["workforce:manage"],
+      href,
+    };
+  }
+
   if (engagement.state === "active") {
     // Overdue leave beats a function gap: somebody the organization believes is
     // back and has not said so is a person work may be routed to wrongly.
@@ -405,16 +523,18 @@ function nextActionFor(
       };
     }
 
-    if (engagement.startDate && !engagement.startDateProvenance) {
-      return {
-        kind: "record_start_date_basis",
-        label: "Say where the start date came from",
-        detail: "This engagement has a start date and nothing recording whether this organization stated it or "
-          + "Antcolos observed it. That difference is the one a regulator asks about.",
-        requires: ["workforce:manage"],
-        href,
-      };
-    }
+    /*
+     * ★ WHAT IS DELIBERATELY NOT A NEXT ACTION ★
+     * A start date with no recorded basis. Every engagement made before the
+     * provenance field existed has one, so raising it here put the same nudge
+     * on almost every row in the directory — and a queue that speaks on every
+     * row is one nobody reads, which is the discipline this function was
+     * written to keep.
+     *
+     * It is not blocked work and nobody is waiting on it. The engagement's own
+     * page says "nobody recorded where this came from" beside the date, which
+     * is where somebody correcting it would already be looking.
+     */
   }
 
   return undefined;
@@ -433,18 +553,23 @@ function project(engagement: WorkforceEngagement): WorkforceEngagementView {
     member?.status === "active" ? member.permissions : undefined,
   );
 
+  // Derived on every read, so a drift produced AFTER the command ran — a future
+  // leave becoming effective, somebody changing the seat independently, a
+  // failed projection write — shows up without anybody having been told.
+  const projection = availabilityProjection(engagement, member?.availability, now);
+
   return {
     engagement,
     hasActiveMembership: member?.status === "active",
     links: linksFor(engagement),
     incompleteOffboarding: incompleteOffboardingFor(engagement.id),
-    availability: availabilityFor(engagement, now),
+    availability: { ...availabilityFor(engagement, now), projection },
     functionGaps,
     // A COUNT of the existing derived projection. The items themselves stay in
     // Needs You; this exists so a row can say "two things are waiting" without
     // this module growing a second queue to keep in step.
     openNeedsYouCount: countNeedsYouFor(engagement),
-    nextAction: nextActionFor(engagement, functionGaps.length, now),
+    nextAction: nextActionFor(engagement, functionGaps.length, now, !projection.inSync),
   };
 }
 
@@ -562,6 +687,77 @@ export const mockWorkforceService: WorkforceService = {
       email: input.person.email,
     });
     if (existing) throw new DuplicateEngagementError(existing.id);
+
+    /*
+     * ★ AND THEN THE HARDER QUESTION ★
+     * The check above answers "is this definitely the same person" — the same
+     * account, driver profile or address. It cannot answer "is this PROBABLY
+     * the same person", and that is the case a directory form produces all day:
+     * somebody types a name that is one character off a person already on the
+     * roster, with no email, and a second live engagement appears for a person
+     * the carrier already had.
+     *
+     * The roster import already refuses to guess at this, using
+     * `scorePerson`/`rank` in `@/lib/setup/identity-matching`. This is the SAME
+     * matcher on the SAME question, so the two paths cannot disagree about who
+     * is plausibly who — which is exactly what a second matcher here would
+     * eventually do.
+     *
+     * The pool is this organization's LIVE engagements, deliberately narrower
+     * than the import's: the question is "does this organization already have a
+     * working relationship with this person", not "does this person exist
+     * anywhere in Antcolos".
+     */
+    const acknowledged = new Set(input.confirmedDistinctFrom ?? []);
+    const pool: PersonRecord[] = engagementsForOrganization(ctx.organizationId)
+      .filter((e) => !WORKFORCE_TERMINAL_STATES.includes(e.state))
+      // Acknowledged by EITHER id, because a person the roster knows has two:
+      // the permanent driver profile, which is how the import names them, and
+      // the engagement, which is how this module does. Matching on one only
+      // would silently ignore half of the decisions a person already made.
+      .filter((e) => !acknowledged.has(e.id)
+        && !(e.driverProfileId !== undefined && acknowledged.has(e.driverProfileId)))
+      .map((e) => {
+        const profile = e.driverProfileId ? driverProfileUnscoped(e.driverProfileId) : undefined;
+        return {
+          // The SAME entity vocabulary the roster import uses: the permanent
+          // profile where there is one, the engagement otherwise. One name for
+          // one person across both paths, so a decision made on one is
+          // recognisable to the other.
+          entityId: e.driverProfileId ?? e.id,
+          legalName: profile?.legalName ?? e.person.displayName,
+          email: profile?.email ?? e.person.email,
+          phone: profile?.phone,
+          cdlNumber: profile?.cdlNumber,
+          cdlState: profile?.cdlState,
+          detail: `${WORKFORCE_STATE_LABEL[e.state]} · ${e.positionTitle}`,
+        };
+      });
+
+    const ranking = rank(pool.map((record) => scorePerson({
+      kind: "person",
+      fullName: input.person.displayName,
+      email: input.person.email,
+      classification: input.classification,
+    }, record)));
+
+    // `matched` and `needs_decision` both stop. `matched` means the matcher is
+    // sure and the exact check above was not — a driver profile the engagement
+    // has and this input did not carry — and creating anyway would make the
+    // duplicate the matcher just found.
+    if (ranking.outcome === "needs_decision" || ranking.outcome === "matched") {
+      throw new AmbiguousPersonError(
+        ranking.candidates.slice(0, 5).map((c) => ({
+          // Back to the engagement id, which is what a caller acknowledging
+          // this would hold and what the directory links to.
+          engagementId: engagementsForOrganization(ctx.organizationId)
+            .find((e) => (e.driverProfileId ?? e.id) === c.entityId)?.id ?? c.entityId,
+          label: c.label,
+          detail: pool.find((r) => r.entityId === c.entityId)?.detail ?? "",
+        })),
+        ranking.rationale,
+      );
+    }
 
     // A start date with no basis is refused rather than guessed. The default a
     // caller would get wrong is the dangerous one — a migrated carrier's 2019
@@ -994,10 +1190,30 @@ export const mockWorkforceService: WorkforceService = {
     if (input.expectedReturnDate && input.expectedReturnDate < input.startDate) {
       throw new Error("The expected return is before the leave starts.");
     }
-    if (currentLeave(engagement, nowIso())) {
+    /*
+     * ★ OVERLAP, NOT JUST "AWAY TODAY" ★
+     * Checking only the CURRENT leave let two future leaves be recorded over
+     * the same week — and on the Monday one of them started, the other was
+     * still sitting there claiming a different reason for the same absence.
+     * An interval that touches an existing open interval is refused whenever
+     * either one of them starts.
+     */
+    const overlapping = engagement.leave.find((l) => {
+      if (l.status === "ended" || l.status === "cancelled") return false;
+      const existingEnd = l.actualReturnDate ?? l.expectedReturnDate;
+      const newEnd = input.expectedReturnDate;
+      // An absent end date means open-ended, which overlaps everything after it.
+      const startsBeforeExistingEnds = existingEnd === undefined || input.startDate < existingEnd;
+      const endsAfterExistingStarts = newEnd === undefined || newEnd > l.startDate;
+      return startsBeforeExistingEnds && endsAfterExistingStarts;
+    });
+    if (overlapping) {
       throw new Error(
-        "This person is already recorded as away. End the current leave before recording another, "
-        + "so the history says what actually happened rather than two overlapping guesses.",
+        "This person already has leave recorded over those dates "
+        + `(from ${overlapping.startDate.slice(0, 10)}`
+        + `${overlapping.expectedReturnDate ? ` to ${overlapping.expectedReturnDate.slice(0, 10)}` : ", open-ended"}). `
+        + "End or cancel that one first, so the history says what actually happened rather than "
+        + "two overlapping guesses.",
       );
     }
 
@@ -1009,10 +1225,22 @@ export const mockWorkforceService: WorkforceService = {
       throw new NotFoundError(`Membership ${input.approvedByMembershipId}`);
     }
 
+    /*
+     * What the seat reads right now, kept so ending this leave can put it back.
+     * `MembershipAvailability` is single-valued: going on leave DISPLACES an
+     * `off_shift` or `unavailable` that somebody set for an unrelated reason,
+     * and without this the leave ending would announce them available on a
+     * decision nobody made.
+     */
+    const seatNow = engagement.membershipId
+      ? memberIn(ctx.organizationId, engagement.membershipId)?.availability
+      : undefined;
+
     const record: WorkforceLeaveRecord = {
       id: nextLeaveId(),
       reason: input.reason,
       status: input.startDate > at ? "planned" : "current",
+      seatAvailabilityBefore: seatNow === "on_leave" ? undefined : seatNow,
       startDate: input.startDate,
       expectedReturnDate: input.expectedReturnDate,
       recordedByMembershipId: ctx.membershipId,
@@ -1040,18 +1268,17 @@ export const mockWorkforceService: WorkforceService = {
       actor: ctx.actor,
     });
 
-    // ★ THE ROUTING SIGNAL IS NOT WRITTEN HERE ★
-    // Workforce holds no routing flag. Availability lives on the membership
-    // profile, the responsibility engine's candidate gate reads it through
-    // `takesWork`, and the way to change it is the membership directory's own
-    // command — exactly as offboarding calls `setMembershipStatus` rather than
-    // writing a second copy of a seat's state.
+    // ★ WORKFORCE HOLDS NO ROUTING FLAG ★
+    // Availability lives on the membership profile, the responsibility engine's
+    // candidate gate reads it through `takesWork`, and the way to change it is
+    // the membership directory's own command — exactly as offboarding calls
+    // `setMembershipStatus` rather than writing a second copy of a seat's state.
     //
-    // Only when the leave is CURRENT: marking somebody unavailable for a
-    // holiday three weeks out would take them off the board today.
-    if (record.status === "current" && engagement.membershipId) {
-      setMembershipAvailability(engagement.membershipId, "on_leave");
-    }
+    // `applyLeaveProjection` decides whether anything is written at all: a
+    // holiday three weeks out changes nothing today, and when that Monday
+    // arrives with nobody to apply it, `availabilityProjection` reports the
+    // drift and Needs You raises it rather than the two quietly disagreeing.
+    applyLeaveProjection(next, record.seatAvailabilityBefore);
 
     audit(ctx, "workforce.leave_recorded", next,
       `Leave recorded for ${engagement.person.displayName} (${label}) from `
@@ -1096,16 +1323,26 @@ export const mockWorkforceService: WorkforceService = {
       actor: ctx.actor,
     });
 
-    // ★ ELIGIBLE TO BE CONSIDERED. NOT DECLARED READY. ★
-    // `available` on the membership profile means the responsibility engine may
-    // consider them again — nothing more. It is not a statement that a load may
-    // be assigned, that a truck is roadworthy or that a driver is qualified and
-    // has hours: Dispatch, Maintenance, Safety and the ELD own those four
-    // answers, none of them reads this field, and returning from leave has told
-    // none of them anything.
-    if (engagement.membershipId) {
-      setMembershipAvailability(engagement.membershipId, "available");
-    }
+    // ★ ELIGIBLE TO BE CONSIDERED. NOT DECLARED READY. NOT EVEN ALWAYS THAT. ★
+    //
+    // This used to write `available` unconditionally, which was wrong three
+    // ways at once, and `applyLeaveProjection` is where each is refused:
+    //
+    //   • Somebody SUSPENDED or OFFBOARDED, whose old leave record somebody
+    //     then closed, was handed straight back to the routing engine. Leave
+    //     does not speak for an engagement that is not active.
+    //   • Somebody who was `off_shift` before the leave started came back
+    //     `available`, on a decision nobody made.
+    //   • Somebody with a SECOND leave still covering today came back while
+    //     still away.
+    //
+    // And where it does write, `available` still means only that the
+    // responsibility engine may consider them: never that a load may be
+    // assigned, a truck is roadworthy, or a driver is qualified and has hours.
+    // Dispatch, Maintenance, Safety and the ELD own those four answers, none of
+    // them reads this field, and returning from leave has told none of them
+    // anything.
+    applyLeaveProjection(next, record.seatAvailabilityBefore);
 
     audit(ctx, "workforce.leave_ended", next,
       `${engagement.person.displayName} returned from leave on ${returned.slice(0, 10)}. `
@@ -1145,13 +1382,72 @@ export const mockWorkforceService: WorkforceService = {
       actor: ctx.actor,
     });
 
-    if (wasCurrent && engagement.membershipId) {
-      setMembershipAvailability(engagement.membershipId, "available");
-    }
+    // Same rules as ending it. A cancelled leave undoes only its own mark, only
+    // back to what it displaced, and only on an engagement somebody still works
+    // under — `wasCurrent` is kept for the history line, not as permission to
+    // write, because whether anything should be written is the projection's
+    // question and not this command's.
+    void wasCurrent;
+    applyLeaveProjection(next, record.seatAvailabilityBefore);
 
     audit(ctx, "workforce.leave_cancelled", next,
       `Leave from ${record.startDate.slice(0, 10)} cancelled: ${input.reason.trim()}`,
       "workforce.leave_cancelled");
+    return project(next);
+  },
+
+  async reconcileAvailability(ctx, engagementId) {
+    await wait();
+    required(ctx, "workforce:view", "workforce:manage");
+    const engagement = own(ctx, engagementId);
+
+    const member = engagement.membershipId
+      ? memberIn(ctx.organizationId, engagement.membershipId)
+      : undefined;
+    const before = availabilityProjection(engagement, member?.availability, nowIso());
+
+    // Already in step — and saying so costs nothing, while writing anyway
+    // would put a meaningless line in the ledger every time somebody looked.
+    if (before.inSync) return project(engagement);
+
+    // The leave that displaced the seat, so restoring it restores the right
+    // value rather than inventing `available`.
+    const displaced = engagement.leave
+      .slice()
+      .reverse()
+      .find((l) => l.seatAvailabilityBefore !== undefined)?.seatAvailabilityBefore;
+
+    applyLeaveProjection(engagement, displaced);
+
+    const after = availabilityProjection(
+      engagement,
+      engagement.membershipId
+        ? memberIn(ctx.organizationId, engagement.membershipId)?.availability
+        : undefined,
+      nowIso(),
+    );
+
+    // Recorded on the engagement AND in the ledger, because a routing signal
+    // changing underneath people is exactly the thing somebody asks about
+    // later. The line says what it moved from and to, never just "reconciled".
+    const next = amendEngagement(engagementId, {}, {
+      kind: "note",
+      summary: after.inSync
+        ? `Work routing put back in step with the recorded leave (${before.actual ?? "no seat"} → ${after.actual ?? "no seat"})`
+        : "Work routing could not be put back in step with the recorded leave",
+      detail: after.inSync
+        ? "Leave is the recorded fact; the seat's availability is the operational projection of it. "
+          + "This changed only that projection and granted, revoked and decided nothing else."
+        : after.summary,
+      actor: ctx.actor,
+    });
+
+    audit(ctx, "workforce.availability_reconciled", next,
+      after.inSync
+        ? `Work routing for ${engagement.person.displayName} put back in step with the recorded leave. `
+          + "This declares no dispatch readiness."
+        : `Work routing for ${engagement.person.displayName} is still out of step: ${after.summary}`,
+      "workforce.availability_reconciled");
     return project(next);
   },
 

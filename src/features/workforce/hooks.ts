@@ -103,7 +103,8 @@ type EngagementAction =
   | { kind: "removeFunction"; input: RemoveFunctionInput }
   | { kind: "recordLeave"; input: RecordLeaveInput }
   | { kind: "endLeave"; input: EndLeaveInput }
-  | { kind: "recordStartDate"; input: RecordStartDateInput };
+  | { kind: "recordStartDate"; input: RecordStartDateInput }
+  | { kind: "reconcileAvailability" };
 
 /**
  * One mutation for every engagement command.
@@ -135,6 +136,8 @@ export function useEngagementAction(engagementId: string) {
         case "endLeave": return services.workforce.endLeave(ctx, engagementId, action.input);
         case "recordStartDate":
           return services.workforce.recordStartDate(ctx, engagementId, action.input);
+        case "reconcileAvailability":
+          return services.workforce.reconcileAvailability(ctx, engagementId);
       }
     },
     onSuccess: () => {

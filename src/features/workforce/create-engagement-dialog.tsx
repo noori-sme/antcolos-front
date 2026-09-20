@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -56,14 +57,42 @@ export function CreateEngagementDialog({
   onSubmit,
   pending,
   error,
+  ambiguous,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (input: CreateEngagementInput) => void;
   pending: boolean;
   error?: string;
+  /**
+   * People already on this roster who may be the person being entered.
+   *
+   * Present when the service refused to decide. It is not an error the form
+   * should clear on the next keystroke — it is a question only somebody who
+   * knows these people can answer.
+   */
+  ambiguous?: { engagementId: string; label: string; detail: string }[];
 }) {
   const colleagues = useWorkspaceColleagues();
+
+  /*
+   * ★ A REFUSAL NOBODY CAN SEE IS A FORM THAT DID NOTHING ★
+   * The candidates render at the top of a scrolling dialog. On a phone the
+   * submit button sits well below that, so pressing it appeared to do nothing
+   * at all: the answer was on screen in the DOM sense and off screen in the
+   * only sense that matters. Bringing it into view is the whole fix.
+   */
+  const ambiguousRef = useRef<HTMLDivElement>(null);
+  const ambiguousCount = ambiguous?.length ?? 0;
+  useEffect(() => {
+    if (ambiguousCount > 0) {
+      // Instant, not smooth: this is an answer to something somebody just
+      // pressed, and animating it means a window where the form still looks
+      // like it did nothing.
+      ambiguousRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+      ambiguousRef.current?.focus({ preventScroll: true });
+    }
+  }, [ambiguousCount]);
 
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -88,9 +117,10 @@ export function CreateEngagementDialog({
       : [...current, key]));
   };
 
-  const submit = () => {
+  const submit = (confirmedDistinctFrom?: string[]) => {
     if (blocked) return;
     onSubmit({
+      confirmedDistinctFrom,
       person: {
         displayName: displayName.trim(),
         email: email.trim() || undefined,
@@ -119,7 +149,61 @@ export function CreateEngagementDialog({
         className="max-w-2xl"
       >
         <div className="mt-4 max-h-[60vh] space-y-5 overflow-y-auto pr-1">
-          {error ? <FormAlert tone="danger" title="That did not work">{error}</FormAlert> : null}
+          {/*
+            ★ THE QUESTION ANTCOLOS REFUSES TO ANSWER ★
+            A name and an address are evidence, not identity. When somebody on
+            the roster may already be this person, linking the wrong record and
+            creating a second one are both permanent, and only a person who
+            knows them can tell. So the form stops, names who it found with
+            enough detail to tell them apart, and offers the two honest ways
+            out — open the existing record, or say they are different people.
+            There is no third button that merges them.
+          */}
+          {ambiguous && ambiguous.length > 0 ? (
+            <div
+              ref={ambiguousRef}
+              className="rounded-lg border border-st-warning/40 bg-st-warning/5 p-4"
+              data-testid="ambiguous-person"
+              tabIndex={-1}
+              role="alert"
+            >
+              <p className="text-[0.875rem] font-medium text-fg">
+                Somebody here may already be this person
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {ambiguous.map((c) => (
+                  <li key={c.engagementId} className="text-[0.8125rem]">
+                    <Link
+                      href={`/workforce/${c.engagementId}`}
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                    >
+                      {c.label}
+                    </Link>
+                    {c.detail ? <span className="text-fg-subtle"> · {c.detail}</span> : null}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[0.75rem] leading-relaxed text-fg-muted">
+                Open one of them if it is the same person — recording them twice cannot be
+                undone. If these are genuinely different people, say so and this will be
+                recorded as a separate engagement. Nothing is linked or merged either way.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                className="mt-2.5"
+                disabled={pending}
+                data-testid="confirm-distinct"
+                onClick={() => submit(ambiguous.map((c) => c.engagementId))}
+              >
+                These are different people
+              </Button>
+            </div>
+          ) : null}
+
+          {error && !(ambiguous && ambiguous.length > 0)
+            ? <FormAlert tone="danger" title="That did not work">{error}</FormAlert>
+            : null}
 
           <section className="space-y-3">
             <h3 className="text-[0.8125rem] font-semibold text-fg">Who</h3>
@@ -298,7 +382,7 @@ export function CreateEngagementDialog({
             size="sm"
             variant="primary"
             disabled={blocked || pending}
-            onClick={submit}
+            onClick={() => submit()}
             data-testid="create-engagement-submit"
           >
             {pending ? "Recording…" : "Record the engagement"}

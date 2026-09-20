@@ -1,4 +1,5 @@
 import type { IsoDateTime } from "./common";
+import type { MembershipAvailability } from "./membership";
 import type { PermissionKey } from "./permission";
 import type { ResponsibilityFunction } from "./responsibility";
 import type { ActorRef } from "./user";
@@ -550,6 +551,20 @@ export interface WorkforceLeaveRecord {
   endedByMembershipId?: string;
   endedByName?: string;
   endedAt?: IsoDateTime;
+  /**
+   * What the seat's availability read BEFORE this leave displaced it.
+   *
+   * ★ WHY THIS FIELD HAS TO EXIST ★
+   * `MembershipAvailability` is single-valued, so a seat cannot hold two
+   * reasons at once. Somebody who was already `off_shift` and then goes on
+   * leave has their `off_shift` overwritten by `on_leave` — and without this
+   * field, ending the leave would announce them `available`, which is a reason
+   * nobody gave and a person the routing engine would start handing work to.
+   *
+   * Provenance, not a second availability store: it is written once, read once
+   * when the leave ends, and nothing else consults it.
+   */
+  seatAvailabilityBefore?: MembershipAvailability;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -586,8 +601,37 @@ export const WORKFORCE_AVAILABILITY_LABEL: Record<WorkforceAvailabilityState, st
   not_engaged: "Not working here",
 };
 
+/**
+ * Whether the operational routing signal actually agrees with the HR fact.
+ *
+ * DERIVED on every read, stored nowhere. See `availabilityProjection` in
+ * `src/lib/workforce/availability.ts` for why a comparison has to exist at all:
+ * a future leave becoming effective, somebody changing the seat independently,
+ * and a failed projection write all produce a disagreement that nothing else
+ * would notice.
+ */
+export interface WorkforceAvailabilityProjection {
+  /** True when a leave covers today on an engagement somebody works under. */
+  managedByLeave: boolean;
+  /** What leave says the seat should read. `undefined` = leave has no opinion. */
+  desired?: MembershipAvailability;
+  /** What the seat actually reads, when the person holds one. */
+  actual?: MembershipAvailability;
+  /** False means the routing engine and HR disagree, and somebody must act. */
+  inSync: boolean;
+  summary: string;
+}
+
 export interface WorkforceAvailability {
   state: WorkforceAvailabilityState;
+  /**
+   * The state of the operational projection onto the person's seat.
+   *
+   * Kept beside `state` rather than folded into it: "this person is away" and
+   * "the routing engine has not been told" are different facts, and a screen
+   * that showed only the first would be the screen that hid the second.
+   */
+  projection: WorkforceAvailabilityProjection;
   /** The leave that produced it, when leave did. */
   leave?: WorkforceLeaveRecord;
   /** One line, in the operator's language. Printed, not inferred by a screen. */
@@ -950,6 +994,7 @@ export interface WorkforceNextAction {
     | "activate"
     | "finish_offboarding"
     | "record_return_from_leave"
+    | "reconcile_availability"
     | "close_function_gap"
     | "record_start_date_basis";
   label: string;

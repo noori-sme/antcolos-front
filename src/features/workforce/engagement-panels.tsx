@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ASSIGNABLE_FUNCTIONS, expectedPermissionsFor } from "@/lib/workforce/functions";
 import {
+  AVAILABILITY_LABEL as WORKFORCE_AVAILABILITY_STATE_LABEL,
   RESPONSIBILITY_FUNCTION_LABEL, WORKFORCE_AVAILABILITY_LABEL,
   WORKFORCE_FUNCTION_REMEDY_LABEL, WORKFORCE_LEAVE_REASON_LABEL,
   WORKFORCE_LEAVE_STATUS_LABEL, WORKFORCE_START_BASIS_DESCRIPTION,
@@ -142,9 +143,13 @@ export function FunctionsPanel({
                     </p>
                     <p className="mt-1.5 text-[0.75rem]">
                       {/* The ONLY route out, and it goes to the module that
-                          owns the answer. Never a grant button here. */}
+                          owns the answer — the invitation screen when there is
+                          no seat to widen, the roster when there is. Never a
+                          grant button here. */}
                       <Link
-                        href={gap.remedy === "invite_to_workspace" ? "/settings/users" : "/settings/users"}
+                        href={gap.remedy === "invite_to_workspace"
+                          ? "/settings/invitations/new"
+                          : "/settings/users"}
                         className="font-medium text-primary underline-offset-2 hover:underline"
                       >
                         {WORKFORCE_FUNCTION_REMEDY_LABEL[gap.remedy]}
@@ -194,20 +199,67 @@ export function AvailabilityPanel({
   canManage,
   onRecordLeave,
   onEndLeave,
+  onReconcile,
   pending,
 }: {
   view: WorkforceEngagementView;
   canManage: boolean;
   onRecordLeave: () => void;
   onEndLeave: (leaveId: string) => void;
+  onReconcile: () => void;
   pending: boolean;
 }) {
   const { availability, engagement } = view;
   const live = availability.leave;
   const history = engagement.leave.filter((l) => l.id !== live?.id);
+  const { projection } = availability;
 
   return (
     <div className="space-y-3" data-testid="availability-panel">
+      {/*
+        ★ THE DISAGREEMENT IS SHOWN, NOT RESOLVED QUIETLY ★
+        There is no transaction between the HR record and the seat's
+        availability, so they can and do come apart — a leave that starts next
+        Monday with nothing to notice the day arriving, somebody marking the
+        person back through Access, a write that failed. Putting the banner
+        above the state is deliberate: "this person is away" and "the routing
+        engine has not been told" are different facts, and a panel that showed
+        only the first would be the panel that hid the second.
+      */}
+      {!projection.inSync ? (
+        <div
+          className="rounded-lg border border-st-warning/40 bg-st-warning/5 p-4"
+          data-testid="availability-drift"
+        >
+          <p className="text-[0.875rem] font-medium text-fg">
+            Work routing does not match the recorded leave
+          </p>
+          <p className="mt-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+            {projection.summary}
+          </p>
+          <p className="mt-1 text-[0.75rem] text-fg-subtle">
+            Leave says {projection.desired ? WORKFORCE_AVAILABILITY_STATE_LABEL[projection.desired] : "nothing"};
+            {" "}the seat says {projection.actual ? WORKFORCE_AVAILABILITY_STATE_LABEL[projection.actual] : "nothing"}.
+          </p>
+          {canManage ? (
+            <Button
+              type="button"
+              size="sm"
+              className="mt-2.5"
+              disabled={pending}
+              data-testid="reconcile-availability"
+              onClick={onReconcile}
+            >
+              Put work routing back in step
+            </Button>
+          ) : null}
+          <p className="mt-2 text-[0.6875rem] leading-relaxed text-fg-subtle">
+            This changes only the work-routing signal. It grants nothing, revokes nothing, and
+            declares no dispatch readiness.
+          </p>
+        </div>
+      ) : null}
+
       <div
         className="rounded-lg border border-border bg-surface p-4"
         data-availability={availability.state}
