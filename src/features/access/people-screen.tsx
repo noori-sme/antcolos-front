@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck, UserMinus, UserRound } from "lucide-react";
+import { History, ShieldCheck, UserMinus, UserRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
@@ -12,8 +12,10 @@ import { subscribeRoster } from "@/lib/session/membership-store";
 import { services } from "@/lib/api";
 import type { RosterEntry } from "@/lib/api/contracts/access";
 import { permissionMeta } from "@/lib/permissions";
+import type { PermissionTemplate } from "@/types";
 import { ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import type { CarrierRelationship, Membership } from "@/types";
+import Link from "next/link";
 
 /**
  * Who is in this organization, what they may do, and how to take it away.
@@ -44,12 +46,22 @@ export function PeopleScreen() {
    */
   const [tick, setTick] = useState(0);
   const [people, setPeople] = useState<RosterEntry[]>([]);
+  /*
+   * The roles as they read RIGHT NOW, used for one thing only: telling an owner
+   * that somebody is on an older version of one. Nobody's permissions are
+   * computed from this list — those come from the service, through
+   * `effectivePermissions`, off each seat's own snapshot.
+   */
+  const [templates, setTemplates] = useState<PermissionTemplate[]>([]);
   useEffect(() => subscribeRoster(() => setTick((t) => t + 1)), []);
   useEffect(() => {
     if (!ctx) return;
     let cancelled = false;
     void services.access.roster(ctx).then((rows) => {
       if (!cancelled) setPeople(rows);
+    });
+    void services.access.templates(ctx).then((rows) => {
+      if (!cancelled) setTemplates(rows.map((r) => r.template));
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,6 +105,7 @@ export function PeopleScreen() {
             <PersonRow
               key={entry.membership.id}
               entry={entry}
+              templates={templates}
               isSelf={entry.membership.id === ctx?.membershipId}
               busy={busyId === entry.membership.id}
               onRemove={() => remove(entry.membership)}
@@ -112,16 +125,17 @@ export function PeopleScreen() {
 }
 
 function PersonRow({
-  entry, isSelf, busy, onRemove,
+  entry, templates, isSelf, busy, onRemove,
 }: {
   entry: RosterEntry;
+  templates: readonly PermissionTemplate[];
   isSelf: boolean;
   busy: boolean;
   onRemove: () => void;
 }) {
   // Everything here comes from the service. This row derives nothing: not the
   // permissions, not the person, not the relationship.
-  const { membership, account, permissions } = entry;
+  const { membership, permissions, displayName } = entry;
   const engagement = entry.relationships[0];
 
   return (
@@ -140,7 +154,7 @@ function PersonRow({
           </span>
           <div className="min-w-0">
             <p className="text-[0.875rem] font-semibold text-fg">
-              {account?.displayName ?? membership.userId}
+              {displayName}
               {isSelf ? <span className="ml-1.5 text-[0.75rem] font-normal text-fg-muted">(you)</span> : null}
             </p>
             <p className="mt-0.5 text-[0.75rem] text-fg-muted">
@@ -169,11 +183,19 @@ function PersonRow({
 
       {engagement ? <EngagementRow engagement={engagement} /> : null}
 
-      <p className="mt-2.5 text-[0.75rem] leading-relaxed text-fg-muted">
+      {membership.isOwner ? null : (
+        <RolesRow membership={membership} templates={templates} />
+      )}
+
+      {/*
+        * THE authoritative answer. Derived by the service through
+        * `effectivePermissions` over this seat, never read off a role.
+        */}
+      <p className="mt-2.5 text-[0.75rem] leading-relaxed text-fg-muted" data-testid="effective-permissions">
         <span className="font-medium text-fg">
           {membership.isOwner
-            ? "Everything this workspace supports"
-            : `${permissions.length} ${permissions.length === 1 ? "permission" : "permissions"}`}
+            ? "Can do everything this workspace supports"
+            : `Can do ${permissions.length} ${permissions.length === 1 ? "thing" : "things"}`}
         </span>
         {membership.isOwner ? null : (
           <>
@@ -184,6 +206,106 @@ function PersonRow({
         )}
       </p>
     </li>
+  );
+}
+
+/**
+ * Which roles produced this seat, and whether any of them has moved on since.
+ *
+ * ★ PROVENANCE, NOT THE ANSWER ★
+ * The line under this one — the permission count and the labels — is the
+ * authoritative statement of what this person can do. This is where it CAME
+ * FROM, which is a different and smaller claim: the role names, the versions
+ * that were applied, and who applied them. Read them the other way round and
+ * you get the bug this whole model exists to prevent — somebody opening the
+ * current "Dispatcher" role and believing they have just read this person's
+ * access.
+ *
+ * "Version 2, and the role is now on 4" is shown rather than resolved. It is
+ * the correct state, not a fault: the role was edited and this person kept what
+ * they were given.
+ */
+function RolesRow({
+  membership, templates,
+}: {
+  membership: Membership;
+  templates: readonly PermissionTemplate[];
+}) {
+  const applied = membership.appliedTemplates;
+  const own = membership.grants.length + membership.revocations.length;
+
+  if (applied.length === 0 && own === 0) return null;
+
+  return (
+    <div
+      className="mt-2.5 rounded-md border border-border bg-surface-sunken px-3 py-2.5"
+      data-testid="roles-row"
+    >
+      {applied.length > 0 ? (
+        <>
+          <p className="text-[0.75rem] font-medium text-fg">
+            {applied.length === 1 ? "Role applied" : "Roles applied"}
+          </p>
+          <ul className="mt-1 space-y-1">
+            {applied.map((a) => {
+              const current = templates.find((t) => t.id === a.templateId);
+              const behind = current ? current.version !== a.version : false;
+              return (
+                <li
+                  key={a.templateId}
+                  className="text-[0.75rem] leading-relaxed text-fg-muted"
+                  data-testid="applied-template"
+                  data-template-id={a.templateId}
+                  data-applied-version={a.version}
+                >
+                  <span className="font-medium text-fg">{a.templateName}</span>
+                  <span className="tabular-nums"> · version {a.version}</span>
+                  {" · applied by "}
+                  {a.appliedByName}
+                  {behind ? (
+                    <span
+                      className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-st-info-bg px-1.5 py-0.5 text-[0.6875rem] font-medium text-st-info tabular-nums"
+                      data-testid="behind-badge"
+                    >
+                      <History className="size-3" aria-hidden />
+                      Role is now on version {current!.version}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
+
+      {own > 0 ? (
+        <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-muted">
+          <span className="font-medium text-fg">Set for them specifically:</span>{" "}
+          {membership.grants.length > 0
+            ? `${membership.grants.length} added`
+            : null}
+          {membership.grants.length > 0 && membership.revocations.length > 0 ? ", " : null}
+          {membership.revocations.length > 0
+            ? `${membership.revocations.length} taken away`
+            : null}
+          . These are not part of any role and stay when one is applied.
+        </p>
+      ) : null}
+
+      {applied.some((a) => {
+        const current = templates.find((t) => t.id === a.templateId);
+        return current ? current.version !== a.version : false;
+      }) ? (
+          <p className="mt-1.5 text-[0.75rem] leading-relaxed text-fg-subtle">
+            Editing a role never changes what somebody can already do. To move this person onto
+            the current version, use{" "}
+            <Link href="/settings/permissions" className="text-primary underline-offset-4 hover:underline">
+              Roles and permissions
+            </Link>
+            {" "}— you will see exactly what changes for them first.
+          </p>
+        ) : null}
+    </div>
   );
 }
 

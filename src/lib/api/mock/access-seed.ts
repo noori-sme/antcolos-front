@@ -71,7 +71,9 @@ export function seedInvitations(): InvitationSeed[] {
     {
       ...base,
       id: "inv_4", token: "INV-CUSTOM", kind: "custom", roleName: "Night dispatcher",
-      customRoleId: "role_nl_night",
+      // Hand-built rather than templated — which is what `kind: "custom"`
+      // means. There is no `templateId` because no template was used, and
+      // inventing one would put provenance on a record that has none.
       recipientName: "Priya Raman", recipientEmail: "priya@example.com",
       permissions: ["loads:view", "loads:edit", "loads:status:update", "dispatch:view", "loads:assign", "drivers:view", "trucks:view", "trailers:view", "documents:view", "documents:upload"],
       expiresAt: daysFromNow(4), createdAt: daysAgo(1), status: "pending",
@@ -93,7 +95,6 @@ export function seedInvitations(): InvitationSeed[] {
     {
       ...base,
       id: "inv_7", token: "INV-REVOKED", kind: "custom", roleName: "Billing clerk",
-      customRoleId: "role_nl_billing",
       recipientName: "Dana Wells", recipientEmail: "dana@example.com",
       permissions: ["loads:view", "customers:view", "invoices:view", "invoices:create", "rates:view"],
       expiresAt: daysFromNow(2), createdAt: daysAgo(6), status: "revoked",

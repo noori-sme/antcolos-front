@@ -1,7 +1,7 @@
 import { PERMISSION_CATALOG } from "@/lib/permissions/catalog";
 import { effectivePermissions } from "@/lib/permissions/effective";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER,
 } from "@/lib/session/fixtures";
 import type { InsuranceContext } from "@/lib/api/mock/insurance-registry";
 import {
@@ -42,7 +42,7 @@ export function serviceContextFor(membershipId: string): ServiceContext {
     organizationName: organization.displayName,
     workspaceKind: workspaceKindOf(organization),
     membershipId: membership.id,
-    permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
+    permissions: effectivePermissions(membership, organization),
     scope: membership.scope,
     driverProfileId: membership.driverProfileId,
     actor: actorFor(membership.id),
@@ -106,7 +106,7 @@ export function serviceContext(
     organizationName: organization.displayName,
     workspaceKind: workspaceKindOf(organization),
     membershipId: membership.id,
-    permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
+    permissions: effectivePermissions(membership, organization),
     scope: membership.scope,
     driverProfileId: membership.driverProfileId,
     actor: {

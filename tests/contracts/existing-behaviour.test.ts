@@ -13,11 +13,13 @@ import {
 import {
   driverProfileSync, driverRelationshipsSync, mockListRelationships,
 } from "@/features/driver/mock-driver";
+import { mockListInvitations } from "@/features/access/mock-access";
+import { resetAccessStore } from "@/lib/api/mock/access-store";
 import {
-  mockListInvitations, mockListRoles, resetAccessMock,
-} from "@/features/access/mock-access";
+  resetTemplateStore, templatesForOrganization,
+} from "@/lib/api/mock/template-store";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER,
 } from "@/lib/session/fixtures";
 import { PERMISSION_CATALOG } from "@/lib/permissions/catalog";
 import { requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
@@ -63,7 +65,7 @@ async function canonicalSnapshot() {
     organizations: MOCK_ORGANIZATIONS,
     memberships: MOCK_MEMBERSHIPS,
     invitations: await mockListInvitations("org_northline"),
-    roles: await mockListRoles("org_northline"),
+    roles: templatesForOrganization("org_northline"),
     driverRelationships: driverRelationshipsSync(),
     driverProfile: driverProfileSync(),
     driverEngagements: await mockListRelationships(),
@@ -83,7 +85,8 @@ describe("contracts leave every canonical relationship alone", () => {
   beforeEach(() => {
     resetAgreementRegistry();
     resetTruckRegistry();
-    resetAccessMock();
+    resetAccessStore();
+    resetTemplateStore();
   });
 
   it("creating, signing, amending and terminating change nothing outside contracts", async () => {
@@ -245,7 +248,8 @@ describe("contracts leave every canonical relationship alone", () => {
 describe("what already worked still works", () => {
   beforeEach(() => {
     resetAgreementRegistry();
-    resetAccessMock();
+    resetAccessStore();
+    resetTemplateStore();
   });
 
   it("keeps every permission key that existed before", () => {
@@ -277,7 +281,18 @@ describe("what already worked still works", () => {
     expect(requiredPermissionsForPath("/loads")).toEqual(["loads:view"]);
     expect(requiredPermissionsForPath("/fleet/trucks")).toEqual(["trucks:view"]);
     expect(requiredPermissionsForPath("/settings/users")).toEqual(["members:view"]);
-    expect(requiredPermissionsForPath("/settings/invitations")).toEqual(["invitations:view"]);
+    /*
+     * TIGHTENED, deliberately, and not a relaxation of this guard.
+     *
+     * This route used to require `invitations:view`, which is weaker than the
+     * screen behind it: the Invite action lives there, and the page itself was
+     * owner-only, so anybody holding the view key saw a nav item that led to a
+     * refusal. The seeded "Contracts and relationships" template grants
+     * `invitations:view`, so that was a real person, not a hypothetical.
+     * Inviting is now one permission from top to bottom.
+     */
+    expect(requiredPermissionsForPath("/settings/invitations")).toEqual(["invitations:create"]);
+    expect(requiredPermissionsForPath("/settings/invitations/new")).toEqual(["invitations:create"]);
     expect(requiredPermissionsForPath("/home")).toEqual([]);
 
     expect(requiredPermissionsForPath("/contracts")).toEqual(["contracts:view"]);
@@ -288,13 +303,13 @@ describe("what already worked still works", () => {
   it("still gives an owner everything and a rate-blind dispatcher less", () => {
     const northlineOwner = MOCK_MEMBERSHIPS.find((m) => m.id === "mem_northline_owner")!;
     const northline = MOCK_ORGANIZATIONS.find((o) => o.id === "org_northline")!;
-    const ownerPerms = effectivePermissions(northlineOwner, northline, MOCK_TEMPLATES);
+    const ownerPerms = effectivePermissions(northlineOwner, northline);
     expect(ownerPerms.has("contracts:sign")).toBe(true);
     expect(ownerPerms.has("contracts:financials:view")).toBe(true);
 
     const dispatcher = MOCK_MEMBERSHIPS.find((m) => m.id === "mem_meridian_dispatcher")!;
     const meridian = MOCK_ORGANIZATIONS.find((o) => o.id === "org_meridian")!;
-    const dispatcherPerms = effectivePermissions(dispatcher, meridian, MOCK_TEMPLATES);
+    const dispatcherPerms = effectivePermissions(dispatcher, meridian);
     expect(dispatcherPerms.has("contracts:view")).toBe(true);
     // Reads the terms, and never the money or the signature line.
     expect(dispatcherPerms.has("contracts:financials:view")).toBe(false);
@@ -305,7 +320,10 @@ describe("what already worked still works", () => {
 
   it("leaves invitations and roles working exactly as before", async () => {
     const invitations = await mockListInvitations("org_northline");
-    const roles = await mockListRoles("org_northline");
+    // Roles are `PermissionTemplate` records in the one template store now,
+    // not the feature-local `CustomRole` list this guard used to read. The
+    // claim is the same one: a contract write disturbs neither.
+    const roles = templatesForOrganization("org_northline");
 
     // A contract write in between changes neither.
     createSync(owner(), {
@@ -316,7 +334,7 @@ describe("what already worked still works", () => {
 
     expect(JSON.stringify(await mockListInvitations("org_northline")))
       .toBe(JSON.stringify(invitations));
-    expect(JSON.stringify(await mockListRoles("org_northline")))
+    expect(JSON.stringify(templatesForOrganization("org_northline")))
       .toBe(JSON.stringify(roles));
   });
 });

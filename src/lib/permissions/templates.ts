@@ -2,9 +2,15 @@ import type { PermissionKey, PermissionTemplate } from "@/types";
 
 /**
  * Templates are conveniences, not roles: additive, non-exclusive, editable,
- * and detached once applied. Nothing in the app may branch on a template name.
+ * and DETACHED once applied. Nothing in the app may branch on a template name,
+ * and nothing reads a template to decide what somebody may do — see
+ * `AppliedTemplate` in `@/types/permission` and `./effective.ts`.
+ *
+ * These are the ones every organization starts with. They are ordinary
+ * templates: an owner may edit, duplicate or archive them, and editing one
+ * changes nobody who already holds it.
  */
-type SeedTemplate = Omit<PermissionTemplate, "id" | "organizationId">;
+type SeedTemplate = Pick<PermissionTemplate, "name" | "description" | "seeded" | "permissions">;
 
 export const SEED_TEMPLATES: readonly SeedTemplate[] = [
   {
@@ -213,11 +219,33 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
   },
 ] as const;
 
+/**
+ * The instant every seeded template is stamped with.
+ *
+ * Fixed rather than `new Date()`, because these are fixtures: a template whose
+ * `createdAt` moved every time the module loaded would make "has this been
+ * edited since it was applied?" answer differently on every reload.
+ */
+export const SEED_TEMPLATE_TIMESTAMP = "2026-01-01T00:00:00.000Z";
+
+export function seedTemplateId(organizationId: string, name: string): string {
+  return `tpl_${organizationId}_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+}
+
 export function seedTemplates(organizationId: string): PermissionTemplate[] {
   return SEED_TEMPLATES.map((t) => ({
     ...t,
-    id: `tpl_${organizationId}_${t.name.toLowerCase()}`,
+    id: seedTemplateId(organizationId, t.name),
     organizationId,
     permissions: [...t.permissions] as PermissionKey[],
+    version: 1,
+    archived: false,
+    createdAt: SEED_TEMPLATE_TIMESTAMP,
+    updatedAt: SEED_TEMPLATE_TIMESTAMP,
   }));
+}
+
+/** The one seeded template that is structural rather than chosen. */
+export function isOwnerTemplate(template: { name: string }): boolean {
+  return template.name.trim().toLowerCase() === "owner";
 }

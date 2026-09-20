@@ -1,12 +1,12 @@
 import { InviteFlow } from "@/features/access/invite-flow";
-import { OwnerOnly } from "@/features/access/owner-guard";
+import { RequiresPermission } from "@/features/access/owner-guard";
 
 export const metadata = { title: "Invite" };
 
 export default function Page() {
   return (
-    <OwnerOnly>
+    <RequiresPermission permission="invitations:create" title="Only the owner can invite people">
       <InviteFlow />
-    </OwnerOnly>
+    </RequiresPermission>
   );
 }

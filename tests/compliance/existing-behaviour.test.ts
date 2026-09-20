@@ -12,7 +12,7 @@ import { resetTrailerRegistry } from "@/lib/api/mock/trailer-registry";
 import { resetCarrierDriversMock } from "@/features/driver/mock-carrier-drivers";
 import { effectivePermissions } from "@/lib/permissions/effective";
 import { clampToGrantable, grantablePermissionKeys } from "@/lib/permissions/grantable";
-import { MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES } from "@/lib/session/fixtures";
+import { MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS } from "@/lib/session/fixtures";
 import { availablePermissionKeys } from "@/lib/permissions/catalog";
 import {
   BAXTER_OWNER, CASCADE_DRIVER, MERIDIAN_DISPATCHER, NORTHLINE_OWNER,
@@ -40,14 +40,14 @@ describe("permissions", () => {
   it("gives an owner everything the organization type supports, and nothing else", () => {
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === "org_northline")!;
     const owner = membership(NORTHLINE_OWNER);
-    const permissions = effectivePermissions(owner, org, MOCK_TEMPLATES);
+    const permissions = effectivePermissions(owner, org);
     expect(permissions.size).toBe(availablePermissionKeys(org.type).length);
   });
 
   it("still lets a revocation beat a grant", () => {
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === "org_meridian")!;
     const dispatcher = membership(MERIDIAN_DISPATCHER);
-    const permissions = effectivePermissions(dispatcher, org, MOCK_TEMPLATES);
+    const permissions = effectivePermissions(dispatcher, org);
     expect(permissions.has("loads:delete")).toBe(false);
     expect(permissions.has("documents:approve")).toBe(true);
     // The rate-blind dispatcher is the fixture the whole model exists to prove.
@@ -57,7 +57,7 @@ describe("permissions", () => {
   it("grants nothing at all to a membership that is not active", () => {
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === "org_northline")!;
     const suspended = { ...membership(NORTHLINE_OWNER), status: "suspended" as const };
-    expect(effectivePermissions(suspended, org, MOCK_TEMPLATES).size).toBe(0);
+    expect(effectivePermissions(suspended, org).size).toBe(0);
   });
 
   it("never lets anybody hand out access they do not hold", () => {

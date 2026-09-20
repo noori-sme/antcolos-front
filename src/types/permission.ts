@@ -139,16 +139,99 @@ export interface PermissionMeta {
   financial?: boolean;
   /** Absent = available to every organization type. */
   orgTypes?: OrganizationType[];
+  /**
+   * Keys that have to be held alongside this one for it to mean anything.
+   *
+   * ADVISORY, not enforced: a template carrying `loads:edit` without
+   * `loads:view` is saved exactly as chosen, and the editor says so rather than
+   * quietly adding a permission nobody ticked. Silently widening a selection is
+   * how an owner ends up granting access they never agreed to.
+   */
+  prerequisites?: PermissionKey[];
+  /**
+   * What this key reaches BEYOND the action itself — the sentence an owner needs
+   * in order to read the grant correctly.
+   *
+   * Two kinds of thing live here, and both are already true of the product:
+   * record scope (`MembershipScope` narrows some keys to the holder's own
+   * records) and a second basis that has to agree (a carrier's per-truck
+   * Dispatch delegation, a driver's own sharing consent). Holding the key is
+   * necessary in those cases and never sufficient.
+   */
+  scopeNote?: string;
 }
 
 export type OrganizationType = "CARRIER" | "DISPATCH_AGENCY";
 
+/**
+ * A reusable, organization-scoped way of CHOOSING permissions. Not a role in
+ * the sense of a second authorization system.
+ *
+ * ★ WHAT A TEMPLATE IS NOT ★
+ * Nothing in Antcolos asks a template what somebody may do. `can()` reads a
+ * permission set, and that set comes from the Membership — see
+ * `AppliedTemplate` below for why the two can never disagree. A template that
+ * is edited, archived or deleted changes nobody's access, because nobody's
+ * access was ever being read from it.
+ *
+ * `version` is what makes that checkable. It rises on every saved edit to the
+ * permission selection, so a Membership carrying version 3 of "Limited
+ * Dispatcher" can be compared against the template's current version and the
+ * difference shown — rather than the difference being applied to them while
+ * they are working.
+ */
 export interface PermissionTemplate {
   id: string;
   organizationId: string;
   name: string;
   description: string;
   permissions: PermissionKey[];
+  /**
+   * Rises by one whenever `permissions` changes. Renaming or rewording does
+   * NOT bump it: nobody's access depends on the name, so re-applying a template
+   * because its description was tidied would be asking an owner to confirm a
+   * change that is not one.
+   */
+  version: number;
   /** Seeded templates may be edited but not deleted. */
   seeded: boolean;
+  /** Archived templates keep working for whoever holds them and cannot be applied again. */
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * The record of a template having been applied to one Membership.
+ *
+ * ★ THE SNAPSHOT IS THE POINT ★
+ * `permissions` is a COPY of what the template carried at the moment somebody
+ * applied it, not a pointer to what it carries now. That single decision is
+ * what makes "editing a saved template does not silently change existing
+ * people's access" a structural property rather than a promise: there is no
+ * code path from a template edit to a Membership's effective permissions,
+ * because the Membership stopped reading the template the instant it was
+ * applied.
+ *
+ * What is kept BESIDES the snapshot is provenance — which template, under which
+ * name, at which version, applied by whom and when — so a screen can say "this
+ * came from Limited Dispatcher (v2)" and an owner can be shown, later, exactly
+ * what moving them to v4 would change.
+ */
+export interface AppliedTemplate {
+  templateId: string;
+  /** Snapshotted, so a renamed template does not rewrite the history of a seat. */
+  templateName: string;
+  /** The template version this snapshot was taken from. */
+  version: number;
+  /** Exactly the keys the template carried when applied. Never re-read. */
+  permissions: PermissionKey[];
+  appliedAt: string;
+  /**
+   * The membership that applied it. Never a User: applying a template is an act
+   * performed from inside an organization, by a seat that held the authority.
+   */
+  appliedByMembershipId: string;
+  /** Snapshotted for the same reason as `templateName`. */
+  appliedByName: string;
 }

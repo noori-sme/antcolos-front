@@ -154,7 +154,11 @@ export const SETTINGS_NAV: NavSection[] = [
     items: [
       { label: "Organization", href: "/settings/organization", icon: Building2, requires: ["organization:manage"] },
       { label: "People", href: "/settings/users", icon: Users, requires: ["members:view"] },
-      { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:view"] },
+      // `invitations:create`, not the weaker view key. The route manifest is
+      // derived from this line, so it is also what the route guard enforces —
+      // and a nav item gated below the screen behind it is an item that exists
+      // only to tell somebody they may not have it.
+      { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:create"] },
       { label: "Roles and permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
       { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["integrations:view"] },
       // What the ranking learns from, and what it never touches. Not a setting —

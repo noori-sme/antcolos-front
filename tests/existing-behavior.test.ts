@@ -9,8 +9,7 @@ import { grantablePermissionKeys } from "@/lib/permissions/grantable";
 import { seedTemplates } from "@/lib/permissions/templates";
 import { requiredPermissionsForPath, ROUTE_MANIFEST } from "@/lib/permissions/route-manifest";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES,
-} from "@/lib/session/fixtures";
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import { buildSeed } from "@/lib/api/mock/seed";
 import {
   fleetSync, resetTruckRegistry, truckContextFrom, TRUCK_IDS, accessReason,
@@ -93,7 +92,7 @@ test("a dispatch organization is never offered carrier-only keys", () => {
 test("an owner holds everything their organization type supports", () => {
   const membership = MOCK_MEMBERSHIPS.find((m) => m.id === "mem_northline_owner")!;
   const organization = MOCK_ORGANIZATIONS.find((o) => o.id === "org_northline")!;
-  const permissions = effectivePermissions(membership, organization, MOCK_TEMPLATES);
+  const permissions = effectivePermissions(membership, organization);
 
   assert.deepEqual(
     [...permissions].sort(),
@@ -104,7 +103,7 @@ test("an owner holds everything their organization type supports", () => {
 test("a revocation still beats a grant", () => {
   const membership = MOCK_MEMBERSHIPS.find((m) => m.id === "mem_meridian_dispatcher")!;
   const organization = MOCK_ORGANIZATIONS.find((o) => o.id === "org_meridian")!;
-  const permissions = effectivePermissions(membership, organization, MOCK_TEMPLATES);
+  const permissions = effectivePermissions(membership, organization);
 
   assert.ok(permissions.has("customers:edit"), "explicit grant applies");
   assert.ok(!permissions.has("loads:delete"), "explicit revocation applies");
@@ -115,8 +114,7 @@ test("a suspended membership holds nothing", () => {
   const membership = MOCK_MEMBERSHIPS.find((m) => m.id === "mem_meridian_dispatcher")!;
   const organization = MOCK_ORGANIZATIONS.find((o) => o.id === "org_meridian")!;
   const permissions = effectivePermissions(
-    { ...membership, status: "suspended" }, organization, MOCK_TEMPLATES,
-  );
+    { ...membership, status: "suspended" }, organization);
   assert.equal(permissions.size, 0);
 });
 

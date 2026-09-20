@@ -9,8 +9,7 @@ import { clampToGrantable, grantablePermissionKeys } from "@/lib/permissions/gra
 import { requiredPermissionsForPath, ROUTE_MANIFEST } from "@/lib/permissions/route-manifest";
 import { SEED_TEMPLATES, seedTemplates } from "@/lib/permissions/templates";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES,
-} from "@/lib/session/fixtures";
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import { mockLoadsService } from "@/lib/api/mock/loads";
 import { mockNeedsYouService } from "@/lib/api/mock/needs-you";
 import { mockStore } from "@/lib/api/mock/store";
@@ -114,7 +113,7 @@ test("seeded templates are namespaced to their organization", () => {
 test("an owner holds everything their organization type supports", () => {
   const membership = MOCK_MEMBERSHIPS.find((m) => m.id === "mem_northline_owner")!;
   const organization = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
-  const effective = effectivePermissions(membership, organization, MOCK_TEMPLATES);
+  const effective = effectivePermissions(membership, organization);
   assert.deepEqual(
     [...effective].sort(),
     [...availablePermissionKeys(organization.type)].sort(),
@@ -132,7 +131,7 @@ test("a dispatch agency is never offered carrier-only fleet keys", () => {
 test("a revocation beats a template grant", () => {
   const membership = MOCK_MEMBERSHIPS.find((m) => m.id === "mem_meridian_dispatcher")!;
   const organization = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
-  const effective = effectivePermissions(membership, organization, MOCK_TEMPLATES);
+  const effective = effectivePermissions(membership, organization);
   assert.ok(effective.has("loads:view"), "from the template");
   assert.ok(effective.has("customers:edit"), "from the explicit grant");
   assert.ok(!effective.has("loads:delete"), "explicitly revoked");
@@ -145,7 +144,7 @@ test("a suspended membership holds nothing", () => {
     status: "suspended" as const,
   };
   const organization = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
-  assert.equal(effectivePermissions(membership, organization, MOCK_TEMPLATES).size, 0);
+  assert.equal(effectivePermissions(membership, organization).size, 0);
 });
 
 test("nobody can hand out access they do not hold", () => {
