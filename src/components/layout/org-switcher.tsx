@@ -7,6 +7,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useActiveMembership, useSession } from "@/lib/session/hooks";
 import { workspaceKindOf, type Organization } from "@/types";
 import { cn } from "@/lib/utils";
@@ -23,34 +24,51 @@ export function OrgSwitcher({ collapsed = false }: { collapsed?: boolean }) {
   const active = memberships.filter((m) => m.status === "active");
   const orgOf = (id: string) => organizations.find((o) => o.id === id);
 
+  const name = organization?.displayName ?? "No organization";
+  const role = membership?.isOwner ? "Owner" : (membership?.title ?? "Member");
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        className={cn(
-          "flex w-full items-center gap-2.5 rounded-md border border-border bg-surface px-2.5 py-2 text-left transition-colors hover:bg-surface-hover",
-          collapsed && "justify-center px-0",
-        )}
-        aria-label="Switch organization"
-      >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
-          {organization ? <WorkspaceIcon organization={organization} className="size-4" /> : (
-            <Building2 aria-hidden className="size-4" />
-          )}
-        </span>
-        {!collapsed && (
-          <>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[0.8125rem] leading-4 font-semibold text-fg">
-                {organization?.displayName ?? "No organization"}
-              </span>
-              <span className="block truncate text-[0.75rem] leading-4 text-fg-subtle">
-                {membership?.isOwner ? "Owner" : (membership?.title ?? "Member")}
-              </span>
+      {/* The rail has no room to print the workspace, so the identity is
+          carried by the icon and named on hover rather than lost. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-md border border-border bg-surface px-2.5 py-2 text-left transition-colors hover:bg-surface-hover",
+              collapsed && "justify-center px-0",
+            )}
+            /* Expanded, the workspace is printed beside the icon and the
+               button only has to say what it does. On the rail it is not, so
+               there the label is the only thing naming it. */
+            aria-label={
+              collapsed
+                ? `Switch organization. Current: ${name}, ${role}.`
+                : "Switch organization"
+            }
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
+              {organization ? <WorkspaceIcon organization={organization} className="size-4" /> : (
+                <Building2 aria-hidden className="size-4" />
+              )}
             </span>
-            <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-fg-subtle" />
-          </>
-        )}
-      </DropdownMenuTrigger>
+            {!collapsed && (
+              <>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[0.8125rem] leading-4 font-semibold text-fg">
+                    {name}
+                  </span>
+                  <span className="block truncate text-[0.75rem] leading-4 text-fg-subtle">
+                    {role}
+                  </span>
+                </span>
+                <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-fg-subtle" />
+              </>
+            )}
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        {collapsed ? <TooltipContent side="right">{name} · {role}</TooltipContent> : null}
+      </Tooltip>
 
       <DropdownMenuContent align="start" className="w-72">
         <DropdownMenuLabel>Organizations</DropdownMenuLabel>
