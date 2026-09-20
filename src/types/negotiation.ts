@@ -424,6 +424,16 @@ export type BookingBlockKind =
   | "carrier_cannot_haul"
   | "truck_unavailable"
   | "already_booked"
+  /**
+   * The carrier's factor will not fund this broker, or there is no current
+   * answer and the carrier's policy requires one.
+   *
+   * Its own kind rather than folded into `carrier_cannot_haul`, because they
+   * are different problems with different fixes: an authority problem is
+   * permanent until the carrier sorts it out, and a factoring block is often
+   * one phone call away — or an authorized override with a reason.
+   */
+  | "factoring"
   | "not_permitted";
 
 export const BOOKING_BLOCK_LABEL: Record<BookingBlockKind, string> = {
@@ -432,5 +442,6 @@ export const BOOKING_BLOCK_LABEL: Record<BookingBlockKind, string> = {
   carrier_cannot_haul: "This carrier cannot legally haul",
   truck_unavailable: "This truck is not available",
   already_booked: "This cycle already has a load on it",
+  factoring: "Factoring does not clear this broker",
   not_permitted: "You are not allowed to book",
 };

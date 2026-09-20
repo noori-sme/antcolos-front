@@ -1,7 +1,7 @@
 import type {
   ActorRef, Assignment, BookingBlockKind, BookingRecord, ConsentRequirement,
-  DispatchWorkReceipt, Load, LoadDocumentRequirement, Negotiation,
-  ProviderBookingLink, Stop,
+  DispatchWorkReceipt, FactoringBookingGate, Listing, Load,
+  LoadDocumentRequirement, MtLoop, Negotiation, ProviderBookingLink, Stop,
 } from "@/types";
 import { authorityAllowsDispatch } from "@/types";
 import { listingById } from "./listing-registry";
@@ -18,6 +18,7 @@ import { createBookedLoad, recordLoadConsent } from "./load-commands";
 import {
   attributedActor, loadReachFor, requireLoadWriteAuthority,
 } from "./dispatch-delegation";
+import { evaluateFactoringBooking, factoringGateSync } from "./factoring";
 // The shared simulated round trip. A seeder can suppress it; a person never does.
 import { sleep } from "./latency";
 
@@ -273,6 +274,15 @@ export function sealDispatchReceipts(input: {
 export interface BookCheck {
   ok: boolean;
   blocks: { kind: BookingBlockKind; detail: string }[];
+  /**
+   * What the carrier's factor says, and whether policy lets this proceed.
+   *
+   * Always present when a cycle and a listing could be resolved, even when it
+   * blocks nothing: a dispatcher about to commit a truck wants to see which
+   * factor answered, when, and how — and a confirmation screen that showed the
+   * status only when it was bad would teach them to read silence as approval.
+   */
+  factoring?: FactoringBookingGate;
   /** What the dispatcher is about to commit to, for the confirmation screen. */
   preview?: {
     lane: string;
@@ -288,6 +298,38 @@ export interface BookCheck {
     otherMatchesClosing: number;
     draftsStandingDown: number;
   };
+}
+
+/**
+ * The factoring question this booking raises, or nothing.
+ *
+ * Built in one place so `canBook` and `bookNegotiation` ask it identically. The
+ * subject is the broker on the LISTING and the carrier on the LOOP — never the
+ * workspace reading the screen, which is what keeps a dispatch agency from
+ * booking Carrier B's load on Carrier A's approval.
+ */
+function factoringGateFor(
+  listing: Listing,
+  loop: MtLoop,
+  negotiation: Negotiation,
+  ctx: MtLoopContext,
+): FactoringBookingGate | undefined {
+  if (!ctx.permissions.has("factoring:view")) return undefined;
+  if (!loop.carrierOrganizationId) return undefined;
+  try {
+    return factoringGateSync(ctx, {
+      carrierOrganizationId: loop.carrierOrganizationId,
+      brokerNameObserved: listing.broker.name,
+      brokerMcNumber: listing.broker.mcNumber,
+      proposedAmountCents: negotiation.agreedRateCents ?? listing.offeredRateCents,
+      dispatchCycleId: negotiation.dispatchCycleId,
+      listingId: listing.listingId,
+    });
+  } catch {
+    // No authority over that carrier's factoring. Nothing is asserted either
+    // way, and the booking's other rules still apply.
+    return undefined;
+  }
 }
 
 /**
@@ -333,7 +375,26 @@ export function canBook(negotiationId: string, ctx: MtLoopContext): BookCheck {
     });
   }
 
-  if (blocks.length > 0 || !listing || !loop || !tc) return { ok: false, blocks };
+  /*
+   * ★ THE FACTORING GATE ★
+   *
+   * Evaluated against the CARRIER ON THE LOOP, not the workspace pressing Book,
+   * and read synchronously so the button and the command behind it cannot
+   * disagree. `bookNegotiation` runs the same gate again with a recheck first.
+   *
+   * A carrier whose policy does not require factoring is not blocked by it, and
+   * a caller with no factoring permission gets no gate rather than a refusal —
+   * a dispatcher who may not see credit decisions is not thereby forbidden to
+   * book freight the carrier already approves of.
+   */
+  const factoring = listing && loop
+    ? factoringGateFor(listing, loop, negotiation, ctx)
+    : undefined;
+  if (factoring && !factoring.allowed && factoring.block) {
+    blocks.push({ kind: "factoring", detail: factoring.block.detail });
+  }
+
+  if (blocks.length > 0 || !listing || !loop || !tc) return { ok: false, blocks, factoring };
 
   const consent: ConsentRequirement = !loop.driverProfileId
     ? "not_required"
@@ -343,6 +404,7 @@ export function canBook(negotiationId: string, ctx: MtLoopContext): BookCheck {
   return {
     ok: true,
     blocks: [],
+    factoring,
     preview: {
       lane: `${listing.origin.city}, ${listing.origin.state} → ${listing.destination.city}, ${listing.destination.state}`,
       rateCents: negotiation.agreedRateCents ?? 0,
@@ -415,6 +477,31 @@ export function bookAndStandDown(
 /* Booking                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Ask the carrier's adapter again, where one exists. Writes an answer or
+ * nothing; it never turns a missing answer into an approval.
+ */
+async function recheckFactoringForBooking(
+  negotiationId: string,
+  ctx: MtLoopContext,
+): Promise<void> {
+  if (!ctx.permissions.has("factoring:view")) return;
+  const negotiation = negotiationById(negotiationId, ctx);
+  if (!negotiation) return;
+  const listing = listingById(ctx.organizationId, negotiation.listingId);
+  const loop = mtLoopById(negotiation.dispatchCycleId, ctx);
+  if (!listing || !loop?.carrierOrganizationId) return;
+
+  await evaluateFactoringBooking(ctx, {
+    carrierOrganizationId: loop.carrierOrganizationId,
+    brokerNameObserved: listing.broker.name,
+    brokerMcNumber: listing.broker.mcNumber,
+    proposedAmountCents: negotiation.agreedRateCents ?? listing.offeredRateCents,
+    dispatchCycleId: negotiation.dispatchCycleId,
+    listingId: listing.listingId,
+  }).catch(() => undefined);
+}
+
 export type BookOutcome =
   | { status: "ok"; booking: BookingRecord; load: Load }
   | { status: "blocked"; blocks: BookCheck["blocks"] };
@@ -432,6 +519,17 @@ export async function bookNegotiation(
   ctx: MtLoopContext,
 ): Promise<BookOutcome> {
   await sleep(LATENCY_MS);
+
+  /*
+   * ★ RECHECK AT BOOKING TIME, WHERE THERE IS AN ADAPTER TO RECHECK WITH ★
+   *
+   * Run BEFORE `canBook`, so the gate below decides on the freshest answer
+   * rather than on whatever was on the screen. Where the carrier has no
+   * adapter — import, email, manual — nothing is re-asked and nothing pretends
+   * to have been: the gate's `recheckNote` says so, and the confirmation screen
+   * prints it.
+   */
+  await recheckFactoringForBooking(negotiationId, ctx);
 
   const check = canBook(negotiationId, ctx);
   if (!check.ok) return { status: "blocked", blocks: check.blocks };

@@ -136,6 +136,15 @@ export const AUDIT_ACTIONS: readonly AuditActionMeta[] = [
   { key: "referrals.invitation_started", label: "Invitation started from referral", module: "referrals" },
   { key: "referrals.email_delivery_failed", label: "Referral email failed", module: "referrals" },
 
+  // Factoring. The override is high value for the same reason a banking change
+  // is: it is a decision to take on risk the organization's own policy refused,
+  // and the only account of why is the reason on this line.
+  { key: "factoring.connection_changed", label: "Factoring connection changed", module: "factoring", permissionSensitive: true, highValue: true },
+  { key: "factoring.policy_changed", label: "Factoring policy changed", module: "factoring", permissionSensitive: true },
+  { key: "factoring.check_recorded", label: "Factoring result recorded", module: "factoring" },
+  { key: "factoring.import_committed", label: "Factoring list imported", module: "factoring" },
+  { key: "factoring.override_recorded", label: "Factoring block overridden", module: "factoring", permissionSensitive: true, highValue: true },
+
   { key: "audit.event_corrected", label: "Audit event corrected", module: "risk" },
   { key: "audit.export_prepared", label: "Audit export prepared", module: "risk", permissionSensitive: true },
 ] as const;
@@ -181,6 +190,7 @@ export const AUDIT_MODULE_LABEL: Record<AuditModule, string> = {
   integrations: "Integrations",
   workforce: "Workforce & HR",
   referrals: "Referrals",
+  factoring: "Factoring",
   risk: "Audit & Risk",
 };
 

@@ -33,6 +33,7 @@ import { learningFor, rankingPreferences } from "./ranking";
 import { sessionForCycle, sessionsFor } from "./search-session";
 import { mtLoopById, openLoopsFor, type MtLoopContext } from "./mt-loop";
 import { policiesFor } from "./driver-visibility";
+import { factoringStatusSync } from "./factoring-registry";
 // The shared simulated round trip. A seeder can suppress it; a person never does.
 import { sleep } from "./latency";
 
@@ -326,9 +327,52 @@ function withBookings(
  * memoized card would then keep showing a driver's answer from before they gave
  * it. So they are attached to the data, once, on the way out.
  */
+/**
+ * Attach the carrier-scoped factoring answer to each row.
+ *
+ * ★ EVERY DISCOVERED LOAD WITH AN MC IS EVALUATED, AND NOT AS A NEW STAGE ★
+ * Factoring is an eligibility question inside Search, exactly like deadhead or
+ * hours of service. It adds no lane, no stage and no step to the MT Loop: the
+ * answer rides on the row the dispatcher is already looking at.
+ *
+ * Resolved against `match.carrierOrganizationId`, which is the carrier the
+ * TRUCK runs under — never `ctx.organizationId`. A dispatch agency covering two
+ * carriers sees two different answers about one broker on one screen, because
+ * their factors are two different companies and both answers are true.
+ *
+ * Three ways a row ends up with no factoring at all, and none of them is a
+ * silent approval: the viewer does not hold `factoring:view`; the listing
+ * carries no broker MC to ask about; or the carrier is one this workspace has
+ * no authority over, in which case the read throws and is swallowed here rather
+ * than taking down a search result.
+ */
+function attachFactoring(rows: MatchWithListing[], ctx: MtLoopContext): MatchWithListing[] {
+  if (!ctx.permissions.has("factoring:view")) return rows;
+  return rows.map((r) => {
+    if (!r.listing.broker.mcNumber) return r;
+    try {
+      return {
+        ...r,
+        factoring: factoringStatusSync(ctx, {
+          carrierOrganizationId: r.match.carrierOrganizationId,
+          brokerNameObserved: r.listing.broker.name,
+          brokerMcNumber: r.listing.broker.mcNumber,
+          proposedAmountCents: r.listing.offeredRateCents,
+          dispatchCycleId: r.match.dispatchCycleId,
+          listingId: r.listing.listingId,
+        }),
+      };
+    } catch {
+      // No authority over that carrier, or no permission. Either way the row
+      // carries nothing rather than something wrong.
+      return r;
+    }
+  });
+}
+
 function attachDrafts(rows: MatchWithListing[], ctx: MtLoopContext): MatchWithListing[] {
   return rankMatches(
-    rows.map((r) => {
+    attachFactoring(rows, ctx).map((r) => {
       const gate = driverGate(r.match.matchId, ctx);
       const review = reviewForMatch(r.match.matchId, ctx);
       const resendable = !review || review.status === "withdrawn" || review.status === "declined";

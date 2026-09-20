@@ -119,6 +119,32 @@ export type PermissionKey =
   // referral still cannot create a seat, and the handoff into the invitation
   // flow is gated by `invitations:create` exactly as it always was.
   | "referrals:review"
+  // Factoring — whether the carrier's factor will fund an invoice on a broker.
+  //
+  // ★ FOUR KEYS, AND WHY NONE OF THEM IS AN EXISTING ONE ★
+  // `customers:view` is held by every dispatcher and reaches the directory; a
+  // factor's credit limit and its reason for refusing a broker are a carrier's
+  // banking relationship, not a directory field, and folding them in would hand
+  // both to anybody who may look up a phone number. `invoices:view` is about
+  // invoices this carrier has raised, which a factoring check precedes by days.
+  // `integrations:manage` connects outside TOOLS; a factoring account is the
+  // arrangement that decides whether the carrier gets paid, and the person who
+  // wires up Telegram is not thereby the person who changes it.
+  //
+  // Split four ways because they are four exposures. Reading a result is an
+  // everyday dispatch act. RUNNING one spends a real credit-check request
+  // against the carrier's account, and recording a fallback answer puts words
+  // in the factor's mouth. Connecting an account and setting the policy decides
+  // whether anybody can book at all. And overriding a block is a deliberate
+  // decision to take a risk the carrier's own policy refused — the strongest of
+  // the four, and the only one that writes an immutable audit entry by itself.
+  //
+  // Every one of them is narrowed AGAIN by the carrier boundary: holding
+  // `factoring:view` in a dispatch organization reaches only the carriers that
+  // granted it dispatch authority, and never a carrier's own factor account
+  // details. The key says what a person may do; the carrier's grant says whose
+  // records it reaches, and both have to agree.
+  | "factoring:view" | "factoring:check" | "factoring:manage" | "factoring:override"
   // Organization settings
   | "organization:manage" | "integrations:view" | "integrations:manage" | "audit:view"
   // Audit & Risk — the one ledger, and the cases opened off it.
@@ -142,6 +168,7 @@ export type PermissionGroup =
   | "accounting" | "compliance" | "maintenance" | "insurance" | "claims"
   | "contracts"
   | "workforce"
+  | "factoring"
   | "members" | "invitations" | "organization" | "audit";
 
 export interface PermissionMeta {

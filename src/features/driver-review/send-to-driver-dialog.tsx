@@ -74,7 +74,8 @@ export function SendToDriverDialog({
       setError(
         outcome?.status === "no_driver" ? "There is no driver on this truck."
           : outcome?.status === "already_sent" ? "This load is already with the driver."
-            : "Nothing was sent.",
+            : outcome?.status === "factoring_not_approved" ? outcome.reason
+              : "Nothing was sent.",
       );
       return;
     }
@@ -178,6 +179,23 @@ export function SendToDriverDialog({
                 )}
               </>
             )}
+
+            {p.factoring && p.factoring.label !== "Driver review" ? (
+              <p
+                data-testid="driver-factoring-note"
+                className={cn(
+                  "mt-2 rounded-md border px-2.5 py-1.5 text-[0.75rem] leading-relaxed",
+                  p.factoring.mayShareWithDriver
+                    ? "border-st-warning/40 bg-st-warning-bg/35 text-fg"
+                    : "border-st-danger/40 bg-st-danger-bg/45 text-fg",
+                )}
+              >
+                {p.factoring.label}
+                {p.factoring.mayShareWithDriver
+                  ? " — this goes out with the load, so nobody reads it as funded."
+                  : " — this carrier does not send unapproved loads to a driver."}
+              </p>
+            ) : null}
 
             {!sent ? (
               <label className="mt-2 flex flex-wrap items-center gap-2">
@@ -364,6 +382,15 @@ export function smsFor(p: DriverSendPreview, note?: string): string {
     `PU  ${f.originCity}, ${f.originState}${when(f.pickupAt) ? ` — ${when(f.pickupAt)}` : ""}`,
     `DEL ${f.destinationCity}, ${f.destinationState}${when(f.deliverBy) ? ` — ${when(f.deliverBy)}` : ""}`,
   ];
+  /*
+   * ★ THE FACTORING LINE GOES IN THE MESSAGE ITSELF ★
+   * A driver reading a load with a rate on it will read it as bookable unless
+   * something says otherwise, and the something has to be in the text they
+   * actually receive rather than on a screen only the dispatcher sees.
+   */
+  if (p.factoring && p.factoring.label !== "Driver review") {
+    lines.push(p.factoring.label);
+  }
   const kv: Array<[string, string | undefined]> = [
     ["Equip", f.equipmentLabel],
     ["Miles", f.loadedMiles === undefined ? undefined : `${f.loadedMiles.toLocaleString()} loaded${f.deadheadMiles === undefined ? "" : ` · ${f.deadheadMiles} empty`}`],

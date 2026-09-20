@@ -54,6 +54,7 @@ files rather than a copy. `npm test` runs both.
 | Insurance & Claims foundation | `/insurance`, `/insurance/policies`, `/insurance/certificates`, `/insurance/claims` |
 | Truck and trailer registries | `/fleet/trucks`, `/fleet/trailers` and their profiles |
 | Invoice foundation | `/finance/invoices`, `/finance/invoices/[invoiceId]` |
+| Factoring Check foundation | `/settings/factoring`, plus the factoring chip, filter and contextual check inside Load Search, the Opportunity list and the booking confirmation |
 | Broker / Shipper / Receiver directory | `/directory`, `/directory/[partyId]`, `/directory/locations/[facilityId]`, `/directory/contacts/[contactId]`, `/directory/review` |
 | Driver decision & trip workflow | `/driver/proposals`, `/driver/proposals/[id]`, `/driver/loads`, `/driver/loads/[loadId]` |
 | Unified Document Center | `/documents`, `/documents/[documentId]` |
@@ -1826,6 +1827,55 @@ Frontend only, and the limits are worth stating rather than discovering:
 
 Every screen in the module says so on the screen, not only here.
 
+## Factoring Check
+
+> ███ **ANTCOLOS IS NOT CONNECTED TO A FACTORING COMPANY.** ███ There is no
+> confirmed production API access from OTR, RTS or anybody else. Nothing in this
+> slice contacts a factor: every result it can produce came from an authorized
+> export a carrier imported, a provider response a person recorded with
+> evidence, or the labelled development adapter — and every result says which.
+
+**A factoring result is not a fact about a broker.** "TQL is approved" is not a
+sentence that can be true; "Northline's factor, OTR, on account NL-4471, said on
+Tuesday that it would fund up to $12,000 against MC-1142908, until Friday" is.
+So every record is partitioned by `carrierOrganizationId`, exactly as
+`CarrierPartyRelationship` already is — Apex Logistics is approved for Northline
+and refused by Baxter's factor, and both are true at once.
+
+Ten decision states, and four of them exist precisely because they are **not**
+refusals: `unknown`, `stale`, `not_connected` and `provider_unavailable` all
+mean "no current answer". Collapsing any of them into `rejected` would put a
+refusal in a broker's file that no factor ever made.
+
+**It is not an MT Loop stage.** Factoring is an eligibility check inside Search
+and Opportunity evaluation, like deadhead or hours of service. Every discovered
+load with an identified broker MC is evaluated against the factoring connection
+of the carrier the truck runs under, and the answer rides on the row the
+dispatcher is already reading. Where the connection answers by itself there is
+no button; where it cannot there is exactly one — "Check with factoring" — which
+opens the carrier's own fallback, prefilled with everything Antcolos already
+knows.
+
+Expiry is resolved **at read time**: the stored decision never changes, and an
+approval that lapsed at 03:00 reads as `stale` at 03:01 without any job having
+run. Nothing is ever invented — an empty credit-limit column produces *absent*,
+never zero — and there is no field anywhere in the module that could hold a
+provider password, token or portal session.
+
+Screens: `/settings/factoring` (connection, policy, debtor-list import — never
+the dispatcher's daily screen), the factoring chip and filter on Load Search
+and the Opportunity list, and the decision, source, freshness and authorized
+override on the booking confirmation.
+
+`docs/factoring-check.md` records the whole design, the four new permission
+keys and why none of them could be an existing one, the import and supersession
+rules, and the seven things the backend still owes — provider authorization on
+the server, encryption at rest, append-only durable storage, server-side
+enforcement of the carrier boundary, audit retention for overrides,
+provider-specific rate limiting, and a real authorized integration before
+anything renders `approved_live`. Portal scraping, browser credential
+automation and CAPTCHA handling are permanently excluded, not unimplemented.
+
 ## For backend integration
 
 `src/lib/api/contracts/` is the seam. Every method takes a `ServiceContext` carrying the organization, membership, permission set, record scope and an actor snapshot — there is no method that accepts a `User`. The mock adapter enforces permissions and organization ownership itself, so a UI bug that renders a forbidden button still fails at the seam.
@@ -1850,6 +1900,11 @@ to redesign later:
   (username immutability, avatar re-validation and scanning, rate limiting,
   a uniqueness constraint on contribution source references, the ranking behind
   a conferred award, and one source for the share card).
+- `docs/factoring-check.md` — whether the carrier's factor will fund an invoice
+  on a broker: the carrier-partitioned model, the ten decision states and the
+  four that must never become a refusal, read-time expiry, the import and
+  supersession rules, the four new permission keys, and the seven things the
+  backend still owes before anything may render a live provider approval.
 - `docs/contract-opportunity-future-compatibility.md` — whether the current
   architecture blocks a later Contract Opportunity Intelligence module. It does
   not, so nothing was built: the record is the canonical data ownership map, the

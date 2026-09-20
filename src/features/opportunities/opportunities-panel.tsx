@@ -1,13 +1,21 @@
 "use client";
 
-import { Mail, Package } from "lucide-react";
-import { useState } from "react";
+import { Landmark, Mail, Package } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { MatchWithListing, OutreachDraft } from "@/types";
-import {
-  DRAFT_STATUS_LABEL, DRIVER_REVIEW_STATUS_LABEL, UNARGUABLE_CHECKS,
+import type {
+  FactoringFilterKey, FactoringVisibility, MatchWithListing, OutreachDraft,
 } from "@/types";
+import {
+  DRAFT_STATUS_LABEL, DRIVER_REVIEW_STATUS_LABEL, FACTORING_FILTER_ORDER,
+  FACTORING_VISIBILITY_LABEL, UNARGUABLE_CHECKS,
+} from "@/types";
+import { hiddenByPolicy, deprioritizedByPolicy, matchesFactoringFilter } from "@/lib/factoring";
+import { policyForSync } from "@/lib/api/mock/factoring-registry";
+import { FactoringFilter } from "@/features/factoring/factoring-filter";
+import { CheckWithFactoringDialog } from "@/features/factoring/check-with-factoring-dialog";
+import { useAutomaticFactoringChecks } from "@/features/factoring/use-automatic-checks";
 import { dismissMatch, restoreMatch, shortlistMatch } from "@/lib/api/mock/opportunity-matching";
 import { approveDraft, cancelDraft } from "@/lib/api/mock/outreach-drafts";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
@@ -40,6 +48,9 @@ export function OpportunitiesPanel({
   /** Which dialog is open over the list, and on which row. */
   const [talkTo, setTalkTo] = useState<MatchWithListing | null>(null);
   const [sendTo, setSendTo] = useState<string | null>(null);
+  /** The row whose fallback factoring workflow is open, if any. */
+  const [checking, setChecking] = useState<MatchWithListing | null>(null);
+  const [factoringFilter, setFactoringFilter] = useState<FactoringFilterKey>("all");
 
   async function act(fn: () => Promise<{ status: string }>) {
     if (!ctx) return;
@@ -56,7 +67,77 @@ export function OpportunitiesPanel({
     onChanged();
   }
 
+  /*
+   * ★ NO BUTTON WHERE THE CONNECTION ANSWERS BY ITSELF ★
+   * Every row whose carrier has an automatic connection and no current answer
+   * is checked in the background, once. The dispatcher presses nothing and does
+   * not leave the search.
+   */
+  useAutomaticFactoringChecks([...top, ...rest], ctx, onChanged);
+
   const openDraft = drafts.find((d) => d.draftId === openDraftId);
+
+  /*
+   * ★ THE FACTORING FILTER, AND THE CARRIER'S POLICY ABOUT WHAT IT HIDES ★
+   *
+   * Two different things, applied in order and reported separately.
+   *
+   * The FILTER is the dispatcher's own choice, right now. The POLICY is the
+   * carrier's standing rule about rejected, unknown and stale freight — and
+   * whatever it hides is COUNTED and said out loud underneath. A load that
+   * silently vanished would teach a dispatcher that the market is thin rather
+   * than that their own organization chose not to show it.
+   *
+   * Policy is read per ROW, from the carrier the truck runs under, because a
+   * board with two carriers' trucks on it has two carriers' policies on it.
+   */
+  const view = useMemo(() => {
+    const apply = (rows: MatchWithListing[]) => {
+      const kept: MatchWithListing[] = [];
+      const deprioritized: MatchWithListing[] = [];
+      let hidden = 0;
+      const hiddenReasons = new Set<FactoringVisibility>();
+
+      for (const row of rows) {
+        if (!matchesFactoringFilter(row.factoring, factoringFilter)) continue;
+        const policy = policyForSync(row.match.carrierOrganizationId);
+        if (hiddenByPolicy(row.factoring, policy)) {
+          hidden++;
+          hiddenReasons.add("hide");
+          continue;
+        }
+        if (deprioritizedByPolicy(row.factoring, policy)) deprioritized.push(row);
+        else kept.push(row);
+      }
+      return { kept, deprioritized, hidden, hiddenReasons };
+    };
+
+    const topView = apply(top);
+    const restView = apply(rest);
+    return {
+      // A deprioritized row never reaches the short list; it falls through to
+      // the rest of the list, which is still visible and still explained.
+      top: topView.kept,
+      rest: [...restView.kept, ...topView.deprioritized, ...restView.deprioritized],
+      hidden: topView.hidden + restView.hidden,
+    };
+  }, [top, rest, factoringFilter]);
+
+  /** How many rows each filter option would leave. Nothing hides silently. */
+  const factoringCounts = useMemo(() => {
+    const all = [...top, ...rest];
+    return Object.fromEntries(
+      FACTORING_FILTER_ORDER.map((key) => [
+        key, all.filter((r) => matchesFactoringFilter(r.factoring, key)).length,
+      ]),
+    ) as Partial<Record<FactoringFilterKey, number>>;
+  }, [top, rest]);
+
+  /** The carrier whose factor these answers came from, when there is one. */
+  const factoringCarrierName = top[0]?.match.carrierName ?? rest[0]?.match.carrierName;
+
+  /** Any factoring at all on this board? No permission, no filter. */
+  const showsFactoring = [...top, ...rest].some((r) => r.factoring !== undefined);
 
   /**
    * Whether this load can be argued about, and if not, why not.
@@ -99,8 +180,20 @@ export function OpportunitiesPanel({
       : {};
     const blockedByDriver = Boolean(driver && !driverClear(driver));
 
+    /*
+     * ★ ONE BUTTON, AND ONLY WHERE THERE IS NO AUTOMATIC CHECK ★
+     * The service decides this, not the screen: `offersManualCheck` is false
+     * whenever the carrier's connection answers by itself, so a completed
+     * automatic result and a "Check with factoring" button can never appear
+     * together on one row.
+     */
+    const factoring = row.factoring?.offersManualCheck
+      ? { onCheckFactoring: () => setChecking(row) }
+      : {};
+
     return {
       ...send,
+      ...factoring,
       onTalkToBroker: negotiable && !blockedByDriver ? () => setTalkTo(row) : undefined,
       /*
        * A label for the scan, the sentence for the tip. The note is often a
@@ -132,6 +225,15 @@ export function OpportunitiesPanel({
           </h2>
 
         </div>
+        {showsFactoring ? (
+          <FactoringFilter
+            value={factoringFilter}
+            onChange={setFactoringFilter}
+            counts={factoringCounts}
+            carrierName={factoringCarrierName}
+            className="w-52"
+          />
+        ) : null}
         {drafts.filter((d) => d.status === "ready").length > 0 ? (
           <Badge tone="info">
             <Mail aria-hidden className="size-3" />
@@ -148,16 +250,16 @@ export function OpportunitiesPanel({
       ) : null}
 
       <div className="mt-3">
-        {top.length === 0 && rest.length === 0 ? (
+        {view.top.length === 0 && view.rest.length === 0 ? (
           <p className="flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-4 text-[0.8125rem] font-medium text-fg">
             Nothing found yet
             <InfoTip text="Start a search and whatever the connected sources have will appear here, checked against this truck." />
           </p>
         ) : (
           <>
-            {top.length > 0 ? (
+            {view.top.length > 0 ? (
               <ul className="space-y-2">
-                {top.map((row, i) => (
+                {view.top.map((row, i) => (
                   <MatchCard
                     key={row.match.matchId}
                     row={row}
@@ -175,22 +277,22 @@ export function OpportunitiesPanel({
               <div className="rounded-md border border-dashed border-border px-3.5 py-4 text-center">
                 <p className="text-[0.8125rem] font-medium text-fg">Nothing is eligible right now</p>
                 <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-                  {rest.length} load{rest.length === 1 ? " was" : "s were"} considered and every one
+                  {view.rest.length} load{view.rest.length === 1 ? " was" : "s were"} considered and every one
                   of them failed something. Open the list below to see what.
                 </p>
               </div>
             )}
 
-            {rest.length > 0 ? (
+            {view.rest.length > 0 ? (
               <div className="mt-3">
                 <Button variant="ghost" size="sm" onClick={() => setShowRest((v) => !v)}>
                   {showRest
                     ? "Hide the rest"
-                    : `Show the other ${rest.length} load${rest.length === 1 ? "" : "s"}`}
+                    : `Show the other ${view.rest.length} load${view.rest.length === 1 ? "" : "s"}`}
                 </Button>
                 {showRest ? (
                   <ul className="mt-2 space-y-2">
-                    {rest.map((row) => (
+                    {view.rest.map((row) => (
                       <MatchCard
                         key={row.match.matchId}
                         row={row}
@@ -210,6 +312,18 @@ export function OpportunitiesPanel({
         )}
       </div>
 
+      {view.hidden > 0 ? (
+        <p
+          data-testid="factoring-hidden-note"
+          className="mt-3 flex items-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-2 text-[0.75rem] leading-relaxed text-fg-muted"
+        >
+          <Landmark className="size-3.5 shrink-0 text-fg-subtle" aria-hidden />
+          {view.hidden} load{view.hidden === 1 ? " is" : "s are"} hidden by this carrier&rsquo;s
+          factoring policy ({FACTORING_VISIBILITY_LABEL.hide.toLowerCase()}). Change it in
+          Settings &rarr; Factoring to see them.
+        </p>
+      ) : null}
+
       {openDraft ? (
         <DraftReview
           draft={openDraft}
@@ -226,6 +340,22 @@ export function OpportunitiesPanel({
           ctx={ctx}
           onClose={() => setTalkTo(null)}
           onChanged={onChanged}
+        />
+      ) : null}
+      {checking && ctx ? (
+        <CheckWithFactoringDialog
+          ctx={ctx}
+          subject={{
+            carrierOrganizationId: checking.match.carrierOrganizationId,
+            brokerNameObserved: checking.listing.broker.name,
+            brokerMcNumber: checking.listing.broker.mcNumber,
+            proposedAmountCents: checking.listing.offeredRateCents,
+            dispatchCycleId: checking.match.dispatchCycleId,
+            listingId: checking.listing.listingId,
+            laneLabel: `${checking.listing.origin.city}, ${checking.listing.origin.state} → ${checking.listing.destination.city}, ${checking.listing.destination.state}`,
+          }}
+          onClose={() => setChecking(null)}
+          onRecorded={onChanged}
         />
       ) : null}
       {sendTo ? (

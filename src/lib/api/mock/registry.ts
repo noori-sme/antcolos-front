@@ -22,6 +22,8 @@ import { resetEldRegistry } from "./eld-registry";
 import { resetFleetTelemetry } from "./fleet-telemetry";
 import { resetFuelStore } from "./fuel-store";
 import { resetImportStore } from "./import-store";
+import { resetFactoring } from "./factoring-registry";
+import { resetFactoringImports } from "./factoring-import";
 import { resetInsuranceRegistry } from "./insurance-registry";
 import { resetInvoiceRegistry } from "./invoice-registry";
 import { resetListings } from "./listing-registry";
@@ -216,6 +218,13 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   { id: "work_assignments", holds: "Who has claimed which piece of workspace work", module: "dispatch-workspace.ts", reset: resetWorkAssignments },
   { id: "compliance_needs_you", holds: "Compliance's own Needs You state", module: "compliance-needs-you.ts", reset: resetComplianceNeedsYou },
   { id: "document_needs_you", holds: "Document Center's own Needs You state", module: "document-needs-you.ts", reset: resetDocumentNeedsYou },
+
+  /* -- Factoring --------------------------------------------------------- */
+  // Two stores, because they are two kinds of record. The answers a carrier
+  // holds outlive any one file; a staged import is a file somebody brought in
+  // and may never commit.
+  { id: "factoring", holds: "Factoring connections, policies, results and overrides", module: "factoring-registry.ts", reset: resetFactoring },
+  { id: "factoring_imports", holds: "Staged factoring debtor exports and their rows", module: "factoring-import.ts", reset: resetFactoringImports },
 
   /* -- Audit, risk and the integration boundary -------------------------- */
   { id: "audit", holds: "The ONE audit ledger", module: "audit-ledger.ts", reset: resetAuditLedger },

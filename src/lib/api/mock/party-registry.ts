@@ -802,6 +802,46 @@ function requireVisibleParty(ctx: PartyContext, partyId: string): Party {
   return party;
 }
 
+/**
+ * The canonical broker a carrier knows by MC number, or nothing.
+ *
+ * ★ WHY THIS READ EXISTS, AND WHY IT IS NOT A SEARCH ★
+ * Factoring answers are about a broker's MC. To attach one to a permanent
+ * profile rather than to a name, something has to turn an MC into a `partyId`
+ * — and the alternative to this three-line read was a second broker table
+ * inside the factoring module, which is exactly the duplicate-profile problem
+ * the directory exists to prevent.
+ *
+ * It is deliberately narrow. It takes a NORMALIZED MC and nothing else: there
+ * is no name argument, no fuzzy fallback and no way to page through it, so it
+ * cannot be used to enumerate another carrier's customers. It is scoped to
+ * companies the carrier already has a directory relationship with, so an
+ * unknown MC comes back as nothing and the caller has to treat the row as
+ * unmatched rather than inventing a profile.
+ *
+ * It creates nothing. Callers that want a new profile still go through
+ * `planResolution` / `commitResolution` with a person deciding.
+ */
+export function brokerByVerifiedMcSync(
+  carrierOrganizationId: string,
+  normalizedMcNumber: string,
+): Party | undefined {
+  return db().parties.find(
+    (p) => p.identifiers.mcNumber === normalizedMcNumber
+      && p.status !== "merged"
+      && hasRelationship(carrierOrganizationId, p.partyId),
+  );
+}
+
+/** The canonical record, only where this carrier already knows the company. */
+export function partyVisibleToCarrierSync(
+  carrierOrganizationId: string,
+  partyId: string,
+): Party | undefined {
+  if (!hasRelationship(carrierOrganizationId, partyId)) return undefined;
+  return db().parties.find((p) => p.partyId === partyId);
+}
+
 function partyLoadLinks(ctx: PartyContext, predicate: (l: PartyLoadLink) => boolean) {
   return db()
     .loadLinks.filter((l) => l.carrierOrganizationId === ctx.organizationId && predicate(l))
