@@ -19,6 +19,11 @@ export type * from "./access";
 export type * from "./workforce";
 export type * from "./qualification";
 export type * from "./referrals";
+export type * from "./profile";
+export {
+  AvatarRejectedError, NotProfileOwnerError, ProfileAlreadyInitializedError,
+  ProfileInputError, ProfileNotFoundError, UsernameImmutableError,
+} from "./profile";
 export type * from "./import";
 
 
@@ -44,6 +49,7 @@ import type { NeedsYouService } from "./needs-you";
 import type { ReportsService } from "./reports";
 import type { ResponsibilityService } from "./responsibility";
 import type { WorkforceService } from "./workforce";
+import type { ProfileService } from "./profile";
 import type { QualificationService } from "./qualification";
 import type { ReferralsService } from "./referrals";
 
@@ -134,4 +140,17 @@ export interface AntcolosServices {
    * is still the one invitation command.
    */
   referrals: ReferralsService;
+  /**
+   * The permanent, organization-independent career record.
+   *
+   * ★ THE ONE SERVICE WHOSE READS TAKE NO ServiceContext ★
+   * Every other entry on this interface is read AS A MEMBERSHIP, INSIDE AN
+   * ORGANIZATION, because every other record belongs to one. A profile belongs
+   * to a person: it is read by signed-out strangers following a link and by
+   * link-preview crawlers, and it outlives every organization the person ever
+   * joins. Its reads take a viewer — an optional user id, and no permission —
+   * which is what makes it structurally impossible for an employer to unlock a
+   * profile section its owner chose to hide. See contracts/profile.ts.
+   */
+  profile: ProfileService;
 }

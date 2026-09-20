@@ -62,6 +62,7 @@ files rather than a copy. `npm test` runs both.
 | ELD & Telematics foundation | `/eld`, `/eld/devices/[deviceId]` |
 | Hierarchical responsibility, delegation & escalation | `/work`, `/settings/responsibility` |
 | Roles and permissions | `/settings/permissions` — the permission catalog, reusable role templates, and applying one to a Membership |
+| Permanent user profile & onboarding | `/onboarding/profile`, `/profile/[username]`, `/profile/[username]/a/[key]`, `/account/profile` |
 
 Everything else is a placeholder screen that says so.
 
@@ -665,6 +666,71 @@ milestone happened. It is recorded as `inferred`, with its source, timestamp and
 confidence, and stays that way until a person confirms or corrects it. Nothing
 back-fills a timestamp to make a timeline look tidy.
 
+## The permanent user profile
+
+The one record in Antcolos that belongs to a person rather than to an
+organization, and the only one that survives leaving every organization they
+were ever in. Full design notes in `docs/permanent-user-profile.md`.
+
+**Signup is three stages now, not two.**
+
+```
+1. Sign up            email → code → username → password        /sign-up
+2. Permanent profile  avatar (skippable), full name, headline   /onboarding/profile
+3. Role               carrier / driver / dispatch, or join one  /onboarding
+```
+
+The profile step sits *before* role selection on purpose: the record it creates
+outlives every answer given at step 3. "Skip for now" skips the avatar and the
+headline, never the record — the permanent profile is created either way, tied
+to the username chosen at signup, and an invitation rides through the step in
+`?next=` rather than being dropped.
+
+**Nothing on a profile is typed in except four fields.** Name, headline, bio and
+location are the person's own; everything else is derived:
+
+- **Workplace history** — one `WorkplaceAssociation` per period at one
+  organization, with the company name snapshotted when it opened. An
+  association ends; it is never deleted, so a carrier cannot erase the fact
+  that somebody worked there.
+- **Operational figures** — folded on every read from `ProfileContribution`, an
+  append-only ledger where each row names the organization the work was done
+  for, the moment it happened and the record it came from. There is no stored
+  total anywhere, so any figure can be traced back to its rows, and a
+  cancellation is a reversing row rather than an edit to a sum.
+- **Milestones** — computed from that ledger by a pure rule table, and dated to
+  the contribution that crossed the line: "100th load dispatched, March 2026",
+  not "as of whenever you opened the page".
+
+**The one badge the rule engine refuses to invent.** "Top Dispatcher Q3 2026" is
+a statement about everybody *else's* quarter, and a profile read holds exactly
+one person's rows. Deriving it would mean shipping every dispatcher's figures to
+every client, or inventing a ranking from one person's data. Comparative awards
+are therefore *conferred* — written by the platform, carrying the period they
+were decided for, and labelled "Awarded by Antcolos" wherever they appear.
+`src/lib/profile/achievements.test.ts` asserts that no rule can produce one.
+
+**It is the only service whose reads take no `ServiceContext`.** Every other
+call in the app is made *as a membership, inside an organization*. A profile is
+read by signed-out strangers following a link and by link-preview crawlers in
+group chats, neither of which is a membership in anything — so its reads take a
+viewer: an optional user id, and no permission at all. That is what makes "no
+employer can unlock a section its owner hid" a property of the interface rather
+than a promise in a comment.
+
+**Sharing.** `/profile/[username]` is public (`@sam` and `SAM` redirect to it),
+each achievement has its own page and its own Open Graph image, and the share
+dialog previews the card *as a stranger sees it* — so somebody who hid their
+figures approves a card without figures rather than discovering the difference
+afterwards. A profile set to "Antcolos only" or private renders no card and is
+marked `noindex`: a link preview in a group chat is not a signed-in reader.
+
+**The safety score is written down where it is shown** — 100, less 8 per
+recorded safety event, plus 2 per clean inspection, clamped to 0–100, and
+`null` rather than 100 for a driver with no history. It is Antcolos's own
+summary of what carriers recorded here; it is not a CSA or SMS score and has no
+regulatory meaning.
+
 ## Try the permission and identity model
 
 The app ships with one permanent user and six memberships. Use the organization switcher at the top of the sidebar:
@@ -678,7 +744,7 @@ The app ships with one permanent user and six memberships. Use the organization 
 - **Cascade Haul** — you are a Company driver scoped to your own loads. `/home` hands off to `/driver/home`, and you see three of the four loads that exist. On a proposal you see the rate per mile, your share and the miles — the linehaul and the total rate are named as withheld — and you may counter on schedule, route, home time and hours, but not on rate.
 - **Stonebridge Carriers** — the same person as an **Owner-operator**. Same product, same screens, a different rulebook: the full rate, and rate counteroffers up to five at a time. Comparing these two memberships is the fastest way to see that the difference lives in policy and the service layer, not in the UI.
 
-Your profile, avatar, theme and density never change when you switch. The data cache is cleared on every switch, so one organization's records can never be served to a screen rendered under another.
+Your profile, avatar, theme and density never change when you switch — `/account/profile` renders the same record in every workspace, because nothing on it belongs to one. The data cache is cleared on every switch, so one organization's records can never be served to a screen rendered under another.
 
 ## Architecture
 
@@ -1764,12 +1830,26 @@ Every screen in the module says so on the screen, not only here.
 
 `src/lib/api/contracts/` is the seam. Every method takes a `ServiceContext` carrying the organization, membership, permission set, record scope and an actor snapshot — there is no method that accepts a `User`. The mock adapter enforces permissions and organization ownership itself, so a UI bug that renders a forbidden button still fails at the seam.
 
+There is exactly one deliberate exception, and it is documented where it lives.
+`ProfileService` reads take a `ProfileViewer` — an optional user id, and no
+permission — because the permanent profile belongs to a person rather than to an
+organization, and is read by signed-out strangers and link-preview crawlers who
+are members of nothing. Its one organization-scoped method,
+`recordContribution`, takes a `ServiceContext` like everything else. See
+`src/lib/api/contracts/profile.ts` and `docs/permanent-user-profile.md`.
+
 Two audit records say what the backend still owns and what it must not be asked
 to redesign later:
 
 - `docs/zero-entry-data-audit.md` — where data enters, which facts are
   canonical, and the persistence, ordering, delivery and authorization
   guarantees the frontend describes but cannot provide.
+- `docs/permanent-user-profile.md` — the permanent career record: the four
+  tables behind it, why its reads are the one place a `ServiceContext` is wrong,
+  why no figure is stored, and the six things the backend still owes the seam
+  (username immutability, avatar re-validation and scanning, rate limiting,
+  a uniqueness constraint on contribution source references, the ranking behind
+  a conferred award, and one source for the share card).
 - `docs/contract-opportunity-future-compatibility.md` — whether the current
   architecture blocks a later Contract Opportunity Intelligence module. It does
   not, so nothing was built: the record is the canonical data ownership map, the
@@ -1807,6 +1887,27 @@ They cover the service layer, which is where the rules actually live:
   invoice that was already issued.
 - **Needs You** — invoice items land in the shared queue, are gated on
   `invoices:view`, and snooze and resolve like any other item.
+
+### The permanent profile
+
+`src/lib/profile/*.test.ts` and `src/lib/api/mock/profile.test.ts` add 128
+cases, split the way the module is: nine files of pure domain tests that never
+touch a store, and one service-layer file that proves the boundary.
+
+- **Nothing is inflated.** Overlapping jobs count once toward time worked, not
+  twice; a reversing row takes a badge back and a later row re-earns it, dated
+  to the crossing that stuck; a perfect record over three loads wins no quality
+  badge, because both are gated on volume.
+- **Nothing is invented.** No rule in the catalogue can produce a comparative
+  award, however good the figures are — asserted directly against the conferred
+  definitions, so adding one by accident fails the suite.
+- **Nothing leaks.** A private profile answers identically to a handle nobody
+  holds; a hidden section is absent rather than empty and is named in
+  `withheld`; a share card never carries a figure the profile withholds; and
+  the owner's own view is the only one that overrides any of it.
+- **Nothing is editable that should not be.** There is no path through the
+  service that changes a username, and initializing a second time is refused
+  rather than treated as an edit.
 
 ### Responsibility, delegation and escalation
 

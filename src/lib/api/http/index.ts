@@ -433,4 +433,29 @@ export const httpServices: AntcolosServices = {
     commit: notImplemented("import.commit"),
     list: notImplemented("import.list"),
   },
+  /**
+   * The permanent profile.
+   *
+   * Four things the backend must enforce that no frontend can. The username is
+   * unique and immutable, so `initialize` is idempotent per account and never
+   * reads a handle from its own request body. Avatar bytes are re-checked and
+   * scanned on the server, because a content type and a byte length reported by
+   * a browser are claims rather than evidence. Public reads are rate limited
+   * and answer identically for a handle nobody holds and a profile the caller
+   * may not read. And the contribution ledger is append-only, with a uniqueness
+   * constraint on `sourceRef`, so a retried job cannot post the same load twice
+   * and inflate somebody's record.
+   */
+  profile: {
+    initialize: notImplemented("profile.initialize"),
+    getOwn: notImplemented("profile.getOwn"),
+    getByUsername: notImplemented("profile.getByUsername"),
+    update: notImplemented("profile.update"),
+    setVisibility: notImplemented("profile.setVisibility"),
+    uploadAvatar: notImplemented("profile.uploadAvatar"),
+    removeAvatar: notImplemented("profile.removeAvatar"),
+    listWorkplaces: notImplemented("profile.listWorkplaces"),
+    recordContribution: notImplemented("profile.recordContribution"),
+    shareCard: notImplemented("profile.shareCard"),
+  },
 };

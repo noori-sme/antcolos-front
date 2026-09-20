@@ -3,6 +3,7 @@ export type * from "./permission";
 export type * from "./user";
 export type * from "./organization";
 export type * from "./membership";
+export type * from "./profile";
 export type * from "./session";
 export type * from "./load";
 export type * from "./invoice";
@@ -185,6 +186,10 @@ export {
   RESTRICTED_QUALIFICATION_CATEGORIES, RESTRICTED_CATEGORY_REASON,
   isRestrictedQualificationCategory,
 } from "./qualification";
+export {
+  CAPACITY_LABEL, METERED_CAPACITIES, CONTRIBUTION_UNIT, TIER_LABEL,
+  SHARE_TARGET_LABEL,
+} from "./profile";
 export type * from "./import";
 export {
   CLAIM_OUTCOME_LABEL, IMPORT_LIMITATION, IMPORT_ASSERTION_BASIS, SOLO_OWNER_NOTE,
