@@ -8,7 +8,8 @@ import { mockStore } from "../store";
 import { finalizeLoad, finalizationBlockers } from "../driver-workflow-finalize";
 import { integrations } from "@/lib/integrations";
 import { enqueueExtraction } from "../rate-con-extractions";
-import { autoIndexBrokers } from "../party-registry";
+import { observeBrokersFromRateCon } from "../party-registry";
+import { authorityService } from "@/lib/directory/authority";
 import { recordFinalizationOnLoop } from "../mt-loop";
 import { rateConfirmationForLoad } from "../rate-confirmation-record";
 
@@ -37,13 +38,13 @@ import { rateConfirmationForLoad } from "../rate-confirmation-record";
  * shipper off a name and an address is how a carrier ends up with four profiles
  * for one dock.
  *
- * There is now exactly one carve-out, and it is narrow enough to state here: a
- * BROKER block carrying an MC number is not soft evidence. An MC number is
- * issued once, by an authority, to one company, and `matching.ts` already
- * treats it as decisive. Those — and only those — are indexed automatically as
- * unverified, unclaimed profiles. Everything else on the confirmation still
- * goes to a person. See `src/lib/directory/auto-broker.ts` for why the two
- * cases are different in kind rather than in degree.
+ * A BROKER block is the one thing that takes a different route, and it is not a
+ * relaxation of that rule — it is a stricter one. The document does not create
+ * anything. It produces an OBSERVATION, and a canonical broker profile exists
+ * only when the FMCSA authority service confirms the MC number, populated from
+ * the register's fields rather than the document's. On this branch that service
+ * is not connected, so nothing is created at all and every observation is held
+ * pending. See `src/lib/directory/broker-resolution.ts`.
  */
 
 type Event = DomainEvent<LoadFinalizedPayload>;
@@ -236,31 +237,30 @@ export const invoicePreparationProjection = subscriber({
 /**
  * The parties on the confirmation, handed to the Directory.
  *
- * Two things happen here, and keeping them apart is the whole design.
- *
- * **Brokers with an MC number are indexed immediately.** An MC number is
- * decisive — issued once, by an authority, to one company — so a broker
- * carrying one is an identity rather than a guess. The profile is created
- * unverified and unclaimed, and nothing else about it is assumed.
+ * **The broker is OBSERVED, not created.** What this document said — the name,
+ * the MC number, the address — is preserved with its provenance and then
+ * resolved against the FMCSA authority service. A permanent broker profile
+ * appears only if the register confirms the MC, and it is populated from the
+ * register rather than from the document. If the service is unavailable, says
+ * no such entity, or contradicts the paperwork, the observation is kept and
+ * nothing canonical is written.
  *
  * **Everything else still waits for a person.** Shippers, receivers,
- * facilities, contacts, brokers with no MC number, and every LINK between this
- * load and any of them. The Directory's matching tiers deliberately include no
- * tier meaning "sure enough to merge without asking", and a shipper matched on
- * a name and an address is exactly the case that produces four profiles for one
- * dock.
+ * facilities, contacts, and every LINK between this load and any of them. A
+ * shipper matched on a name and an address is exactly the case that produces
+ * four profiles for one dock.
  *
- * So the projection reports `needs_review` even when it created something: the
- * queue entry is still there, the dispatcher still confirms the links, and what
- * changed is that the broker is already a profile when they arrive instead of a
- * name they have to mint.
+ * So the projection reports `needs_review`: the queue entry is still there and
+ * the dispatcher still confirms the links. What changed is that a broker the
+ * register knows is already one permanent profile that every future
+ * confirmation for that MC resolves to.
  */
 export const directoryProjection = subscriber({
   id: "directory_parties",
   label: "Broker, Shipper, Receiver, Facility and Contact links",
   targetModule: "load",
   mock: false,
-  project(event: Event): ProjectionOutcome {
+  async project(event: Event): Promise<ProjectionOutcome> {
     const { parties, loadId, loadReference, originalDocumentId } = event.payload;
 
     const extraction: RateConfirmationExtraction = {
@@ -293,38 +293,48 @@ export const directoryProjection = subscriber({
       reviewedAt: event.payload.signature.signedAt,
     };
 
-    // Indexed BEFORE queueing, so the dispatcher who opens the review finds the
-    // broker proposed for linking rather than for creation. The queue entry is
-    // idempotent on the rate confirmation and the indexer abstains on any
-    // resemblance, so replaying this event creates nothing a second time.
-    const indexed = autoIndexBrokers(event.scope.organizationId, extraction);
+    // Observed BEFORE queueing, so a dispatcher who opens the review finds a
+    // resolved broker proposed for linking rather than for creation. Both the
+    // queue entry and the observation recorder are idempotent enough to replay:
+    // the queue keys on the rate confirmation, and a second observation for an
+    // MC that already resolved attaches rather than creating.
+    const discovery = await observeBrokersFromRateCon(event.scope.organizationId, extraction);
 
     const queued = enqueueExtraction(event.scope.organizationId, extraction, {
       loadReference,
       rateConfirmationId: event.payload.rateConfirmationId,
     });
 
-    const createdNames = indexed.created.map((p) => p.legalName).join(", ");
+    const createdNames = discovery.created.map((p) => p.legalName).join(", ");
+    const heldCount = discovery.held.length;
+
+    const brokerLine = discovery.created.length > 0
+      ? `FMCSA confirmed ${createdNames}, so ${discovery.created.length === 1 ? "it is" : "they are"} now a permanent broker profile — verified and unclaimed. `
+      : discovery.attached.length > 0
+        ? `The broker on ${loadReference} resolved to the permanent profile that already exists for its MC number. `
+        : heldCount > 0
+          ? `The broker on ${loadReference} was recorded as an observation; no profile was created. `
+          : "";
+
+    const reason = discovery.created.length > 0
+      ? "The identity came from the federal register, not from the document — the rate "
+        + "confirmation only said which MC number to look up. Nobody from the brokerage has "
+        + "claimed the profile."
+      : heldCount > 0
+        ? `${discovery.held.map((o) => o.detail).filter(Boolean).join(" ")} The document's values are kept with their provenance and will resolve when the authority answers.`
+        : "Every party on this confirmation still needs a person: the Directory refuses to "
+          + "create or merge on a name-and-address match.";
 
     return {
       state: "needs_review",
-      detail:
-        (indexed.created.length > 0
-          ? `Indexed ${createdNames} as ${indexed.created.length === 1 ? "an unclaimed broker profile" : "unclaimed broker profiles"} from ${loadReference}. `
-          : "")
-        + `The parties on ${loadReference} are queued for resolution in Directory → Review.`,
-      reason:
-        (indexed.created.length > 0
-          ? `${indexed.created.length === 1 ? "That profile carries" : "Those profiles carry"} an MC number, which is decisive, and ${indexed.created.length === 1 ? "is" : "are"} unverified and unclaimed: nothing was checked against FMCSA and nobody from the brokerage has claimed the record. `
-          : "")
-        + "Everything else on the confirmation — shippers, receivers, facilities, contacts, and every link between this load and any of them — still needs a person, because the Directory refuses to create or merge on a name-and-address match."
-        + (indexed.skipped.length > 0
-          ? ` Not indexed: ${indexed.skipped.map((s) => `${s.name} (${s.role}) — ${s.detail}`).join(" ")}`
-          : ""),
+      detail: `${brokerLine}The parties on ${loadReference} are queued for resolution in Directory → Review.`,
+      reason: authorityService().connected
+        ? reason
+        : `${reason} The FMCSA authority data service is not connected on this build, so no MC number can be confirmed here.`,
       retryable: false,
       producedRefs: [
         externalRef("load", queued.id, { entityId: queued.id, entityKind: "resolution_queue_entry" }),
-        ...indexed.created.map((p) =>
+        ...discovery.created.map((p) =>
           externalRef("load", p.partyId, { entityId: p.partyId, entityKind: "party" })),
       ],
     };

@@ -1,12 +1,12 @@
-import { Bot } from "lucide-react";
+import { BadgeCheck, CircleHelp, Clock, ShieldAlert, TriangleAlert } from "lucide-react";
 import type {
-  MatchConfidence, PartyClaimState, PartyRecordStatus, PartyRole, PartyStanding,
-  PartyVerificationState,
+  AuthorityStatus, BrokerIdentityState, MatchConfidence, PartyClaimState,
+  PartyRecordStatus, PartyRole, PartyStanding, PartyVerificationState,
 } from "@/types";
 import { cn } from "@/lib/utils";
-import { AUTO_INDEXED_BADGE, AUTO_INDEXED_EXPLANATION } from "@/lib/directory/auto-broker";
 import {
-  CLAIM_DESCRIPTION, CLAIM_LABEL, CONFIDENCE_LABEL, PARTY_ROLE_LABEL,
+  AUTHORITY_DESCRIPTION, AUTHORITY_LABEL, CLAIM_DESCRIPTION, CLAIM_LABEL,
+  CONFIDENCE_LABEL, IDENTITY_DESCRIPTION, IDENTITY_LABEL, PARTY_ROLE_LABEL,
   PARTY_STATUS_LABEL, STANDING_LABEL, VERIFICATION_LABEL,
 } from "./directory-labels";
 
@@ -144,10 +144,9 @@ const CLAIM_TONE: Record<PartyClaimState, string> = {
 /**
  * Whether the company behind this profile has claimed it.
  *
- * Shown for brokers and hidden for `unclaimed` unless asked for, because most
- * of the directory is unclaimed and a column of grey "Unclaimed" chips would
- * say nothing. The one place it is always worth saying is on a profile that was
- * also auto-generated — see `AutoIndexedChip`.
+ * Neutral-toned on purpose. Unclaimed is not a problem to be fixed — it is the
+ * ordinary state of a broker who has never heard of Antcolos — and colouring it
+ * amber would tell dispatchers to distrust perfectly good register data.
  */
 export function ClaimChip({
   state,
@@ -166,22 +165,77 @@ export function ClaimChip({
   );
 }
 
+const IDENTITY_TONE: Record<BrokerIdentityState, string> = {
+  verified: "bg-st-success-bg text-st-success",
+  pending: "bg-st-neutral-bg text-st-neutral",
+  conflicted: "bg-st-danger-bg text-st-danger",
+};
+
+const IDENTITY_ICON = {
+  verified: BadgeCheck,
+  pending: Clock,
+  conflicted: TriangleAlert,
+} as const;
+
 /**
- * The one chip that says a machine wrote this record and nobody has stood
- * behind it.
+ * What FMCSA said about who this company is.
  *
- * It carries BOTH facts in one line — auto-generated, and unclaimed — because
- * they are the two things a dispatcher needs before they trust a figure on the
- * profile, and splitting them across two chips invites reading only one.
+ * The axis people most want to collapse into "verified", and the reason this
+ * chip exists separately from `ClaimChip`: a profile is routinely
+ * "FMCSA verified" and "Unclaimed" at the same time, and both chips render
+ * side by side rather than fighting over one word.
  */
-export function AutoIndexedChip({ className }: { className?: string }) {
+export function IdentityChip({
+  state,
+  className,
+}: {
+  state: BrokerIdentityState;
+  className?: string;
+}) {
+  const Icon = IDENTITY_ICON[state];
   return (
     <span
-      className={cn(CHIP, "inline-flex items-center gap-1 bg-st-warning-bg text-st-warning", className)}
-      title={AUTO_INDEXED_EXPLANATION}
+      className={cn(CHIP, "inline-flex items-center gap-1", IDENTITY_TONE[state], className)}
+      title={IDENTITY_DESCRIPTION[state]}
     >
-      <Bot aria-hidden className="size-3" />
-      {AUTO_INDEXED_BADGE}
+      <Icon aria-hidden className="size-3" />
+      {IDENTITY_LABEL[state]}
+    </span>
+  );
+}
+
+const AUTHORITY_TONE: Record<AuthorityStatus, string> = {
+  active: "bg-st-success-bg text-st-success",
+  inactive: "bg-st-warning-bg text-st-warning",
+  revoked: "bg-st-danger-bg text-st-danger",
+  unknown: "bg-st-neutral-bg text-st-neutral",
+};
+
+/**
+ * Whether they may broker freight today.
+ *
+ * Hidden when `active`, like every other "nothing to see here" chip in this
+ * file: a row of green authority badges would bury the revoked one, which is
+ * the only one anybody needs to act on.
+ */
+export function AuthorityChip({
+  status,
+  className,
+  showActive = false,
+}: {
+  status: AuthorityStatus;
+  className?: string;
+  showActive?: boolean;
+}) {
+  if (status === "active" && !showActive) return null;
+  const Icon = status === "unknown" ? CircleHelp : ShieldAlert;
+  return (
+    <span
+      className={cn(CHIP, "inline-flex items-center gap-1", AUTHORITY_TONE[status], className)}
+      title={AUTHORITY_DESCRIPTION[status]}
+    >
+      <Icon aria-hidden className="size-3" />
+      {AUTHORITY_LABEL[status]}
     </span>
   );
 }

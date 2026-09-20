@@ -2,7 +2,7 @@
 
 import {
   ArrowLeft, Building2, ChevronRight, FileText, MapPin, Package, Pin, ScrollText,
-  Bot, TriangleAlert, UserRound,
+  BadgeCheck, TriangleAlert, UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -15,19 +15,18 @@ import { useServiceContext } from "@/lib/api/use-service-context";
 import { getPartyProfile, addNote, setStanding, setRating } from "@/lib/api/mock/party-registry";
 import { useCan } from "@/lib/session/hooks";
 import type { Load, PartyProfileView, PartyStanding } from "@/types";
-import { isAutoIndexedUnclaimed } from "@/types";
-import { AUTO_INDEXED_EXPLANATION } from "@/lib/directory/auto-broker";
+import { isVerifiedUnclaimedBroker } from "@/types";
 import { laneLabel } from "@/types";
 import { cn } from "@/lib/utils";
 import {
-  AutoIndexedChip, ClaimChip, PartyStatusChip, RatingStars, RoleChip, StandingChip,
-  VerificationChip,
+  AuthorityChip, ClaimChip, IdentityChip, PartyStatusChip, RatingStars, RoleChip,
+  StandingChip, VerificationChip,
 } from "./directory-chips";
 import {
   CONTACT_KIND_LABEL, PARTY_STATUS_DESCRIPTION, STANDING_DESCRIPTION, STANDING_LABEL,
   VERIFICATION_DESCRIPTION, formatAddress, formatCityState, formatDate,
   formatDateTime, formatMcNumber, formatPhone,
-  PROVENANCE_LABEL,
+  AUTHORITY_LABEL, IDENTITY_DESCRIPTION, PROVENANCE_LABEL,
 } from "./directory-labels";
 import { usePartyContext } from "./use-party-context";
 
@@ -170,50 +169,60 @@ export function PartyProfileScreen({ partyId }: { partyId: string }) {
         {party.roles.map((r) => (
           <RoleChip key={r} role={r} />
         ))}
-        {isAutoIndexedUnclaimed(party)
-          ? <AutoIndexedChip />
-          : <PartyStatusChip status={party.status} />}
-        <VerificationChip state={party.verification.state} />
         {/*
-          Always shown here, even when unclaimed. On a profile — unlike a list
-          row — "nobody from this company has an account" is exactly what
-          somebody about to trust the page needs told.
+          The three axes, side by side and never merged into one word. A broker
+          the register confirmed that nobody has signed up to claim reads
+          "FMCSA verified · Authority active · Unclaimed", all three true.
         */}
+        {party.broker
+          ? <IdentityChip state={party.broker.identity.state} />
+          : <PartyStatusChip status={party.status} />}
+        {party.broker ? <AuthorityChip status={party.broker.authority.status} showActive /> : null}
+        {party.broker ? null : <VerificationChip state={party.verification.state} />}
         <ClaimChip state={party.claim.state} showUnclaimed />
         <StandingChip standing={relationship.standing} showStandard />
       </div>
 
       {/*
-        An auto-indexed profile gets its own banner rather than the generic
-        provisional one. "Waiting to be checked" is true of both, but it does
-        not say the thing that actually matters here: no person has ever looked
-        at this record, and the company it describes does not know it exists.
+        A verified, unclaimed broker gets its own banner. It is NOT a warning:
+        this is the permanent, correct state of a good brokerage that has never
+        heard of Antcolos, and the old "waiting to be checked" wording said the
+        opposite of what is true.
       */}
-      {isAutoIndexedUnclaimed(party) ? (
-        <section className="rounded-lg border border-st-warning/35 bg-st-warning-bg/40 p-4">
+      {isVerifiedUnclaimedBroker(party) ? (
+        <section className="rounded-lg border border-border bg-surface-sunken/60 p-4">
           <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
-            <Bot className="size-4 text-st-warning" aria-hidden />
-            Antcolos built this profile from a rate confirmation
+            <BadgeCheck className="size-4 text-st-success" aria-hidden />
+            FMCSA verified, and nobody from the company has claimed it
           </h2>
-          <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-fg-muted">
-            {AUTO_INDEXED_EXPLANATION}
-          </p>
-          <ul className="mt-2 space-y-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+          <ul className="mt-1.5 space-y-1 text-[0.8125rem] leading-relaxed text-fg-muted">
             <li>
-              <span className="font-medium text-fg">The MC number is what it was indexed on.</span>{" "}
-              It came off the broker&apos;s own paperwork and has not been checked against FMCSA.
+              <span className="font-medium text-fg">The identity came from the register.</span>{" "}
+              The legal name, address and authority status below are FMCSA&apos;s, not a rate
+              confirmation&apos;s.
             </li>
             <li>
-              <span className="font-medium text-fg">Everything else is unconfirmed.</span>{" "}
-              The address, phone and email are whatever the document printed.
+              <span className="font-medium text-fg">Unclaimed is not a defect.</span>{" "}
+              This profile is permanent and may stay unclaimed for years. It is the ordinary
+              state of a brokerage that has never signed up.
             </li>
             <li>
               <span className="font-medium text-fg">Nothing here is a recommendation.</span>{" "}
               Antcolos has indexed this brokerage&apos;s activity; it has not vouched for them.
+              Your own experience with them is on this page and is private to you.
             </li>
           </ul>
-          <p className="mt-2 text-[0.8125rem] leading-relaxed text-fg-muted">
-            Confirming it in Directory → Review is what turns it into a checked profile.
+        </section>
+      ) : party.broker && party.broker.identity.state !== "verified" ? (
+        <section className="rounded-lg border border-st-warning/35 bg-st-warning-bg/40 p-4">
+          <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
+            <TriangleAlert className="size-4 text-st-warning" aria-hidden />
+            {party.broker.identity.state === "pending"
+              ? "This broker has not been resolved against FMCSA yet"
+              : "The register and the paperwork disagree about this broker"}
+          </h2>
+          <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-fg-muted">
+            {party.broker.identity.detail ?? IDENTITY_DESCRIPTION[party.broker.identity.state]}
           </p>
         </section>
       ) : party.status === "provisional" ? (
@@ -224,9 +233,6 @@ export function PartyProfileScreen({ partyId }: { partyId: string }) {
           </h2>
           <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-fg-muted">
             {party.reviewReason ?? PARTY_STATUS_DESCRIPTION.provisional}
-          </p>
-          <p className="mt-2 text-[0.8125rem] leading-relaxed text-fg-muted">
-            {PARTY_STATUS_DESCRIPTION.provisional}
           </p>
         </section>
       ) : null}
@@ -297,9 +303,68 @@ export function PartyProfileScreen({ partyId }: { partyId: string }) {
             <Row label="First recorded" value={formatDate(party.createdAt)} />
             <Row label="Last changed" value={formatDate(party.updatedAt)} />
             <p className="mt-3 text-[0.75rem] leading-relaxed text-fg-muted">
-              {VERIFICATION_DESCRIPTION[party.verification.state]}
+              {party.broker
+                ? IDENTITY_DESCRIPTION[party.broker.identity.state]
+                : VERIFICATION_DESCRIPTION[party.verification.state]}
             </p>
           </Panel>
+
+          {/*
+            The register's fields, shown apart from everything else on the page.
+            A claimed brokerage may correct its phone number above and may not
+            touch anything in this panel — so the panel says whose it is.
+          */}
+          {party.broker?.official ? (
+            <Panel title="Official identity — FMCSA">
+              <Row label="Legal name" value={party.broker.official.legalName} />
+              {party.broker.official.dbaName ? (
+                <Row label="Doing business as" value={party.broker.official.dbaName} />
+              ) : null}
+              <Row
+                label="MC number"
+                value={formatMcNumber(party.broker.official.mcNumber) ?? party.broker.official.mcNumber}
+                mono
+              />
+              <Row label="USDOT" value={party.broker.official.dotNumber ?? "Not on file"} mono />
+              <Row
+                label="Registered address"
+                value={formatAddress(party.broker.official.address) || "—"}
+              />
+              <Row label="Entity type" value={party.broker.official.entityType ?? "—"} />
+              <Row
+                label="Operating authority"
+                value={party.broker.official.operatingStatus
+                  ?? AUTHORITY_LABEL[party.broker.authority.status]}
+              />
+              <Row label="Fetched" value={formatDate(party.broker.official.fetchedAt)} />
+              <p className="mt-3 text-[0.75rem] leading-relaxed text-fg-muted">
+                These come from the federal register. Nobody at Antcolos and nobody at the
+                brokerage can edit them — they change only when the register is read again.
+              </p>
+            </Panel>
+          ) : null}
+
+          {/*
+            What the brokerage says about itself, once it has claimed the
+            profile. Separated from the panel above so it is never mistaken for
+            an official field.
+          */}
+          {party.broker?.selfReported ? (
+            <Panel title="What the brokerage says about itself">
+              <Row label="Display name" value={party.broker.selfReported.displayName ?? "—"} />
+              <Row label="Website" value={party.broker.selfReported.website ?? "—"} />
+              <Row label="Phone" value={formatPhone(party.broker.selfReported.phone) || "—"} />
+              <Row label="Email" value={party.broker.selfReported.email ?? "—"} />
+              {party.broker.selfReported.description ? (
+                <p className="mt-2 text-[0.8125rem] leading-relaxed text-fg-muted">
+                  {party.broker.selfReported.description}
+                </p>
+              ) : null}
+              <p className="mt-3 text-[0.75rem] leading-relaxed text-fg-muted">
+                Written by the company that claimed this profile. Antcolos has not checked it.
+              </p>
+            </Panel>
+          ) : null}
 
           <Panel title="Your history with them">
             <Row

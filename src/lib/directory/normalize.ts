@@ -160,15 +160,29 @@ export function normalizeCompanyName(value?: string): string | undefined {
 
   let words = cleaned.split(" ").filter((w) => !COMPANY_NOISE.has(w));
 
-  // Suffixes are only meaningless at the end of a name.
-  while (words.length > 1 && COMPANY_SUFFIXES.has(words[words.length - 1])) {
-    words = words.slice(0, -1);
-  }
-  // "L L C" survives the loop above as three tokens; drop a trailing run.
-  while (words.length > 1 && /^[a-z]$/.test(words[words.length - 1])) {
-    const tail = words.slice(-3).join(" ");
-    if (tail === "l l c") words = words.slice(0, -3);
-    else break;
+  /*
+   * Suffixes are only meaningless at the end of a name, and stripping one can
+   * expose another: "Group, L.L.C." is a spelled-out suffix hiding a plain one
+   * behind it.
+   *
+   * These two rules used to run once each, in order, which made the same
+   * company normalize two different ways — "Acme Group LLC" lost both words and
+   * became "acme", while "Acme Group, L.L.C." dropped the letter run and then
+   * stopped, keeping "acme group". Two keys for one company is exactly what
+   * this function exists to prevent, so they run together until neither
+   * applies.
+   */
+  for (;;) {
+    if (words.length > 1 && COMPANY_SUFFIXES.has(words[words.length - 1])) {
+      words = words.slice(0, -1);
+      continue;
+    }
+    // "L L C" survives as three single-letter tokens; drop a trailing run.
+    if (words.length > 3 && words.slice(-3).join(" ") === "l l c") {
+      words = words.slice(0, -3);
+      continue;
+    }
+    break;
   }
 
   const key = words.join(" ").trim();

@@ -18,7 +18,8 @@ import type {
 } from "@/types";
 import { cn } from "@/lib/utils";
 import {
-  AutoIndexedChip, PartyStatusChip, RatingStars, RoleChip, StandingChip,
+  AuthorityChip, ClaimChip, IdentityChip, PartyStatusChip, RatingStars, RoleChip,
+  StandingChip,
 } from "./directory-chips";
 import {
   CONTACT_KIND_LABEL, formatCityState, formatDate, formatMcNumber, formatPhone,
@@ -356,11 +357,15 @@ function CompanyList({ listings, total }: { listings: DirectoryListing[]; total:
                   <RoleChip key={r} role={r} />
                 ))}
                 {/*
-                  Shown INSTEAD of the generic "Needs review" chip, not beside
-                  it: an auto-indexed record is provisional too, and two amber
-                  chips saying overlapping things is how a row stops being read.
+                  A broker carries its own identity chip, which already says
+                  more than "Needs review" would. The generic status chip is
+                  for everything else.
                 */}
-                {l.autoIndexed ? <AutoIndexedChip /> : <PartyStatusChip status={l.status} />}
+                {l.identityState
+                  ? <IdentityChip state={l.identityState} />
+                  : <PartyStatusChip status={l.status} />}
+                {l.authorityStatus ? <AuthorityChip status={l.authorityStatus} /> : null}
+                <ClaimChip state={l.claimState} />
                 <StandingChip standing={l.standing} />
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.75rem] text-fg-muted">

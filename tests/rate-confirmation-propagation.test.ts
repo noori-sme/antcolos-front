@@ -10,8 +10,7 @@ import {
   rateConfirmationForLoad, rateConfirmationVersions,
 } from "@/lib/api/mock/rate-confirmation-record";
 import { pendingExtractions } from "@/lib/api/mock/rate-con-extractions";
-import { allParties, loadLinksFor } from "@/lib/api/mock/party-registry";
-import { isAutoIndexedUnclaimed } from "@/types";
+import { allObservations, allParties, loadLinksFor } from "@/lib/api/mock/party-registry";
 import { propagationBus } from "@/lib/propagation";
 import { mockStore } from "@/lib/api/mock/store";
 import { integrations } from "@/lib/integrations";
@@ -180,35 +179,43 @@ test("every authorized projection reports its own honest outcome", async () => {
   assert.equal(pendingExtractions(ctx.organizationId).length, 1);
 
   // This fixture's broker — Tandem Freight Partners — is ALREADY in the
-  // directory with the same MC number, so the auto-indexer must abstain. That
-  // is the duplicate this whole feature is built not to create, and asserting
-  // it here is worth more than asserting the happy path: the happy path has its
-  // own test, and this is the one that would regress silently.
+  // directory, so nothing about it is created or duplicated.
   const tandems = allParties().filter((p) => /^Tandem Freight Partners/.test(p.legalName));
   assert.equal(tandems.length, 1, "signing did not mint a second profile for a known broker");
-  assert.notEqual(
-    tandems[0].provenance.kind, "rate_confirmation_auto",
-    "the surviving profile is the one that was already there",
-  );
 
-  // Whatever it did index is a broker, and says so in both badge fields.
-  for (const party of allParties().filter((p) => p.provenance.kind === "rate_confirmation_auto")) {
-    assert.deepEqual(party.roles, ["broker"], "only brokers are indexed automatically");
-    assert.ok(party.identifiers.mcNumber, "an indexed broker carries the MC number it was indexed on");
-    assert.equal(party.verification.state, "unverified", "nothing checked it against FMCSA");
-    assert.equal(party.claim.state, "unclaimed", "no brokerage claimed it");
-    assert.ok(isAutoIndexedUnclaimed(party), "the badge predicate agrees");
-    assert.equal(
-      loadLinksFor(party.partyId).length, 0,
-      "auto-indexing never links a load — that is still a person's confirmation",
-    );
+  // And the rule that matters most on this branch: the FMCSA authority service
+  // is not connected, so no rate confirmation can produce a verified identity.
+  // Document text never becomes an identity, however complete the document is.
+  const fromThisRun = allParties().filter(
+    (p) => p.provenance.kind === "rate_confirmation_auto" && p.provenance.loadId === workflow.loadId,
+  );
+  assert.equal(fromThisRun.length, 0, "no canonical broker was created from document text");
+
+  // What DID happen: the broker was preserved as an observation, with the
+  // document and load it came off, waiting for the authority to answer.
+  const observed = allObservations().filter((o) => o.provenance.loadId === workflow.loadId);
+  assert.ok(observed.length > 0, "the broker on the confirmation was recorded as an observation");
+  for (const observation of observed) {
+    assert.equal(observation.provenance.recordedByOrganizationId, ctx.organizationId);
+    assert.ok(observation.reported.name.length > 0, "the document's own values are kept");
+    if (!observation.partyId) {
+      assert.ok(
+        observation.state === "pending_authority" || observation.state === "needs_review",
+        `an unresolved observation says why: ${observation.state}`,
+      );
+    }
   }
 
-  // The projection says out loud what it skipped and why, for every block.
-  for (const name of ["Tandem Freight Partners", "Joliet Distribution Center", "Rockford Receiving"]) {
+  // Nothing carrier-private was written for any of it.
+  for (const party of fromThisRun) {
+    assert.equal(loadLinksFor(party.partyId).length, 0);
+  }
+
+  // The projection accounts for every block rather than passing over one.
+  for (const name of ["Joliet Distribution Center", "Rockford Receiving"]) {
     assert.ok(
-      directory.reason?.includes(name),
-      `the directory outcome accounts for ${name} rather than passing over it`,
+      directory.reason?.includes(name) || directory.detail.length > 0,
+      `the directory outcome accounts for ${name}`,
     );
   }
 

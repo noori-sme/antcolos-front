@@ -63,7 +63,7 @@ files rather than a copy. `npm test` runs both.
 | Hierarchical responsibility, delegation & escalation | `/work`, `/settings/responsibility` |
 | Roles and permissions | `/settings/permissions` — the permission catalog, reusable role templates, and applying one to a Membership |
 | Permanent user profile & onboarding | `/onboarding/profile`, `/profile/[username]`, `/profile/[username]/a/[key]`, `/account/profile` |
-| Automatic broker profiles from rate cons | `/directory` — indexed, unverified, unclaimed |
+| Broker identity, authority & claiming | `/directory` — FMCSA verified, unclaimed, permanent |
 
 Everything else is a placeholder screen that says so.
 
@@ -732,48 +732,43 @@ recorded safety event, plus 2 per clean inspection, clamped to 0–100, and
 summary of what carriers recorded here; it is not a CSA or SMS score and has no
 regulatory meaning.
 
-## Automatic broker profiles from rate confirmations
+## Broker identity, authority and claiming
 
-The Directory refused, in three separate files, to create a party profile on its
-own — because a rate confirmation that mints a broker is how a carrier ends up
-with four profiles for one broker. That rule still holds for almost everything
-on the document. This is the one carve-out, and the reason it is safe is
-specific. Full notes in `docs/broker-auto-indexing.md`.
+A broker profile is a **permanent canonical record that may stay unclaimed for
+years**. A rate confirmation does not create one — it discovers a candidate, and
+the candidate becomes a profile only when the FMCSA authority service confirms
+who the MC number belongs to. Full notes in
+`docs/broker-identity-and-claiming.md`.
 
-**Why brokers only.** The duplicate problem is a problem of *soft* evidence.
-Shippers and receivers are matched on names and addresses, which resemble each
-other across genuinely different companies. An MC number is issued once, by an
-authority, to one company, and the matcher already treats it as **decisive** — a
-match on it cannot be outvoted by any pile of soft signals. A broker block
-carrying one is not a guess, it is an identity. So the scope restriction is not
-a setting that could later be relaxed to shippers; it is the whole argument.
+**Three axes, never one badge.** Identity (`verified` / `pending` /
+`conflicted`, answered by FMCSA and nothing else), ownership (`claimed` /
+`unclaimed`), and authority (`active` / `inactive` / `revoked` / `unknown`,
+which changes over time). Every combination is real, and
+**"FMCSA verified, unclaimed" is the ordinary, permanent state of a good broker
+who has never heard of Antcolos**. An unclaimed profile is never labelled
+unverified.
 
-**The asymmetry.** To *create*, evidence must be decisive: a normalized MC
-number, or nothing happens — a broker printed with only a name still goes to the
-review queue. To *abstain*, any resemblance at all is enough, `possible` rather
-than `strong`. Being wrong therefore costs a dispatcher confirming by hand, as
-they do today; it never costs a duplicate.
+**Layers of fact stay apart.** The register's fields are written only by an
+authority lookup; rate-con observations are append-only and never rewritten;
+what a claimed brokerage says about itself is its own layer; a carrier's
+experience — standing, payment terms, factoring — is private to that carrier and
+is never a global broker fact. `BrokerSelfReportedInput` has no `legalName` or
+`mcNumber` field, so a broker cannot overwrite an official value because no
+input reaches one.
 
-**Three different facts, not one badge.** An indexed record is
-`rate_confirmation_auto` (no person was in the loop), `unverified` (nothing was
-checked against FMCSA) and `unclaimed` (the brokerage has no account here).
-Verification is about the *data*; claiming is about whether the *company* has an
-account and proved the record is theirs. Every combination is real, and
-collapsing them gives you a badge that means two things at once and so means
-nothing. Claiming confers no access either: everything carrier-private stays on
-`CarrierPartyRelationship`, partitioned by carrier.
+**One profile, forever.** Every later rate confirmation for that MC resolves to
+the same record. Two names on one MC produce a conflict recorded on the
+observation, not a second company. One name on two MCs stays two companies and
+is never auto-merged. A brokerage that joins later *claims* the existing record;
+there is no path that creates a second one, and claiming erases no observation,
+no carrier-private record and no provenance.
 
-**What it does not do.** It does not link the load, create a facility or
-contact, set a standing or a rating, or vouch for anybody. Antcolos has indexed
-the brokerage's operational activity; it has not recommended them, and the
-profile says so in as many words.
-
-**Where it shows up** — the part that surprised us. `visibleParties` lists
-companies a carrier has a *relationship* with, and auto-indexing creates none.
-So an indexed broker is a canonical record immediately (which is what stops the
-next confirmation duplicating it, and makes the review screen propose *linking*
-rather than *creating*) and enters a carrier's directory when that carrier links
-a load to it — through the confirmation step that already exists.
+**What this build does.** The FMCSA service is a typed extension point that is
+**not connected** — `notConnectedAuthority` answers `unavailable` to everything
+and no code path can answer otherwise. So every rate confirmation processed here
+holds its observation pending and creates nothing, which is the correct
+behaviour rather than a gap. The confirmed and conflicted paths are driven in
+tests through a stub authority.
 
 ## Try the permission and identity model
 
@@ -1888,13 +1883,11 @@ to redesign later:
 - `docs/zero-entry-data-audit.md` — where data enters, which facts are
   canonical, and the persistence, ordering, delivery and authorization
   guarantees the frontend describes but cannot provide.
-- `docs/broker-auto-indexing.md` — the one place a party profile is created
-  without a person: why a decisive MC number is different in kind from a
-  name-and-address match, the create/abstain asymmetry, why verification and
-  claiming are separate axes, and the five things the backend owes it
-  (a uniqueness constraint on the normalized MC number, real FMCSA
-  verification, the claim flow, telling the brokerage it was indexed, and rate
-  limiting).
+- `docs/broker-identity-and-claiming.md` — the permanent broker record: why a
+  rate confirmation discovers a candidate rather than creating an identity, the
+  three axes and why they are never one badge, which layer of fact each actor
+  may write, and the six things the backend owes it (starting with the FMCSA
+  authority service itself).
 - `docs/permanent-user-profile.md` — the permanent career record: the four
   tables behind it, why its reads are the one place a `ServiceContext` is wrong,
   why no figure is stored, and the six things the backend still owes the seam

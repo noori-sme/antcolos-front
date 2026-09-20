@@ -72,7 +72,9 @@ export type PartyProvenanceKind =
    * turns on exactly this, and a boolean buried in a provenance object is a
    * thing screens forget to read.
    *
-   * ONLY the broker auto-indexer writes this. See `src/lib/directory/auto-broker.ts`.
+   * ONLY broker discovery writes this, and it marks HOW the company was found
+   * — not what is known about it. The identity still comes from FMCSA. See
+   * `src/lib/directory/broker-resolution.ts`.
    */
   | "rate_confirmation_auto"
   | "manual_entry"
@@ -107,45 +109,151 @@ export interface PartyVerification {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Claiming — a different question from verification                           */
+/* Brokers: three axes that are never one badge                                */
 /* -------------------------------------------------------------------------- */
 
 /**
- * ★ VERIFICATION AND CLAIMING ARE NOT THE SAME QUESTION ★
+ * ★ THREE INDEPENDENT QUESTIONS ★
  *
- * `PartyVerification` asks: has anybody checked that this DATA is right?
- * `PartyClaim` asks: does the company this record describes have an account on
- * Antcolos, and has it proved this record is theirs?
+ * A broker profile answers three things that people constantly collapse into
+ * one word, and every combination of them is real:
  *
- * They are independent, and every combination is real. A broker profile built
- * from an FMCSA lookup is `externally_verified` and still `unclaimed` — the
- * data is right and nobody from that brokerage has ever logged in. A brokerage
- * that claimed its record the day it signed up is `claimed` with an address
- * nobody has checked.
+ *   IDENTITY      Is this company who the paperwork says it is?
+ *                 Answered by FMCSA, and by nothing else.
+ *   OWNERSHIP     Does this company have an account here, and has it proved
+ *                 this record is theirs?
+ *   AUTHORITY     Is this company allowed to broker freight right now?
+ *                 Also FMCSA's answer, and it changes over time.
  *
- * Collapsing them into one "verified" flag is what produces a badge that
- * means two things at once and therefore nothing.
+ * "FMCSA verified, unclaimed, authority active" is the ordinary state of a
+ * good broker who has never heard of Antcolos. "Claimed, identity pending" is
+ * somebody who signed up before we could resolve their MC. "Verified, claimed,
+ * authority revoked" is a broker you should stop hauling for today. One flag
+ * cannot say any of that, which is why there are three.
  */
-export type PartyClaimState =
-  /**
-   * Nobody from this company has an Antcolos account tied to this record.
-   *
-   * The state every auto-indexed broker is born in, and the honest one: the
-   * platform has indexed their operational activity from paperwork other
-   * people sent it. They have not agreed to anything, supplied anything, or
-   * been told the record exists.
-   */
-  | "unclaimed"
-  /** Somebody asserted ownership. Not proved yet, and it grants nothing. */
-  | "claim_pending"
-  /** Proved. An Antcolos organization stands behind this record as its own. */
-  | "claimed";
 
 /**
- * How ownership was proved.
+ * Whether FMCSA confirmed this is a real, identifiable entity.
  *
- * Never "they said so". Each of these is a check against something the
- * claimant could not have arranged on their own.
+ * ★ ONLY THE AUTHORITY SERVICE MAY WRITE `verified` ★
+ * A rate confirmation is a document a broker sent us. It is evidence of what
+ * the broker SAID, and no amount of confidence in the extraction turns that
+ * into an identity. Nothing in the directory can produce `verified` from
+ * document text — see `src/lib/directory/authority.ts`.
+ */
+export type BrokerIdentityState =
+  /** FMCSA returned a record for this MC number and it matched. */
+  | "verified"
+  /**
+   * Not resolved yet. The authority service has not answered — it may be
+   * unavailable, or the MC may simply not have been looked up.
+   *
+   * A pending identity is NOT a canonical profile. See `BrokerObservation`.
+   */
+  | "pending"
+  /**
+   * The authority answered and it disagrees with the document, or two
+   * documents disagree with each other in a way a person must settle.
+   */
+  | "conflicted";
+
+export interface BrokerIdentity {
+  state: BrokerIdentityState;
+  /** Only ever "FMCSA". Present when the state is `verified`. */
+  source?: "FMCSA";
+  checkedAt?: IsoDateTime;
+  /** What is pending, or what conflicts. Written for a person to read. */
+  detail?: string;
+}
+
+/**
+ * Whether the company may broker freight right now.
+ *
+ * Separate from identity because it CHANGES: a correctly identified brokerage
+ * can have its authority revoked on a Tuesday, and a record that folded the two
+ * together would either go on saying "verified" about a company that may no
+ * longer book freight, or lose the identity when the authority lapsed.
+ */
+export type AuthorityStatus = "active" | "inactive" | "revoked" | "unknown";
+
+export interface BrokerAuthority {
+  status: AuthorityStatus;
+  checkedAt?: IsoDateTime;
+  /** FMCSA's own wording, kept verbatim rather than mapped away. */
+  statusText?: string;
+}
+
+/**
+ * The fields FMCSA issued, held apart from everything else on the profile.
+ *
+ * ★ NOTHING IN THE PRODUCT MAY WRITE THESE EXCEPT A NEW AUTHORITY LOOKUP ★
+ * Not a dispatcher, not the broker after claiming, not a rate confirmation.
+ * That is enforced by the shape of the inputs — `BrokerSelfReportedInput` has
+ * no field that could reach here — and asserted by test.
+ */
+export interface FmcsaOfficialIdentity {
+  legalName: string;
+  dbaName?: string;
+  /** Normalized, digits only. The canonical key for a broker. */
+  mcNumber: string;
+  dotNumber?: string;
+  address?: Address;
+  entityType?: string;
+  /** FMCSA's operating-status text, e.g. "Authorized for property". */
+  operatingStatus?: string;
+  /** When this snapshot was taken from the authority. */
+  fetchedAt: IsoDateTime;
+}
+
+/**
+ * What the brokerage says about itself, once it has claimed the profile.
+ *
+ * Operational detail only — how to reach them, what they haul, who to call.
+ * Never identity: a claimed broker may correct its dispatch phone number and
+ * may not correct its legal name, because the legal name came from the
+ * register and changing it means a new authority lookup.
+ */
+export interface BrokerSelfReported {
+  displayName?: string;
+  website?: string;
+  phone?: string;
+  email?: string;
+  /** How they describe their own operation. */
+  description?: string;
+  updatedAt?: IsoDateTime;
+  /** The claiming organization that wrote it. */
+  updatedByOrganizationId?: string;
+}
+
+/** The broker block on a canonical party. Absent for shippers and receivers. */
+export interface BrokerRecord {
+  identity: BrokerIdentity;
+  authority: BrokerAuthority;
+  /** Present once the authority confirmed it. The identity, full stop. */
+  official?: FmcsaOfficialIdentity;
+  /** Present once somebody claimed the profile and edited it. */
+  selfReported?: BrokerSelfReported;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ownership                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether the company behind this record has an account here.
+ *
+ * ★ NOT A STATEMENT ABOUT THE DATA ★
+ * A profile can be FMCSA verified and unclaimed for years — that is the normal
+ * state of every good broker who has never heard of Antcolos, and labelling it
+ * "unverified" because nobody signed up would be false.
+ */
+export type PartyClaimState = "unclaimed" | "claim_pending" | "claimed";
+
+/**
+ * How control of the company was proved.
+ *
+ * Never "they said so". Each is a check against something a claimant could not
+ * have arranged alone.
  */
 export type PartyClaimMethod =
   /** A code sent to the address FMCSA holds for that MC number. */
@@ -160,22 +268,92 @@ export interface PartyClaim {
   /**
    * The Antcolos organization that proved this record is theirs.
    *
-   * ★ IT CONFERS NO ACCESS OVER OTHER CARRIERS' DATA ★
-   * Claiming a broker record does not let that brokerage read any carrier's
-   * loads, rates, notes or standing. Everything carrier-private lives on
-   * `CarrierPartyRelationship`, partitioned by carrier, and nothing in the
-   * read path takes a parameter that would let a claimant reach it.
+   * ★ IT CONFERS NO ACCESS OVER ANY CARRIER'S DATA ★
+   * Claiming lets a brokerage edit `BrokerRecord.selfReported` and nothing
+   * else. It cannot read or change a carrier's loads, rates, notes, standing,
+   * payment experience or factoring history — those live on
+   * `CarrierPartyRelationship`, partitioned by carrier, and no read path takes
+   * a parameter that would let a claimant reach them. It cannot alter
+   * `official`, and it cannot delete an observation.
    */
   claimedByOrganizationId?: string;
   claimedAt?: IsoDateTime;
   method?: PartyClaimMethod;
-  /** Set while a claim is pending, so a person can see who is asking. */
   claimRequestedByOrganizationId?: string;
   claimRequestedAt?: IsoDateTime;
 }
 
 /** What a record with nobody behind it starts as. */
 export const UNCLAIMED: PartyClaim = { state: "unclaimed" };
+
+/* -------------------------------------------------------------------------- */
+/* Document-derived observations                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ WHAT A RATE CONFIRMATION ACTUALLY PRODUCES ★
+ *
+ * Not a profile. An OBSERVATION: this document, on this date, said this
+ * company had this MC number and this address. That is a fact about the
+ * document and it is true forever, whatever the register later says.
+ *
+ * Observations are the raw layer the canonical profile is resolved FROM, and
+ * they are kept whether or not that resolution ever succeeds:
+ *
+ *   • An MC the authority cannot confirm leaves an unresolved observation, and
+ *     no canonical profile. Document text is never promoted to an identity.
+ *   • An MC that resolves attaches the observation to the canonical profile —
+ *     and every later confirmation for that MC attaches to the SAME one.
+ *   • A document that disagrees with the register keeps its disagreement,
+ *     recorded on the observation, rather than overwriting the official field
+ *     or minting a second company.
+ *
+ * They are append-only and are never rewritten, including by a broker who
+ * later claims the profile.
+ */
+export type BrokerObservationState =
+  /** Attached to a canonical profile. */
+  | "resolved"
+  /** Waiting on the authority service. No canonical profile exists for it. */
+  | "pending_authority"
+  /** The authority disagrees with the document, or two documents disagree. */
+  | "conflicted"
+  /** Unusable on its own — no MC number to resolve. A person must decide. */
+  | "needs_review";
+
+/** Exactly what the document printed. Never normalized away. */
+export interface ReportedBrokerFields {
+  name: string;
+  mcNumber?: string;
+  dotNumber?: string;
+  address?: Address;
+  phone?: string;
+  email?: string;
+}
+
+/** One field where the document and the register do not agree. */
+export interface ObservationConflict {
+  field: "legalName" | "dotNumber" | "address" | "mcNumber";
+  reported?: string;
+  official?: string;
+}
+
+export interface BrokerObservation {
+  id: string;
+  /** Verbatim, as printed. The point of the record. */
+  reported: ReportedBrokerFields;
+  /** Digits only. Absent when the document carried no usable MC number. */
+  normalizedMcNumber?: string;
+  state: BrokerObservationState;
+  /** Set once resolved. The canonical profile this document refers to. */
+  partyId?: string;
+  /** Why it is pending, conflicted or in review. For a person to read. */
+  detail?: string;
+  conflicts?: ObservationConflict[];
+  /** The document, the load, who recorded it and for which organization. */
+  provenance: PartyProvenance;
+  observedAt: IsoDateTime;
+}
 
 /**
  * Identifiers the outside world issues. These are what matching runs on, so
@@ -222,9 +400,17 @@ export interface Party {
   verification: PartyVerification;
   /**
    * Whether the company behind this record has an account here and has proved
-   * the record is theirs. Independent of `verification` — see `PartyClaim`.
+   * the record is theirs. Independent of every other axis — see `PartyClaim`.
    */
   claim: PartyClaim;
+  /**
+   * Identity, authority and the official register fields.
+   *
+   * Present only for brokers that went through the authority service. A
+   * shipper has no MC number and no operating authority, so it has no block
+   * here rather than a block full of `unknown`.
+   */
+  broker?: BrokerRecord;
   provenance: PartyProvenance;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
@@ -235,16 +421,48 @@ export interface Party {
   createdByOrganizationId: string;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Reading the three axes                                                      */
+/* -------------------------------------------------------------------------- */
+
 /**
- * True when this record was indexed from paperwork with nobody in the loop and
- * the company has still never claimed it.
+ * FMCSA confirmed who this is.
  *
- * The one place the "Auto-generated via rate con — unclaimed" badge is decided,
- * so a screen cannot invent its own definition of the same words.
+ * ★ SAYS NOTHING ABOUT OWNERSHIP ★
+ * The whole point of separating the axes: this is routinely true of a profile
+ * nobody has claimed, and a screen that wrote "unverified" over such a record
+ * because no broker had signed up would be stating a falsehood about a company
+ * whose identity the federal register confirmed.
  */
-export function isAutoIndexedUnclaimed(party: Party): boolean {
-  return party.provenance.kind === "rate_confirmation_auto"
-    && party.claim.state === "unclaimed";
+export function isIdentityVerified(party: Party): boolean {
+  return party.broker?.identity.state === "verified";
+}
+
+export function isUnclaimed(party: Party): boolean {
+  return party.claim.state === "unclaimed";
+}
+
+/**
+ * The canonical broker profile exists but nobody from the company is behind it.
+ *
+ * The state the pipeline is designed to produce and leave alone, possibly for
+ * years. It is not a defect, not temporary, and not a review item.
+ */
+export function isVerifiedUnclaimedBroker(party: Party): boolean {
+  return isIdentityVerified(party) && isUnclaimed(party);
+}
+
+/**
+ * Whether a brokerage may book freight today, as far as the register said when
+ * it was last asked.
+ *
+ * `unknown` is deliberately not treated as a refusal: an authority we have not
+ * checked is not an authority we know to be bad, and pretending otherwise
+ * would block real work on missing data.
+ */
+export function authorityBlocksBooking(party: Party): boolean {
+  const status = party.broker?.authority.status;
+  return status === "revoked" || status === "inactive";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -466,8 +684,12 @@ export type DirectoryEventKind =
   | "party.updated"
   | "party.role_added"
   | "party.promoted_from_provisional"
-  /** Indexed automatically from a rate confirmation. Nobody confirmed it. */
-  | "party.auto_indexed"
+  /** A rate confirmation named this broker. Append-only, never a profile edit. */
+  | "broker.observation_recorded"
+  /** The authority confirmed an MC number and a permanent profile was created. */
+  | "broker.identity_verified"
+  /** A claimed brokerage changed its own operational details. Never identity. */
+  | "broker.self_reported_updated"
   | "party.claim_requested"
   | "party.claimed"
   | "party.flagged_for_review"
@@ -526,8 +748,9 @@ export interface DirectoryListing {
   status: PartyRecordStatus;
   verificationState: PartyVerificationState;
   claimState: PartyClaimState;
-  /** True for a record no person has ever confirmed. Drives the list badge. */
-  autoIndexed: boolean;
+  /** Absent for a party with no broker block — a shipper has no identity to verify. */
+  identityState?: BrokerIdentityState;
+  authorityStatus?: AuthorityStatus;
   city?: string;
   state?: string;
   facilityCount: number;

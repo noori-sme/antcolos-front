@@ -3,7 +3,8 @@ import type {
   ContactProfileView, DirectoryEvent, DirectoryEventKind, DirectoryListing,
   ExtractedContact, ExtractedFacility, ExtractedParty, ExtractedPartyBlock,
   Facility, FacilityProfileView, PartyContact, PartyContactKind, PartyLoadLink,
-  PartyClaim, PartyNote, PartyProfileView, PartyProvenance, PartyRole, PartySnapshot,
+  BrokerObservation, BrokerRecord, PartyClaim, PartyClaimMethod, PartyNote, PartyProfileView,
+  PartyProvenance, PartyRole, PartySnapshot, ReportedBrokerFields,
   PartyStanding, PaymentExperience, PermissionKey, Party, ResolutionOutcome,
   ResolutionPlan, PartyResolutionProposal, RateConfirmationExtraction,
 } from "@/types";
@@ -12,7 +13,8 @@ import {
   rankContactCandidates, rankFacilityCandidates, rankPartyCandidates,
   recommendFor, thinExtraction,
 } from "@/lib/directory/matching";
-import { decideAutoIndexForBlocks } from "@/lib/directory/auto-broker";
+import { authorityService } from "@/lib/directory/authority";
+import { canonicalForMc, resolveObservation } from "@/lib/directory/broker-resolution";
 import {
   normalizeCompanyName, normalizeDotNumber, normalizeEmail, normalizeMcNumber,
   normalizePhone, normalizeScac,
@@ -142,6 +144,16 @@ interface RegistryState {
   notes: PartyNote[];
   /** Private: a carrier's loads are its own. */
   loadLinks: PartyLoadLink[];
+  /**
+   * What documents said about brokers, append-only.
+   *
+   * Global rather than carrier-partitioned as a STORE, because an observation
+   * is a fact about a document and the same MC number is the same MC number for
+   * everybody. Reads are scoped: `observationsFor` serves a carrier only the
+   * observations it recorded, because the document and load ids on them point
+   * at that carrier's paperwork.
+   */
+  observations: BrokerObservation[];
   events: DirectoryEvent[];
 }
 
@@ -198,8 +210,10 @@ interface PartySeed {
   provisional?: string;
   /** Seeds an already-claimed brokerage, for the screens that show one. */
   claim?: PartyClaim;
-  /** Seeds a record nobody confirmed, for the auto-indexed badge. */
+  /** Seeds a record discovered automatically rather than confirmed by hand. */
   provenanceKind?: PartyProvenance["kind"];
+  /** Seeds the identity, authority and register fields for a broker. */
+  broker?: BrokerRecord;
 }
 
 function makeParty(seed: PartySeed): Party {
@@ -230,6 +244,7 @@ function makeParty(seed: PartySeed): Party {
     // No fixture is claimed. Claiming means a real brokerage proved a record is
     // theirs, and seeding one would put words in a company's mouth.
     claim: seed.claim ?? { state: "unclaimed" },
+    broker: seed.broker,
     provenance: provenance(seed.organizationId, seed.provenanceKind),
     createdAt: created,
     updatedAt: created,
@@ -408,34 +423,51 @@ function buildFixtures(): RegistryState {
   }));
 
   /**
-   * A broker Antcolos indexed on its own, with nobody in the loop.
+   * A permanent broker profile the register confirmed and nobody has claimed.
    *
-   * Seeded because the demo cannot otherwise reach this state: every broker the
-   * fixture rate confirmations name is already in this directory, so the
-   * indexer correctly abstains on all of them and the badge would never appear
-   * on screen. Signing a confirmation for a genuinely unknown broker produces
-   * exactly this record — see `auto-broker-indexing.test.ts`, which drives that
-   * path for real.
+   * ★ THE STATE THE PIPELINE IS BUILT TO PRODUCE AND LEAVE ALONE ★
+   * Verified identity, active authority, unclaimed ownership. Not provisional,
+   * not a review item, not temporary — a brokerage that has never heard of
+   * Antcolos looks exactly like this, possibly for years.
    *
-   * ★ WHY IT HAS A RELATIONSHIP AND THE INDEXER CREATES NONE ★
-   * `visibleParties` lists the companies a carrier has a relationship with, and
-   * auto-indexing deliberately creates no relationship — it writes the shared
-   * company record and nothing carrier-private. So a freshly indexed broker is
-   * a canonical record that stops the next confirmation duplicating it, and it
-   * enters a carrier's directory at the moment that carrier links a load to it
-   * in Directory → Review. This fixture is seeded one step past that, with the
-   * zero-load relationship such a link produces, so the badge is visible.
+   * Seeded because this branch cannot reach it live: the FMCSA authority
+   * service is not connected, so every rate confirmation processed here holds
+   * its observation pending and creates nothing. `broker-authority.test.ts`
+   * drives the confirmed path for real, with a stub authority.
+   *
+   * It has a zero-load relationship for the same reason as `tandemLogistics`:
+   * `visibleParties` lists companies a carrier has a relationship with, and
+   * discovery creates none — a profile enters a carrier's directory when that
+   * carrier links a load to it in Directory → Review.
    */
   const ridgeline = push(parties, makeParty({
     key: "ridgeline_auto", organizationId: NL, roles: ["broker"],
     legalName: "Ridgeline Freight Brokers LLC",
     mcNumber: "MC-1042778",
+    dotNumber: "3771204",
     address: { line1: "870 N Arrowhead Ave", city: "San Bernardino", state: "CA", postalCode: "92401" },
     phone: "+1 (909) 555-0117",
-    provisional:
-      "Indexed automatically from a rate confirmation. Nobody has confirmed it and the "
-      + "brokerage has not claimed it.",
     provenanceKind: "rate_confirmation_auto",
+    broker: {
+      identity: { state: "verified", source: "FMCSA", checkedAt: daysAgo(18) },
+      authority: {
+        status: "active",
+        statusText: "Authorized for property",
+        checkedAt: daysAgo(18),
+      },
+      official: {
+        legalName: "Ridgeline Freight Brokers LLC",
+        mcNumber: "1042778",
+        dotNumber: "3771204",
+        address: {
+          line1: "870 N Arrowhead Ave", city: "San Bernardino", state: "CA",
+          postalCode: "92401", country: "US",
+        },
+        entityType: "Broker",
+        operatingStatus: "Authorized for property",
+        fetchedAt: daysAgo(18),
+      },
+    },
   }));
 
   const rivet = push(parties, makeParty({
@@ -784,7 +816,10 @@ function buildFixtures(): RegistryState {
       { partyId: apex.partyId }, { private: true, occurredAt: daysAgo(15) }),
   );
 
-  return { parties, facilities, contacts, relationships, notes, loadLinks, events };
+  return {
+    parties, facilities, contacts, relationships, notes, loadLinks,
+    observations: [], events,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -934,7 +969,8 @@ export async function listDirectory(
         status: party.status,
         verificationState: party.verification.state,
         claimState: party.claim.state,
-        autoIndexed: party.provenance.kind === "rate_confirmation_auto",
+        identityState: party.broker?.identity.state,
+        authorityStatus: party.broker?.authority.status,
         city: party.primaryAddress?.city,
         state: party.primaryAddress?.state,
         facilityCount: facilities.filter(
@@ -1216,6 +1252,43 @@ export async function addNote(
  * other carriers already know does not get a fourth profile.
  */
 /* -------------------------------------------------------------------------- */
+/* Observations                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Append an observation. There is no update and no delete, here or anywhere.
+ *
+ * That is requirement 8 made structural: a broker who claims a profile cannot
+ * erase what a document said about them, because nothing in the module can
+ * remove one of these rows.
+ */
+function recordObservation(observation: BrokerObservation): void {
+  db().observations.push(observation);
+}
+
+/**
+ * The observations one carrier recorded, newest first.
+ *
+ * Scoped to the recording organization, because the `documentId` and `loadId`
+ * on an observation point at that carrier's own paperwork. Another carrier
+ * seeing them would be reading which loads somebody else ran.
+ */
+export function observationsFor(
+  organizationId: string,
+  partyId?: string,
+): BrokerObservation[] {
+  return db().observations
+    .filter((o) => o.provenance.recordedByOrganizationId === organizationId)
+    .filter((o) => (partyId ? o.partyId === partyId : true))
+    .sort((a, b) => b.observedAt.localeCompare(a.observedAt));
+}
+
+/** Every observation, unscoped. Tests and the resolver only. */
+export function allObservations(): readonly BrokerObservation[] {
+  return db().observations;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Test-visible reads                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -1237,113 +1310,323 @@ export function loadLinksFor(partyId: string): readonly PartyLoadLink[] {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Automatic broker indexing                                                   */
+/* Broker discovery: observe, then resolve through the authority               */
 /* -------------------------------------------------------------------------- */
 
-export interface AutoIndexReport {
-  /** Parties created. Empty on almost every confirmation, which is correct. */
+export interface BrokerDiscoveryReport {
+  /** Canonical profiles created from an AUTHORITY answer. Never from a document. */
   created: Party[];
-  /** One line per block that was not indexed, and why. For the projection. */
+  /** Observations attached to a profile that already existed. */
+  attached: BrokerObservation[];
+  /** Observations kept with no profile: pending, conflicted or in review. */
+  held: BrokerObservation[];
+  /** Non-broker blocks, reported so the projection can account for them. */
   skipped: { role: PartyRole; name: string; detail: string }[];
 }
 
 /**
- * Index the brokers on one rate confirmation, with nobody in the loop.
+ * Record what a rate confirmation said about its broker, and resolve it.
  *
- * ★ WHY THIS DOES NOT TAKE A PartyContext ★
- * Every other write in this file takes one and checks a permission, because
- * every other write is somebody doing something. This is the platform indexing
- * a company from paperwork, and there is no "somebody": the dispatcher who
- * signed the rate confirmation did not ask for a broker profile and may not
- * hold `customers:resolve` at all. Gating it on their permissions would mean a
- * carrier's directory grew or did not grow depending on which dispatcher
- * happened to sign — which is not a permission, it is a coin toss.
+ * ★ THE DOCUMENT NEVER BECOMES AN IDENTITY ★
+ * Every broker block produces an OBSERVATION with full provenance, whatever
+ * happens next. A canonical profile is created only when the FMCSA authority
+ * service confirms the MC number, and it is populated from the AUTHORITY's
+ * fields — never from the document's. On this branch the service is not
+ * connected, so every observation is held `pending_authority` and no profile
+ * is created at all. That is the honest outcome, and the screens say so.
  *
- * So it takes an organization for attribution only, exactly as
- * `createdByOrganizationId` is documented to be: audit provenance that confers
- * no access. A party record is shared and public in the real world — an MC
- * number is a matter of public record — so creating one discloses nothing.
+ * ★ WHY IT TAKES NO PartyContext ★
+ * Same reason as before: the dispatcher who signed the confirmation did not ask
+ * for a broker profile and may not hold `customers:resolve`. This is the
+ * platform indexing a company, so the organization is carried for attribution
+ * and provenance only, exactly as `createdByOrganizationId` is documented to be.
  *
- * ★ WHAT IT DELIBERATELY DOES NOT DO ★
- * It does not link the load. It does not create a facility or a contact. It
- * does not touch `CarrierPartyRelationship`, standing, rating or notes. Every
- * one of those is either carrier-private or a judgement, and both still belong
- * to the person working the review queue. All this does is make sure that when
- * they get there, the broker is already a profile instead of a name.
+ * It creates nothing carrier-private: no load link, no relationship, no
+ * standing, no rating, no note.
  */
-export function autoIndexBrokers(
+export async function observeBrokersFromRateCon(
   organizationId: string,
   extraction: RateConfirmationExtraction,
-): AutoIndexReport {
+  actor: ActorRef = SYSTEM_ACTOR,
+): Promise<BrokerDiscoveryReport> {
   const at = now();
-  const created: Party[] = [];
-  const skipped: AutoIndexReport["skipped"] = [];
+  const report: BrokerDiscoveryReport = { created: [], attached: [], held: [], skipped: [] };
 
-  const decisions = decideAutoIndexForBlocks(extraction.blocks, db().parties);
-
-  decisions.forEach((decision, index) => {
-    const block = extraction.blocks[index];
-    if (decision.outcome === "skip") {
-      skipped.push({ role: block.role, name: block.party.name, detail: decision.detail });
-      return;
+  for (const block of extraction.blocks) {
+    if (block.role !== "broker") {
+      report.skipped.push({
+        role: block.role,
+        name: block.party.name,
+        detail:
+          `A ${block.role} has no MC number and no operating authority, so there is no register `
+          + "to resolve it against. Only brokers are discovered automatically.",
+      });
+      continue;
     }
 
+    const reported: ReportedBrokerFields = {
+      name: block.party.name,
+      mcNumber: block.party.mcNumber,
+      dotNumber: block.party.dotNumber,
+      address: block.party.address,
+      phone: block.party.phone,
+      email: block.party.email,
+    };
+
+    const provenanceRecord: PartyProvenance = {
+      kind: "rate_confirmation_auto",
+      documentId: extraction.documentId,
+      loadId: extraction.loadId,
+      recordedAt: at,
+      recordedBy: actor,
+      recordedByOrganizationId: organizationId,
+    };
+
+    // Asked once per block, and only when nothing canonical exists yet — the
+    // pure resolver decides whether to consult it at all.
+    const mc = normalizeMcNumber(reported.mcNumber);
+    const answer = mc && !canonicalForMc(mc, db().parties)
+      ? await authorityService().resolveMc(mc)
+      : { status: "unavailable" as const, detail: "not consulted" };
+
+    const decision = resolveObservation(reported, db().parties, () => answer);
+
+    const observation: BrokerObservation = {
+      id: rowId("obs"),
+      reported,
+      normalizedMcNumber: mc,
+      state: "pending_authority",
+      provenance: provenanceRecord,
+      observedAt: at,
+    };
+
+    if (decision.outcome === "hold") {
+      observation.state = decision.state;
+      observation.detail = decision.detail;
+      recordObservation(observation);
+      report.held.push(observation);
+      continue;
+    }
+
+    if (decision.outcome === "attach") {
+      observation.state = decision.state;
+      observation.partyId = decision.partyId;
+      observation.conflicts = decision.conflicts.length > 0 ? decision.conflicts : undefined;
+      observation.detail = decision.detail;
+      recordObservation(observation);
+      report.attached.push(observation);
+
+      db().events.push(event(
+        organizationId, "broker.observation_recorded",
+        decision.conflicts.length > 0
+          ? `A rate confirmation named this broker with details that disagree with the register.`
+          : "A rate confirmation named this broker.",
+        { partyId: decision.partyId, loadId: extraction.loadId },
+        { occurredAt: at, actor },
+      ));
+      continue;
+    }
+
+    /* -- The authority confirmed it. This is the only path that creates. --- */
+
+    const official = decision.authority.official;
     const party: Party = {
       partyId: uuid(),
       roles: ["broker"],
-      legalName: decision.legalName,
-      dbaName: block.party.dbaName?.trim() || undefined,
+      // From the REGISTER, not from the document.
+      legalName: official.legalName,
+      dbaName: official.dbaName,
       identifiers: {
-        mcNumber: decision.mcNumber,
-        dotNumber: normalizeDotNumber(block.party.dotNumber),
-        asPrinted: {
-          mcNumber: block.party.mcNumber,
-          dotNumber: block.party.dotNumber,
-        },
+        mcNumber: official.mcNumber,
+        dotNumber: official.dotNumber,
+        asPrinted: { mcNumber: reported.mcNumber, dotNumber: reported.dotNumber },
       },
-      primaryAddress: block.party.address,
-      phone: block.party.phone,
-      email: normalizeEmail(block.party.email) ?? block.party.email,
-      // Provisional, and the review reason says why rather than implying an
-      // uncertain match. The MC number was decisive; what is missing is a
-      // person, and confirming the proposal in Directory → Review promotes it
-      // through the lifecycle that already exists.
-      status: "provisional",
-      reviewReason:
-        "Indexed automatically from a rate confirmation. Nobody has confirmed it and the "
-        + "brokerage has not claimed it.",
-      // NOT dispatcher_confirmed: no dispatcher saw it. A record that called
-      // itself confirmed because a machine wrote it would make the word
-      // meaningless everywhere else it appears.
-      verification: { state: "unverified" },
+      primaryAddress: official.address,
+      // Contact details are operational, not identity: the register does not
+      // issue a dispatch phone number, so the document's is the best available
+      // and is marked as coming from one.
+      phone: reported.phone,
+      email: normalizeEmail(reported.email) ?? reported.email,
+      // PERMANENT AND ACTIVE, not provisional. An identity the federal register
+      // confirmed is not a record waiting for somebody to check it.
+      status: "active",
+      verification: {
+        state: "externally_verified",
+        authority: "FMCSA",
+        checkedAt: at,
+      },
       claim: { state: "unclaimed" },
-      provenance: {
-        kind: "rate_confirmation_auto",
-        documentId: extraction.documentId,
-        loadId: extraction.loadId,
-        recordedAt: at,
-        recordedBy: SYSTEM_ACTOR,
-        recordedByOrganizationId: organizationId,
+      broker: {
+        identity: { state: "verified", source: "FMCSA", checkedAt: at },
+        authority: {
+          status: decision.authority.authorityStatus,
+          statusText: decision.authority.authorityStatusText,
+          checkedAt: at,
+        },
+        official,
       },
+      provenance: provenanceRecord,
       createdAt: at,
       updatedAt: at,
       createdByOrganizationId: organizationId,
     };
 
     db().parties.push(party);
-    created.push(party);
+    report.created.push(party);
+
+    observation.state = decision.conflicts.length > 0 ? "conflicted" : "resolved";
+    observation.partyId = party.partyId;
+    observation.conflicts = decision.conflicts.length > 0 ? decision.conflicts : undefined;
+    observation.detail = decision.detail;
+    recordObservation(observation);
+    report.attached.push(observation);
 
     db().events.push(event(
-      organizationId,
-      "party.auto_indexed",
-      `Indexed ${party.legalName} (MC ${decision.mcNumber}) from a rate confirmation. `
-      + "Unverified and unclaimed — no person confirmed it.",
+      organizationId, "broker.identity_verified",
+      `${official.legalName} (MC ${official.mcNumber}) was confirmed against FMCSA and became a `
+      + "permanent broker profile. Unclaimed: nobody from the brokerage has proved control of it.",
       { partyId: party.partyId, loadId: extraction.loadId },
-      { occurredAt: at, actor: SYSTEM_ACTOR },
+      { occurredAt: at, actor },
     ));
-  });
+  }
 
-  return { created, skipped };
+  return report;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Claiming                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export class BrokerClaimError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "BrokerClaimError";
+  }
+}
+
+export interface BrokerClaimInput {
+  partyId: string;
+  /** The Antcolos organization asserting control. */
+  organizationId: string;
+  /**
+   * How control was proved. There is no "self_asserted" member, so a caller
+   * cannot claim a profile by saying it owns it.
+   */
+  method: PartyClaimMethod;
+  actor: ActorRef;
+}
+
+/**
+ * Attach an organization to an EXISTING canonical broker profile.
+ *
+ * ★ IT NEVER CREATES A PROFILE ★
+ * A brokerage that joins Antcolos years after its record was indexed claims
+ * that record. There is no path here that mints a second one, which is
+ * requirement 7 and is asserted by test.
+ *
+ * ★ WHAT CLAIMING DOES NOT TOUCH ★
+ * Not `broker.official` — those are the register's. Not the observations —
+ * those are facts about documents other people hold. Not any
+ * `CarrierPartyRelationship`, note, standing, rating or payment experience —
+ * those are carrier-private and a broker has no business reading them, let
+ * alone deleting them. The function writes exactly one field and an event.
+ */
+export function claimBrokerProfile(input: BrokerClaimInput): Party {
+  const party = db().parties.find((p) => p.partyId === input.partyId);
+  if (!party) throw new PartyNotFoundError("Company");
+  if (!party.roles.includes("broker")) {
+    throw new BrokerClaimError("Only a broker profile can be claimed.");
+  }
+  if (party.claim.state === "claimed") {
+    throw new BrokerClaimError(
+      `${party.legalName} is already claimed. A second organization cannot take it over; `
+      + "that is a support decision with evidence behind it, not a command.",
+    );
+  }
+
+  const at = now();
+  const claimed: Party = {
+    ...party,
+    claim: {
+      state: "claimed",
+      claimedByOrganizationId: input.organizationId,
+      claimedAt: at,
+      method: input.method,
+    },
+    updatedAt: at,
+  };
+  replaceParty(claimed);
+
+  db().events.push(event(
+    input.organizationId, "party.claimed",
+    `${party.legalName} was claimed. The register's identity fields are unchanged and every `
+    + "rate confirmation observation is untouched.",
+    { partyId: party.partyId },
+    { occurredAt: at, actor: input.actor },
+  ));
+
+  return claimed;
+}
+
+/**
+ * What a claimed brokerage may change about itself.
+ *
+ * ★ THE TYPE IS THE ENFORCEMENT ★
+ * There is no `legalName`, no `mcNumber`, no `dotNumber` and no `address`
+ * here. A broker cannot overwrite an official field because there is no field
+ * on this input that reaches one — not because a guard clause checks for it.
+ */
+export interface BrokerSelfReportedInput {
+  displayName?: string;
+  website?: string;
+  phone?: string;
+  email?: string;
+  description?: string;
+}
+
+export function updateBrokerSelfReported(
+  partyId: string,
+  organizationId: string,
+  input: BrokerSelfReportedInput,
+  actor: ActorRef,
+): Party {
+  const party = db().parties.find((p) => p.partyId === partyId);
+  if (!party) throw new PartyNotFoundError("Company");
+  if (party.claim.state !== "claimed" || party.claim.claimedByOrganizationId !== organizationId) {
+    throw new BrokerClaimError(
+      "Only the organization that claimed this profile can edit it.",
+    );
+  }
+
+  const at = now();
+  const next: Party = {
+    ...party,
+    broker: party.broker
+      ? {
+        ...party.broker,
+        // Spread into `selfReported` ONLY. `official`, `identity` and
+        // `authority` are carried across untouched by construction.
+        selfReported: {
+          ...party.broker.selfReported,
+          ...input,
+          updatedAt: at,
+          updatedByOrganizationId: organizationId,
+        },
+      }
+      : party.broker,
+    updatedAt: at,
+  };
+  replaceParty(next);
+
+  db().events.push(event(
+    organizationId, "broker.self_reported_updated",
+    `${party.legalName} updated its own operational details. The register's identity fields `
+    + "were not changed.",
+    { partyId },
+    { occurredAt: at, actor },
+  ));
+
+  return next;
 }
 
 export async function planResolution(
