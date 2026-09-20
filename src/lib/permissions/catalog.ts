@@ -218,6 +218,13 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "invitations:resend", label: "Resend invitations", description: "Send an invitation again if it was missed.", group: "invitations", prerequisites: ["invitations:view"] },
   { key: "invitations:revoke", label: "Revoke invitations", description: "Cancel an invitation before it is accepted.", group: "invitations", prerequisites: ["invitations:view"] },
 
+  // ---- Referrals ---------------------------------------------------------
+  // Grouped with Invitations in the reading order because that is where an
+  // owner looks for "people coming in", and because accepting a referral hands
+  // off into the invitation flow. It is not an invitation permission: it never
+  // creates one, and the handoff still needs `invitations:create`.
+  { key: "referrals:review", label: "Review referrals", description: "See people somebody outside the company introduced, and record whether this company is interested. Never creates a membership, a role, permissions or an employment record.", group: "invitations", sensitive: true, scopeNote: "Only referrals sent to this organization, and only this organization's decision. Recording interest grants the person nothing \u2014 an invitation is still a separate, authorized act." },
+
   // ---- Organization settings ---------------------------------------------
   { key: "organization:manage", label: "Manage organization settings", description: "Edit the organization's details and billing information.", group: "organization", sensitive: true },
   { key: "integrations:view", label: "View integrations", description: "See which outside tools are connected.", group: "organization" },

@@ -122,6 +122,20 @@ export const AUDIT_ACTIONS: readonly AuditActionMeta[] = [
   { key: "risk.case_note_added", label: "Risk case note added", module: "risk" },
   { key: "risk.case_evidence_added", label: "Risk case evidence added", module: "risk" },
   { key: "risk.case_decision_recorded", label: "Risk case decision recorded", module: "risk" },
+  /* Introductions. Not one of these is permission-sensitive, because not one
+     of them changes what anybody may do — which is the point. The abuse report
+     IS marked, because a person saying "I never asked to be contacted" is the
+     signal a pattern would be visible in. */
+  { key: "referrals.submitted", label: "Referral submitted", module: "referrals" },
+  { key: "referrals.withdrawn", label: "Referral withdrawn", module: "referrals" },
+  { key: "referrals.candidate_claimed", label: "Referral claimed by candidate", module: "referrals" },
+  { key: "referrals.candidate_declined", label: "Referral declined by candidate", module: "referrals" },
+  { key: "referrals.reported_unwanted", label: "Referral reported as unwanted", module: "referrals", permissionSensitive: true },
+  { key: "referrals.interest_recorded", label: "Company recorded interest", module: "referrals" },
+  { key: "referrals.declined_by_company", label: "Company declined referral", module: "referrals" },
+  { key: "referrals.invitation_started", label: "Invitation started from referral", module: "referrals" },
+  { key: "referrals.email_delivery_failed", label: "Referral email failed", module: "referrals" },
+
   { key: "audit.event_corrected", label: "Audit event corrected", module: "risk" },
   { key: "audit.export_prepared", label: "Audit export prepared", module: "risk", permissionSensitive: true },
 ] as const;
@@ -166,6 +180,7 @@ export const AUDIT_MODULE_LABEL: Record<AuditModule, string> = {
   invoices: "Invoices",
   integrations: "Integrations",
   workforce: "Workforce & HR",
+  referrals: "Referrals",
   risk: "Audit & Risk",
 };
 

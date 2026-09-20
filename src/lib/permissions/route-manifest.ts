@@ -43,6 +43,11 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   // inheriting it.
   "/settings/responsibility": ["organization:manage"],
   "/account": [],
+  // Both referral surfaces, stated so the longest-prefix rule cannot hand
+  // either the other's requirements. `/account/referrals` is open to every
+  // signed-in person; `/referrals` is the company inbox.
+  "/account/referrals": [],
+  "/referrals": ["referrals:review"],
   // Ending somebody's engagement is a stronger power than reading the roster,
   // and the detail page is where it happens. The nav entry gates the list; this
   // keeps the child route from falling through to a weaker parent by accident

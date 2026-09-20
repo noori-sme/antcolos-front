@@ -4,7 +4,7 @@ import {
   ArrowUpCircle, BellOff, Briefcase, Building2, CalendarClock, CheckCircle2, ChevronRight,
   ClipboardCheck, ClipboardList, Container, FileSignature, FileText, Fuel, Handshake, IdCard,
   Mail, MailQuestion, Map, Package, Radar, Receipt, RefreshCw, Router, Satellite,
-  ScrollText, ShieldAlert, ShieldCheck, TriangleAlert, Truck, User, UserCheck, UserSearch,
+  ScrollText, ShieldAlert, ShieldCheck, TriangleAlert, Truck, User, UserCheck, UserPlus, UserSearch,
   UserCircle, Wrench, type LucideIcon,
 } from "lucide-react";
 import {
@@ -50,6 +50,7 @@ const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   eld_device: Satellite, eld_connection: Router,
   workforce_engagement: Briefcase, qualification_record: IdCard, invitation: Mail,
   import_claim: UserSearch,
+  referral: UserPlus,
 };
 
 /** Severity as a two-letter mark rather than a word. Colour is never the only cue. */

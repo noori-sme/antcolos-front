@@ -24,9 +24,9 @@ export function MobileNavDrawer() {
         </Button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/45 lg:hidden" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/45 data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out lg:hidden" />
         <Dialog.Content
-          className="fixed inset-y-0 left-0 z-50 flex w-[17.5rem] flex-col border-r border-border bg-surface shadow-e3 outline-none lg:hidden"
+          className="fixed inset-y-0 left-0 z-50 flex w-[17.5rem] flex-col border-r border-border bg-surface shadow-e3 outline-none data-[state=open]:animate-drawer-in data-[state=closed]:animate-drawer-out lg:hidden"
           aria-describedby={undefined}
         >
           <Dialog.Title className="sr-only">Navigation</Dialog.Title>
