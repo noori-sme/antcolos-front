@@ -1,7 +1,7 @@
 "use client";
 
 import { Building2, Check, Copy, Plus, ShieldCheck, UserRound, Users } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -15,7 +15,7 @@ import {
   validateRoleName,
 } from "@/lib/permissions";
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
-import type { CustomRole, EngagementType, PermissionKey } from "@/types";
+import type { EngagementType, PermissionKey, PermissionTemplate } from "@/types";
 import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import { PermissionPicker } from "./permission-picker";
 import {
@@ -24,15 +24,12 @@ import {
   SensitiveAccessWarning,
 } from "./permission-summary";
 import { invitationPresets, type InvitationPreset } from "./presets";
-import {
-  invitationLink,
-  mockCreateRole,
-  mockListRoles,
-} from "./mock-access";
+import { invitationLink } from "./mock-access";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
+import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 
@@ -74,14 +71,34 @@ function sameSet(a: readonly PermissionKey[], b: ReadonlySet<PermissionKey>): bo
  */
 export function InviteFlow() {
   const router = useRouter();
+  /**
+   * ★ THE REFERRAL HANDOFF ★
+   *
+   * A company that accepted a referral lands here with `?referral=`. What
+   * arrives is PREFILL and nothing else: a name, an address, the referrer's
+   * name and the free-text title the referrer typed, shown as context.
+   *
+   * Notice what the handoff cannot carry and therefore cannot decide — the
+   * invitation kind, the permission set, the engagement type, the expiry. Every
+   * one of those is still chosen on this screen by somebody holding
+   * `invitations:create`, which is exactly the point: accepting a referral is
+   * an expression of interest, and this is where the actual decisions are made.
+   *
+   * The one thing it carries that is more than a prefill is
+   * `existingEngagementId`, which makes acceptance CONNECT a workforce record
+   * this organization already has rather than start a second one. That is the
+   * access module's own `InvitationDraft.engagementId`, not a new mechanism.
+   */
+  const referralId = useSearchParams().get("referral");
+  const [handoff, setHandoff] = useState<ReferralHandoff | null>(null);
   const { membership, organization } = useActiveMembership();
   const ctx = useServiceContext();
   const myPermissions = usePermissions();
 
   const [stage, setStage] = useState<Stage>("type");
   const [preset, setPreset] = useState<InvitationPreset | null>(null);
-  const [savedRole, setSavedRole] = useState<CustomRole | null>(null);
-  const [roles, setRoles] = useState<CustomRole[]>([]);
+  const [savedRole, setSavedRole] = useState<PermissionTemplate | null>(null);
+  const [roles, setRoles] = useState<PermissionTemplate[]>([]);
 
   const [roleName, setRoleName] = useState("");
   const [recipientName, setRecipientName] = useState("");
@@ -110,10 +127,32 @@ export function InviteFlow() {
   );
 
   useEffect(() => {
-    if (!organization) return;
+    if (!ctx || !referralId) return;
     let cancelled = false;
-    mockListRoles(organization.id).then((list) => {
-      if (!cancelled) setRoles(list.filter((r) => !r.archived));
+    void services.referrals.handoff(ctx, referralId).then((result) => {
+      if (cancelled || !result) return;
+      setHandoff(result);
+      // Prefilled, and still editable. The reviewer confirms the identity and
+      // the contact details — what a stranger typed into a referral form is
+      // evidence of an introduction, not a verified fact about the person.
+      setRecipientName(result.recipientName);
+      setRecipientEmail(result.recipientEmail);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx, referralId]);
+
+  useEffect(() => {
+    if (!ctx) return;
+    let cancelled = false;
+    // Archived roles are left out on purpose: they keep working for whoever
+    // already holds one and cannot be handed to anybody new, and an invitation
+    // is exactly "handed to somebody new".
+    void services.access.templates(ctx).then((rows) => {
+      if (!cancelled) {
+        setRoles(rows.map((r) => r.template).filter((t) => !t.archived));
+      }
     });
     return () => {
       cancelled = true;
@@ -130,7 +169,7 @@ export function InviteFlow() {
 
   const selectedList = useMemo(() => [...permissions], [permissions]);
 
-  function choose(next: InvitationPreset, role?: CustomRole) {
+  function choose(next: InvitationPreset, role?: PermissionTemplate) {
     setPreset(next);
     setSavedRole(role ?? null);
     // A preset arrives pre-ticked; anything the granter cannot hand out is
@@ -180,17 +219,35 @@ export function InviteFlow() {
     // what this owner personally holds.
     const safe = clampToGrantable(selectedList, myPermissions, orgType);
 
-    let customRoleId = savedRole?.id;
+    if (!ctx) {
+      setSending(false);
+      return;
+    }
+
+    /*
+     * ★ SAVING THE SELECTION AS A ROLE IS A SEPARATE ACT ★
+     * The invitation carries `safe` either way — its own snapshot, taken now.
+     * Saving a role as well records where that snapshot came from and makes it
+     * reusable; it does not make the invitation depend on the role. Editing the
+     * role tomorrow cannot re-scope an invitation somebody is about to accept,
+     * because acceptance reads the snapshot and never the template.
+     */
+    let templateId = savedRole?.id;
+    let templateVersion = savedRole?.version;
     if (saveAsRole && !savedRole) {
-      const created = await mockCreateRole(organization.id, {
+      const created = await services.access.createTemplate(ctx, {
         name: newRoleName,
         description: `Saved from an invitation to ${recipientName.trim()}.`,
         permissions: safe,
       });
-      customRoleId = created.id;
+      if (created.status === "refused") {
+        setRefusal(`The role was not saved, so the invitation was not sent. ${created.message}`);
+        setSending(false);
+        return;
+      }
+      templateId = created.template.id;
+      templateVersion = created.template.version;
     }
-
-    if (!ctx) return;
 
     /*
      * ★ THE SERVICE DECIDES, AND A REFUSAL IS READ RATHER THAN THROWN ★
@@ -209,13 +266,18 @@ export function InviteFlow() {
       invitation = await services.access.create(ctx, {
         kind: preset.kind,
         roleName: effectiveRoleName || preset.label,
-        customRoleId,
+        templateId,
+        templateVersion,
         engagementType: engagementType ?? undefined,
         recipientName,
         recipientEmail,
         permissions: safe,
         scopedToCarrierName: isDispatchOrg ? organization.displayName : undefined,
         expiresAt: expiryIso(expiryDays),
+        // Present only when Workforce already holds a live engagement for this
+        // person. It is what makes acceptance a CONNECTION rather than a second
+        // record — the access module's existing behaviour, not a new one.
+        engagementId: handoff?.existingEngagementId,
       });
     } catch (error) {
       setRefusal(
@@ -226,6 +288,16 @@ export function InviteFlow() {
       );
       setSending(false);
       return;
+    }
+
+    /*
+     * The referral learns the id of the invitation that came out of it, AFTER
+     * the canonical command returned one. The referral module has no way to
+     * create an invitation and this is the only direction the link is ever
+     * written in.
+     */
+    if (referralId) {
+      void services.referrals.recordInvitation(ctx, referralId, invitation.id);
     }
 
     setSentToken(invitation.token);
@@ -253,6 +325,30 @@ export function InviteFlow() {
         title="Invite to Antcolos"
         description={`Everyone you invite joins ${organization.displayName} with exactly the access you choose here.`}
       />
+
+      {handoff ? (
+        <div className="rounded-lg border border-st-info/35 bg-st-info-bg/40 px-4 py-3">
+          <p className="text-[0.8125rem] font-semibold text-fg">
+            From a referral by {handoff.referrerName}
+          </p>
+          <p className="mt-1 text-[0.8125rem] text-fg-muted">
+            They suggested {handoff.recipientName} for
+            {" "}&ldquo;{handoff.proposedTitleContext}&rdquo;. That is the
+            referrer&apos;s description and nothing else &mdash; it is not a
+            role, it grants nothing, and what this person will actually be able
+            to do is what you choose below.
+          </p>
+          {handoff.existingEngagementId ? (
+            <p className="mt-2 text-[0.8125rem] text-fg-muted">
+              This organization already has a workforce record for them. Sending
+              this invitation connects that record rather than starting a second.
+            </p>
+          ) : null}
+          <p className="mt-2 text-[0.75rem] text-fg-subtle">
+            {handoff.meaningOfAcceptance}
+          </p>
+        </div>
+      ) : null}
 
       {stage === "type" ? (
         <TypeStep presets={presets} roles={roles} onChoose={choose} />
@@ -641,7 +737,7 @@ function SelectedTypeCard({
   onChange,
 }: {
   preset: InvitationPreset;
-  savedRole: CustomRole | null;
+  savedRole: PermissionTemplate | null;
   onChange: () => void;
 }) {
   const Icon = KIND_ICON[preset.kind];
@@ -678,8 +774,8 @@ function TypeStep({
   onChoose,
 }: {
   presets: InvitationPreset[];
-  roles: CustomRole[];
-  onChoose: (preset: InvitationPreset, role?: CustomRole) => void;
+  roles: PermissionTemplate[];
+  onChoose: (preset: InvitationPreset, role?: PermissionTemplate) => void;
 }) {
   const custom = presets.find((p) => p.kind === "custom")!;
   const headingId = useId();

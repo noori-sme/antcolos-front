@@ -1,6 +1,6 @@
 import { effectivePermissions } from "@/lib/permissions/effective";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER,
 } from "@/lib/session/fixtures";
 import { workspaceKindOf, type PermissionKey } from "@/types";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
@@ -24,7 +24,7 @@ export function loopContextFor(
     organizationName: organization.displayName,
     workspaceKind: workspaceKindOf(organization),
     membershipId: membership.id,
-    permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES),
+    permissions: effectivePermissions(membership, organization),
     scope: membership.scope,
     driverProfileId: membership.driverProfileId,
     actor: {

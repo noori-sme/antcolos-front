@@ -1,6 +1,6 @@
 import { effectivePermissions } from "@/lib/permissions/effective";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER,
 } from "@/lib/session/fixtures";
 import { workspaceKindOf, type PermissionKey } from "@/types";
 import type { ServiceContext } from "@/lib/api/contracts/context";
@@ -23,7 +23,7 @@ export function contextFor(
 
   const permissions = over.permissions
     ? new Set(over.permissions)
-    : effectivePermissions(membership, organization, MOCK_TEMPLATES);
+    : effectivePermissions(membership, organization);
   for (const key of over.without ?? []) permissions.delete(key);
 
   return {

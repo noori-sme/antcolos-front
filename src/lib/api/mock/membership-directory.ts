@@ -1,8 +1,9 @@
 import { effectivePermissions } from "@/lib/permissions/effective";
 import { DEFAULT_SCOPE, OWN_RECORDS_SCOPE } from "@/lib/permissions/scope";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER, appliedSeedTemplate,
 } from "@/lib/session/fixtures";
+import { notifyRosterChanged } from "@/lib/session/membership-store";
 import type {
   IsoDateTime, Membership, PermissionKey, ResponsibilityFunction,
 } from "@/types";
@@ -131,8 +132,6 @@ export interface DirectoryMember {
 /* Colleagues                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const tpl = (orgId: string, name: string) => `tpl_${orgId}_${name}`;
-
 /**
  * The people the signed-in user works with.
  *
@@ -173,7 +172,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_northline",
     status: "active",
     title: "Dispatcher",
-    templateIds: [tpl("org_northline", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_northline", "dispatcher")],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -186,7 +185,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_northline",
     status: "active",
     title: "Dispatcher",
-    templateIds: [tpl("org_northline", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_northline", "dispatcher")],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -203,7 +202,7 @@ const COLLEAGUES: readonly Membership[] = [
     // Deliberately NOT a dispatcher: he cannot be routed dispatch work, and the
     // engine has to reach that conclusion from his permissions rather than from
     // the word "shop".
-    templateIds: [tpl("org_northline", "maintenance")],
+    appliedTemplates: [appliedSeedTemplate("org_northline", "maintenance")],
     grants: ["trucks:view", "trailers:view"],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -225,10 +224,10 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_northline",
     status: "active",
     title: "Safety & compliance",
-    templateIds: [
-      tpl("org_northline", "safety"),
-      tpl("org_northline", "compliance"),
-      tpl("org_northline", "risk and insurance"),
+    appliedTemplates: [
+      appliedSeedTemplate("org_northline", "safety"),
+      appliedSeedTemplate("org_northline", "compliance"),
+      appliedSeedTemplate("org_northline", "risk and insurance"),
     ],
     grants: ["trucks:view", "trailers:view", "drivers:view"],
     revocations: [],
@@ -242,7 +241,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_northline",
     status: "active",
     title: "Bookkeeper",
-    templateIds: [tpl("org_northline", "accountant")],
+    appliedTemplates: [appliedSeedTemplate("org_northline", "accountant")],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -255,7 +254,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_northline",
     status: "active",
     title: "Company driver",
-    templateIds: [tpl("org_northline", "driver")],
+    appliedTemplates: [appliedSeedTemplate("org_northline", "driver")],
     grants: [],
     revocations: [],
     scope: OWN_RECORDS_SCOPE,
@@ -275,7 +274,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_meridian",
     status: "active",
     title: "Owner",
-    templateIds: [],
+    appliedTemplates: [],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -288,7 +287,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_meridian",
     status: "active",
     title: "Dispatcher",
-    templateIds: [tpl("org_meridian", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_meridian", "dispatcher")],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -301,7 +300,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_meridian",
     status: "active",
     title: "Dispatcher",
-    templateIds: [tpl("org_meridian", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_meridian", "dispatcher")],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -314,7 +313,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_meridian",
     status: "active",
     title: "Operations lead",
-    templateIds: [tpl("org_meridian", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_meridian", "dispatcher")],
     // What makes her a supervisor is the profile below, not this list. These
     // are the powers the job needs; being escalated to is not a permission.
     grants: ["members:view", "documents:approve"],
@@ -332,7 +331,7 @@ const COLLEAGUES: readonly Membership[] = [
     // for the right reason rather than by a special case.
     status: "suspended",
     title: "Night dispatcher",
-    templateIds: [tpl("org_meridian", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_meridian", "dispatcher")],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -351,7 +350,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_cascade",
     status: "active",
     title: "Owner",
-    templateIds: [],
+    appliedTemplates: [],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -364,7 +363,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_stonebridge",
     status: "active",
     title: "Owner",
-    templateIds: [],
+    appliedTemplates: [],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -379,7 +378,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_summit",
     status: "active",
     title: "Dispatcher",
-    templateIds: [tpl("org_summit", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_summit", "dispatcher")],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -392,7 +391,7 @@ const COLLEAGUES: readonly Membership[] = [
     organizationId: "org_summit",
     status: "active",
     title: "Dispatcher",
-    templateIds: [tpl("org_summit", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_summit", "dispatcher")],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -668,13 +667,32 @@ interface DirectoryOverrides {
   status: Map<string, Membership["status"]>;
   /** Runtime delegation scope: which trucks and carriers somebody was given. */
   scope: Map<string, { truckIds?: string[]; carrierOrganizationIds?: string[] }>;
+  /**
+   * Runtime access: the applied templates, grants and revocations a seat has
+   * been given since the fixtures were written.
+   *
+   * Held here for the same reason as the others — so a reset puts the world
+   * back exactly — and holding nothing else. It carries no permission of its
+   * own: the values are what the Access service already clamped and decided to
+   * write, and `effectivePermissions` still turns them into permissions.
+   */
+  access: Map<string, MembershipAccessOverride>;
+}
+
+/** Exactly the three fields a template application may change. */
+export interface MembershipAccessOverride {
+  appliedTemplates?: Membership["appliedTemplates"];
+  grants?: Membership["grants"];
+  revocations?: Membership["revocations"];
 }
 
 let overrides: DirectoryOverrides | null = null;
 
 function ov(): DirectoryOverrides {
   if (!overrides) {
-    overrides = { availability: new Map(), status: new Map(), scope: new Map() };
+    overrides = {
+      availability: new Map(), status: new Map(), scope: new Map(), access: new Map(),
+    };
   }
   return overrides;
 }
@@ -682,6 +700,7 @@ function ov(): DirectoryOverrides {
 /** Test hook and demo control. Never called during a normal render. */
 export function resetMembershipDirectory() {
   overrides = null;
+  notifyRosterChanged();
 }
 
 /**
@@ -696,6 +715,7 @@ export function setMembershipAvailability(
   availability: MembershipAvailability,
 ) {
   ov().availability.set(membershipId, availability);
+  notifyRosterChanged();
 }
 
 /**
@@ -710,6 +730,7 @@ export function setMembershipStatus(
   status: Membership["status"],
 ) {
   ov().status.set(membershipId, status);
+  notifyRosterChanged();
 }
 
 /**
@@ -724,12 +745,35 @@ export function setMembershipStatus(
  * other five leave them; revoke it and they come back, with the work itself
  * never duplicated or destroyed.
  */
+/**
+ * Record a change to what a seat carries.
+ *
+ * ★ A PRIMITIVE, NOT A COMMAND ★
+ * It writes what it is given and checks nothing. WHO may change a seat, whether
+ * the selection is inside their own access, and whether the organization
+ * boundary was crossed are all the Access service's — see
+ * `./access-templates.ts`, which answers every one of them before calling here.
+ */
+export function updateMemberAccess(
+  membershipId: string,
+  patch: MembershipAccessOverride,
+): Membership | undefined {
+  const base = ALL_MEMBERSHIPS.find((m) => m.id === membershipId);
+  if (!base) return undefined;
+  const current = ov().access.get(membershipId) ?? {};
+  ov().access.set(membershipId, { ...current, ...patch });
+  // The roster's answer just changed. Screens read it through one subscription.
+  notifyRosterChanged();
+  return membershipRecordFor(membershipId);
+}
+
 export function setMembershipDelegationScope(
   membershipId: string,
   scope: { truckIds?: string[]; carrierOrganizationIds?: string[] } | undefined,
 ) {
   if (scope === undefined) ov().scope.delete(membershipId);
   else ov().scope.set(membershipId, scope);
+  notifyRosterChanged();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -743,11 +787,33 @@ function organizationOf(organizationId: string) {
   return MOCK_ORGANIZATIONS.find((o) => o.id === organizationId);
 }
 
+/** The fixture record plus whatever has been written over it at runtime. */
+function current(membership: Membership): Membership {
+  const status = ov().status.get(membership.id) ?? membership.status;
+  const access = ov().access.get(membership.id);
+  if (status === membership.status && !access) return membership;
+  return {
+    ...membership,
+    status,
+    appliedTemplates: access?.appliedTemplates ?? membership.appliedTemplates,
+    grants: access?.grants ?? membership.grants,
+    revocations: access?.revocations ?? membership.revocations,
+  };
+}
+
+/** Every seat in one organization, as a plain record, overrides applied. */
+export function membershipsIn(organizationId: string): Membership[] {
+  return ALL_MEMBERSHIPS
+    .filter((m) => m.organizationId === organizationId)
+    .map(current);
+}
+
 function resolve(membership: Membership): DirectoryMember | undefined {
   const organization = organizationOf(membership.organizationId);
   if (!organization) return undefined;
 
-  const status = ov().status.get(membership.id) ?? membership.status;
+  const live = current(membership);
+  const status = live.status;
   const profile = PROFILE_BY_ID.get(membership.id)
     ?? { membershipId: membership.id, ...DEFAULT_PROFILE };
   const availability = ov().availability.get(membership.id) ?? profile.availability;
@@ -756,11 +822,7 @@ function resolve(membership: Membership): DirectoryMember | undefined {
   // The real function, on the real record. A suspended or ended membership
   // resolves to the empty set, which is what makes removal work without a
   // single special case downstream.
-  const permissions = effectivePermissions(
-    { ...membership, status },
-    organization,
-    MOCK_TEMPLATES,
-  );
+  const permissions = effectivePermissions(live, organization);
 
   return {
     membershipId: membership.id,
@@ -919,9 +981,7 @@ export function assignableMembersOf(
  */
 export function membershipRecordFor(membershipId: string): Membership | undefined {
   const membership = ALL_MEMBERSHIPS.find((m) => m.id === membershipId);
-  if (!membership) return undefined;
-  const status = ov().status.get(membership.id) ?? membership.status;
-  return status === membership.status ? membership : { ...membership, status };
+  return membership ? current(membership) : undefined;
 }
 
 /** The organization record behind an id. */

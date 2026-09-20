@@ -14,8 +14,7 @@ import { resetTrailerRegistry, trailerFleetSync } from "@/lib/api/mock/trailer-r
 import { resetFleetTelemetry } from "@/lib/api/mock/fleet-telemetry";
 import { trailerContextFrom } from "@/lib/api/mock/fleet-operations";
 import {
-  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_TEMPLATES,
-} from "@/lib/session/fixtures";
+  MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import type { PermissionKey } from "@/types";
 import { MERIDIAN_DISPATCHER, NORTHLINE_OWNER, contextFor } from "../helpers/context";
 
@@ -115,7 +114,7 @@ describe("effective permissions are unchanged in shape", () => {
   it("gives an owner everything available to the organization type", () => {
     const membership = MOCK_MEMBERSHIPS.find((m) => m.id === NORTHLINE_OWNER)!;
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
-    const effective = effectivePermissions(membership, org, MOCK_TEMPLATES);
+    const effective = effectivePermissions(membership, org);
     expect(effective.size).toBe(availablePermissionKeys(org.type).length);
     expect(effective.has("fleet:view")).toBe(true);
   });
@@ -123,7 +122,7 @@ describe("effective permissions are unchanged in shape", () => {
   it("still honours a revocation over a template grant", () => {
     const membership = MOCK_MEMBERSHIPS.find((m) => m.id === MERIDIAN_DISPATCHER)!;
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
-    const effective = effectivePermissions(membership, org, MOCK_TEMPLATES);
+    const effective = effectivePermissions(membership, org);
     expect(effective.has("loads:delete")).toBe(false);   // revoked
     expect(effective.has("customers:edit")).toBe(true);  // granted
     expect(effective.has("rates:view")).toBe(false);     // never granted
@@ -133,7 +132,7 @@ describe("effective permissions are unchanged in shape", () => {
     const membership = MOCK_MEMBERSHIPS.find((m) => m.id === MERIDIAN_DISPATCHER)!;
     const org = MOCK_ORGANIZATIONS.find((o) => o.id === membership.organizationId)!;
     const suspended = { ...membership, status: "suspended" as const };
-    expect(effectivePermissions(suspended, org, MOCK_TEMPLATES).size).toBe(0);
+    expect(effectivePermissions(suspended, org).size).toBe(0);
   });
 });
 

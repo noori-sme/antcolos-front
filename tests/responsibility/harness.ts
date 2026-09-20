@@ -1,7 +1,7 @@
 import { effectivePermissions } from "@/lib/permissions/effective";
 import { DEFAULT_SCOPE, OWN_RECORDS_SCOPE } from "@/lib/permissions/scope";
 import {
-  MOCK_ORGANIZATIONS, MOCK_TEMPLATES, MOCK_USER,
+  MOCK_ORGANIZATIONS, MOCK_USER,
 } from "@/lib/session/fixtures";
 import {
   membershipRecordFor, memberById,
@@ -39,7 +39,7 @@ export function contextFor(
 
   const permissions = over.permissions
     ? new Set(over.permissions)
-    : effectivePermissions(membership, organization, MOCK_TEMPLATES);
+    : effectivePermissions(membership, organization);
   for (const key of over.without ?? []) permissions.delete(key);
 
   return {

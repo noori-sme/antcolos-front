@@ -1,4 +1,4 @@
-import type { PermissionKey } from "./permission";
+import type { AppliedTemplate, PermissionKey } from "./permission";
 
 export type MembershipStatus = "invited" | "active" | "suspended" | "left";
 
@@ -16,8 +16,20 @@ export interface Membership {
   status: MembershipStatus;
   /** Organization-specific job title, display only. Never a permission source. */
   title?: string;
-  templateIds: string[];
+  /**
+   * The templates applied to this seat, each carrying the permission SNAPSHOT
+   * taken when it was applied.
+   *
+   * Not a list of ids to dereference. A membership that held ids would be a
+   * membership whose access changed whenever somebody edited a template — the
+   * exact behaviour the product has to be able to promise it does not have.
+   * See `AppliedTemplate`.
+   */
+  appliedTemplates: AppliedTemplate[];
+  /** Person-specific additions, on top of whatever the templates brought. */
   grants: PermissionKey[];
+  /** Person-specific removals. Beat grants, so one key can be taken back
+   *  without building a template for one person. */
   revocations: PermissionKey[];
   scope: MembershipScope;
   driverProfileId?: string;

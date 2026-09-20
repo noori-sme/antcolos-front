@@ -91,9 +91,17 @@ export interface Invitation {
   organizationName: string;
   organizationType: OrganizationType;
   kind: InvitationKind;
-  /** The role as it read when sent — a preset name, or the custom role's name. */
+  /** How the sender described it — a preset name, or the template's name. */
   roleName: string;
-  customRoleId?: string;
+  /**
+   * The template this was built from, when one was used. PROVENANCE ONLY.
+   *
+   * Acceptance reads `permissions` below and never this: an invitation sent
+   * against version 2 of a template stays an offer of version 2, even if
+   * somebody saves version 3 while it is in the recipient's inbox.
+   */
+  templateId?: string;
+  templateVersion?: number;
   /**
    * Driver invitations only. The carrier decides whether this is a company
    * driver or an owner-operator — it sets the paperwork and the pay, so it is
@@ -287,16 +295,12 @@ export const ACCEPTANCE_LIMITATION =
   + "what is done. Nothing here is persisted beyond this browser tab, no "
   + "invitation was emailed, and none of these checks is a security property.";
 
-export interface CustomRole {
-  id: string;
-  organizationId: string;
-  name: string;
-  description: string;
-  permissions: PermissionKey[];
-  /** Archived roles keep working for whoever holds them, but cannot be given out. */
-  archived: boolean;
-  /** How many current members hold this role. Blocks deletion when above zero. */
-  memberCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
+/*
+ * `CustomRole` used to live here.
+ *
+ * It was a second, parallel role type with its own store, its own hand-written
+ * `memberCount` and no connection to any Membership — so the Roles screen edited
+ * records that granted nobody anything, and the headcount beside each one was
+ * invented. `PermissionTemplate` in `@/types/permission` is the one template
+ * type, and `AppliedTemplate` is how one reaches a seat.
+ */

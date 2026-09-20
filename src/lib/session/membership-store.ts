@@ -24,18 +24,19 @@ import type { SessionScenario } from "./scenarios";
  *
  * ███ WHAT THIS IS NOT ███
  *
- * It is NOT a permission system. Nothing here reads, computes, widens or stores
- * a `PermissionKey`. A membership carries template ids, grants and revocations
- * exactly as a fixture one does, and `effectivePermissions` — the one that
- * already exists — turns those into permissions. A seat granted here is subject
- * to precisely the rules a seeded seat is subject to, because it goes through
- * precisely the same function.
+ * It is NOT a permission system. Nothing here reads, computes, widens or
+ * clamps a `PermissionKey`. A membership carries applied templates — each one a
+ * SNAPSHOT of what a template held when somebody applied it — plus grants and
+ * revocations, exactly as a fixture one does, and `effectivePermissions` turns
+ * those into permissions. A seat written here is subject to precisely the rules
+ * a seeded seat is subject to, because it goes through precisely the same
+ * function.
  *
- * It is NOT an authorization boundary either. `grantMembership` is a primitive:
- * it writes a seat and notifies. WHO may ask for one, on what basis, and what
- * else must be true first is the Access service's, and the Access service does
- * not exist yet. Until it does, nothing in the product calls this — it is
- * reachable only from tests, which is deliberate and is asserted.
+ * It is NOT an authorization boundary either. `grantMembership` and
+ * `updateMembershipAccess` are primitives: they write and notify. WHO may ask,
+ * on what basis, and whether what they wrote is inside their own access is the
+ * Access service's — see `src/lib/api/mock/access-templates.ts`, which does
+ * every one of those checks and clamps the selection before calling in here.
  *
  * ███ FRONTEND ONLY ███
  * In-memory for the life of the tab, and reset by a reload. There is no
@@ -96,6 +97,22 @@ function notify() {
 /* -------------------------------------------------------------------------- */
 /* Reads                                                                       */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Announce that the roster changed, from a store that is not this one.
+ *
+ * ★ WHY THIS IS EXPORTED ★
+ * "Who is in this organization" is answered by two stores — this one holds the
+ * seats this tab has, the mock membership directory holds the colleagues — but
+ * there is only one QUESTION, so there is only one subscription. Without this,
+ * a write to the directory changed the roster and notified nobody, and the
+ * People screen sat there showing the answer from before it.
+ *
+ * It notifies. It does not write, and it has no opinion about what changed.
+ */
+export function notifyRosterChanged(): void {
+  notify();
+}
 
 export function subscribeRoster(onChange: () => void): () => void {
   listeners.add(onChange);
@@ -208,6 +225,56 @@ export function setMembershipStatus(
     },
   };
   notify();
+}
+
+/**
+ * Changes what a seat carries: its applied templates, and its person-specific
+ * grants and revocations.
+ *
+ * ★ DELIBERATELY NARROW ★
+ * Exactly three fields, and no others. A general `updateMembership` would let a
+ * caller flip `isOwner`, move a seat to another organization, or resurrect a
+ * status — three different ways to produce access nobody granted, from a
+ * primitive whose whole job is to write what somebody already decided.
+ *
+ * It grants no permission of its own and checks no authority. WHO may change a
+ * seat, and whether what they wrote is within their own access, is the Access
+ * service's — see `src/lib/api/mock/access-templates.ts`, which clamps before
+ * it ever reaches here.
+ */
+export interface MembershipAccessPatch {
+  appliedTemplates?: Membership["appliedTemplates"];
+  grants?: Membership["grants"];
+  revocations?: Membership["revocations"];
+}
+
+export function updateMembershipAccess(
+  scenario: SessionScenario,
+  membershipId: string,
+  patch: MembershipAccessPatch,
+): Membership | undefined {
+  const current = snapshots[scenario];
+  const seat = current.memberships.find((m) => m.id === membershipId);
+  if (!seat) return undefined;
+
+  const next: Membership = {
+    ...seat,
+    appliedTemplates: patch.appliedTemplates
+      ? patch.appliedTemplates.map((a) => ({ ...a, permissions: [...a.permissions] }))
+      : seat.appliedTemplates,
+    grants: patch.grants ? [...patch.grants] : seat.grants,
+    revocations: patch.revocations ? [...patch.revocations] : seat.revocations,
+  };
+
+  snapshots = {
+    ...snapshots,
+    [scenario]: {
+      ...current,
+      memberships: current.memberships.map((m) => (m.id === membershipId ? next : m)),
+    },
+  };
+  notify();
+  return next;
 }
 
 /** Test hook. Never called by the UI. */

@@ -5,7 +5,7 @@ import {
   Inbox, Layers, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
   Share2,
   ReceiptText, Route, Satellite, ScrollText, Settings2, Shield, ShieldCheck,
-  TriangleAlert, Truck, UserCircle, Users, UsersRound, Wrench,
+  TriangleAlert, Truck, UserCircle, UserPlus, Users, UsersRound, Wrench,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
 
@@ -66,6 +66,11 @@ export const PRODUCT_NAV: NavSection[] = [
       // member list. Gated on its own key: somebody who may see who drives here
       // is not thereby somebody who may see on what basis they are employed.
       { label: "Workforce", href: "/workforce", icon: Briefcase, requires: ["workforce:view"] },
+      // Introductions from outside the company. Its own key, and deliberately
+      // NOT `invitations:create`: reading a name somebody sent in is a much
+      // smaller power than handing out access, and gating it on the stronger
+      // key would mean only people who can grant permissions may triage.
+      { label: "Referrals", href: "/referrals", icon: UserPlus, requires: ["referrals:review"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
       { label: "Safety & Compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"] },
@@ -154,7 +159,11 @@ export const SETTINGS_NAV: NavSection[] = [
     items: [
       { label: "Organization", href: "/settings/organization", icon: Building2, requires: ["organization:manage"] },
       { label: "People", href: "/settings/users", icon: Users, requires: ["members:view"] },
-      { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:view"] },
+      // `invitations:create`, not the weaker view key. The route manifest is
+      // derived from this line, so it is also what the route guard enforces —
+      // and a nav item gated below the screen behind it is an item that exists
+      // only to tell somebody they may not have it.
+      { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:create"] },
       { label: "Roles and permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
       { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["integrations:view"] },
       // What the ranking learns from, and what it never touches. Not a setting —
@@ -181,6 +190,10 @@ export const ACCOUNT_NAV: NavSection[] = [
       { label: "Appearance", href: "/account/appearance", icon: Palette, requires: [] },
       { label: "Notifications", href: "/account/notifications", icon: Bell, requires: [] },
       { label: "My organizations", href: "/account/organizations", icon: Settings2, requires: [] },
+      // In ACCOUNT, and gated on nothing. Referring somebody is an act of the
+      // person: the referrer usually has no membership in the company they are
+      // introducing somebody to, and often belongs to no company at all.
+      { label: "Referrals", href: "/account/referrals", icon: UserPlus, requires: [] },
     ],
   },
 ];

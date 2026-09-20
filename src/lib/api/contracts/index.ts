@@ -18,6 +18,7 @@ export type * from "./responsibility";
 export type * from "./access";
 export type * from "./workforce";
 export type * from "./qualification";
+export type * from "./referrals";
 export type * from "./profile";
 export {
   AvatarRejectedError, NotProfileOwnerError, ProfileAlreadyInitializedError,
@@ -50,6 +51,7 @@ import type { ResponsibilityService } from "./responsibility";
 import type { WorkforceService } from "./workforce";
 import type { ProfileService } from "./profile";
 import type { QualificationService } from "./qualification";
+import type { ReferralsService } from "./referrals";
 
 /** The seam Taqi implements against. The UI only ever sees this shape. */
 export interface AntcolosServices {
@@ -129,6 +131,15 @@ export interface AntcolosServices {
    */
   import: ImportService;
   /**
+   * Introductions — one person telling a company about another person.
+   *
+   * It owns no identity, no seat, no permission, no engagement and no
+   * document, and it cannot create one: read `contracts/referrals.ts` for the
+   * list of things a Referral deliberately is not. Its only route into the
+   * rest of the product is a set of PREFILL VALUES for `access.create`, which
+   * is still the one invitation command.
+   */
+  referrals: ReferralsService;
    * The permanent, organization-independent career record.
    *
    * ★ THE ONE SERVICE WHOSE READS TAKE NO ServiceContext ★

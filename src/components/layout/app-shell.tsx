@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { MobileTabBar } from "./mobile-nav";
-import { Sidebar } from "./sidebar";
+import { Sidebar, SidebarOverlay } from "./sidebar";
 import { Topbar } from "./topbar";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -17,6 +17,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       <div className="flex min-h-dvh bg-canvas">
         <Sidebar />
+        <SidebarOverlay />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
           <main

@@ -201,10 +201,46 @@ test.describe("when a seat ends underneath the person", () => {
     await page.getByRole("link", { name: "People", exact: true }).first().click();
 
     await expect(page.getByTestId("people-list")).toBeVisible();
-    // Themselves, plus the owner who invited them. Read from the one membership
-    // store — there is no second roster anywhere.
-    await expect(page.getByTestId("person-row")).toHaveCount(2);
+
+    /*
+     * Everybody who is actually in Northline: the owner who invited them, the
+     * colleagues the membership directory holds, and their own new seat.
+     *
+     * This used to assert exactly two rows. That number was not the claim — it
+     * was what came out of the People screen reading only the SESSION store,
+     * which holds the seats this tab has rather than the organization's roster,
+     * so six colleagues who were plainly in Northline were missing from the one
+     * screen whose job is to list them. The count is deliberately not pinned
+     * here: the claim is that there is ONE roster and it is the organization's.
+     */
+    const rows = page.getByTestId("person-row");
+    await expect(rows.filter({ hasText: "Sam Murtaza" })).toHaveCount(1);
+    await expect(rows.filter({ hasText: "Paige" })).toHaveCount(1);
+    // And exactly one of them is theirs to put down.
     await expect(page.getByTestId("leave-organization")).toHaveCount(1);
+  });
+
+  /**
+   * ★ THE ROSTER READS TWO STORES, SO REMOVAL HAS TO REACH BOTH ★
+   *
+   * Colleagues live in the membership directory; seats granted in this tab live
+   * in the session store. When the People screen began listing both, "Remove
+   * access" kept writing only to the session store — so for six of Northline's
+   * seven rows it did nothing at all and said it had worked. This drives the
+   * button on a colleague and insists the row is gone.
+   */
+  test("removing a colleague actually removes them", async ({ page }) => {
+    await page.goto("/settings/users", { waitUntil: "networkidle" });
+
+    const paige = page.getByTestId("person-row").filter({ hasText: "Paige Ellery" });
+    await expect(paige).toHaveCount(1);
+    const before = await page.getByTestId("person-row").count();
+
+    await paige.getByRole("button", { name: "Remove access" }).click();
+
+    await expect(page.getByTestId("person-row").filter({ hasText: "Paige Ellery" }))
+      .toHaveCount(0);
+    await expect(page.getByTestId("person-row")).toHaveCount(before - 1);
   });
 
   test("stops being their workspace instead of leaving stale permissions", async ({ page }) => {

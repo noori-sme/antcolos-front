@@ -1,7 +1,7 @@
 import { OWN_RECORDS_SCOPE, DEFAULT_SCOPE } from "@/lib/permissions/scope";
-import { seedTemplates } from "@/lib/permissions/templates";
+import { seedTemplateId, seedTemplates } from "@/lib/permissions/templates";
 import type {
-  Membership, Organization, PermissionTemplate, Session, User,
+  AppliedTemplate, Membership, Organization, PermissionTemplate, Session, User,
 } from "@/types";
 
 /**
@@ -63,6 +63,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     type: "CARRIER",
     legalName: "Northline Freight LLC",
     displayName: "Northline Freight",
+    username: "northline-freight",
     dotNumber: "3487211",
     mcNumber: "MC-1142908",
     timeZone: "America/Chicago",
@@ -73,6 +74,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     type: "DISPATCH_AGENCY",
     legalName: "Meridian Dispatch Group Inc.",
     displayName: "Meridian Dispatch",
+    username: "meridian-dispatch",
     timeZone: "America/New_York",
     createdAt: "2026-02-18T14:02:00.000Z",
   },
@@ -81,6 +83,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     type: "DISPATCH_AGENCY",
     legalName: "Summit Dispatch Partners LLC",
     displayName: "Summit Dispatch",
+    username: "summit-dispatch",
     timeZone: "America/Denver",
     createdAt: "2026-08-11T15:10:00.000Z",
   },
@@ -108,6 +111,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     type: "CARRIER",
     legalName: "Baxter Transit LLC",
     displayName: "Baxter Transit",
+    username: "baxter-transit",
     dotNumber: "3155902",
     mcNumber: "MC-1098447",
     timeZone: "America/New_York",
@@ -118,6 +122,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     type: "CARRIER",
     legalName: "Cascade Haul Co.",
     displayName: "Cascade Haul",
+    username: "cascade-haul",
     dotNumber: "2910446",
     timeZone: "America/Los_Angeles",
     createdAt: "2026-05-30T19:45:00.000Z",
@@ -131,6 +136,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     type: "CARRIER",
     legalName: "Stonebridge Carriers LLC",
     displayName: "Stonebridge Carriers",
+    username: "stonebridge",
     dotNumber: "3620118",
     mcNumber: "MC-1203774",
     timeZone: "America/New_York",
@@ -142,7 +148,34 @@ export const MOCK_TEMPLATES: PermissionTemplate[] = MOCK_ORGANIZATIONS.flatMap(
   (org) => seedTemplates(org.id),
 );
 
-const tpl = (orgId: string, name: string) => `tpl_${orgId}_${name}`;
+const TEMPLATES_BY_ID = new Map(MOCK_TEMPLATES.map((t) => [t.id, t]));
+
+/**
+ * A seeded template as it lands on a fixture seat: the SNAPSHOT, not a pointer.
+ *
+ * Fixture memberships go through exactly the shape a real application produces,
+ * so a seeded seat and one an owner set up by hand are the same kind of record.
+ * `appliedByMembershipId` says `seed` because nobody applied these — they came
+ * with the workspace — and inventing an administrator who did would put a
+ * person's name on an act they did not perform.
+ */
+export function appliedSeedTemplate(
+  orgId: string,
+  name: string,
+  appliedAt = "2026-01-05T00:00:00.000Z",
+): AppliedTemplate {
+  const template = TEMPLATES_BY_ID.get(seedTemplateId(orgId, name));
+  if (!template) throw new Error(`No seeded template "${name}" in ${orgId}`);
+  return {
+    templateId: template.id,
+    templateName: template.name,
+    version: template.version,
+    permissions: [...template.permissions],
+    appliedAt,
+    appliedByMembershipId: "seed",
+    appliedByName: "Set up with the workspace",
+  };
+}
 
 export const MOCK_MEMBERSHIPS: Membership[] = [
   {
@@ -151,7 +184,7 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     organizationId: "org_northline",
     status: "active",
     title: "Owner",
-    templateIds: [],
+    appliedTemplates: [],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -164,7 +197,7 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     organizationId: "org_meridian",
     status: "active",
     title: "Senior dispatcher",
-    templateIds: [tpl("org_meridian", "dispatcher")],
+    appliedTemplates: [appliedSeedTemplate("org_meridian", "dispatcher")],
     // Template plus extra grants, minus one explicit revocation — the exact
     // case that fixed roles cannot express. `insurance:view` is here so the
     // dispatch side of insurance disclosure can actually be looked at: it
@@ -185,7 +218,7 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     organizationId: "org_summit",
     status: "active",
     title: "Owner",
-    templateIds: [],
+    appliedTemplates: [],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -200,7 +233,7 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     organizationId: "org_baxter",
     status: "active",
     title: "Owner",
-    templateIds: [],
+    appliedTemplates: [],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -217,7 +250,7 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     organizationId: "org_solo",
     status: "active",
     title: "Individual dispatcher",
-    templateIds: [],
+    appliedTemplates: [],
     grants: [],
     revocations: [],
     scope: DEFAULT_SCOPE,
@@ -230,7 +263,7 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     organizationId: "org_cascade",
     status: "active",
     title: "Company driver",
-    templateIds: [tpl("org_cascade", "driver")],
+    appliedTemplates: [appliedSeedTemplate("org_cascade", "driver")],
     grants: [],
     revocations: [],
     scope: OWN_RECORDS_SCOPE,
@@ -244,7 +277,7 @@ export const MOCK_MEMBERSHIPS: Membership[] = [
     organizationId: "org_stonebridge",
     status: "active",
     title: "Owner-operator",
-    templateIds: [tpl("org_stonebridge", "driver")],
+    appliedTemplates: [appliedSeedTemplate("org_stonebridge", "driver")],
     grants: [],
     revocations: [],
     scope: OWN_RECORDS_SCOPE,

@@ -38,7 +38,7 @@ export function contextFor(
 
   const derived = overrides.permissions
     ? new Set(overrides.permissions)
-    : effectivePermissions(membership, organization, MOCK_TEMPLATES);
+    : effectivePermissions(membership, organization);
 
   for (const key of overrides.with ?? []) derived.add(key);
   for (const key of overrides.without ?? []) derived.delete(key);

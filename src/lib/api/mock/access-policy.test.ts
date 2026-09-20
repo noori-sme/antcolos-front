@@ -450,7 +450,7 @@ describe("the access service cannot grant dispatch reach", () => {
     expect(seat).toBeDefined();
     expect(seat!.scope).toEqual({ loads: "assigned", financials: "own" });
     expect(seat!.isOwner).toBe(false);
-    expect(seat!.templateIds).toEqual([]);
+    expect(seat!.appliedTemplates).toEqual([]);
   });
 });
 

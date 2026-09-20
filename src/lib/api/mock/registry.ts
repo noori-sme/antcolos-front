@@ -41,6 +41,7 @@ import { resetRateConfirmationRecords } from "./rate-confirmation-record";
 import { resetListingCorrections } from "./listing-corrections";
 import { resetRateConfirmations } from "./rate-confirmation";
 import { resetResponsibility } from "./responsibility";
+import { resetReferralStore } from "./referral-store";
 import { resetRiskStore } from "./risk-store";
 import { resetSearchSessions } from "./search-session";
 import { settlementStore } from "./settlement-registry";
@@ -49,6 +50,7 @@ import { resetEmptyConfirmations } from "./tracking-availability";
 import { resetTracking } from "./tracking-registry";
 import { resetTrackingSignals } from "./tracking-signals";
 import { resetTrailerRegistry } from "./trailer-registry";
+import { resetTemplateStore } from "./template-store";
 import { resetTruckRegistry } from "./truck-registry";
 import { resetQualificationStore } from "./qualification-store";
 import { resetWorkforceStore } from "./workforce-store";
@@ -122,6 +124,10 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // invitation would offer access into an organization whose roster had already
   // been rebuilt. It holds no membership and no profile of its own: the seats
   // are the membership store's and the people are the driver registry's.
+  // BEFORE the access store, because an invitation may name the template it was
+  // built from. It holds no membership and no permission belonging to a person:
+  // a template is a saved SELECTION out of the one permission catalog.
+  { id: "permission_templates", holds: "Reusable, organization-scoped permission templates", module: "template-store.ts", reset: resetTemplateStore },
   { id: "access", holds: "Invitations, their state, and each person's attempt to accept one", module: "access-store.ts", reset: resetAccessStore },
   // AFTER the driver registry and the membership directory, because the
   // engagement fixtures point at both by id and a seed built over a stale
@@ -137,6 +143,14 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   // person, no truck and no organization of its own — only what a carrier
   // asserted, and what somebody decided about it.
   { id: "import", holds: "Import batches, their immutable claims, the current plan and each run", module: "import-store.ts", reset: resetImportStore },
+  // AFTER the workforce store, because the handoff out of an accepted referral
+  // asks Workforce whether an engagement for this person already exists, and a
+  // referral read against a stale roster would offer to connect a record that
+  // is no longer there. It holds no person, no organization, no seat, no
+  // permission and no engagement of its own — an introduction, the two
+  // decisions taken about it, and the addresses that asked to stop receiving
+  // referral email.
+  { id: "referrals", holds: "Introductions, their candidate and company decisions, the opt-out list and abuse reports", module: "referral-store.ts", reset: resetReferralStore },
   // The permanent profile. It belongs to no organization, so it sits outside
   // every ordering rule above: nothing here is derived from a roster, and
   // resetting it does not disturb any workspace. It holds no permission, no

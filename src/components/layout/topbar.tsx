@@ -11,6 +11,8 @@ import { useNeedsYouCount } from "@/features/needs-you/hooks";
 import { useActiveMembership } from "@/lib/session/hooks";
 import { AccountMenu } from "./account-menu";
 import { MobileNavDrawer } from "./mobile-nav";
+import { SidebarLogoTrigger } from "./sidebar";
+import { SidebarModeMenu } from "./sidebar-mode-menu";
 import { DensityToggle, ThemeToggle } from "./theme-density-controls";
 
 function NeedsYouButton() {
@@ -39,6 +41,10 @@ export function Topbar() {
         <Logo size="sm" />
       </div>
 
+      {/* Hidden mode leaves nothing but this: the logo, which is the way back
+          to the navigation. It renders in no other mode. */}
+      <SidebarLogoTrigger />
+
       <div className="hidden min-w-0 items-center gap-2.5 lg:flex">
         <span className="truncate text-[0.875rem] font-medium text-fg">
           {organization?.displayName}
@@ -57,6 +63,7 @@ export function Topbar() {
         <Button variant="ghost" size="icon" aria-label="Search" className="hidden sm:inline-flex">
           <Search aria-hidden />
         </Button>
+        <SidebarModeMenu className="hidden lg:inline-flex" />
         <DensityToggle className="hidden sm:inline-flex" />
         <ThemeToggle />
         <NeedsYouButton />

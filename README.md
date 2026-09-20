@@ -61,6 +61,7 @@ files rather than a copy. `npm test` runs both.
 | Contracts & Relationships foundation | `/contracts`, `/contracts/new`, `/contracts/[contractId]`, `/contracts/[contractId]/versions/[versionId]` |
 | ELD & Telematics foundation | `/eld`, `/eld/devices/[deviceId]` |
 | Hierarchical responsibility, delegation & escalation | `/work`, `/settings/responsibility` |
+| Roles and permissions | `/settings/permissions` — the permission catalog, reusable role templates, and applying one to a Membership |
 | Permanent user profile & onboarding | `/onboarding/profile`, `/profile/[username]`, `/profile/[username]/a/[key]`, `/account/profile` |
 
 Everything else is a placeholder screen that says so.
@@ -2118,3 +2119,36 @@ the screens that show it:
 - **Existing behaviour** — the fleet layer, its own telemetry store, the
   permission catalog, the service registry and the unimplemented HTTP seam are
   all exactly as they were.
+
+## Roles and permissions
+
+`/settings/permissions`. Permissions belong to a **Membership**; a role is a
+reusable, organization-scoped **template** for choosing them, not a second
+source of authorization.
+
+Applying a role writes a *snapshot* of its permissions onto the seat, together
+with which role it was, at which version, applied by whom. `effectivePermissions`
+reads that snapshot — it does not take a template list and cannot dereference
+one. So:
+
+- **Editing a role changes nobody's access.** Not by policy, by construction.
+  The role's version rises and no seat is touched.
+- **People sitting on an older version is the correct state**, not drift to be
+  cleaned up. The screens count it and name it.
+- **Moving somebody onto a newer version is a separate, authorized act**, one
+  person at a time, with a before/after preview that is the *same value* the
+  command acts on rather than a description of it.
+- **Person-specific grants and revocations survive**, and the preview says which
+  of them will cancel part of the role being applied.
+
+Nobody can save a role containing a permission they do not hold, apply one to
+their own seat, reach a seat in another organization, or remove the last owner.
+A role in a dispatch organization is not a route into a carrier's data —
+per-truck `TruckDispatchAccess` remains the only basis for that, and the one key
+that comes close says so in the catalog.
+
+None of that is security: it runs in a browser against a permission set the
+browser assembled. `docs/roles-and-permissions.md` records what the backend owes
+this seam — durable templates, authenticated grant authority, organization
+scoping as a query predicate, immutable applied snapshots, and an audit entry
+for every assignment and every refusal.

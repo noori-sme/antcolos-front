@@ -3,7 +3,6 @@ import type { PermissionKey, WorkspaceKind } from "@/types";
 import type { ServiceContext } from "../contracts/context";
 import { MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER } from "@/lib/session/fixtures";
 import { effectivePermissions } from "@/lib/permissions/effective";
-import { MOCK_TEMPLATES } from "@/lib/session/fixtures";
 import { workspaceKindOf } from "@/types";
 import { mockNeedsYouService } from "./needs-you";
 import { mockHomeService } from "./home";
@@ -23,7 +22,7 @@ function contextFor(membershipId: string): ServiceContext {
     organizationName: organization.displayName,
     workspaceKind: workspaceKindOf(organization) as WorkspaceKind,
     membershipId: membership.id,
-    permissions: effectivePermissions(membership, organization, MOCK_TEMPLATES) as ReadonlySet<PermissionKey>,
+    permissions: effectivePermissions(membership, organization) as ReadonlySet<PermissionKey>,
     actor: {
       userId: MOCK_USER.id,
       membershipId: membership.id,
