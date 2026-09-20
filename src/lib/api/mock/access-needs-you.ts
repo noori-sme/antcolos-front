@@ -87,9 +87,12 @@ export function accessNeedsYouItems(ctx: ServiceContext): NeedsYouItem[] {
         href: "/settings/invitations",
       },
       recommendedAction: {
+        // The item itself is information and stays at `invitations:view`; the
+        // ACTION points at a screen that now needs `invitations:create`, and
+        // offering somebody a button into a refusal is worse than no button.
         kind: "review_acceptance",
         label: "Look at what is missing",
-        requires: ["invitations:view"],
+        requires: ["invitations:create"],
         href: "/settings/invitations",
       },
       requires: REQUIRES,

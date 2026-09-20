@@ -34,6 +34,10 @@ import { SHARE_PURPOSE_LABEL } from "@/types";
 export function SharedWithUsScreen() {
   const { organization, membership } = useActiveMembership();
   const { user } = useSession();
+  // Inviting is the owner's, or somebody they have given the key to. Without
+  // this the button showed to anybody who could open Documents, and led them
+  // to a screen that refuses them.
+  const canInvite = useCan("invitations:create");
   const [nonce, setNonce] = useState(0);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   void nonce;
@@ -91,9 +95,11 @@ export function SharedWithUsScreen() {
                       <p className="mt-1 text-[0.75rem] text-fg-subtle">“{pkg.note}”</p>
                     ) : null}
                   </div>
-                  <Button asChild variant="secondary" size="sm">
-                    <Link href="/settings/invitations/new">Invite them to onboard</Link>
-                  </Button>
+                  {canInvite ? (
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href="/settings/invitations/new">Invite them to onboard</Link>
+                    </Button>
+                  ) : null}
                 </div>
 
                 {!usable ? (

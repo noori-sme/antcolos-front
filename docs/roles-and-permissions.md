@@ -66,6 +66,43 @@ in a dispatch workspace's catalog at all, and the key that comes closest —
 it is necessary and not sufficient, because the carrier's per-truck
 `TruckDispatchAccess` decides which trucks it reaches.
 
+## Who may invite somebody in
+
+**The Owner, or somebody the Owner has given `invitations:create` to.** That is
+one check, not two: an active owner holds every permission their organization
+type supports, so `isOwner` needs no separate clause.
+
+There is deliberately **no Admin role**, no `isAdmin` flag and no second
+structural rank beside `isOwner`. Delegation happens through the permission,
+because that is the only mechanism the product has for it — `Membership.title`
+is display-only and nothing in authorization branches on a name.
+
+The same key gates every layer, so there is one answer rather than four that
+drift apart:
+
+| Layer | Gate |
+|---|---|
+| Nav item | `requires: ["invitations:create"]` in `config/nav.ts` |
+| Route guard | derived from that nav line, so `/settings/invitations` and `/new` inherit it |
+| Screen | `RequiresPermission permission="invitations:create"` |
+| Entry points elsewhere | the Documents "Invite them to onboard" CTA, the dispatch workspace tile, and the Needs You recommended action all check the same key |
+| Service | `create()` requires it, and separately clamps what the invitation may carry to what the sender holds |
+
+The nav item used to be gated on `invitations:view`, which is **weaker than the
+screen behind it**. The seeded "Contracts and relationships" role grants that
+key, so a real person saw the item, clicked it, and was told they may not be
+there. A nav entry gated below its own screen is not a closed door — it is a
+sign on a closed door telling people it is there.
+
+No seeded role carries `invitations:create`. The delegation exists as a
+mechanism and is given to nobody by default, so out of the box the answer to
+"who may invite" is: the owner.
+
+★ FOR THE BACKEND ★ The screen guards are user experience. The server derives
+the acting membership from the session it issued, requires `invitations:create`
+on the create endpoint, and applies the same clamp to the invitation's
+permission snapshot — holding the invite key is never a way around it.
+
 ## The roster, and why it reads two stores
 
 `rosterOf(organizationId)` answers "who is in this organization" from two
@@ -163,4 +200,4 @@ template edit to anybody's access.
 | Mock implementation | `src/lib/api/mock/access-templates.ts` |
 | Template store | `src/lib/api/mock/template-store.ts` |
 | Screens | `src/features/access/roles-screen.tsx`, `permission-catalog.tsx`, `apply-template-panel.tsx`, `access-diff.tsx` |
-| Tests | `src/lib/api/mock/access-templates.test.ts`, `roster-union.test.ts` |
+| Tests | `src/lib/api/mock/access-templates.test.ts`, `roster-union.test.ts`, `invitation-authority.test.ts` |

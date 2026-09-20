@@ -281,7 +281,18 @@ describe("what already worked still works", () => {
     expect(requiredPermissionsForPath("/loads")).toEqual(["loads:view"]);
     expect(requiredPermissionsForPath("/fleet/trucks")).toEqual(["trucks:view"]);
     expect(requiredPermissionsForPath("/settings/users")).toEqual(["members:view"]);
-    expect(requiredPermissionsForPath("/settings/invitations")).toEqual(["invitations:view"]);
+    /*
+     * TIGHTENED, deliberately, and not a relaxation of this guard.
+     *
+     * This route used to require `invitations:view`, which is weaker than the
+     * screen behind it: the Invite action lives there, and the page itself was
+     * owner-only, so anybody holding the view key saw a nav item that led to a
+     * refusal. The seeded "Contracts and relationships" template grants
+     * `invitations:view`, so that was a real person, not a hypothetical.
+     * Inviting is now one permission from top to bottom.
+     */
+    expect(requiredPermissionsForPath("/settings/invitations")).toEqual(["invitations:create"]);
+    expect(requiredPermissionsForPath("/settings/invitations/new")).toEqual(["invitations:create"]);
     expect(requiredPermissionsForPath("/home")).toEqual([]);
 
     expect(requiredPermissionsForPath("/contracts")).toEqual(["contracts:view"]);

@@ -321,7 +321,7 @@ export function DispatchWorkspaceScreen() {
                   label="Pending invitations"
                   value={s.team.pendingInvitationCount}
                   href="/settings/invitations"
-                  permission="invitations:view"
+                  permission="invitations:create"
                 />
                 <TeamRow
                   icon={Shield}
