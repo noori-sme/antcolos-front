@@ -66,6 +66,16 @@ const PLACES: Record<string, { lat: number; lon: number }> = {
   "lafayette,in": { lat: 40.42, lon: -86.89 },
   "indianapolis,in": { lat: 39.77, lon: -86.16 },
   "fort wayne,in": { lat: 41.08, lon: -85.14 },
+  "south bend,in": { lat: 41.68, lon: -86.25 },
+  "bloomington,il": { lat: 40.48, lon: -88.99 },
+  "champaign,il": { lat: 40.12, lon: -88.24 },
+  "peoria,il": { lat: 40.69, lon: -89.59 },
+  "peru,il": { lat: 41.33, lon: -89.13 },
+  "springfield,il": { lat: 39.80, lon: -89.64 },
+  "davenport,ia": { lat: 41.52, lon: -90.58 },
+  "grand rapids,mi": { lat: 42.96, lon: -85.67 },
+  "dayton,oh": { lat: 39.76, lon: -84.19 },
+  "cincinnati,oh": { lat: 39.10, lon: -84.51 },
   "columbus,oh": { lat: 39.96, lon: -82.99 },
   "cleveland,oh": { lat: 41.50, lon: -81.69 },
   "toledo,oh": { lat: 41.65, lon: -83.54 },
@@ -537,6 +547,27 @@ const MARKET: Record<Region, Seedling[]> = {
     { ...BROKERS.apex, to: ["Fort Wayne", "IN"], hours: 6, equipment: "cargo_van", rateCents: 34_000, weight: 2_100, commodity: "Spare parts" },
     { ...BROKERS.keystone, to: ["Madison", "WI"], hours: 13, equipment: "box_truck", rateCents: 67_000, weight: 8_100 },
     { ...BROKERS.tandem, to: ["Rockford", "IL"], hours: 9, equipment: "flatbed", rateCents: 41_000, weight: 18_000, commodity: "Pipe" },
+    /*
+     * ★ DEPTH IN THE SMALL EQUIPMENT ★
+     * The midwest market had two cargo-van lanes and two box-truck lanes, which
+     * was fine for one demo truck and not for ten: the fourth van to search
+     * found everything already taken and the board showed an empty search
+     * rather than a stage. A real board for this fleet has more of these than
+     * anything else, because that is what a fleet of straight trucks and vans
+     * hauls.
+     */
+    { ...BROKERS.meadowlark, to: ["Peoria", "IL"], hours: 7, equipment: "cargo_van", rateCents: 38_000, weight: 1_900, commodity: "Printed matter" },
+    { ...BROKERS.harbor, to: ["Grand Rapids", "MI"], hours: 10, equipment: "cargo_van", rateCents: 64_000, weight: 2_400, commodity: "Lab supplies" },
+    { ...BROKERS.keystone, to: ["Dayton", "OH"], hours: 8, equipment: "cargo_van", rateCents: 66_000, weight: 2_600, commodity: "Aerospace fasteners" },
+    { ...BROKERS.apex, to: ["Springfield", "IL"], hours: 6, equipment: "box_truck", rateCents: 44_000, weight: 7_400, commodity: "Shop fittings" },
+    { ...BROKERS.harbor, to: ["South Bend", "IN"], hours: 9, equipment: "box_truck", rateCents: 51_000, weight: 8_600, commodity: "Appliances" },
+    { ...BROKERS.meadowlark, to: ["Cincinnati", "OH"], hours: 12, equipment: "box_truck", rateCents: 72_000, weight: 9_800, commodity: "Point-of-sale units" },
+    { ...BROKERS.tandem, to: ["Davenport", "IA"], hours: 5, equipment: "sprinter", rateCents: 42_000, weight: 1_400, commodity: "Machine spares" },
+    { ...BROKERS.keystone, to: ["Champaign", "IL"], hours: 7, equipment: "sprinter", rateCents: 34_000, weight: 1_600, commodity: "Lab equipment" },
+    { ...BROKERS.apex, to: ["Peru", "IL"], hours: 8, equipment: "flatbed", rateCents: 46_000, weight: 16_000, commodity: "Structural steel" },
+    { ...BROKERS.harbor, to: ["Lafayette", "IN"], hours: 6, equipment: "flatbed", rateCents: 39_000, weight: 14_500, commodity: "Pipe" },
+    { ...BROKERS.tandem, to: ["Bloomington", "IL"], hours: 7, equipment: "cargo_van", rateCents: 36_000, weight: 2_200, commodity: "Dental supplies" },
+    { ...BROKERS.meadowlark, to: ["Toledo", "OH"], hours: 9, equipment: "cargo_van", rateCents: 58_000, weight: 2_700, commodity: "Electronics" },
   ],
   northwest: [
     { ...BROKERS.pacline, to: ["Seattle", "WA"], hours: 7, equipment: "sprinter", rateCents: 47_000, weight: 2_200, commodity: "Electronics" },

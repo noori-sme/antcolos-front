@@ -46,6 +46,17 @@ function panel(page: Page) {
   return page.getByRole("dialog");
 }
 
+/**
+ * One row of the queue.
+ *
+ * By its own marker rather than by "a button inside the list": a row now holds
+ * the decision buttons themselves — "Confirm the rate con", "Merge the
+ * duplicate" — so counting buttons counts presses, not pieces of work.
+ */
+function rows(list: ReturnType<Page["getByRole"]>) {
+  return list.locator("[data-needs-you-item]");
+}
+
 async function openFilters(page: Page) {
   await filtersButton(page).click();
   await expect(panel(page)).toBeVisible();
@@ -68,7 +79,7 @@ test.describe("the collapsed default", () => {
     const list = page.getByRole("list", { name: "Needs You queue" });
     test.skip((await list.count()) === 0, "this workspace's queue is empty");
 
-    const first = list.getByRole("button").first();
+    const first = rows(list).first();
     const box = await first.boundingBox();
     expect(box).not.toBeNull();
     // The old bar pushed the first item past 700px on this viewport.
@@ -308,17 +319,17 @@ test.describe("filtering still filters", () => {
     const list = page.getByRole("list", { name: "Needs You queue" });
     test.skip((await list.count()) === 0, "this workspace's queue is empty");
 
-    const before = await list.getByRole("button").count();
+    const before = await rows(list).count();
 
     await openFilters(page);
     await panel(page).getByRole("button", { name: /^Critical/ }).first().click();
     await panel(page).getByRole("button", { name: /^Show \d+ items?$/ }).click();
 
-    const rows = list.getByRole("button");
-    const after = await rows.count();
+    const shown = rows(list);
+    const after = await shown.count();
     expect(after).toBeLessThanOrEqual(before);
     for (let i = 0; i < after; i++) {
-      await expect(rows.nth(i)).toHaveAttribute("data-severity", "critical");
+      await expect(shown.nth(i)).toHaveAttribute("data-severity", "critical");
     }
   });
 
@@ -336,9 +347,9 @@ test.describe("filtering still filters", () => {
     const list = page.getByRole("list", { name: "Needs You queue" });
     test.skip((await list.count()) === 0, "this workspace's queue is empty");
 
-    const before = await list.getByRole("button").count();
+    const before = await rows(list).count();
     await page.getByLabel("Sort this queue").selectOption("newest");
-    await expect(list.getByRole("button")).toHaveCount(before);
+    await expect(rows(list)).toHaveCount(before);
     // A sort is not a filter, so it must not appear in the summary.
     await expect(page.locator('[aria-label="Active filters"]')).toHaveCount(0);
   });

@@ -17,6 +17,7 @@ import {
 import {
   ALL_VISIBILITY_FIELDS, labelOf, resetPolicyToDefault, setVisibilityField,
 } from "@/lib/api/mock/driver-visibility";
+import { InfoTip } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -76,16 +77,13 @@ export function DriverReviewPanel({
           <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
             <UserCheck className="size-4 text-fg-subtle" aria-hidden />
             Sent to the driver
+            <InfoTip text="Ask the driver before you negotiate. Once you have asked, nothing is negotiated until they answer." />
             {live.filter((r) => r.status === "waiting").length > 0 ? (
               <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
                 {live.filter((r) => r.status === "waiting").length}
               </span>
             ) : null}
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Ask the driver before you negotiate. Once you have asked, nothing is negotiated until
-            they answer.
-          </p>
         </div>
         {carrierOrganizationId ? (
           <Button variant="secondary" size="sm" onClick={() => setTuning((v) => !v)}>
@@ -118,13 +116,10 @@ export function DriverReviewPanel({
       ) : null}
 
       {reviews.length === 0 ? (
-        <div className="mt-3 rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-          <p className="text-[0.8125rem] font-medium text-fg">Nothing has been sent</p>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            Use &quot;Send to driver&quot; on a load above. Sending is your choice unless the carrier
-            asks for it.
-          </p>
-        </div>
+        <p className="mt-3 flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-4 text-[0.8125rem] font-medium text-fg">
+          Nothing sent yet
+          <InfoTip text="Use Driver on a load above. Sending is your choice unless the carrier asks for it." />
+        </p>
       ) : (
         <ul className="mt-3 space-y-2">
           {reviews.map((review) => (
@@ -141,7 +136,16 @@ export function DriverReviewPanel({
         </ul>
       )}
 
-      <p className="mt-3 text-[0.6875rem] leading-relaxed text-fg-subtle">{port.statement}</p>
+      {/*
+        ★ THE CLAIM STAYS, THE PARAGRAPH DOES NOT ★
+        "Nothing is delivered to a driver" is the one thing on this panel that
+        must never be missed, and it is three words. The module boundary behind
+        it is a tip, because it is the answer to a second question.
+      */}
+      <p className="mt-3 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-st-warning">
+        Not delivered
+        <InfoTip text={port.statement} />
+      </p>
     </section>
   );
 }
@@ -238,7 +242,7 @@ function ReviewRow({
               {d.wantedRateCents !== undefined ? (
                 <span className="font-medium tabular-nums text-fg">{money(d.wantedRateCents)}</span>
               ) : null}
-              <Badge tone="warning">Recorded by a dispatcher — no driver app is connected</Badge>
+              <Badge tone="warning">Recorded by hand</Badge>
               <span className="text-fg-subtle">{relativeTime(d.at)}</span>
               {d.comment ? <span className="w-full text-fg-muted">{d.comment}</span> : null}
             </li>

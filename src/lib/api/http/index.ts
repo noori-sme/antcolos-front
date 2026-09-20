@@ -20,6 +20,7 @@ export const httpServices: AntcolosServices = {
     snooze: notImplemented("needsYou.snooze"),
     unsnooze: notImplemented("needsYou.unsnooze"),
     escalate: notImplemented("needsYou.escalate"),
+    decide: notImplemented("needsYou.decide"),
     resolve: notImplemented("needsYou.resolve"),
     reopen: notImplemented("needsYou.reopen"),
   },
@@ -370,5 +371,21 @@ export const httpServices: AntcolosServices = {
     roster: notImplemented("access.roster"),
     endSeat: notImplemented("access.endSeat"),
     leaveOrganization: notImplemented("access.leaveOrganization"),
+  },
+  /**
+   * Import.
+   *
+   * The backend must enforce two things this stub cannot: a claim is evidence
+   * of what a carrier asserted, so `stage` is append-only and a re-upload of
+   * the same content resolves to the batch that already exists; and a commit
+   * writes through the module that owns the record, so the import endpoint
+   * never gets its own people or truck tables.
+   */
+  import: {
+    stage: notImplemented("import.stage"),
+    plan: notImplemented("import.plan"),
+    decide: notImplemented("import.decide"),
+    commit: notImplemented("import.commit"),
+    list: notImplemented("import.list"),
   },
 };

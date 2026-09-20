@@ -78,6 +78,11 @@ export const MODULE_LABEL: Record<NeedsYouModule, string> = {
 export const CATEGORY_MODULE: Record<NeedsYouCategory, NeedsYouModule> = {
   invitation_acceptance_incomplete: "access",
 
+  /* Import. Routed to WORKFORCE rather than a module of its own: the question
+     is who somebody on this carrier's roster is, and the people who can answer
+     it are the people who run the roster. */
+  import_claim_unresolved: "workforce",
+
   /* Dispatch & loads */
   rate_con_verification: "dispatch",
   unassigned_load: "dispatch",

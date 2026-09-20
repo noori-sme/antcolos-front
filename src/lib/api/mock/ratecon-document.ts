@@ -203,23 +203,25 @@ export function buildRateConDocument(seed: DocumentSeed): BuiltDocument {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The signed copy: a NEW document, never an edit of the original.
+ * The signature, laid ON the broker's page.
  *
- * The original's blocks are copied rather than shared, so nothing that happens
- * to the signed version can reach back and change what the broker actually
- * sent. Corrections a dispatcher made are stamped on as an addendum — the
- * document still shows what the broker wrote, and what we signed instead.
+ * ★ WHAT THIS RETURNS IS AN OVERLAY ★
+ * Only the blocks that were ADDED. The original is named in `overlay` and is
+ * drawn underneath wherever this is shown, so the broker's page is literally
+ * still their page — nothing of theirs is copied, re-keyed or re-laid-out, and
+ * no change to how documents are built can reach backwards and alter what we
+ * claim they sent.
+ *
+ * It used to copy every one of the original's blocks into a second record. That
+ * rendered identically and was the wrong claim: two documents that both said
+ * they were the broker's page, and only a comment promising they agreed.
  */
 export function signDocument(
   original: RateConDocument,
   signature: AppliedSignature,
   corrections: { label: string; from: string; to: string }[],
 ): RateConDocument {
-  const blocks: DocumentBlock[] = original.blocks.map((b) => ({
-    ...b,
-    id: `${b.id}_s`,
-    region: { ...b.region },
-  }));
+  const blocks: DocumentBlock[] = [];
 
   blocks.push(block(signature.signedName, "signature", { xPct: 6, yPct: 87.2, wPct: 40, hPct: 3.6 }));
   blocks.push(block(
@@ -248,9 +250,68 @@ export function signDocument(
     fileName: original.fileName.replace(/\.pdf$/, "") + "-signed.pdf",
     pages: original.pages,
     blocks,
+    overlay: { baseDocumentId: original.documentId, baseFileName: original.fileName },
     createdAt: nowIso(),
     signature,
-    mockNotice: "A generated copy with a drawn signature block. It is not a credential and it was not sent anywhere.",
+    mockNotice: "Their page with a drawn signature laid on it. The signature is not a credential and nothing was sent anywhere.",
+  };
+}
+
+/**
+ * The disputed lines, marked ON the broker's page.
+ *
+ * Same principle as signing, for the other direction: a rate confirmation going
+ * back for correction goes back as THEIR document with our marks on it. Each
+ * mark sits on the region of the block it disputes, so the broker opens the
+ * page they produced and sees a ring round the number we are arguing about.
+ */
+export function annotateDocument(
+  original: RateConDocument,
+  marks: { blockId: string; label: string; agreed: string }[],
+  byName: string,
+): RateConDocument {
+  const byId = new Map(original.blocks.map((b) => [b.id, b]));
+  const blocks: DocumentBlock[] = [];
+
+  for (const mark of marks) {
+    const target = byId.get(mark.blockId);
+    if (!target) continue;
+    // The ring goes exactly where their value is. `dispute` is drawn as an
+    // outline rather than a filled box so the value underneath stays readable —
+    // a mark that hides the number it disputes is worse than no mark.
+    blocks.push({
+      id: `mk_${(++seq).toString(36)}`,
+      text: "",
+      style: "dispute",
+      region: { ...target.region },
+    });
+    blocks.push(block(
+      `We booked ${mark.agreed}`,
+      "small",
+      {
+        page: target.region.page,
+        xPct: Math.min(target.region.xPct + target.region.wPct + 1, 62),
+        yPct: target.region.yPct,
+        wPct: 36,
+        hPct: Math.max(target.region.hPct, 2.4),
+      },
+    ));
+  }
+
+  blocks.push(block(
+    `Returned unsigned by ${byName}. The ringed values do not match what was booked.`,
+    "small", { xPct: 6, yPct: 90, wPct: 88, hPct: 2.6 },
+  ));
+
+  return {
+    documentId: `doc_${(++seq).toString(36)}${Date.now().toString(36)}`,
+    kind: "marked_up",
+    fileName: original.fileName.replace(/\.pdf$/, "") + "-marked.pdf",
+    pages: original.pages,
+    blocks,
+    overlay: { baseDocumentId: original.documentId, baseFileName: original.fileName },
+    createdAt: nowIso(),
+    mockNotice: "Their page with our marks laid on it. Nothing of theirs was changed.",
   };
 }
 

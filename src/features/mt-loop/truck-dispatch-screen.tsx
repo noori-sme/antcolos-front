@@ -1,24 +1,24 @@
 "use client";
 
 import {
-  AlertTriangle, ArrowLeft, Building2, CircleCheck, Clock3, Container, FileText,
-  Lock, MapPin, Phone, Mail, RefreshCw, Truck as TruckIcon, User,
+  AlertTriangle, ArrowLeft, Building2, Check, ChevronDown, CircleCheck, Clock3,
+  ArrowUpRight, Container, FileText, Lock, Phone, Mail, RefreshCw, Truck as TruckIcon, User,
 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/layout/page-header";
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AUTHORITY_STATUS_LABEL, CONTACT_ROLE_LABEL, CARRIER_DOCUMENT_LABEL,
   ASSIGNMENT_SOURCE_LABEL, DRIVER_AVAILABILITY_LABEL, MT_LOOP_ACTION_LABEL, MT_LOOP_STATUS_LABEL,
-  type CarrierView, type DriverView,
+  type CarrierView, type DriverView, type MtLoopBlocker, type MtLoopCard,
 } from "@/types";
 import type {
-  DispatchBlocker, PlannedSection, TruckDispatchWorkspace,
+  PlannedSection, TruckDispatchWorkspace,
 } from "@/lib/api/mock/truck-dispatch-workspace";
-import { cn } from "@/lib/utils";
+import { cn, useNow } from "@/lib/utils";
 import { SearchPanel } from "@/features/opportunities/search-panel";
 import { OpportunitiesPanel } from "@/features/opportunities/opportunities-panel";
 import { useTruckOpportunities } from "@/features/opportunities/use-opportunities";
@@ -27,8 +27,18 @@ import { NegotiationPanel } from "@/features/opportunities/negotiation-panel";
 import { CommunicationsPanel } from "@/features/communications/communications-panel";
 import { DriverReviewPanel } from "@/features/driver-review/driver-review-panel";
 import { RateConAwaiting, RateConSummary } from "@/features/rate-confirmations/ratecon-panel";
-import { useMtLoopContext } from "./use-mt-loop";
+import { useMtLoopBoard, useMtLoopContext } from "./use-mt-loop";
 import { useTruckDispatchWorkspace } from "./use-truck-dispatch";
+// The board's own cards and marks, so the rail beside this page and the board
+// it was opened from cannot say different things about the same truck.
+import { Dwell, ServiceChip, TruckMark, progressTone } from "./loop-cards";
+import { MiniMap } from "./mini-map";
+import { InfoTip, Metric, Tip } from "./tip";
+import { TruckRail } from "./truck-rail";
+import {
+  cycleStages, openStageOf,
+  type CycleStage, type CycleStageKey,
+} from "./cycle-stages";
 
 /**
  * One truck's dispatch workspace.
@@ -50,16 +60,24 @@ import { useTruckDispatchWorkspace } from "./use-truck-dispatch";
 export function TruckDispatchScreen({ truckId }: { truckId: string }) {
   const query = useTruckDispatchWorkspace(truckId);
   const ctx = useMtLoopContext();
+  // The board, for the rail. The same query the board screen uses, so opening
+  // a truck does not cost a second read and the list beside it is the list
+  // that was clicked.
+  const board = useMtLoopBoard();
   // The cycle id is the MT Loop's own id — the roadmap's dispatchCycleId. One
   // id from the truck going empty to the load being delivered and released.
   const dispatchCycleId = query.data?.loop?.loopId;
   const opportunities = useTruckOpportunities(dispatchCycleId);
 
   const refreshWorkspace = useOpportunityRefresh();
+  /** Which stage the reader has opened, overriding the one the work is at. */
+  const [chosenStage, setChosenStage] = useState<CycleStageKey | null>(null);
+  const [rigOpen, setRigOpen] = useState(false);
 
   function refreshEverything() {
     void query.refetch();
     void opportunities.refetch();
+    void board.refetch();
     // And every other screen that reads the same store: the Inbox, the board
     // and the Needs You queue all change when a search runs here.
     refreshWorkspace();
@@ -100,41 +118,44 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
   }
 
   const w = query.data;
+  const card = w.loopCard;
 
-  return (
-    <div className="space-y-section">
-      <BackLink />
+  /*
+   * ★ THE CYCLE, READ OFF THE RECORDS — NOT A WIZARD ★
+   * Every stage state comes from the module that owns it, and the blockers are
+   * the one list every screen shows. Stages run together and some never run:
+   * a carrier that does not ask its drivers skips that stage, always, and the
+   * card says whose rule that is rather than leaving a gap.
+   */
+  const stages = cycleStages({
+    card,
+    blockers: w.blockers,
+    opportunities: opportunities.data,
+    driverConsentRequired: w.carrier
+      ? w.carrier.rules.some((r) => r.kind === "driver_consent_required")
+      : undefined,
+    carrierName: w.carrier?.displayName,
+    driverConsentRule: w.carrier?.rules.find((r) => r.kind === "driver_consent_required")?.detail,
+  });
+  const openStage = chosenStage ?? openStageOf(stages);
 
-      <PageHeader
-        title={`Unit ${w.fleetTruck.unit}`}
-        description={`${w.truck.year} ${w.truck.make} ${w.truck.model} · ${w.truck.equipmentType.replace(/_/g, " ")}${w.carrier ? ` · ${w.carrier.displayName}` : ""}`}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {w.loopCard ? (
-              <Badge tone={w.loopCard.status === "blocked" ? "danger" : "info"}>
-                <RefreshCw aria-hidden className="size-3" />
-                {MT_LOOP_STATUS_LABEL[w.loopCard.status]}
-              </Badge>
-            ) : null}
-            <Button variant="secondary" size="sm" asChild>
-              <Link href={`/fleet/trucks/${w.truck.truckId}`}>Truck record</Link>
-            </Button>
-          </div>
-        }
-      />
-
-      <BlockerPanel blockers={w.blockers} />
-
-      {/* Finding the next load is the work this page exists for, so it sits
-          above the reference material about the truck and the carrier. */}
-      {dispatchCycleId ? (
-        <>
+  /** What each stage opens to. The modules are unchanged; the frame is new. */
+  function stageBody(key: CycleStageKey): React.ReactNode {
+    if (!dispatchCycleId) return null;
+    switch (key) {
+      case "search":
+        return (
           <SearchPanel
             dispatchCycleId={dispatchCycleId}
             session={opportunities.data?.session}
+            // So a finished search leads somewhere without leaving the stage.
+            top={opportunities.data?.top ?? []}
             ctx={ctx}
             onChanged={refreshEverything}
           />
+        );
+      case "shortlist":
+        return (
           <OpportunitiesPanel
             top={opportunities.data?.top ?? []}
             rest={opportunities.data?.rest ?? []}
@@ -142,9 +163,9 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
             ctx={ctx}
             onChanged={refreshEverything}
           />
-          {/* Between the loads and the brokers, because that is where it sits
-              in the work: the driver is asked about a load before anybody
-              talks to a broker about it. */}
+        );
+      case "driver":
+        return (
           <DriverReviewPanel
             reviews={opportunities.data?.driverReviews ?? []}
             policies={opportunities.data?.driverVisibility ?? []}
@@ -153,51 +174,148 @@ export function TruckDispatchScreen({ truckId }: { truckId: string }) {
             ctx={ctx}
             onChanged={refreshEverything}
           />
-          {/* Below the loads, because a conversation is about a load somebody
-              picked out above it — and once one is open, it is the thing on
-              this page that is actually waiting for an answer. */}
-          <NegotiationPanel
-            negotiations={opportunities.data?.negotiations ?? []}
-            ctx={ctx}
-            onChanged={refreshEverything}
-          />
-          {/* The rate confirmation sits between the conversation that produced
-              it and the messages that carry it back. */}
-          {opportunities.data?.rateCon ? (
-            <RateConSummary rateCon={opportunities.data.rateCon} />
-          ) : opportunities.data?.booking ? (
+        );
+      case "brokers":
+        return (
+          <div className="space-y-3">
+            <NegotiationPanel
+              negotiations={opportunities.data?.negotiations ?? []}
+              ctx={ctx}
+              onChanged={refreshEverything}
+              // So a booked load whose paper is back is not told its paper is
+              // missing, two stages above the one that says it is signed.
+              rateConStatus={opportunities.data?.rateCon?.status}
+            />
+            {/* The messages belong to the conversation they are about, so they
+                open with it rather than as a panel of their own halfway down
+                a page nobody scrolled to. */}
+            {opportunities.data?.communications ? (
+              <CommunicationsPanel
+                dispatchCycleId={dispatchCycleId}
+                communications={opportunities.data.communications}
+                ctx={ctx}
+                onChanged={refreshEverything}
+              />
+            ) : null}
+          </div>
+        );
+      case "book":
+        /*
+         * ★ NO BOOK BUTTON HERE, AND THAT IS NOT AN OVERSIGHT ★
+         * A load is booked from the conversation that agreed its price, where
+         * the floor, the deadhead and the driver's answer are on screen beside
+         * it. A second booking control here would be a commitment made without
+         * the things it has to be made against.
+         */
+        return (
+          <p className="flex items-center gap-2 rounded-md border border-dashed border-border px-3.5 py-2 text-[0.8125rem] text-fg-muted">
+            Booked from the agreed conversation
+            <InfoTip text="The rate, the deadhead and the driver's answer are all on screen there when the truck is committed, and every blocker is re-checked at that moment — not from this page." />
+          </p>
+        );
+      case "ratecon":
+        if (opportunities.data?.rateCon) {
+          return <RateConSummary rateCon={opportunities.data.rateCon} />;
+        }
+        if (opportunities.data?.booking) {
+          return (
             <RateConAwaiting
               booking={opportunities.data.booking}
               ctx={ctx}
               onChanged={refreshEverything}
             />
-          ) : null}
-          {opportunities.data?.communications ? (
-            <CommunicationsPanel
-              dispatchCycleId={dispatchCycleId}
-              communications={opportunities.data.communications}
-              ctx={ctx}
-              onChanged={refreshEverything}
-            />
-          ) : null}
-        </>
-      ) : null}
+          );
+        }
+        /*
+         * ★ A STAGE A PERSON OPENED NEVER RENDERS NOTHING ★
+         * A truck can be carrying a load this workspace did not book through
+         * Antcolos — the load is on the cycle, the booking record is not. The
+         * rate confirmation for it is somebody's filing cabinet, not ours, and
+         * saying so is the answer. Drawing an empty panel was the bug: the
+         * stage looked broken rather than out of scope.
+         */
+        return (
+          <p className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-border px-3.5 py-2 text-[0.8125rem] text-fg-muted">
+            {card?.loadReference
+              ? `${card?.loadReference} was not booked here`
+              : "Not booked here"}
+            <InfoTip text="This truck is on a load that did not come through Antcolos, so there is no booking for a rate confirmation to hang off. Nothing about the paperwork for it is known here." />
+          </p>
+        );
+    }
+  }
 
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        {/* The cycle, then the equipment, then the person on it. The carrier
-            sits alongside as the context all three run under. */}
-        <div className="space-y-4">
+  return (
+    /*
+     * ★ TWO COLUMNS, TWO SCROLLBARS ★
+     *
+     * The rail is a list you work down and the panel is a cycle you read down,
+     * and they are different lengths. Sharing one page scrollbar meant scrolling
+     * the truck you are reading off the screen to see the truck you might switch
+     * to — so each column gets its own, and the page itself does not scroll.
+     *
+     * The height is the viewport less the sticky topbar (3.5rem) and the page's
+     * own vertical padding, read from the same custom property the shell uses so
+     * this stays right when the density setting changes it.
+     *
+     * Only from `xl`, where the rail exists. Below that there is one column, a
+     * phone scrolls a page rather than a pane, and pinning the height would trap
+     * the content in a box inside a page that could not scroll either.
+     */
+    <div className="flex gap-5 xl:h-[calc(100dvh-3.5rem-2*var(--page-py))] xl:overflow-hidden">
+      <TruckRail board={board.data} activeTruckId={truckId} />
+
+      <div className="min-w-0 min-h-0 flex-1 space-y-4 xl:overflow-y-auto xl:pr-1 xl:pb-4">
+        {/* The rail is the way back where there is room for it. */}
+        <div className="xl:hidden">
+          <BackLink />
+        </div>
+
+        <TruckHeader w={w} card={card} />
+
+        <RigStrip
+          w={w}
+          card={card}
+          open={rigOpen}
+          onToggle={() => setRigOpen((v) => !v)}
+        />
+        {rigOpen ? (
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+            <div className="space-y-4">
+              <TruckPanel w={w} />
+              <TrailerPanel w={w} />
+              <DriverPanel driver={w.driver} problems={w.driverDocumentProblems} />
+            </div>
+            <div className="space-y-4">
+              <CarrierPanel carrier={w.carrier} withheld={w.carrierWithheld} />
+              <LoopPanel w={w} />
+            </div>
+          </div>
+        ) : null}
+
+        {/*
+          ★ THE BLOCKER IS NEVER BEHIND A DISCLOSURE ★
+          Everything else on this page can be collapsed. This cannot: a truck
+          that may not legally move is not a truck anybody should be finding a
+          load for, and the stage below says the same thing again where the
+          work would have started.
+        */}
+        {w.blockers.length > 0 ? <BlockerPanel blockers={w.blockers} /> : null}
+
+        {dispatchCycleId ? (
+          <StageSpine
+            stages={stages}
+            openStage={openStage}
+            onOpen={(key) => setChosenStage(key === openStage ? null : key)}
+            body={stageBody}
+            planned={w.planned}
+          />
+        ) : (
           <LoopPanel w={w} />
-          <TruckPanel w={w} />
-          <TrailerPanel w={w} />
-          <DriverPanel driver={w.driver} problems={w.driverDocumentProblems} />
-        </div>
-        <div className="space-y-4">
-          <CarrierPanel carrier={w.carrier} withheld={w.carrierWithheld} />
-        </div>
-      </div>
+        )}
 
-      <PlannedPanel planned={w.planned} loopId={w.loop?.loopId} />
+        <RecordsChips w={w} onWhy={() => setRigOpen(true)} />
+      </div>
     </div>
   );
 }
@@ -212,6 +330,516 @@ function BackLink() {
     >
       <ArrowLeft className="size-3.5" aria-hidden />
       Back to MT Loop
+    </Link>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The truck, at the top                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Who this page is about, and where its cycle has got to.
+ *
+ * ★ A CONCLUSION, NOT A SPECIFICATION ★
+ * It used to read "2019 Freightliner Cascadia · tractor" — three facts the
+ * truck's own record owns and none of them a reason to do anything. What a
+ * dispatcher needs in the first second is which truck, whose it is, how long
+ * it has been costing money, where it is, and whose turn it is. The
+ * specification is one click away under The rig, and one more click away on
+ * the truck's permanent record.
+ */
+function TruckHeader({
+  w, card,
+}: {
+  w: TruckDispatchWorkspace;
+  card?: MtLoopCard;
+}) {
+  const now = useNow();
+  return (
+    /*
+     * Stacked on a phone, one row where there is width.
+     *
+     * Squeezed into a single row at 412px the unit number broke across two
+     * lines and the subtitle wrapped one word at a time — the most important
+     * thing on the page, unreadable. The clock, the badge and the map go
+     * underneath instead, where they keep their own line.
+     */
+    <header className="flex flex-col gap-3 rounded-lg border border-border bg-surface px-4 py-3 shadow-e1 sm:flex-row sm:items-start sm:gap-4">
+      <TruckMark />
+      <div className="min-w-0 flex-1">
+        <h1 className="font-mono text-[1.25rem] leading-tight font-semibold text-fg">
+          Unit {w.fleetTruck.unit}
+        </h1>
+        {/* Equipment, carrier, holder — three facts, not a clause each. */}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.75rem] leading-snug text-fg-muted">
+          <span>{w.fleetTruck.equipment.replace(/_/g, " ")}</span>
+          <span aria-hidden className="text-border-strong">·</span>
+          <span>{w.carrier?.displayName ?? "No carrier"}</span>
+          {card ? (
+            <>
+              <span aria-hidden className="text-border-strong">·</span>
+              <span className={card.claimed ? undefined : "text-st-warning"}>
+                {card.claimed
+                  ? card.claimed.isMine ? "yours" : card.claimed.displayName
+                  : "unclaimed"}
+              </span>
+            </>
+          ) : null}
+          {card && cycleAge(card.openedAt, now) ? (
+            <>
+              <span aria-hidden className="text-border-strong">·</span>
+              <span className="tabular-nums">{cycleAge(card.openedAt, now)}</span>
+            </>
+          ) : null}
+        </p>
+      </div>
+
+      {card ? (
+        <div className="flex shrink-0 items-center gap-3 sm:items-start">
+          <Badge tone={progressTone(card.progress)}>{card.progress.label}</Badge>
+          <span className="flex flex-1 items-center justify-end gap-3 sm:flex-col sm:items-end sm:gap-1">
+            <Dwell card={card} />
+            {card.position ? <MiniMap position={card.position} width={80} height={48} /> : null}
+          </span>
+        </div>
+      ) : (
+        <Badge tone="neutral">No open cycle</Badge>
+      )}
+    </header>
+  );
+}
+
+/**
+ * How long this cycle has been open.
+ *
+ * A different number from the empty clock beside it, and deliberately so: a
+ * loop opens when the truck is EXPECTED to go empty, so it can be hours old
+ * before the truck has stopped earning. A dispatcher planning a re-load needs
+ * the first; one explaining a bad week needs the second.
+ */
+function cycleAge(openedAt: string, now: number | null): string {
+  if (now === null) return "";
+  const hours = Math.max(0, Math.floor((now - Date.parse(openedAt)) / 3_600_000));
+  if (hours >= 24) return `${Math.floor(hours / 24)}d open`;
+  if (hours >= 1) return `${hours}h open`;
+  /*
+   * Under an hour, say nothing.
+   *
+   * "Cycle just opened" beside "19h empty" reads as a contradiction, and the
+   * reader has no way to know it is not one: the cycle's age and the truck's
+   * are genuinely different clocks, and the smaller of the two is never the
+   * interesting number. The empty clock is right there and is the one that
+   * costs money.
+   */
+  return "";
+}
+
+/* -------------------------------------------------------------------------- */
+/* The rig                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The truck, the trailer, the driver and the carrier — as four dots.
+ *
+ * ★ WHY FOUR DOTS AND NOT FOUR PANELS ★
+ * These four were four full-width panels scattered down the page, and a
+ * dispatcher asking "is this rig ready?" had to read all of them and hold the
+ * answer in their head. The question has a one-glance answer: four things,
+ * each either in order or not. The panels still exist, unchanged, one click
+ * away under "The rig" — what changed is that the ANSWER is on the page and
+ * the reference material is behind it.
+ *
+ * ★ THE DOTS ARE READ OFF THE BLOCKER LIST ★
+ * Not off the records a second time. `blockersFor` is the one thing in
+ * Antcolos that decides whether something is in the way, and a strip that
+ * made its own judgement would be a second engine disagreeing with the first
+ * — which is the exact bug this module was cleaned of.
+ */
+function RigStrip({
+  w, card, open, onToggle,
+}: {
+  w: TruckDispatchWorkspace;
+  card?: MtLoopCard;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const has = (prefix: string) => w.blockers.find((b) => b.key.startsWith(prefix));
+
+  const truckProblem = has("truck_document");
+  const carrierProblem = has("carrier_authority") ?? has("carrier_document");
+  const driverProblem = has("no_driver") ?? has("driver_document") ?? has("driver_inactive");
+  const trailerNeeded = w.fleetTruck.equipment === "tractor";
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-surface px-3.5 py-2">
+      {/*
+        ★ FOUR DOTS, FOUR WORDS ★
+        These read "Truck 133 · in order", "Northline Freight · authority
+        active" — a sentence per dot, four sentences to answer one yes/no
+        question. The dot carries the answer; the label carries the name; the
+        problem, when there is one, carries its own words in the tip.
+      */}
+      <RigDot
+        icon={TruckIcon}
+        tone={truckProblem ? "bad" : "good"}
+        label={w.fleetTruck.unit}
+        detail={truckProblem?.detail ?? "Paperwork in order."}
+      />
+      <RigDot
+        icon={Container}
+        tone={w.trailer ? "good" : trailerNeeded ? "bad" : "none"}
+        label={w.trailer?.unit ?? "No trailer"}
+        detail={w.trailer
+          ? `Trailer ${w.trailer.unit} is hooked up.`
+          : trailerNeeded
+            ? "This is a tractor and has no trailer on it. It cannot be dispatched."
+            : `A ${w.fleetTruck.equipment.replace(/_/g, " ")} does not need one.`}
+      />
+      <RigDot
+        icon={User}
+        tone={driverProblem ? "bad" : "good"}
+        label={w.driver?.legalName ?? "No driver"}
+        detail={driverProblem?.detail ?? "Available, and their paperwork is in order."}
+      />
+      <RigDot
+        icon={Building2}
+        tone={carrierProblem ? "bad" : w.carrierWithheld ? "unknown" : "good"}
+        label={w.carrier?.displayName ?? (w.carrierWithheld ? "Withheld" : "Not established")}
+        detail={carrierProblem?.detail
+          ?? (w.carrier
+            ? "Operating authority is active."
+            : w.carrierWithheld
+              ? "This workspace has no relationship that entitles it to the carrier's record."
+              : "The canonical records name no carrier for this cycle.")}
+      />
+
+      {card?.service ? <ServiceChip card={card} /> : null}
+
+      <span className="flex-1" />
+      <Button variant="ghost" size="sm" onClick={onToggle} aria-expanded={open}>
+        Detail
+        <ChevronDown
+          className={cn("size-3.5 transition-transform", open && "rotate-180")}
+          aria-hidden
+        />
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * One thing, and whether it is in order.
+ *
+ * `none` is its own tone and not a quiet `good` — a cargo van with no trailer
+ * is not a van whose trailer checks out — and `unknown` is not a quiet `bad`:
+ * a carrier this workspace may not read is a permission outcome, not a
+ * carrier with a problem.
+ */
+function RigDot({
+  tone, label, detail, icon: Icon,
+}: {
+  tone: "good" | "bad" | "none" | "unknown";
+  label: string;
+  detail: string;
+  icon: typeof TruckIcon;
+}) {
+  return (
+    <Tip text={detail} className="no-underline">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 text-[0.75rem]",
+          tone === "bad" ? "font-medium text-st-danger"
+            : tone === "unknown" ? "text-st-warning"
+              : tone === "none" ? "text-fg-subtle" : "text-fg-muted",
+        )}
+      >
+        <Icon
+          className={cn(
+            "size-3.5 shrink-0",
+            tone === "bad" ? "text-st-danger"
+              : tone === "unknown" ? "text-st-warning"
+                : tone === "none" ? "text-border-strong" : "text-st-success",
+          )}
+          aria-hidden
+        />
+        {label}
+      </span>
+    </Tip>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The spine                                                                   */
+/* -------------------------------------------------------------------------- */
+
+const STAGE_TONE: Record<CycleStage["state"], "success" | "info" | "warning" | "neutral" | "danger"> = {
+  done: "success",
+  active: "info",
+  waiting: "warning",
+  upcoming: "neutral",
+  skipped: "neutral",
+  stopped: "danger",
+};
+
+/**
+ * The cycle, drawn as a connected run of stages.
+ *
+ * ★ THE SHAPE IS THE ANSWER ★
+ * Behind you, a line each. Where you are, open. Ahead, a line each. Somebody
+ * arriving at this page mid-cycle reads their position from the layout before
+ * they read a word of it — which is what seven identical full-width panels
+ * could never do.
+ *
+ * ★ CONCURRENT AND SKIPPED, BOTH DRAWN HONESTLY ★
+ * The connector between two stages is solid only where the earlier one is
+ * finished. A skipped stage keeps its place in the line with a dashed node
+ * and its reason, so the run reads as "this did not have to happen" rather
+ * than "this is missing". More than one stage can be live at once, because
+ * brokers answer while a driver is still looking.
+ */
+function StageSpine({
+  stages, openStage, onOpen, body, planned,
+}: {
+  stages: CycleStage[];
+  openStage?: CycleStageKey;
+  onOpen: (key: CycleStageKey) => void;
+  body: (key: CycleStageKey) => React.ReactNode;
+  planned: PlannedSection[];
+}) {
+  return (
+    <section aria-label="This truck's cycle" className="flex flex-col">
+      {stages.map((stage, i) => {
+        const isOpen = stage.key === openStage;
+        const last = i === stages.length - 1;
+        return (
+          <div key={stage.key} className="flex gap-3">
+            <StageNode stage={stage} continues={!last} />
+            <div className={cn("min-w-0 flex-1", last ? "pb-0" : "pb-2")}>
+              <StageCard
+                stage={stage}
+                open={isOpen}
+                onToggle={() => onOpen(stage.key)}
+                body={isOpen ? body(stage.key) : null}
+              />
+            </div>
+          </div>
+        );
+      })}
+
+      {/*
+        ★ WHAT IS NOT BUILT, NAMED RATHER THAN MOCKED UP ★
+        The cycle does not end at the rate confirmation — it ends when the load
+        has run and the truck is empty again. Four milestones of that are not
+        built. A spine that simply stopped would imply the cycle does too, and
+        a greyed-out button would imply it nearly works.
+      */}
+      <div className="flex gap-3">
+        <span className="flex w-6 shrink-0 flex-col items-center">
+          <span className="flex size-6 items-center justify-center rounded-full border-2 border-dashed border-border-strong">
+            <RefreshCw className="size-3 text-fg-subtle" aria-hidden />
+          </span>
+        </span>
+        <div className="min-w-0 flex-1 rounded-md border border-dashed border-border bg-surface-sunken px-3.5 py-2">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Badge tone="neutral">Not built</Badge>
+            <span className="text-[0.75rem] text-fg-muted">
+              {planned.length} more {planned.length === 1 ? "stage" : "stages"}
+            </span>
+            <InfoTip
+              text={`${planned.map((p) => p.title).join(" · ")}. Milestones ${planned[0]?.milestone ?? 9}–${planned[planned.length - 1]?.milestone ?? 12}, each hanging off the cycle id already on this page. When they run, this cycle closes and a new loop opens for the same truck with its own id.`}
+            />
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** The node and the connector under it. */
+function StageNode({ stage, continues }: { stage: CycleStage; continues: boolean }) {
+  const done = stage.state === "done";
+  const stopped = stage.state === "stopped";
+  const skipped = stage.state === "skipped";
+  const live = stage.state === "active" || stage.state === "waiting";
+
+  return (
+    <span className="flex w-6 shrink-0 flex-col items-center">
+      <span
+        aria-hidden
+        className={cn(
+          "flex size-6 shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-semibold",
+          done && "bg-st-success text-white",
+          stopped && "bg-st-danger text-white",
+          skipped && "border-2 border-dashed border-border-strong text-fg-subtle",
+          live && "border-2 border-st-info bg-surface text-st-info",
+          stage.state === "upcoming" && "border-2 border-border-strong bg-surface",
+        )}
+      >
+        {done ? <Check className="size-3.5" /> : null}
+        {stopped ? "!" : null}
+        {skipped ? "–" : null}
+        {live && stage.count !== undefined ? stage.count : null}
+        {/* A live stage with nothing to count still has to look live: an empty
+            ring is what `upcoming` looks like, and the two mean opposite
+            things to somebody scanning the column. */}
+        {live && stage.count === undefined ? (
+          <span aria-hidden className="size-2 rounded-full bg-st-info" />
+        ) : null}
+      </span>
+      {continues ? (
+        <span
+          aria-hidden
+          className={cn(
+            "w-0.5 flex-1",
+            // Solid only where the stage behind it is actually finished. A
+            // solid line out of an unfinished stage would draw progress that
+            // has not happened.
+            done ? "bg-st-success/50" : "bg-border",
+          )}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+/** One stage: always a summary, and its module when it is the one open. */
+function StageCard({
+  stage, open, onToggle, body,
+}: {
+  stage: CycleStage;
+  open: boolean;
+  onToggle: () => void;
+  body: React.ReactNode;
+}) {
+  const stopped = stage.state === "stopped";
+  return (
+    <div
+      data-stage={stage.key}
+      data-stage-state={stage.state}
+      className={cn(
+        "rounded-md border",
+        stopped ? "border-st-danger/45 bg-st-danger-bg/30"
+          : open ? "border-border-strong bg-surface shadow-e1"
+            : stage.state === "skipped" ? "border-dashed border-border bg-surface-sunken"
+              : "border-border bg-surface-sunken",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-start gap-2 px-3.5 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        <span className="min-w-0 flex-1">
+          {/* Title, state, and the numbers — one line where there is room. */}
+          <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span
+              className={cn(
+                "text-[0.8125rem] font-semibold",
+                stage.state === "upcoming" || stage.state === "skipped"
+                  ? "text-fg-muted"
+                  : "text-fg",
+              )}
+            >
+              {stage.title}
+            </span>
+            <Badge tone={STAGE_TONE[stage.state]}>{stage.summary}</Badge>
+            {stage.metrics?.map((m) => (
+              <Metric key={m.label} label={m.label} value={m.value} tone={m.tone} title={m.title} />
+            ))}
+            {/*
+              ★ WHAT STAYS ON THE PAGE, AND WHAT MOVES TO A HOVER ★
+              A refusal's cause and a carrier's rule are the two notes a reader
+              has to act on, so they stay visible. Everything else — what is
+              not connected, what is never emailed, when the blockers are
+              re-checked — is an explanation of something already on screen,
+              and lives in the tip.
+            */}
+            {stage.note && !stage.noteVisible ? <InfoTip text={stage.note} /> : null}
+          </span>
+          {stage.note && stage.noteVisible ? (
+            <span
+              className={cn(
+                "mt-1 block text-[0.75rem] leading-snug",
+                stopped ? "text-st-danger" : "text-fg-subtle",
+              )}
+            >
+              {stage.note}
+            </span>
+          ) : null}
+        </span>
+        <ChevronDown
+          className={cn(
+            "mt-0.5 size-4 shrink-0 text-fg-subtle transition-transform",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+
+      {open && body ? <div className="border-t border-border px-3 py-3">{body}</div> : null}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The records                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where the facts actually live.
+ *
+ * ★ LINKS, NOT COPIES ★
+ * This page reads the truck, the driver, the trailer, the carrier and the
+ * tracking feed and shows what they MEAN. It does not restate them, because a
+ * restated fact is a fact that can go stale while the record it came from is
+ * corrected. These are the way to the records themselves.
+ */
+function RecordsChips({
+  w, onWhy,
+}: {
+  w: TruckDispatchWorkspace;
+  onWhy: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+      <RecordChip href={`/fleet/trucks/${w.truck.truckId}`}>
+        Truck {w.fleetTruck.unit}
+      </RecordChip>
+      {w.trailer ? (
+        <RecordChip href={`/fleet/trailers/${w.trailer.trailerId}`}>
+          Trailer {w.trailer.unit}
+        </RecordChip>
+      ) : null}
+      {w.driver ? (
+        <RecordChip href={`/people/drivers/${w.driver.driverProfileId}`}>
+          {w.driver.legalName}
+        </RecordChip>
+      ) : null}
+      {w.carrier ? (
+        <RecordChip href={`/carriers/${w.carrier.organizationId}`}>
+          {w.carrier.displayName}
+        </RecordChip>
+      ) : null}
+      {w.loop?.loadId ? (
+        <RecordChip href={`/dispatch/tracking/${w.loop.loadId}`}>Tracking</RecordChip>
+      ) : null}
+      <span className="flex-1" />
+      <Button variant="ghost" size="sm" onClick={onWhy}>
+        Why?
+      </Button>
+    </div>
+  );
+}
+
+function RecordChip({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-sm border border-border bg-surface px-2 py-0.5 text-[0.75rem] text-fg-muted underline-offset-4 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    >
+      {children}
     </Link>
   );
 }
@@ -281,63 +909,106 @@ const EmptyNote = ({ children }: { children: React.ReactNode }) => (
 /* Blockers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const OWNER_LABEL: Record<DispatchBlocker["owner"], string> = {
-  carrier: "The carrier has to fix this",
-  driver: "The driver has to fix this",
-  dispatcher: "Yours to sort out",
+/** Whose it is to clear. Two words — the row has no room for a sentence. */
+const OWNER_LABEL: Record<MtLoopBlocker["owner"], string> = {
+  carrier: "carrier",
+  driver: "driver",
+  dispatcher: "yours",
 };
 
-function BlockerPanel({ blockers }: { blockers: DispatchBlocker[] }) {
+/**
+ * Everything unresolved, in two groups that mean different things.
+ *
+ * ★ WHY TWO AND NOT ONE ★
+ * This panel used to lead every list with "every one of these means a load
+ * should not be booked on this truck until it is sorted out" — and then list
+ * a proof of delivery the load still owes for invoicing, and a cycle nobody
+ * had put their hand up for. Neither stops a booking. A panel that cries wolf
+ * about paperwork is a panel a dispatcher learns to scroll past, and the one
+ * time it names an expired medical card they will scroll past that too.
+ *
+ * So: what STOPS a dispatch is said in those words and leads. What is merely
+ * unresolved is listed underneath, in its own words, and is never dressed up.
+ * `stopsDispatch` is the blocker's own flag — this reads it rather than
+ * inferring urgency from severity, which orders the list and nothing more.
+ */
+function BlockerPanel({ blockers }: { blockers: MtLoopBlocker[] }) {
+  const stopping = blockers.filter((b) => b.stopsDispatch);
+  const other = blockers.filter((b) => !b.stopsDispatch);
+
   if (blockers.length === 0) {
     return (
-      <section className="flex items-start gap-2.5 rounded-lg border border-st-success/40 bg-st-success-bg/50 px-4 py-3">
-        <CircleCheck className="mt-0.5 size-4 shrink-0 text-st-success" aria-hidden />
-        <div>
-          <h2 className="text-[0.875rem] font-semibold text-fg">Nothing is standing in the way</h2>
-          <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-fg-muted">
-            The carrier&rsquo;s authority, the paperwork, the driver and the equipment all check out for
-            this truck right now.
-          </p>
-        </div>
-      </section>
+      <p className="flex items-center gap-2 rounded-lg border border-st-success/40 bg-st-success-bg/40 px-3.5 py-2 text-[0.8125rem] font-medium text-fg">
+        <CircleCheck className="size-4 shrink-0 text-st-success" aria-hidden />
+        Clear to dispatch
+        <InfoTip text="Authority, paperwork, driver and equipment all check out for this truck right now." />
+      </p>
     );
   }
-
-  const critical = blockers.filter((b) => b.severity === "critical").length;
 
   return (
     <section
       aria-labelledby="blockers-heading"
       className={cn(
-        "rounded-lg border p-4",
-        critical > 0 ? "border-st-danger/45 bg-st-danger-bg/40" : "border-st-warning/45 bg-st-warning-bg/35",
+        "rounded-lg border px-3.5 py-2.5",
+        stopping.length > 0
+          ? "border-st-danger/45 bg-st-danger-bg/35"
+          : "border-border bg-surface-sunken",
       )}
     >
-      <h2 id="blockers-heading" className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
-        <AlertTriangle className="size-4 text-st-danger" aria-hidden />
-        {blockers.length === 1 ? "One thing is in the way" : `${blockers.length} things are in the way`}
+      <h2
+        id="blockers-heading"
+        className="flex items-center gap-2 text-[0.8125rem] font-semibold text-fg"
+      >
+        {stopping.length > 0 ? (
+          <AlertTriangle className="size-4 shrink-0 text-st-danger" aria-hidden />
+        ) : null}
+        {stopping.length > 0
+          ? `${stopping.length} blocking`
+          : `${other.length} open`}
+        {other.length > 0 && stopping.length > 0 ? (
+          <span className="font-normal text-fg-muted">· {other.length} non-blocking</span>
+        ) : null}
+        <InfoTip
+          text={stopping.length > 0
+            ? "No load may be booked on this truck until every blocking item is cleared. The rest are open work and do not stop a dispatch."
+            : "None of these stops a dispatch. They still belong to somebody."}
+        />
       </h2>
-      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-        Every one of these means a load should not be booked on this truck until it is sorted out.
-      </p>
-      <ul className="mt-3 space-y-2">
-        {blockers.map((b) => (
-          <li key={b.key} className="rounded-md border border-border bg-surface px-3.5 py-2.5">
-            <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium text-fg">
-              {b.title}
-              <Badge tone={b.severity === "critical" ? "danger" : b.severity === "high" ? "warning" : "neutral"}>
-                {b.severity === "critical" ? "Stops everything" : b.severity === "high" ? "Serious" : "Needs a look"}
-              </Badge>
-            </p>
-            <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">{b.detail}</p>
-            <p className="mt-1 flex flex-wrap items-center gap-x-3 text-[0.75rem] text-fg-subtle">
-              <span>{OWNER_LABEL[b.owner]}</span>
-              {b.href ? (
-                <Link href={b.href} className="underline underline-offset-4 hover:text-fg">
-                  Open it
-                </Link>
-              ) : null}
-            </p>
+
+      {/*
+        ★ ONE ROW EACH, AND THE BLOCKER ITSELF NEVER MOVES ★
+        Each row used to carry a label, a badge, a sentence and an owner line —
+        four lines for a fact whose whole content is "no trailer, yours". The
+        label, the colour and the owner stay on the page; the SENTENCE moved to
+        the tip. What stops a dispatch is still visible without hovering, which
+        is the rule this panel exists to keep.
+      */}
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+        {[...stopping, ...other].map((b) => (
+          <li key={b.key} className="flex items-center gap-1.5 text-[0.75rem]">
+            <span
+              aria-hidden
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                b.stopsDispatch ? "bg-st-danger" : "bg-border-strong",
+              )}
+            />
+            <Tip text={b.detail}>
+              <span className={b.stopsDispatch ? "font-medium text-st-danger" : "text-fg-muted"}>
+                {b.label}
+              </span>
+            </Tip>
+            <span className="text-fg-subtle">{OWNER_LABEL[b.owner]}</span>
+            {b.href ? (
+              <Link
+                href={b.href}
+                className="text-primary underline-offset-4 hover:underline"
+                aria-label={`Open ${b.label}`}
+              >
+                <ArrowUpRight className="size-3.5" aria-hidden />
+              </Link>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -910,32 +1581,3 @@ function DriverPanel({
 
 /* -------------------------------------------------------------------------- */
 /* What comes next                                                             */
-/* -------------------------------------------------------------------------- */
-
-function PlannedPanel({ planned, loopId }: { planned: PlannedSection[]; loopId?: string }) {
-  return (
-    <section className="rounded-lg border border-dashed border-border bg-surface-sunken p-4">
-      <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
-        <MapPin className="size-4 text-fg-subtle" aria-hidden />
-        The rest of the cycle is not built yet
-      </h2>
-      <p className="mt-1 text-[0.8125rem] leading-relaxed text-fg-muted">
-        These are named rather than mocked up, so nothing on this page pretends to work.
-        {loopId ? " Every one of them will hang off this loop's id, which does not change." : ""}
-      </p>
-      <ol className="mt-3 grid gap-2 sm:grid-cols-2">
-        {planned.map((s) => (
-          <li key={s.key} className="rounded-md border border-border bg-surface px-3.5 py-2.5">
-            <p className="flex items-center gap-2 text-[0.8125rem] font-medium text-fg">
-              <span className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-[0.6875rem] tabular-nums text-fg-subtle">
-                {s.milestone}
-              </span>
-              {s.title}
-            </p>
-            <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">{s.description}</p>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}

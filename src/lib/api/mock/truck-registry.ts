@@ -148,6 +148,19 @@ export const TRUCK_IDS = {
   nl131: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1009",
   nl124: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1007",
   nl127: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1008",
+  /* The truck the end-to-end walkthrough is seeded on. See `demo-cycle.ts`. */
+  nl133: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1010",
+  /* ★ THE DEMO FLEET ★ See DEMO_FLEET below for what each one is for. */
+  nl140: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1140",
+  nl141: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1141",
+  nl142: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1142",
+  nl143: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1143",
+  nl144: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1144",
+  nl150: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1150",
+  nl151: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1151",
+  nl152: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1152",
+  nl153: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1153",
+  nl154: "a1f0c2d4-1111-4a10-9c01-0b0f5d7e1154",
   mdA12: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2001",
   mdB04: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2002",
   mdC31: "b2e1d3c5-2222-4b20-8d02-1c1e6f8a2003",
@@ -162,6 +175,7 @@ export const TRUCK_IDS = {
 /** VINs the fixtures use. Reported to reviewers; never shown as hints in the UI. */
 export const FIXTURE_VINS = {
   nl104: "1FTBW2CM8NKA51234",
+  nl133: "1FTBW3XM4PKC70112",
   nl107: "WD3PE8CD5KP123456",
   nl111: "1FVACWDT4HHJK1234",
   nl115: "1XKYDP9X5MJ456789",
@@ -376,6 +390,86 @@ const HOTSHOT_SPECS: TruckSpecs = {
   axleCount: 2, fuelType: "diesel", hazmatCapable: false,
 };
 
+/** Specs by equipment, so a table of trucks does not have to name them. */
+const SPECS_FOR: Record<TruckEquipmentType, TruckSpecs> = {
+  cargo_van: VAN_SPECS,
+  sprinter_van: SPRINTER_SPECS,
+  box_truck: BOX_SPECS,
+  hotshot: HOTSHOT_SPECS,
+  tractor: TRACTOR_SPECS,
+};
+
+
+
+/**
+ * ★ THE DEMO FLEET ★
+ *
+ * Ten trucks whose only job is to put ten real dispatch states on one board at
+ * once, so the whole product can be walked through without anybody first having
+ * to drive a truck into each one.
+ *
+ * ★ WHAT IS SEEDED HERE AND WHAT IS NOT ★
+ * This table seeds the VEHICLE and the people on it — a truck, its papers, its
+ * carrier relationship and its driver. It does NOT seed a dispatch state. A
+ * cycle that is "waiting on a broker's reply" is a conversation with rounds in
+ * it, and writing one down as a fixture would produce a screen that looked
+ * right and proved nothing. `demo-fleet.ts` walks each of these through the
+ * real services instead, exactly as far as its state requires and no further.
+ *
+ * The rolling half carry loads, which are seeded in `seed.ts` where every other
+ * load is, and their activity — resetting, fuelling, stuck, at a dock — is read
+ * off the records those loads leave rather than written on the truck.
+ */
+export interface DemoFleetMember {
+  key: keyof typeof TRUCK_IDS;
+  unit: string;
+  vin: string;
+  equipment: TruckEquipmentType;
+  year: number;
+  make: string;
+  model: string;
+  status: TruckOperatingStatus;
+  city: string;
+  state: string;
+  plate: string;
+  color: string;
+  driverProfileId: string;
+  driverName: string;
+  /** One line, for a person reading the fixtures rather than the board. */
+  why: string;
+}
+
+/*
+ * ★ NO TRACTORS, AND THAT IS ON PURPOSE ★
+ * A tractor with nothing hooked to it carries a `no_trailer` blocker that stops
+ * a dispatch — correctly, and the fixture set already demonstrates it on unit
+ * 131. Putting one here would stop half these cycles at their first gate and
+ * demonstrate that same blocker nine more times. These are straight trucks and
+ * vans, which is what a fleet of this size mostly is anyway.
+ */
+export const DEMO_FLEET: DemoFleetMember[] = [
+  /* ---- Five empty trucks, each stopped at a different stage --------------- */
+  { key: "nl140", unit: "140", vin: "3AKJHHDR1LSLT1400", equipment: "box_truck", year: 2022, make: "Freightliner", model: "M2 106", status: "available", city: "Joliet", state: "IL", plate: "IL-1400D", color: "White", driverProfileId: "dp_owen_k", driverName: "Owen Kessler", why: "Searching. Nothing has been asked about yet." },
+  { key: "nl141", unit: "141", vin: "1XKYDP9X1NJ141141", equipment: "box_truck", year: 2021, make: "International", model: "MV607", status: "available", city: "Chicago", state: "IL", plate: "IL-1411R", color: "Red", driverProfileId: "dp_tasha_b", driverName: "Tasha Bell", why: "A broker has come back with a number nobody has answered." },
+  { key: "nl142", unit: "142", vin: "1FVACWDT3HH142142", equipment: "box_truck", year: 2020, make: "Freightliner", model: "M2 106", status: "available", city: "Gary", state: "IN", plate: "IN-1422G", color: "Blue", driverProfileId: "dp_luis_m", driverName: "Luis Moreno", why: "The driver has said yes. The broker has not been called." },
+  { key: "nl143", unit: "143", vin: "1FTBW2CM4NKA14343", equipment: "cargo_van", year: 2023, make: "Ford", model: "Transit 350", status: "available", city: "Chicago", state: "IL", plate: "IL-1433A", color: "Silver", driverProfileId: "dp_erin_v", driverName: "Erin Vance", why: "Booked, and a rate confirmation is sitting unchecked." },
+  { key: "nl144", unit: "144", vin: "3C6UR5DL1NG144144", equipment: "hotshot", year: 2022, make: "Ram", model: "3500", status: "available", city: "Joliet", state: "IL", plate: "IL-1444J", color: "Black", driverProfileId: "dp_hank_p", driverName: "Hank Pruitt", why: "Mid-negotiation: we have asked, they have not answered." },
+
+  /*
+   * ---- Five that will be on the road ------------------------------------
+   * They start EMPTY, like any other truck. `demo-fleet.ts` walks each one
+   * through its own cycle and then puts it on the road through the load
+   * module, which is what flips the truck to `loaded`. Seeding them as loaded
+   * would have produced five trucks carrying freight that no booking agreed
+   * to and no rate confirmation covers.
+   */
+  { key: "nl150", unit: "150", vin: "4V4NC9EH0LN150150", equipment: "sprinter_van", year: 2023, make: "Mercedes-Benz", model: "Sprinter 2500", status: "available", city: "Chicago", state: "IL", plate: "IL-1500E", color: "White", driverProfileId: "dp_grace_l", driverName: "Grace Lindqvist", why: "Rolling. Moving, on time, nothing wanted." },
+  { key: "nl151", unit: "151", vin: "1XKYDP9X5PJ151151", equipment: "box_truck", year: 2023, make: "Freightliner", model: "M2 112", status: "available", city: "Chicago", state: "IL", plate: "IL-1511S", color: "Green", driverProfileId: "dp_ivan_s", driverName: "Ivan Sorokin", why: "Out of hours. Parked on a 34-hour reset." },
+  { key: "nl152", unit: "152", vin: "3AKJHHDR7MSMT1520", equipment: "sprinter_van", year: 2022, make: "Mercedes-Benz", model: "Sprinter 3500", status: "available", city: "Joliet", state: "IL", plate: "IL-1522W", color: "Blue", driverProfileId: "dp_maya_f", driverName: "Maya Farrell", why: "Fuelling. A card transaction went through minutes ago." },
+  { key: "nl153", unit: "153", vin: "1FUJGLDR3NLNT1530", equipment: "box_truck", year: 2021, make: "Freightliner", model: "M2 106", status: "available", city: "Gary", state: "IN", plate: "IN-1533G", color: "Grey", driverProfileId: "dp_devon_r", driverName: "Devon Rhodes", why: "Stuck. The ETA has slipped against a firm appointment." },
+  { key: "nl154", unit: "154", vin: "1FVACYDT9GHH15454", equipment: "cargo_van", year: 2022, make: "Ford", model: "Transit 350", status: "available", city: "Chicago", state: "IL", plate: "OH-1544C", color: "White", driverProfileId: "dp_priya_n", driverName: "Priya Nair", why: "On a dock. Arrived, not away." },
+];
+
 function buildFixtures(): RegistryState {
   const V = FIXTURE_VINS;
   const T = TRUCK_IDS;
@@ -409,6 +503,17 @@ function buildFixtures(): RegistryState {
       plate("IL-1315N", "IL", 330, "Northline Freight LLC"), TRACTOR_SPECS,
       { city: "Chicago", state: "IL", homeTerminal: "Chicago, IL" },
       "org_northline", "White"),
+    /*
+     * ★ THE WALKTHROUGH TRUCK ★
+     * Nothing special about the vehicle — that is the point. It is here so one
+     * truck on the board can show the whole empty-to-empty cycle with every
+     * stage actually filled in, driven through the real services by
+     * `demo-cycle.ts` rather than written down as a finished state.
+     */
+    truck(T.nl133, V.nl133, "cargo_van", 2023, "Ford", "Transit 350", "available",
+      plate("IL-9033R", "IL", 90, "Northline Freight LLC"), VAN_SPECS,
+      { city: "Bloomington", state: "IL", expectedAvailableAt: hoursFromNow(-7), homeTerminal: "Chicago, IL" },
+      "org_northline", "White"),
     truck(T.mdA12, V.mdA12, "tractor", 2020, "Peterbilt", "579", "loaded",
       plate("PA-2215T", "PA", 180, "Baxter Transit LLC"), TRACTOR_SPECS,
       { city: "Allentown", state: "PA", expectedAvailableAt: hoursFromNow(3) },
@@ -440,6 +545,20 @@ function buildFixtures(): RegistryState {
       plate("OR-2207T", "OR", 280, "Cascade Haul Co."), TRACTOR_SPECS,
       { city: "Salem", state: "OR", expectedAvailableAt: hoursFromNow(6), homeTerminal: "Portland, OR" },
       "org_cascade", "Blue"),
+    // The demo fleet. One row each, built from the table above rather than
+    // written out ten times — the differences that matter are in the table.
+    ...DEMO_FLEET.map((m) => truck(
+      TRUCK_IDS[m.key], m.vin, m.equipment, m.year, m.make, m.model, m.status,
+      plate(m.plate, m.state === "IN" ? "IN" : m.state === "OH" ? "OH" : "IL", 300, "Northline Freight LLC"),
+      SPECS_FOR[m.equipment],
+      {
+        city: m.city,
+        state: m.state,
+        homeTerminal: "Chicago, IL",
+        expectedAvailableAt: hoursFromNow(-3),
+      },
+      "org_northline", m.color,
+    )),
   ];
 
   const ownership: TruckOwnershipRecord[] = [
@@ -452,10 +571,13 @@ function buildFixtures(): RegistryState {
     own(T.nl118, "person", "Marcus Hale", daysAgo(210), "active", undefined, "dp_marcus"),
     own(T.nl121, "organization", "Northline Freight LLC", daysAgo(200), "active", undefined, "org_northline"),
     own(T.nl131, "organization", "Northline Freight LLC", daysAgo(150), "active", undefined, "org_northline"),
+    ...DEMO_FLEET.map((m) =>
+      own(TRUCK_IDS[m.key], "organization", "Northline Freight LLC", daysAgo(200), "active", undefined, "org_northline")),
     own(T.mdA12, "organization", "Baxter Transit LLC", daysAgo(500), "active", undefined, "org_baxter"),
     own(T.mdB04, "organization", "Ridgeway Carriers", daysAgo(420), "active", undefined, "org_ridgeway"),
     own(T.crosswind, "organization", "Crosswind Freight", daysAgo(320), "active", undefined, "org_crosswind"),
     own(T.claimed, "organization", "Northline Freight LLC", daysAgo(260), "active", undefined, "org_northline"),
+    own(T.nl133, "organization", "Northline Freight LLC", daysAgo(90), "active", undefined, "org_northline"),
     own(T.mdA18, "organization", "Baxter Transit LLC", daysAgo(280), "active", undefined, "org_baxter"),
     own(T.cs47, "organization", "Cascade Haul Co.", daysAgo(340), "active", undefined, "org_cascade"),
     own(T.cs52, "organization", "Cascade Haul Co.", daysAgo(250), "active", undefined, "org_cascade"),
@@ -463,6 +585,18 @@ function buildFixtures(): RegistryState {
   ];
 
   const relationships: TruckCarrierRelationship[] = [
+    /*
+     * ★ A FLOOR AND A DEADHEAD THAT LET THESE TRUCKS WORK ★
+     * 140¢/mi and 60 empty miles is a real carrier's rule and a perfectly good
+     * one — for a tractor. On a van running $340 loads out of Chicago it ruled
+     * out every listing in the sample market, and the demo showed ten trucks
+     * searching and finding nothing. These are the numbers a small-equipment
+     * fleet actually sets; the strict version is still on units 104 and 115.
+     */
+    ...DEMO_FLEET.map((m) => rel(
+      TRUCK_IDS[m.key], "org_northline", "Northline Freight", "carrier_owned",
+      m.unit, "approved", daysAgo(200), 95, 210,
+    )),
     rel(T.nl104, "org_northline", "Northline Freight", "carrier_owned", "104", "approved", daysAgo(380), 100, 30),
     rel(T.nl107, "org_northline", "Northline Freight", "carrier_owned", "107", "approved", daysAgo(360), 105, 30),
     rel(T.nl111, "org_northline", "Northline Freight", "carrier_owned", "111", "approved", daysAgo(300), 120, 45),
@@ -476,6 +610,16 @@ function buildFixtures(): RegistryState {
     rel(T.mdB04, "org_ridgeway", "Ridgeway Carriers", "carrier_owned", "B-04", "approved", daysAgo(420), 100, 25),
     rel(T.crosswind, "org_crosswind", "Crosswind Freight", "carrier_owned", "C-31", "approved", daysAgo(320), 125, 40),
     rel(T.claimed, "org_northline", "Northline Freight", "carrier_owned", "127", "approved", daysAgo(260), 120, 45),
+    /*
+     * ★ NORTHLINE'S OWN RULE IS WHAT BINDS THIS TRUCK ★
+     * A carrier dispatching its own equipment gets the STRICTER of the carrier
+     * rule and the relationship, so the 150 empty miles on Northline's rule
+     * decides this truck's reach whatever is written here. Which is why unit
+     * 133 sits in Bloomington and not Springfield: Springfield is 185 miles
+     * from every pickup in the sample market, and the walkthrough truck cannot
+     * be a truck that legitimately matches nothing.
+     */
+    rel(T.nl133, "org_northline", "Northline Freight", "carrier_owned", "133", "approved", daysAgo(90), 120, 150),
     rel(T.mdA18, "org_baxter", "Baxter Transit LLC", "carrier_owned", "A-18", "approved", daysAgo(280), 100, 30),
     rel(T.cs47, "org_cascade", "Cascade Haul", "carrier_owned", "47", "approved", daysAgo(340), 105, 30),
     rel(T.cs52, "org_cascade", "Cascade Haul", "carrier_owned", "52", "approved", daysAgo(250), 110, 35),
@@ -506,10 +650,13 @@ function buildFixtures(): RegistryState {
   ];
 
   const assignments: TruckDriverAssignment[] = [
+    ...DEMO_FLEET.map((m) =>
+      assign(TRUCK_IDS[m.key], "org_northline", m.driverProfileId, m.driverName, daysAgo(190))),
     assign(T.nl104, "org_northline", "dp_dmitri", "Dmitri Kovalenko", daysAgo(210)),
     assign(T.nl107, "org_northline", "dp_marisol", "Marisol Ortiz", daysAgo(7)),
     assign(T.nl115, "org_northline", "dp_amir", "Amir Haddad", daysAgo(290)),
     assign(T.nl118, "org_northline", "dp_marcus", "Marcus Hale", daysAgo(200)),
+    assign(T.nl133, "org_northline", "dp_nadia_r", "Nadia Reyes", daysAgo(88)),
     // History on 121: a driver who has moved on. The profile is untouched.
     assign(T.nl121, "org_northline", "dp_kelsey", "Kelsey Nguyen", daysAgo(180), daysAgo(60), "Left the carrier."),
     assign(T.claimed, "org_northline", "dp_ray", "Ray Bell", daysAgo(150), daysAgo(20), "Reassigned to another truck."),
@@ -522,6 +669,15 @@ function buildFixtures(): RegistryState {
   ];
 
   const seedDocuments = () => {
+    // Every demo truck's papers are in order. A lapsed registration is a state
+    // this fixture set already demonstrates on unit 111, and repeating it here
+    // would stop these cycles before they start.
+    for (const m of DEMO_FLEET) {
+      doc(TRUCK_IDS[m.key], "registration", "approved", "org_northline", `reg-${m.unit}.pdf`, daysFromNow(300));
+      doc(TRUCK_IDS[m.key], "title", "approved", "org_northline", `title-${m.unit}.pdf`);
+      doc(TRUCK_IDS[m.key], "insurance", "approved", "org_northline", `coi-${m.unit}.pdf`, daysFromNow(200));
+      doc(TRUCK_IDS[m.key], "annual_inspection", "approved", "org_northline", `insp-${m.unit}.pdf`, daysFromNow(220));
+    }
     doc(T.nl104, "registration", "approved", "org_northline", "reg-104.pdf", daysFromNow(240));
     doc(T.nl104, "title", "approved", "org_northline", "title-104.pdf");
     doc(T.nl104, "insurance", "approved", "org_northline", "coi-104.pdf", daysFromNow(180));
@@ -538,6 +694,9 @@ function buildFixtures(): RegistryState {
     doc(T.nl118, "registration", "approved", "org_northline", "reg-118.pdf", daysFromNow(300));
     doc(T.nl118, "lease_agreement", "pending_review", "org_northline", "lease-hale.pdf");
     doc(T.claimed, "registration", "approved", "org_northline", "reg-127.pdf", daysFromNow(60));
+  // Everything the walkthrough truck needs, in order and nowhere near expiring.
+  doc(T.nl133, "registration", "approved", "org_northline", "reg-133.pdf", daysFromNow(300));
+  doc(T.nl133, "annual_inspection", "approved", "org_northline", "insp-133.pdf", daysFromNow(210));
     doc(T.nl131, "registration", "approved", "org_northline", "reg-131.pdf", daysFromNow(330));
     doc(T.nl131, "title", "approved", "org_northline", "title-131.pdf");
     doc(T.nl131, "insurance", "approved", "org_northline", "coi-131.pdf", daysFromNow(190));

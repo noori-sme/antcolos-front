@@ -14,12 +14,15 @@ import { mtLoopById } from "./mt-loop";
 import type { MtLoopContext } from "./mt-loop";
 import { negotiationsForCycle } from "./negotiation";
 import { prepareMessageSync, recordAutoSend, messageById } from "./communications";
-import { buildRateConDocument, documentDate, signDocument } from "./ratecon-document";
+import { annotateDocument, buildRateConDocument, documentDate, signDocument } from "./ratecon-document";
+import { effectiveListing } from "./listing-corrections";
 import { truckContextFrom } from "./truck-registry";
 import { commitRateConfirmation } from "./rate-confirmation-record";
 import { mockLoadsService } from "./loads";
 import { readableProjectionsFor, retryProjection } from "@/lib/propagation";
 import { newCorrelationId, withCorrelation } from "@/lib/audit/correlation";
+// The shared simulated round trip. A seeder can suppress it; a person never does.
+import { sleep } from "./latency";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -48,7 +51,6 @@ import { newCorrelationId, withCorrelation } from "@/lib/audit/correlation";
  *     nowhere to go yet is listed as waiting rather than quietly dropped.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const LATENCY_MS = 320;
 
 let seq = 0;
@@ -322,6 +324,16 @@ export async function receiveRateConfirmation(
   // Same rule: the negotiation belongs to whoever ran it.
   const negotiation = negotiationOf(booking, ctx);
 
+  /*
+   * ★ CHECKED AGAINST WHAT WE WERE TOLD, NOT WHAT WAS POSTED ★
+   * The broker's document is built from the BOARD's figures, because that is
+   * what a broker's system prints. The expectations are built from the
+   * CORRECTED ones — so a weight a broker fixed on the phone and then forgot to
+   * fix on the paperwork lands on this screen as a disagreement, which is the
+   * entire point of having recorded the call.
+   */
+  const { listing: agreed } = effectiveListing(listing, booking.dispatchCycleId, ctx);
+
   /* ---- What the broker's document says ---------------------------------- */
 
   // Three deliberate differences from what was booked. Each one is a thing that
@@ -417,7 +429,9 @@ export async function receiveRateConfirmation(
   workflow.fields = extract(workflow, named, {
     booking,
     agreedRateCents: booking.agreedRateCents,
-    expectedPickupAt: listing.pickupAt,
+    expectedPickupAt: agreed.pickupAt,
+    expectedWeightLbs: agreed.weightLbs,
+    expectedCommodity: agreed.commodity,
     carrierLegalName: carrier.legalName,
     carrierMc: carrier.mcNumber,
     carrierDot: carrier.dotNumber,
@@ -453,6 +467,8 @@ interface ExpectedValues {
   booking: BookingRecord;
   agreedRateCents: number;
   expectedPickupAt: string;
+  expectedWeightLbs?: number;
+  expectedCommodity?: string;
   carrierLegalName: string;
   carrierMc?: string;
   carrierDot?: string;
@@ -526,8 +542,16 @@ function extract(
     ].filter(Boolean).join("   ") || undefined,
   });
   push("equipment", "equipment", { required: true, confidence: 0.94, expected: expected.equipment });
-  push("commodity", "commodity", { required: false, confidence: 0.9 });
-  push("weight", "weight", { required: false, confidence: 0.86 });
+  push("commodity", "commodity", {
+    required: false, confidence: 0.9, expected: expected.expectedCommodity,
+  });
+  push("weight", "weight", {
+    required: false,
+    confidence: 0.86,
+    expected: expected.expectedWeightLbs === undefined
+      ? undefined
+      : `${expected.expectedWeightLbs.toLocaleString("en-US")} lbs`,
+  });
   push("pickup_facility", "pickup_facility", { required: true, confidence: 0.91 });
   push("pickup_address", "pickup_address", { required: true, confidence: 0.84 });
   push("pickup_at", "pickup_at", {
@@ -628,10 +652,63 @@ export async function correctField(
   return { status: "ok", workflow, field };
 }
 
+/**
+ * How sensitive a field is, independent of how well it was read.
+ *
+ * ★ WHY A LIST AND NOT A HEURISTIC ★
+ * These are the fields that cost money or put a truck in the wrong place at
+ * the wrong hour. A mis-read commodity is an embarrassment; a mis-read rate is
+ * an invoice nobody will pay and a mis-read appointment is a missed dock.
+ * Ranking them by nothing but OCR confidence would bury a rate read at 82%
+ * under a street address read at 61%.
+ */
+export const SENSITIVE_FIELDS: readonly RateConFieldKey[] = [
+  "rate_total", "pickup_at", "deliver_by", "detention_terms", "layover_terms",
+];
+
+/** Anything the reader was less than this sure of gets looked at first. */
+const LOW_CONFIDENCE = 0.9;
+
+/**
+ * The order a person should check these in.
+ *
+ * Worst first: a value that disagrees with the booking, then a sensitive field,
+ * then anything the reader was unsure of, then the rest in document order. It
+ * is a stable sort on a rank, so two fields of equal risk keep the order they
+ * appear on the page — a queue that reshuffled itself between answers would be
+ * unusable.
+ */
+export function reviewPriority(field: ExtractedField): number {
+  if (field.disagrees) return 0;
+  const sensitive = SENSITIVE_FIELDS.includes(field.key);
+  const unsure = field.confidence < LOW_CONFIDENCE;
+  if (sensitive && unsure) return 1;
+  if (sensitive) return 2;
+  if (unsure) return 3;
+  return 4;
+}
+
+/**
+ * The fields in the order they should be worked, worst first.
+ *
+ * Risk decides the order. Where two fields carry the same risk, the one that
+ * has to be checked before anything can be signed goes first: an optional
+ * field is never what is standing between a dispatcher and a signature, so it
+ * has no business above a required one that is no safer.
+ */
+export function fieldsByPriority(workflow: RateConWorkflow): ExtractedField[] {
+  return [...workflow.fields].sort((a, b) =>
+    reviewPriority(a) - reviewPriority(b)
+    || Number(b.required) - Number(a.required));
+}
+
 export function progressOf(workflow: RateConWorkflow): RateConProgress {
   const required = workflow.fields.filter((f) => f.required);
   const reviewedRequired = required.filter((f) => f.status !== "unreviewed");
-  const next = required.find((f) => f.status === "unreviewed");
+  // ★ The queue follows the risk, not the page. ★
+  const next = [...required]
+    .sort((a, b) => reviewPriority(a) - reviewPriority(b))
+    .find((f) => f.status === "unreviewed");
   const blocked: string[] = [];
   if (next) {
     blocked.push(`${required.length - reviewedRequired.length} field${required.length - reviewedRequired.length === 1 ? "" : "s"} still to check.`);
@@ -741,7 +818,14 @@ export async function confirmAndSign(
       : `Checked field by field against ${workflow.loadReference} and signed as written.`,
   };
 
-  // The original is untouched. This is a new document.
+  /*
+   * ★ THEIR PAGE, SIGNED — NOT OURS, REWRITTEN ★
+   * `signDocument` copies the broker's blocks across verbatim and appends the
+   * signature. What goes back is the document they sent with a signature on it,
+   * which is the only thing a broker will accept as a signed rate confirmation.
+   * It is a second record rather than an edit of the first because the received
+   * original has to stay exactly as it arrived for the audit to mean anything.
+   */
   workflow.signed = signDocument(workflow.original, signature, corrections);
   workflow.status = "returned";
   workflow.confirmedAt = at;
@@ -751,7 +835,7 @@ export async function confirmAndSign(
   record(workflow, "confirmed", ctx.actor.displayNameSnapshot, signature.statement, ctx.membershipId);
   record(
     workflow, "signed", ctx.actor.displayNameSnapshot,
-    `${carrier.displayName}'s signature applied to a new document, ${workflow.signed.fileName}. The original is unchanged.`,
+    `${carrier.displayName}'s signature laid on ${workflow.brokerName}'s own document. Nothing of theirs was copied or re-typed: the signature is an overlay on ${workflow.original.fileName}, which is kept exactly as it arrived.`,
     ctx.membershipId,
   );
 
@@ -898,6 +982,101 @@ export async function retryDistribution(
   await retryProjection(ctx, eventId, subscriberId, ["loads:create"]);
   workflow.distribution = distributionFrom(ctx, eventId);
   return workflow.distribution;
+}
+
+/**
+ * Send it back unsigned, with the conflicting lines named.
+ *
+ * ★ THE MIDDLE ANSWER, WHICH IS THE COMMON ONE ★
+ * A rate confirmation that says $2,200 where $2,500 was agreed is not usually
+ * a load anybody wants to reject — it is a typo, or a broker trying it on, and
+ * either way the answer is "fix this and send it back", not "we are done".
+ * Before this existed the only two buttons were sign it or kill it, so a
+ * dispatcher with a wrong number either accepted the wrong number or blew up a
+ * booked load.
+ *
+ * The status stays `reviewing` on purpose. The LOAD stands, the truck is still
+ * holding, and when a corrected copy arrives the same review continues. What
+ * is refused is this piece of paper.
+ *
+ * ★ THE ORIGINAL GOES BACK, MARKED ★
+ * The attachment is `workflow.original` — the broker's own document, unchanged
+ * — with the block ids of the conflicting values carried alongside it so the
+ * screen can highlight exactly those lines. Antcolos never sends a rewritten
+ * document, and a dispute six weeks later is argued from the page the broker
+ * themselves produced.
+ */
+export async function returnToBroker(
+  rateConId: string,
+  ctx: MtLoopContext,
+): Promise<ConfirmOutcome> {
+  await sleep(LATENCY_MS);
+  if (!maySign(ctx)) return { status: "not_permitted" };
+  const workflow = rateConById(rateConId, ctx);
+  if (!workflow) return { status: "not_found" };
+  if (workflow.status === "returned") {
+    return { status: "blocked", reason: "It is already signed and returned." };
+  }
+  if (workflow.status === "rejected") {
+    return { status: "blocked", reason: "This one was stopped." };
+  }
+
+  const conflicts = workflow.fields.filter((f) => f.disagrees);
+  if (conflicts.length === 0) {
+    return {
+      status: "blocked",
+      reason: "Nothing on this document disagrees with the booking, so there is nothing to send back about.",
+    };
+  }
+
+  /*
+   * ★ THEIR PAGE, MARKED — NOT A LIST OF COMPLAINTS ★
+   * The marks are an OVERLAY on the document the broker sent: a ring round each
+   * disputed value and the booked figure beside it. What travels is their own
+   * page with our pen on it, which is the only form of this a broker's office
+   * can act on without arguing about whose numbers are whose.
+   */
+  workflow.markedUp = annotateDocument(
+    workflow.original,
+    conflicts.map((f) => ({
+      blockId: f.blockId,
+      label: RATECON_FIELD_LABEL[f.key],
+      agreed: f.expected ?? "not recorded",
+    })),
+    ctx.actor.displayNameSnapshot,
+  );
+
+  const prepared = prepareMessageSync(workflow.dispatchCycleId, "ratecon_discrepancy", ctx, {
+    preparedBecause: `${conflicts.length} field${conflicts.length === 1 ? "" : "s"} on ${workflow.loadReference} disagree with the booking.`,
+    extras: {
+      discrepancies: conflicts.map((f) => ({
+        label: RATECON_FIELD_LABEL[f.key],
+        // What Antcolos booked, and what the page says. Both quoted, neither
+        // paraphrased — the broker has to see their own words back.
+        agreed: f.expected ?? "not recorded",
+        onDocument: f.value,
+      })),
+    },
+    attachments: [{
+      documentId: workflow.markedUp.documentId,
+      fileName: workflow.markedUp.fileName,
+      label: "Their own document, with the disputed lines ringed",
+      // Which of THEIR blocks the marks sit on, for a screen showing the page.
+      highlightBlockIds: conflicts.map((f) => f.blockId),
+    }],
+  });
+
+  workflow.sentBackAt = nowIso();
+  workflow.sentBackByName = ctx.actor.displayNameSnapshot;
+  if (prepared.status === "ok") workflow.sentBackMessageId = prepared.message.messageId;
+  record(
+    workflow,
+    "returned_for_correction",
+    ctx.actor.displayNameSnapshot,
+    `Sent back unsigned: ${conflicts.map((f) => RATECON_FIELD_LABEL[f.key]).join(", ")} disagree with the booking. The broker's original is attached with those lines marked.`,
+    ctx.membershipId,
+  );
+  return { status: "ok", workflow };
 }
 
 export async function rejectRateConfirmation(

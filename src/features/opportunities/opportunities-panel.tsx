@@ -5,13 +5,16 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { MatchWithListing, OutreachDraft } from "@/types";
-import { DRAFT_STATUS_LABEL, UNARGUABLE_CHECKS } from "@/types";
+import {
+  DRAFT_STATUS_LABEL, DRIVER_REVIEW_STATUS_LABEL, UNARGUABLE_CHECKS,
+} from "@/types";
 import { dismissMatch, restoreMatch, shortlistMatch } from "@/lib/api/mock/opportunity-matching";
 import { approveDraft, cancelDraft } from "@/lib/api/mock/outreach-drafts";
-import { openNegotiation } from "@/lib/api/mock/negotiation";
-import { sendOpportunityToDriver } from "@/lib/api/mock/driver-review";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
 import { MatchCard } from "./match-card";
+import { TalkToBrokerDialog } from "./talk-to-broker-dialog";
+import { SendToDriverDialog } from "@/features/driver-review/send-to-driver-dialog";
+import { InfoTip } from "@/features/mt-loop/tip";
 
 /**
  * The opportunities for one truck: the best few, then everything else.
@@ -34,6 +37,9 @@ export function OpportunitiesPanel({
   const [error, setError] = useState<string | null>(null);
   const [showRest, setShowRest] = useState(false);
   const [openDraftId, setOpenDraftId] = useState<string | null>(null);
+  /** Which dialog is open over the list, and on which row. */
+  const [talkTo, setTalkTo] = useState<MatchWithListing | null>(null);
+  const [sendTo, setSendTo] = useState<string | null>(null);
 
   async function act(fn: () => Promise<{ status: string }>) {
     if (!ctx) return;
@@ -80,17 +86,35 @@ export function OpportunitiesPanel({
       return { askBlockedBecause: `No conversation will fix this: ${unarguable.map((c) => c.detail).join(" ")}` };
     }
 
+    /*
+     * ★ BOTH ACTIONS OPEN SOMETHING, RATHER THAN DOING SOMETHING ★
+     * "Send to driver" used to fire a send on the first click, with no sight
+     * of what the driver would receive; "Ask for it" opened a negotiation with
+     * nothing said in it. Each now opens the dialog that does the work, with
+     * the load already loaded — and the permission rules that gated the old
+     * buttons still gate these, unchanged.
+     */
     const send = driver?.canSend && negotiable
-      ? { onSendToDriver: () => void act(() => sendOpportunityToDriver(matchId, ctx)) }
+      ? { onSendToDriver: () => setSendTo(matchId) }
       : {};
     const blockedByDriver = Boolean(driver && !driverClear(driver));
 
     return {
       ...send,
-      onAskForIt: negotiable && !blockedByDriver
-        ? () => void act(() => openNegotiation(matchId, ctx))
+      onTalkToBroker: negotiable && !blockedByDriver ? () => setTalkTo(row) : undefined,
+      /*
+       * A label for the scan, the sentence for the tip. The note is often a
+       * full sentence naming the carrier and its rule — true, and not
+       * something to print on every row of a list of fourteen.
+       */
+      driverState: driver?.note
+        ? {
+          label: driver.status
+            ? DRIVER_REVIEW_STATUS_LABEL[driver.status]
+            : driver.reviewRequired ? "Driver first" : "Driver",
+          detail: driver.note,
+        }
         : undefined,
-      driverNote: driver?.note,
     };
   }
 
@@ -104,10 +128,9 @@ export function OpportunitiesPanel({
             <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums text-fg-muted">
               {top.length + rest.length}
             </span>
+            <InfoTip text="The best few first. Everything else is below, each with the reason it is not up here." />
           </h2>
-          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-            The best few first. Everything else is below, each with the reason it is not up here.
-          </p>
+
         </div>
         {drafts.filter((d) => d.status === "ready").length > 0 ? (
           <Badge tone="info">
@@ -126,13 +149,10 @@ export function OpportunitiesPanel({
 
       <div className="mt-3">
         {top.length === 0 && rest.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border px-3.5 py-4 text-center">
-            <p className="text-[0.8125rem] font-medium text-fg">Nothing here yet</p>
-            <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
-              Start a search and whatever the connected sources have will appear here, checked
-              against this truck.
-            </p>
-          </div>
+          <p className="flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3.5 py-4 text-[0.8125rem] font-medium text-fg">
+            Nothing found yet
+            <InfoTip text="Start a search and whatever the connected sources have will appear here, checked against this truck." />
+          </p>
         ) : (
           <>
             {top.length > 0 ? (
@@ -197,6 +217,23 @@ export function OpportunitiesPanel({
           onClose={() => setOpenDraftId(null)}
           onApprove={() => void act(() => approveDraft(openDraft.draftId, ctx!))}
           onCancel={() => void act(() => cancelDraft(openDraft.draftId, ctx!))}
+        />
+      ) : null}
+
+      {talkTo ? (
+        <TalkToBrokerDialog
+          row={talkTo}
+          ctx={ctx}
+          onClose={() => setTalkTo(null)}
+          onChanged={onChanged}
+        />
+      ) : null}
+      {sendTo ? (
+        <SendToDriverDialog
+          matchId={sendTo}
+          ctx={ctx}
+          onClose={() => setSendTo(null)}
+          onChanged={onChanged}
         />
       ) : null}
     </section>
