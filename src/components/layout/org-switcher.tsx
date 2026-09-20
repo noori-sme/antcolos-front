@@ -38,7 +38,14 @@ export function OrgSwitcher({ collapsed = false }: { collapsed?: boolean }) {
               "flex w-full items-center gap-2.5 rounded-md border border-border bg-surface px-2.5 py-2 text-left transition-colors hover:bg-surface-hover",
               collapsed && "justify-center px-0",
             )}
-            aria-label={`Switch organization. Current: ${name}, ${role}.`}
+            /* Expanded, the workspace is printed beside the icon and the
+               button only has to say what it does. On the rail it is not, so
+               there the label is the only thing naming it. */
+            aria-label={
+              collapsed
+                ? `Switch organization. Current: ${name}, ${role}.`
+                : "Switch organization"
+            }
           >
             <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
               {organization ? <WorkspaceIcon organization={organization} className="size-4" /> : (
