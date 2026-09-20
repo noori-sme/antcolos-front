@@ -61,7 +61,20 @@ export type PartyVerificationState =
   | "externally_verified";
 
 export type PartyProvenanceKind =
+  /** A rate confirmation a person reviewed and confirmed. */
   | "rate_confirmation"
+  /**
+   * A rate confirmation nobody reviewed.
+   *
+   * Its own kind rather than a flag on the one above, because the difference is
+   * not a detail of how a record was written — it is whether a human ever
+   * looked at it. Every badge, every filter and every "who said so" question
+   * turns on exactly this, and a boolean buried in a provenance object is a
+   * thing screens forget to read.
+   *
+   * ONLY the broker auto-indexer writes this. See `src/lib/directory/auto-broker.ts`.
+   */
+  | "rate_confirmation_auto"
   | "manual_entry"
   | "import"
   | "carrier_packet"
@@ -92,6 +105,77 @@ export interface PartyVerification {
   /** Why a dispatcher stood behind it, when they did. */
   confirmedBy?: ActorRef;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Claiming — a different question from verification                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ★ VERIFICATION AND CLAIMING ARE NOT THE SAME QUESTION ★
+ *
+ * `PartyVerification` asks: has anybody checked that this DATA is right?
+ * `PartyClaim` asks: does the company this record describes have an account on
+ * Antcolos, and has it proved this record is theirs?
+ *
+ * They are independent, and every combination is real. A broker profile built
+ * from an FMCSA lookup is `externally_verified` and still `unclaimed` — the
+ * data is right and nobody from that brokerage has ever logged in. A brokerage
+ * that claimed its record the day it signed up is `claimed` with an address
+ * nobody has checked.
+ *
+ * Collapsing them into one "verified" flag is what produces a badge that
+ * means two things at once and therefore nothing.
+ */
+export type PartyClaimState =
+  /**
+   * Nobody from this company has an Antcolos account tied to this record.
+   *
+   * The state every auto-indexed broker is born in, and the honest one: the
+   * platform has indexed their operational activity from paperwork other
+   * people sent it. They have not agreed to anything, supplied anything, or
+   * been told the record exists.
+   */
+  | "unclaimed"
+  /** Somebody asserted ownership. Not proved yet, and it grants nothing. */
+  | "claim_pending"
+  /** Proved. An Antcolos organization stands behind this record as its own. */
+  | "claimed";
+
+/**
+ * How ownership was proved.
+ *
+ * Never "they said so". Each of these is a check against something the
+ * claimant could not have arranged on their own.
+ */
+export type PartyClaimMethod =
+  /** A code sent to the address FMCSA holds for that MC number. */
+  | "fmcsa_email"
+  /** A code sent at the company's own mail domain. */
+  | "domain_email"
+  /** A person at Antcolos read documents and decided. */
+  | "manual_review";
+
+export interface PartyClaim {
+  state: PartyClaimState;
+  /**
+   * The Antcolos organization that proved this record is theirs.
+   *
+   * ★ IT CONFERS NO ACCESS OVER OTHER CARRIERS' DATA ★
+   * Claiming a broker record does not let that brokerage read any carrier's
+   * loads, rates, notes or standing. Everything carrier-private lives on
+   * `CarrierPartyRelationship`, partitioned by carrier, and nothing in the
+   * read path takes a parameter that would let a claimant reach it.
+   */
+  claimedByOrganizationId?: string;
+  claimedAt?: IsoDateTime;
+  method?: PartyClaimMethod;
+  /** Set while a claim is pending, so a person can see who is asking. */
+  claimRequestedByOrganizationId?: string;
+  claimRequestedAt?: IsoDateTime;
+}
+
+/** What a record with nobody behind it starts as. */
+export const UNCLAIMED: PartyClaim = { state: "unclaimed" };
 
 /**
  * Identifiers the outside world issues. These are what matching runs on, so
@@ -136,6 +220,11 @@ export interface Party {
   /** Why this record still needs a human, when it is provisional. */
   reviewReason?: string;
   verification: PartyVerification;
+  /**
+   * Whether the company behind this record has an account here and has proved
+   * the record is theirs. Independent of `verification` — see `PartyClaim`.
+   */
+  claim: PartyClaim;
   provenance: PartyProvenance;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
@@ -144,6 +233,18 @@ export interface Party {
    * party is derived from their relationships with it, never from who typed it.
    */
   createdByOrganizationId: string;
+}
+
+/**
+ * True when this record was indexed from paperwork with nobody in the loop and
+ * the company has still never claimed it.
+ *
+ * The one place the "Auto-generated via rate con — unclaimed" badge is decided,
+ * so a screen cannot invent its own definition of the same words.
+ */
+export function isAutoIndexedUnclaimed(party: Party): boolean {
+  return party.provenance.kind === "rate_confirmation_auto"
+    && party.claim.state === "unclaimed";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -365,6 +466,10 @@ export type DirectoryEventKind =
   | "party.updated"
   | "party.role_added"
   | "party.promoted_from_provisional"
+  /** Indexed automatically from a rate confirmation. Nobody confirmed it. */
+  | "party.auto_indexed"
+  | "party.claim_requested"
+  | "party.claimed"
   | "party.flagged_for_review"
   | "party.merged"
   | "party.archived"
@@ -420,6 +525,9 @@ export interface DirectoryListing {
   dotNumber?: string;
   status: PartyRecordStatus;
   verificationState: PartyVerificationState;
+  claimState: PartyClaimState;
+  /** True for a record no person has ever confirmed. Drives the list badge. */
+  autoIndexed: boolean;
   city?: string;
   state?: string;
   facilityCount: number;

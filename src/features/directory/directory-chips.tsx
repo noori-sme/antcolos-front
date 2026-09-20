@@ -1,11 +1,13 @@
+import { Bot } from "lucide-react";
 import type {
-  MatchConfidence, PartyRecordStatus, PartyRole, PartyStanding,
+  MatchConfidence, PartyClaimState, PartyRecordStatus, PartyRole, PartyStanding,
   PartyVerificationState,
 } from "@/types";
 import { cn } from "@/lib/utils";
+import { AUTO_INDEXED_BADGE, AUTO_INDEXED_EXPLANATION } from "@/lib/directory/auto-broker";
 import {
-  CONFIDENCE_LABEL, PARTY_ROLE_LABEL, PARTY_STATUS_LABEL, STANDING_LABEL,
-  VERIFICATION_LABEL,
+  CLAIM_DESCRIPTION, CLAIM_LABEL, CONFIDENCE_LABEL, PARTY_ROLE_LABEL,
+  PARTY_STATUS_LABEL, STANDING_LABEL, VERIFICATION_LABEL,
 } from "./directory-labels";
 
 const CHIP = "shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium";
@@ -129,6 +131,57 @@ export function RatingStars({ rating }: { rating?: number }) {
           ★
         </span>
       ))}
+    </span>
+  );
+}
+
+const CLAIM_TONE: Record<PartyClaimState, string> = {
+  unclaimed: "bg-st-neutral-bg text-st-neutral",
+  claim_pending: "bg-st-warning-bg text-st-warning",
+  claimed: "bg-st-success-bg text-st-success",
+};
+
+/**
+ * Whether the company behind this profile has claimed it.
+ *
+ * Shown for brokers and hidden for `unclaimed` unless asked for, because most
+ * of the directory is unclaimed and a column of grey "Unclaimed" chips would
+ * say nothing. The one place it is always worth saying is on a profile that was
+ * also auto-generated — see `AutoIndexedChip`.
+ */
+export function ClaimChip({
+  state,
+  className,
+  showUnclaimed = false,
+}: {
+  state: PartyClaimState;
+  className?: string;
+  showUnclaimed?: boolean;
+}) {
+  if (state === "unclaimed" && !showUnclaimed) return null;
+  return (
+    <span className={cn(CHIP, CLAIM_TONE[state], className)} title={CLAIM_DESCRIPTION[state]}>
+      {CLAIM_LABEL[state]}
+    </span>
+  );
+}
+
+/**
+ * The one chip that says a machine wrote this record and nobody has stood
+ * behind it.
+ *
+ * It carries BOTH facts in one line — auto-generated, and unclaimed — because
+ * they are the two things a dispatcher needs before they trust a figure on the
+ * profile, and splitting them across two chips invites reading only one.
+ */
+export function AutoIndexedChip({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(CHIP, "inline-flex items-center gap-1 bg-st-warning-bg text-st-warning", className)}
+      title={AUTO_INDEXED_EXPLANATION}
+    >
+      <Bot aria-hidden className="size-3" />
+      {AUTO_INDEXED_BADGE}
     </span>
   );
 }

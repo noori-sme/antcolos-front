@@ -10,6 +10,8 @@ import {
   rateConfirmationForLoad, rateConfirmationVersions,
 } from "@/lib/api/mock/rate-confirmation-record";
 import { pendingExtractions } from "@/lib/api/mock/rate-con-extractions";
+import { allParties, loadLinksFor } from "@/lib/api/mock/party-registry";
+import { isAutoIndexedUnclaimed } from "@/types";
 import { propagationBus } from "@/lib/propagation";
 import { mockStore } from "@/lib/api/mock/store";
 import { integrations } from "@/lib/integrations";
@@ -171,10 +173,44 @@ test("every authorized projection reports its own honest outcome", async () => {
     }
   }
 
-  // The directory may never create a party profile on its own.
+  // The directory still refuses to LINK anything on its own: every party on the
+  // confirmation is queued for a person, exactly as before.
   const directory = rows.find((r) => r.key === "directory_parties")!;
   assert.equal(directory.state, "needs_review");
   assert.equal(pendingExtractions(ctx.organizationId).length, 1);
+
+  // This fixture's broker — Tandem Freight Partners — is ALREADY in the
+  // directory with the same MC number, so the auto-indexer must abstain. That
+  // is the duplicate this whole feature is built not to create, and asserting
+  // it here is worth more than asserting the happy path: the happy path has its
+  // own test, and this is the one that would regress silently.
+  const tandems = allParties().filter((p) => /^Tandem Freight Partners/.test(p.legalName));
+  assert.equal(tandems.length, 1, "signing did not mint a second profile for a known broker");
+  assert.notEqual(
+    tandems[0].provenance.kind, "rate_confirmation_auto",
+    "the surviving profile is the one that was already there",
+  );
+
+  // Whatever it did index is a broker, and says so in both badge fields.
+  for (const party of allParties().filter((p) => p.provenance.kind === "rate_confirmation_auto")) {
+    assert.deepEqual(party.roles, ["broker"], "only brokers are indexed automatically");
+    assert.ok(party.identifiers.mcNumber, "an indexed broker carries the MC number it was indexed on");
+    assert.equal(party.verification.state, "unverified", "nothing checked it against FMCSA");
+    assert.equal(party.claim.state, "unclaimed", "no brokerage claimed it");
+    assert.ok(isAutoIndexedUnclaimed(party), "the badge predicate agrees");
+    assert.equal(
+      loadLinksFor(party.partyId).length, 0,
+      "auto-indexing never links a load — that is still a person's confirmation",
+    );
+  }
+
+  // The projection says out loud what it skipped and why, for every block.
+  for (const name of ["Tandem Freight Partners", "Joliet Distribution Center", "Rockford Receiving"]) {
+    assert.ok(
+      directory.reason?.includes(name),
+      `the directory outcome accounts for ${name} rather than passing over it`,
+    );
+  }
 
   // Sharing a truck's position outside the organization stays a person's call.
   assert.equal(rows.find((r) => r.key === "tracking_session")!.state, "pending");

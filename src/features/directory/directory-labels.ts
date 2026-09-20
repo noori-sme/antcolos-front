@@ -1,6 +1,7 @@
 import type {
-  MatchConfidence, PartyContactKind, PartyRecordStatus, PartyRole, PartyStanding,
-  PartyVerificationState, ResolutionRecommendation,
+  MatchConfidence, PartyClaimState, PartyContactKind, PartyProvenanceKind,
+  PartyRecordStatus, PartyRole, PartyStanding, PartyVerificationState,
+  ResolutionRecommendation,
 } from "@/types";
 
 /**
@@ -153,3 +154,49 @@ export function formatCityState(address?: { city?: string; state?: string }): st
   if (!address?.city) return "—";
   return address.state ? `${address.city}, ${address.state}` : address.city;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Claiming                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Claiming is not verification, and the words have to keep them apart.
+ *
+ * "Verified" is about the DATA. "Claimed" is about whether the company has an
+ * account here and proved the record is theirs. A dispatcher reading a broker
+ * profile needs to know which of the two a badge is talking about, so neither
+ * label is allowed to use the other's word.
+ */
+export const CLAIM_LABEL: Record<PartyClaimState, string> = {
+  unclaimed: "Unclaimed",
+  claim_pending: "Claim pending",
+  claimed: "Claimed",
+};
+
+export const CLAIM_DESCRIPTION: Record<PartyClaimState, string> = {
+  unclaimed:
+    "Nobody from this company has an Antcolos account tied to this profile. They have not " +
+    "agreed to anything here and may not know the profile exists.",
+  claim_pending:
+    "Somebody has asserted they represent this company. It has not been proved yet, and it " +
+    "grants them nothing until it is.",
+  claimed:
+    "Somebody at this company proved the profile is theirs. It says nothing about whether " +
+    "the details on it are correct, and it gives them no access to your loads, rates or notes.",
+};
+
+/**
+ * Where a record came from, in words rather than in enum spelling.
+ *
+ * The two rate-confirmation kinds read differently on purpose: one of them had
+ * a person in it and the other did not, and that is the entire difference
+ * between a profile somebody stands behind and a profile nobody has seen.
+ */
+export const PROVENANCE_LABEL: Record<PartyProvenanceKind, string> = {
+  rate_confirmation: "A rate confirmation, confirmed by a person",
+  rate_confirmation_auto: "A rate confirmation, indexed automatically",
+  manual_entry: "Typed in by hand",
+  import: "An import",
+  carrier_packet: "A carrier packet",
+  system: "Antcolos",
+};

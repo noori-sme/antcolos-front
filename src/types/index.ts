@@ -32,6 +32,7 @@ export type * from "./settlement";
 export type * from "./maintenance";
 export type * from "./insurance";
 export type * from "./party";
+export { UNCLAIMED, isAutoIndexedUnclaimed } from "./party";
 export type * from "./rate-confirmation";
 export type * from "./workspace";
 export type * from "./integration";

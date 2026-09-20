@@ -17,7 +17,9 @@ import type {
   DirectoryListing, Facility, Party, PartyContact, PartyRole, PartyStanding,
 } from "@/types";
 import { cn } from "@/lib/utils";
-import { PartyStatusChip, RatingStars, RoleChip, StandingChip } from "./directory-chips";
+import {
+  AutoIndexedChip, PartyStatusChip, RatingStars, RoleChip, StandingChip,
+} from "./directory-chips";
 import {
   CONTACT_KIND_LABEL, formatCityState, formatDate, formatMcNumber, formatPhone,
 } from "./directory-labels";
@@ -353,7 +355,12 @@ function CompanyList({ listings, total }: { listings: DirectoryListing[]; total:
                 {l.roles.map((r) => (
                   <RoleChip key={r} role={r} />
                 ))}
-                <PartyStatusChip status={l.status} />
+                {/*
+                  Shown INSTEAD of the generic "Needs review" chip, not beside
+                  it: an auto-indexed record is provisional too, and two amber
+                  chips saying overlapping things is how a row stops being read.
+                */}
+                {l.autoIndexed ? <AutoIndexedChip /> : <PartyStatusChip status={l.status} />}
                 <StandingChip standing={l.standing} />
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.75rem] text-fg-muted">

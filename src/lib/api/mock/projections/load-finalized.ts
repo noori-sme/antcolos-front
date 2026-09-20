@@ -8,6 +8,7 @@ import { mockStore } from "../store";
 import { finalizeLoad, finalizationBlockers } from "../driver-workflow-finalize";
 import { integrations } from "@/lib/integrations";
 import { enqueueExtraction } from "../rate-con-extractions";
+import { autoIndexBrokers } from "../party-registry";
 import { recordFinalizationOnLoop } from "../mt-loop";
 import { rateConfirmationForLoad } from "../rate-confirmation-record";
 
@@ -31,9 +32,18 @@ import { rateConfirmationForLoad } from "../rate-confirmation-record";
  *     names why nothing was written. It never claims a write it did not make.
  *
  * And one rule that only applies to the directory: **it may not create a party
- * profile.** Matching belongs to the Directory, which requires a person to
- * confirm every proposal, because a rate confirmation that mints a broker is how
- * a carrier ends up with four profiles for one broker.
+ * profile from soft evidence.** Matching belongs to the Directory, which requires
+ * a person to confirm every proposal, because a rate confirmation that mints a
+ * shipper off a name and an address is how a carrier ends up with four profiles
+ * for one dock.
+ *
+ * There is now exactly one carve-out, and it is narrow enough to state here: a
+ * BROKER block carrying an MC number is not soft evidence. An MC number is
+ * issued once, by an authority, to one company, and `matching.ts` already
+ * treats it as decisive. Those — and only those — are indexed automatically as
+ * unverified, unclaimed profiles. Everything else on the confirmation still
+ * goes to a person. See `src/lib/directory/auto-broker.ts` for why the two
+ * cases are different in kind rather than in degree.
  */
 
 type Event = DomainEvent<LoadFinalizedPayload>;
@@ -224,19 +234,26 @@ export const invoicePreparationProjection = subscriber({
 /* -------------------------------------------------------------------------- */
 
 /**
- * The parties on the confirmation, handed to the Directory for resolution.
+ * The parties on the confirmation, handed to the Directory.
  *
- * This is the projection that must NOT be clever. The Directory's matching rules
- * have four confidence tiers and deliberately no tier meaning "sure enough to
- * merge without asking" — every tier above `none` produces a proposal a
- * dispatcher confirms. So this projection plans nothing and creates nothing: it
- * queues the reviewed extraction for the existing confirmation screen and reports
- * `needs_review`.
+ * Two things happen here, and keeping them apart is the whole design.
  *
- * That is the correct outcome, not a limitation. A rate confirmation that created
- * a broker profile on its own is precisely how a carrier ends up with four
- * profiles for one broker, and this is the one place in the whole flow where
- * stopping to ask is worth more than finishing.
+ * **Brokers with an MC number are indexed immediately.** An MC number is
+ * decisive — issued once, by an authority, to one company — so a broker
+ * carrying one is an identity rather than a guess. The profile is created
+ * unverified and unclaimed, and nothing else about it is assumed.
+ *
+ * **Everything else still waits for a person.** Shippers, receivers,
+ * facilities, contacts, brokers with no MC number, and every LINK between this
+ * load and any of them. The Directory's matching tiers deliberately include no
+ * tier meaning "sure enough to merge without asking", and a shipper matched on
+ * a name and an address is exactly the case that produces four profiles for one
+ * dock.
+ *
+ * So the projection reports `needs_review` even when it created something: the
+ * queue entry is still there, the dispatcher still confirms the links, and what
+ * changed is that the broker is already a profile when they arrive instead of a
+ * name they have to mint.
  */
 export const directoryProjection = subscriber({
   id: "directory_parties",
@@ -276,18 +293,39 @@ export const directoryProjection = subscriber({
       reviewedAt: event.payload.signature.signedAt,
     };
 
+    // Indexed BEFORE queueing, so the dispatcher who opens the review finds the
+    // broker proposed for linking rather than for creation. The queue entry is
+    // idempotent on the rate confirmation and the indexer abstains on any
+    // resemblance, so replaying this event creates nothing a second time.
+    const indexed = autoIndexBrokers(event.scope.organizationId, extraction);
+
     const queued = enqueueExtraction(event.scope.organizationId, extraction, {
       loadReference,
       rateConfirmationId: event.payload.rateConfirmationId,
     });
 
+    const createdNames = indexed.created.map((p) => p.legalName).join(", ");
+
     return {
       state: "needs_review",
-      detail: `The broker, shipper and receiver on ${loadReference} are queued for resolution in Directory → Review.`,
-      reason: "The Directory matches against every canonical record and refuses to create or merge a profile without a person confirming it. Nothing was created or linked here — confirm the proposals and the permanent links are made then.",
+      detail:
+        (indexed.created.length > 0
+          ? `Indexed ${createdNames} as ${indexed.created.length === 1 ? "an unclaimed broker profile" : "unclaimed broker profiles"} from ${loadReference}. `
+          : "")
+        + `The parties on ${loadReference} are queued for resolution in Directory → Review.`,
+      reason:
+        (indexed.created.length > 0
+          ? `${indexed.created.length === 1 ? "That profile carries" : "Those profiles carry"} an MC number, which is decisive, and ${indexed.created.length === 1 ? "is" : "are"} unverified and unclaimed: nothing was checked against FMCSA and nobody from the brokerage has claimed the record. `
+          : "")
+        + "Everything else on the confirmation — shippers, receivers, facilities, contacts, and every link between this load and any of them — still needs a person, because the Directory refuses to create or merge on a name-and-address match."
+        + (indexed.skipped.length > 0
+          ? ` Not indexed: ${indexed.skipped.map((s) => `${s.name} (${s.role}) — ${s.detail}`).join(" ")}`
+          : ""),
       retryable: false,
       producedRefs: [
         externalRef("load", queued.id, { entityId: queued.id, entityKind: "resolution_queue_entry" }),
+        ...indexed.created.map((p) =>
+          externalRef("load", p.partyId, { entityId: p.partyId, entityKind: "party" })),
       ],
     };
   },

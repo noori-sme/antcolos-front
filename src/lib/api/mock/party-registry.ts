@@ -3,7 +3,7 @@ import type {
   ContactProfileView, DirectoryEvent, DirectoryEventKind, DirectoryListing,
   ExtractedContact, ExtractedFacility, ExtractedParty, ExtractedPartyBlock,
   Facility, FacilityProfileView, PartyContact, PartyContactKind, PartyLoadLink,
-  PartyNote, PartyProfileView, PartyProvenance, PartyRole, PartySnapshot,
+  PartyClaim, PartyNote, PartyProfileView, PartyProvenance, PartyRole, PartySnapshot,
   PartyStanding, PaymentExperience, PermissionKey, Party, ResolutionOutcome,
   ResolutionPlan, PartyResolutionProposal, RateConfirmationExtraction,
 } from "@/types";
@@ -12,6 +12,7 @@ import {
   rankContactCandidates, rankFacilityCandidates, rankPartyCandidates,
   recommendFor, thinExtraction,
 } from "@/lib/directory/matching";
+import { decideAutoIndexForBlocks } from "@/lib/directory/auto-broker";
 import {
   normalizeCompanyName, normalizeDotNumber, normalizeEmail, normalizeMcNumber,
   normalizePhone, normalizeScac,
@@ -195,6 +196,10 @@ interface PartySeed {
   email?: string;
   website?: string;
   provisional?: string;
+  /** Seeds an already-claimed brokerage, for the screens that show one. */
+  claim?: PartyClaim;
+  /** Seeds a record nobody confirmed, for the auto-indexed badge. */
+  provenanceKind?: PartyProvenance["kind"];
 }
 
 function makeParty(seed: PartySeed): Party {
@@ -222,7 +227,10 @@ function makeParty(seed: PartySeed): Party {
     verification: seed.provisional
       ? { state: "unverified" }
       : { state: "dispatcher_confirmed", confirmedBy: SYSTEM_ACTOR, checkedAt: created },
-    provenance: provenance(seed.organizationId),
+    // No fixture is claimed. Claiming means a real brokerage proved a record is
+    // theirs, and seeding one would put words in a company's mouth.
+    claim: seed.claim ?? { state: "unclaimed" },
+    provenance: provenance(seed.organizationId, seed.provenanceKind),
     createdAt: created,
     updatedAt: created,
     createdByOrganizationId: seed.organizationId,
@@ -399,6 +407,37 @@ function buildFixtures(): RegistryState {
     provisional: "Created from a rate confirmation that carried no MC number",
   }));
 
+  /**
+   * A broker Antcolos indexed on its own, with nobody in the loop.
+   *
+   * Seeded because the demo cannot otherwise reach this state: every broker the
+   * fixture rate confirmations name is already in this directory, so the
+   * indexer correctly abstains on all of them and the badge would never appear
+   * on screen. Signing a confirmation for a genuinely unknown broker produces
+   * exactly this record — see `auto-broker-indexing.test.ts`, which drives that
+   * path for real.
+   *
+   * ★ WHY IT HAS A RELATIONSHIP AND THE INDEXER CREATES NONE ★
+   * `visibleParties` lists the companies a carrier has a relationship with, and
+   * auto-indexing deliberately creates no relationship — it writes the shared
+   * company record and nothing carrier-private. So a freshly indexed broker is
+   * a canonical record that stops the next confirmation duplicating it, and it
+   * enters a carrier's directory at the moment that carrier links a load to it
+   * in Directory → Review. This fixture is seeded one step past that, with the
+   * zero-load relationship such a link produces, so the badge is visible.
+   */
+  const ridgeline = push(parties, makeParty({
+    key: "ridgeline_auto", organizationId: NL, roles: ["broker"],
+    legalName: "Ridgeline Freight Brokers LLC",
+    mcNumber: "MC-1042778",
+    address: { line1: "870 N Arrowhead Ave", city: "San Bernardino", state: "CA", postalCode: "92401" },
+    phone: "+1 (909) 555-0117",
+    provisional:
+      "Indexed automatically from a rate confirmation. Nobody has confirmed it and the "
+      + "brokerage has not claimed it.",
+    provenanceKind: "rate_confirmation_auto",
+  }));
+
   const rivet = push(parties, makeParty({
     key: "rivet", organizationId: NL, roles: ["shipper", "receiver"],
     legalName: "Rivet Supply Co.",
@@ -510,6 +549,9 @@ function buildFixtures(): RegistryState {
       },
     }),
     makeRelationship(NL, tandemLogistics.partyId, { standing: "standard", loadCount: 0 }),
+    // Zero loads on purpose: Northline has met this broker on paperwork and
+    // has not hauled for them yet. See the seed below for why it exists.
+    makeRelationship(NL, ridgeline.partyId, { standing: "standard", loadCount: 0 }),
     makeRelationship(NL, rivet.partyId, {
       standing: "standard", rating: 4, loadCount: 2,
       firstLoadAt: daysAgo(20), lastLoadAt: daysAgo(1),
@@ -677,6 +719,7 @@ function buildFixtures(): RegistryState {
     legalName: "Summit Goods Co.",
     address: { line1: "4400 E Marginal Way S", city: "Seattle", state: "WA", postalCode: "98134" },
   }));
+
 
   const rheaDoss = push(contacts, makeContact(pacline.partyId, CS, "broker_agent", "Rhea Doss", {
     phone: "+1 (503) 555-0161",
@@ -890,6 +933,8 @@ export async function listDirectory(
         dotNumber: party.identifiers.dotNumber,
         status: party.status,
         verificationState: party.verification.state,
+        claimState: party.claim.state,
+        autoIndexed: party.provenance.kind === "rate_confirmation_auto",
         city: party.primaryAddress?.city,
         state: party.primaryAddress?.state,
         facilityCount: facilities.filter(
@@ -1170,6 +1215,137 @@ export async function addNote(
  * so an MC number stays unique across the whole registry and a broker three
  * other carriers already know does not get a fourth profile.
  */
+/* -------------------------------------------------------------------------- */
+/* Test-visible reads                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every party, unfiltered. For tests and for the auto-indexer's duplicate check.
+ *
+ * Deliberately NOT a service method and deliberately not exported through the
+ * contracts seam: it takes no context and applies no carrier scoping, so
+ * serving it to a screen would hand one carrier the whole directory. The
+ * scoped read a screen uses is `listDirectory`.
+ */
+export function allParties(): readonly Party[] {
+  return db().parties;
+}
+
+/** The load links for one party, across carriers. Tests only, same reason. */
+export function loadLinksFor(partyId: string): readonly PartyLoadLink[] {
+  return db().loadLinks.filter((l) => l.partyId === partyId);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Automatic broker indexing                                                   */
+/* -------------------------------------------------------------------------- */
+
+export interface AutoIndexReport {
+  /** Parties created. Empty on almost every confirmation, which is correct. */
+  created: Party[];
+  /** One line per block that was not indexed, and why. For the projection. */
+  skipped: { role: PartyRole; name: string; detail: string }[];
+}
+
+/**
+ * Index the brokers on one rate confirmation, with nobody in the loop.
+ *
+ * ★ WHY THIS DOES NOT TAKE A PartyContext ★
+ * Every other write in this file takes one and checks a permission, because
+ * every other write is somebody doing something. This is the platform indexing
+ * a company from paperwork, and there is no "somebody": the dispatcher who
+ * signed the rate confirmation did not ask for a broker profile and may not
+ * hold `customers:resolve` at all. Gating it on their permissions would mean a
+ * carrier's directory grew or did not grow depending on which dispatcher
+ * happened to sign — which is not a permission, it is a coin toss.
+ *
+ * So it takes an organization for attribution only, exactly as
+ * `createdByOrganizationId` is documented to be: audit provenance that confers
+ * no access. A party record is shared and public in the real world — an MC
+ * number is a matter of public record — so creating one discloses nothing.
+ *
+ * ★ WHAT IT DELIBERATELY DOES NOT DO ★
+ * It does not link the load. It does not create a facility or a contact. It
+ * does not touch `CarrierPartyRelationship`, standing, rating or notes. Every
+ * one of those is either carrier-private or a judgement, and both still belong
+ * to the person working the review queue. All this does is make sure that when
+ * they get there, the broker is already a profile instead of a name.
+ */
+export function autoIndexBrokers(
+  organizationId: string,
+  extraction: RateConfirmationExtraction,
+): AutoIndexReport {
+  const at = now();
+  const created: Party[] = [];
+  const skipped: AutoIndexReport["skipped"] = [];
+
+  const decisions = decideAutoIndexForBlocks(extraction.blocks, db().parties);
+
+  decisions.forEach((decision, index) => {
+    const block = extraction.blocks[index];
+    if (decision.outcome === "skip") {
+      skipped.push({ role: block.role, name: block.party.name, detail: decision.detail });
+      return;
+    }
+
+    const party: Party = {
+      partyId: uuid(),
+      roles: ["broker"],
+      legalName: decision.legalName,
+      dbaName: block.party.dbaName?.trim() || undefined,
+      identifiers: {
+        mcNumber: decision.mcNumber,
+        dotNumber: normalizeDotNumber(block.party.dotNumber),
+        asPrinted: {
+          mcNumber: block.party.mcNumber,
+          dotNumber: block.party.dotNumber,
+        },
+      },
+      primaryAddress: block.party.address,
+      phone: block.party.phone,
+      email: normalizeEmail(block.party.email) ?? block.party.email,
+      // Provisional, and the review reason says why rather than implying an
+      // uncertain match. The MC number was decisive; what is missing is a
+      // person, and confirming the proposal in Directory → Review promotes it
+      // through the lifecycle that already exists.
+      status: "provisional",
+      reviewReason:
+        "Indexed automatically from a rate confirmation. Nobody has confirmed it and the "
+        + "brokerage has not claimed it.",
+      // NOT dispatcher_confirmed: no dispatcher saw it. A record that called
+      // itself confirmed because a machine wrote it would make the word
+      // meaningless everywhere else it appears.
+      verification: { state: "unverified" },
+      claim: { state: "unclaimed" },
+      provenance: {
+        kind: "rate_confirmation_auto",
+        documentId: extraction.documentId,
+        loadId: extraction.loadId,
+        recordedAt: at,
+        recordedBy: SYSTEM_ACTOR,
+        recordedByOrganizationId: organizationId,
+      },
+      createdAt: at,
+      updatedAt: at,
+      createdByOrganizationId: organizationId,
+    };
+
+    db().parties.push(party);
+    created.push(party);
+
+    db().events.push(event(
+      organizationId,
+      "party.auto_indexed",
+      `Indexed ${party.legalName} (MC ${decision.mcNumber}) from a rate confirmation. `
+      + "Unverified and unclaimed — no person confirmed it.",
+      { partyId: party.partyId, loadId: extraction.loadId },
+      { occurredAt: at, actor: SYSTEM_ACTOR },
+    ));
+  });
+
+  return { created, skipped };
+}
+
 export async function planResolution(
   ctx: PartyContext,
   extraction: RateConfirmationExtraction,
@@ -1610,6 +1786,9 @@ function createPartyFrom(
     // printed on a broker's own paperwork has not been checked against FMCSA,
     // and calling it verified here would make a document self-certifying.
     verification: { state: "dispatcher_confirmed", confirmedBy: actor, checkedAt: at },
+    // A dispatcher standing behind the DATA is not the brokerage standing
+    // behind the RECORD. Confirming a proposal never claims a company.
+    claim: { state: "unclaimed" },
     provenance: recordProvenance,
     createdAt: at,
     updatedAt: at,

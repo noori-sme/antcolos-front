@@ -2,7 +2,7 @@
 
 import {
   ArrowLeft, Building2, ChevronRight, FileText, MapPin, Package, Pin, ScrollText,
-  TriangleAlert, UserRound,
+  Bot, TriangleAlert, UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -15,15 +15,19 @@ import { useServiceContext } from "@/lib/api/use-service-context";
 import { getPartyProfile, addNote, setStanding, setRating } from "@/lib/api/mock/party-registry";
 import { useCan } from "@/lib/session/hooks";
 import type { Load, PartyProfileView, PartyStanding } from "@/types";
+import { isAutoIndexedUnclaimed } from "@/types";
+import { AUTO_INDEXED_EXPLANATION } from "@/lib/directory/auto-broker";
 import { laneLabel } from "@/types";
 import { cn } from "@/lib/utils";
 import {
-  PartyStatusChip, RatingStars, RoleChip, StandingChip, VerificationChip,
+  AutoIndexedChip, ClaimChip, PartyStatusChip, RatingStars, RoleChip, StandingChip,
+  VerificationChip,
 } from "./directory-chips";
 import {
   CONTACT_KIND_LABEL, PARTY_STATUS_DESCRIPTION, STANDING_DESCRIPTION, STANDING_LABEL,
   VERIFICATION_DESCRIPTION, formatAddress, formatCityState, formatDate,
   formatDateTime, formatMcNumber, formatPhone,
+  PROVENANCE_LABEL,
 } from "./directory-labels";
 import { usePartyContext } from "./use-party-context";
 
@@ -166,12 +170,53 @@ export function PartyProfileScreen({ partyId }: { partyId: string }) {
         {party.roles.map((r) => (
           <RoleChip key={r} role={r} />
         ))}
-        <PartyStatusChip status={party.status} />
+        {isAutoIndexedUnclaimed(party)
+          ? <AutoIndexedChip />
+          : <PartyStatusChip status={party.status} />}
         <VerificationChip state={party.verification.state} />
+        {/*
+          Always shown here, even when unclaimed. On a profile — unlike a list
+          row — "nobody from this company has an account" is exactly what
+          somebody about to trust the page needs told.
+        */}
+        <ClaimChip state={party.claim.state} showUnclaimed />
         <StandingChip standing={relationship.standing} showStandard />
       </div>
 
-      {party.status === "provisional" ? (
+      {/*
+        An auto-indexed profile gets its own banner rather than the generic
+        provisional one. "Waiting to be checked" is true of both, but it does
+        not say the thing that actually matters here: no person has ever looked
+        at this record, and the company it describes does not know it exists.
+      */}
+      {isAutoIndexedUnclaimed(party) ? (
+        <section className="rounded-lg border border-st-warning/35 bg-st-warning-bg/40 p-4">
+          <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
+            <Bot className="size-4 text-st-warning" aria-hidden />
+            Antcolos built this profile from a rate confirmation
+          </h2>
+          <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-fg-muted">
+            {AUTO_INDEXED_EXPLANATION}
+          </p>
+          <ul className="mt-2 space-y-1 text-[0.8125rem] leading-relaxed text-fg-muted">
+            <li>
+              <span className="font-medium text-fg">The MC number is what it was indexed on.</span>{" "}
+              It came off the broker&apos;s own paperwork and has not been checked against FMCSA.
+            </li>
+            <li>
+              <span className="font-medium text-fg">Everything else is unconfirmed.</span>{" "}
+              The address, phone and email are whatever the document printed.
+            </li>
+            <li>
+              <span className="font-medium text-fg">Nothing here is a recommendation.</span>{" "}
+              Antcolos has indexed this brokerage&apos;s activity; it has not vouched for them.
+            </li>
+          </ul>
+          <p className="mt-2 text-[0.8125rem] leading-relaxed text-fg-muted">
+            Confirming it in Directory → Review is what turns it into a checked profile.
+          </p>
+        </section>
+      ) : party.status === "provisional" ? (
         <section className="rounded-lg border border-st-warning/35 bg-st-warning-bg/40 p-4">
           <h2 className="flex items-center gap-2 text-[0.875rem] font-semibold text-fg">
             <TriangleAlert className="size-4 text-st-warning" aria-hidden />
@@ -245,14 +290,7 @@ export function PartyProfileScreen({ partyId }: { partyId: string }) {
           </Panel>
 
           <Panel title="Where this came from">
-            <Row
-              label="Source"
-              value={
-                party.provenance.kind === "rate_confirmation"
-                  ? "A rate confirmation"
-                  : party.provenance.kind.replace(/_/g, " ")
-              }
-            />
+            <Row label="Source" value={PROVENANCE_LABEL[party.provenance.kind]} />
             {party.provenance.documentId ? (
               <Row label="Document" value={party.provenance.documentId} mono />
             ) : null}
