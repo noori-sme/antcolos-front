@@ -35,17 +35,32 @@ test.describe("finding it at all", () => {
     await expect(page.getByRole("heading", { name: "Broker policies" })).toBeVisible();
   });
 
-  test("it is NOT a new primary sidebar module", async ({ page }) => {
+  test("it is NOT a new primary sidebar module", async ({ page }, testInfo) => {
     await openDirectory(page);
 
     /*
      * ★ THE ONE THING THIS FEATURE MUST NOT BECOME ★
-     * A Broker Filter module in the sidebar. The directory is the entry point;
-     * the sidebar keeps exactly the navigation it had.
+     * A Broker Filter module in the navigation. The broker directory is the
+     * entry point; the navigation keeps exactly what it had.
+     *
+     * Checked across EVERY navigation landmark rather than the first one,
+     * because the shell renders a different one per breakpoint — the docked
+     * sidebar on a desktop ("Main"), the bottom bar on a phone ("Primary"). An
+     * assertion about "the first nav" would quietly test the desktop claim on
+     * both and prove nothing on a phone, which is exactly what it did.
      */
-    const sidebar = page.getByRole("navigation").first();
-    await expect(sidebar.getByRole("link", { name: /Broker/i })).toHaveCount(0);
-    await expect(sidebar.getByRole("link", { name: "Directory" }).first()).toBeVisible();
+    await expect(page.getByRole("navigation").getByRole("link", { name: /Broker/i }))
+      .toHaveCount(0);
+
+    // And the one module that IS in the sidebar still is. The phone's bottom
+    // bar carries only the handful of primary destinations and deliberately
+    // does not, so this half of the claim is a desktop one.
+    if (testInfo.project.name === "desktop") {
+      await expect(
+        page.getByRole("navigation", { name: "Main" })
+          .getByRole("link", { name: "Directory" }).first(),
+      ).toBeVisible();
+    }
   });
 
   test("the list says what it holds before anybody filters it", async ({ page }) => {
