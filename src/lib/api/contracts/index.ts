@@ -140,6 +140,7 @@ export interface AntcolosServices {
    * is still the one invitation command.
    */
   referrals: ReferralsService;
+  /**
    * The permanent, organization-independent career record.
    *
    * ★ THE ONE SERVICE WHOSE READS TAKE NO ServiceContext ★
