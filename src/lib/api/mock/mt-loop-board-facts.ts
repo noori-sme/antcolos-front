@@ -12,6 +12,8 @@ import { negotiationsForCycle } from "./negotiation";
 import { rateConForCycle } from "./rate-confirmation";
 import { sessionForCycle } from "./search-session";
 import { reviewsForCycle } from "./driver-review";
+import { matchesForCycle } from "./opportunity-matching";
+import { evaluateBrokerPolicyFor } from "./broker-policy-registry";
 import { cityPoint, latestLocationSignal } from "./tracking-signals";
 import {
   isOutOfService, listRequirementsSync, maintenanceContextFrom,
@@ -198,6 +200,32 @@ function progressFor(input: ProgressInput, ctx: MtLoopContext): {
         yourTurn: false,
       },
       inlineAction: { label: "Chase the rate con", kind: "rate_con", id: loop.loadId },
+    };
+  }
+
+  /* ---- An Opportunity this truck already has, stopped by a broker policy ---- */
+  /*
+   * ★ ONLY WHEN THERE IS SOMETHING TO STOP ★
+   * `stoppedOpportunity` returns nothing unless this truck already has an
+   * Opportunity somebody is working — a conversation, or a load they put on the
+   * short list — AND an active policy is what is holding it up. A truck that has
+   * merely been offered a blocked load among thirty others has no broker
+   * decision outstanding, and saying so on its card would put a red badge on
+   * every truck on the board.
+   *
+   * One compact status, one action, and nothing else. The policy, who owns it,
+   * why, what the evidence is and who has to approve it all live inside the
+   * Opportunity and in Needs You.
+   */
+  const stopped = stoppedOpportunity(loop.loopId, ctx);
+  if (stopped) {
+    return {
+      progress: {
+        key: "broker_policy_blocked",
+        label: "Broker blocked",
+        note: "owner decision required",
+        yourTurn: false,
+      },
     };
   }
 
@@ -453,6 +481,61 @@ function positionFor(loop: MtLoop, ctx: MtLoopContext): MtLoopPosition | undefin
     mapPoint: signal.point ?? cityPoint(signal.city, signal.state),
     observedAt: signal.observedAt,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* An Opportunity a broker policy is holding up                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * An Opportunity on this cycle that a policy is actually preventing.
+ *
+ * ★ THE TEST IS ENGAGEMENT, NOT AVAILABILITY ★
+ * A blocked match nobody has touched is the system working quietly: the load
+ * was never offered as eligible and nobody wasted a minute on it. What needs a
+ * person is an Opportunity somebody is already working — one they short-listed,
+ * or one they have a live conversation about — that a policy has since stopped.
+ * That distinction is what keeps the outer board free of broker-policy noise.
+ */
+function stoppedOpportunity(
+  dispatchCycleId: string,
+  ctx: MtLoopContext,
+): { matchId: string; brokerName: string } | undefined {
+  let rows;
+  try {
+    rows = matchesForCycle(dispatchCycleId, ctx);
+  } catch {
+    // A reader that declines is not a truck with a blocked Opportunity.
+    return undefined;
+  }
+
+  const live = new Set(
+    liveNegotiations(negotiationsForCycle(dispatchCycleId, ctx)).map((n) => n.matchId),
+  );
+
+  for (const row of rows) {
+    // Engagement first, and it is the cheap half: on a busy board most cycles
+    // have neither a short list nor a live conversation, and those need no
+    // policy question asked about them at all.
+    const engaged = row.match.status === "shortlisted" || live.has(row.match.matchId);
+    if (!engaged) continue;
+
+    /*
+     * ★ RE-EVALUATED, NOT READ OFF THE MATCH ★
+     * The board is often the first screen somebody opens, and the evaluation on
+     * a match is from whenever the Opportunity was last reconciled. A block an
+     * owner approved five minutes ago has to reach the board on this read, so
+     * this asks the SAME canonical record through the SAME evaluator rather
+     * than trusting what was carried — which is the rule booking already keeps,
+     * applied to the one other surface that has to be right straight away.
+     */
+    const evaluation = evaluateBrokerPolicyFor(ctx, row.listing, {
+      carrierOrganizationId: row.match.carrierOrganizationId,
+    });
+    if (evaluation.effect !== "blocked") continue;
+    return { matchId: row.match.matchId, brokerName: row.listing.broker.name };
+  }
+  return undefined;
 }
 
 /* -------------------------------------------------------------------------- */

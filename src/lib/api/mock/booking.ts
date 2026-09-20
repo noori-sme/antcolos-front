@@ -16,8 +16,11 @@ import { draftsFor, supersedeDraftsForListing } from "./outreach-drafts";
 import { mockStore } from "./store";
 import { createBookedLoad, recordLoadConsent } from "./load-commands";
 import {
-  attributedActor, loadReachFor, requireLoadWriteAuthority,
+  attributedActor, loadReachFor, pinnedCarrierAt, requireLoadWriteAuthority,
 } from "./dispatch-delegation";
+import {
+  verdictForBooking, type BookingPolicyVerdict,
+} from "./broker-policy-registry";
 // The shared simulated round trip. A seeder can suppress it; a person never does.
 import { sleep } from "./latency";
 
@@ -287,6 +290,15 @@ export interface BookCheck {
     brokerName: string;
     otherMatchesClosing: number;
     draftsStandingDown: number;
+    /**
+     * What this company's broker policies say, at THIS instant.
+     *
+     * Present whenever anything applies, including a plain warning — which is
+     * the only place a warning goes, because it must be read before somebody
+     * commits and must never stop them. `outcome` is `allow` or `warn` here by
+     * construction: a block or a conflict never reaches a preview.
+     */
+    brokerPolicy?: BookingPolicyVerdict;
   };
 }
 
@@ -333,6 +345,62 @@ export function canBook(negotiationId: string, ctx: MtLoopContext): BookCheck {
     });
   }
 
+  let brokerPolicyPreview: BookingPolicyVerdict | undefined;
+  /*
+   * ★ THE BROKER POLICY, RE-EVALUATED HERE AND NOT READ OFF THE MATCH ★
+   *
+   * The Opportunity already carries an evaluation, and it is deliberately not
+   * trusted: an Opportunity created this morning against a broker nobody had an
+   * opinion about can be booked this afternoon against a hard block written at
+   * lunchtime. Asking the canonical record again, at this instant, is the only
+   * thing that makes a policy written after the Opportunity bite.
+   *
+   * The carrier is the one the LOAD would run under — from the loop's own
+   * context, not from `ctx` — so a provider booking for a carrier is governed by
+   * that carrier's policies and by its own, and never by a third party's.
+   */
+  if (listing && loop && tc) {
+    /*
+     * ★ THE CARRIER IS DERIVED, NOT ASSUMED — AND FAILING TO DERIVE IT IS NOT
+     *   THE SAME AS THERE BEING NO POLICY ★
+     *
+     * A carrier-scoped block only applies once we know which carrier's
+     * authority the load would run under, so getting this wrong fails OPEN. The
+     * truck's own registry answer is the usual one; where it is silent the
+     * canonical operating context is asked directly, which is the same source
+     * the delegation guard uses a moment later when the load is actually
+     * created. If neither can say, `requireLoadWriteAuthority` refuses the
+     * booking outright, so nothing slips through on a guess.
+     */
+    let carrierOrganizationId =
+      tc.carrier?.organizationId ?? loop.carrierOrganizationId;
+    if (!carrierOrganizationId) {
+      try {
+        carrierOrganizationId = pinnedCarrierAt(loop.truckId, nowIso()).organizationId;
+      } catch {
+        // The records genuinely do not say. Booking refuses below for the same
+        // reason, so this is not a hole — it is the same answer, earlier.
+        carrierOrganizationId = undefined;
+      }
+    }
+
+    const verdict = verdictForBooking(ctx, listing, {
+      carrierOrganizationId,
+      negotiationId,
+      listingId: listing.listingId,
+    });
+    if (verdict.outcome === "blocked") {
+      blocks.push({ kind: "broker_policy", detail: verdict.detail ?? "A broker working policy stops this booking." });
+    } else if (verdict.outcome === "conflict") {
+      blocks.push({ kind: "broker_policy_conflict", detail: verdict.detail ?? "This dispatch company will not work this broker." });
+    }
+    // A warning does not appear here at all, and that is the point: it is
+    // carried onto the confirmation preview below so the dispatcher reads it
+    // before they commit. A warning that joined this list would be a block
+    // nobody approved.
+    brokerPolicyPreview = verdict;
+  }
+
   if (blocks.length > 0 || !listing || !loop || !tc) return { ok: false, blocks };
 
   const consent: ConsentRequirement = !loop.driverProfileId
@@ -356,6 +424,15 @@ export function canBook(negotiationId: string, ctx: MtLoopContext): BookCheck {
       brokerName: listing.broker.name,
       otherMatchesClosing: standing.matches,
       draftsStandingDown: standing.drafts,
+      /*
+       * Present whenever there is anything to say — a warning policy, or a
+       * broker nobody could resolve where the carrier asked to be told. Absent
+       * when there is genuinely nothing, so the confirmation stays quiet in the
+       * ordinary case rather than reassuring somebody about every load.
+       */
+      brokerPolicy: brokerPolicyPreview && brokerPolicyPreview.outcome === "warn"
+        ? brokerPolicyPreview
+        : undefined,
     },
   };
 }

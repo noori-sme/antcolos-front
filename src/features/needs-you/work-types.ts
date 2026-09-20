@@ -76,6 +76,14 @@ export const MODULE_LABEL: Record<NeedsYouModule, string> = {
 };
 
 export const CATEGORY_MODULE: Record<NeedsYouCategory, NeedsYouModule> = {
+  /* Broker working policies. Routed to DISPATCH rather than a module of their
+     own, because that is where the decision bites: a policy exists so that a
+     load either is or is not worked, and the people who read this queue row are
+     the people running the board. It is deliberately NOT a new module — adding
+     one would put a broker-filter surface in the sidebar, which is exactly the
+     shape this feature is not. */
+  broker_policy_approval: "dispatch",
+
   invitation_acceptance_incomplete: "access",
 
   /* Referrals. Routed to ACCESS rather than a module of their own: the people

@@ -197,6 +197,17 @@ export interface Negotiation {
  * grant operating authority. A match failing one of these cannot be opened.
  */
 export const UNARGUABLE_CHECKS: readonly MatchCheckKey[] = [
+  /*
+   * A broker working policy is not a negotiating position.
+   *
+   * Every other check on this list is a fact about the world that a phone call
+   * cannot change. This one is a decision the company itself took, and it
+   * belongs here for the same reason: the broker is not the person who can lift
+   * it, so letting a dispatcher open a conversation against it would put them
+   * on the phone arguing with somebody who has no say. The way past a policy is
+   * an owner revoking it or granting an exception, never a better rate.
+   */
+  "broker_policy",
   "operating_authority",
   "equipment",
   "capacity",
@@ -424,7 +435,25 @@ export type BookingBlockKind =
   | "carrier_cannot_haul"
   | "truck_unavailable"
   | "already_booked"
-  | "not_permitted";
+  | "not_permitted"
+  /**
+   * An active broker working policy, or an unapproved safety hold, stops it.
+   *
+   * Its own kind rather than folded into `carrier_cannot_haul`: that one says
+   * the authority does not permit the work at all, and this one says a company
+   * chose not to do it. Conflating a lawful refusal with an unlawful one would
+   * misdescribe both, and the way past them is completely different.
+   */
+  | "broker_policy"
+  /**
+   * A carrier will work this broker and its dispatch company will not.
+   *
+   * Not a refusal of the load — a refusal of this PAIRING. The carrier's owner
+   * has excepted the dispatch organization's policy for their own carrier, and
+   * a dispatch company still cannot be made to take work it refuses. The load
+   * needs a different dispatcher, or the carrier's own desk.
+   */
+  | "broker_policy_conflict";
 
 export const BOOKING_BLOCK_LABEL: Record<BookingBlockKind, string> = {
   not_agreed: "No price is agreed yet",
@@ -433,4 +462,6 @@ export const BOOKING_BLOCK_LABEL: Record<BookingBlockKind, string> = {
   truck_unavailable: "This truck is not available",
   already_booked: "This cycle already has a load on it",
   not_permitted: "You are not allowed to book",
+  broker_policy: "A broker working policy stops this",
+  broker_policy_conflict: "This dispatch company will not work this broker",
 };

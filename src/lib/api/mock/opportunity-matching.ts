@@ -3,6 +3,7 @@ import type {
   MatchCheck, MatchCheckKey, MatchCheckOutcome, MatchEvent, MtLoop,
   OpportunityMatch, MatchWithListing,
 } from "@/types";
+import type { BrokerPolicyEvaluation } from "@/types";
 import { CHECK_LABEL } from "@/types";
 import {
   closeListing, expireStaleListings, listingById, listingsFor, milesBetween,
@@ -14,6 +15,8 @@ import { fleetSync, truckContextFrom } from "./truck-registry";
 import { openLoopsFor, type MtLoopContext } from "./mt-loop";
 import { mockStore } from "./store";
 import { observeDecision, rankingPreferences, scoreMatch, type ScoringInput } from "./ranking";
+import { evaluateBrokerPolicyFor } from "./broker-policy-registry";
+import { noticeHeadline } from "@/lib/directory/broker-policy";
 
 /**
  * ███ MOCK ONLY — NOT A BACKEND ███
@@ -306,7 +309,20 @@ const check = (
  * The order is the order a dispatcher would think in: can it physically take
  * it, can it get there, is it worth doing, and is anybody going to get paid.
  */
-export function evaluateChecks(listing: Listing, tc: TruckMatchContext): MatchCheck[] {
+export function evaluateChecks(
+  listing: Listing,
+  tc: TruckMatchContext,
+  /**
+   * What this organization's own broker policies say, already evaluated.
+   *
+   * Passed in rather than looked up here, so the check a dispatcher reads and
+   * the evaluation the Opportunity carries are the SAME answer from the same
+   * canonical record. A second lookup inside this function would be a second
+   * opinion, and two opinions is how Search and the Opportunity come to
+   * disagree about whether a load is bookable.
+   */
+  brokerPolicy?: BrokerPolicyEvaluation,
+): MatchCheck[] {
   const out: MatchCheck[] = [];
   const deadhead = milesBetween(
     { city: tc.loop.expectedEmptyCity ?? "", state: tc.loop.expectedEmptyState ?? "" },
@@ -484,6 +500,60 @@ export function evaluateChecks(listing: Listing, tc: TruckMatchContext): MatchCh
     out.push(check("mc_age", "pass", `MC has been going ${Math.round(mcAge / 12)} years.`, false));
   }
 
+  /* ---- Does this company work this broker at all ---- */
+  /*
+   * ★ LAST, AND DELIBERATELY ★
+   * A policy is the company's own decision, and it reads best after everything
+   * the world had to say. It is also the only check on this list that no phone
+   * call can move, which is why `UNARGUABLE_CHECKS` carries it: a broker cannot
+   * lift a block their customer put on them.
+   *
+   * `unresolvedBroker` is reported as `unknown`, never as a pass and never as a
+   * fail. A posting with no MC number could not be tied to a canonical profile,
+   * so nothing is known either way — and applying somebody's fraud suspicion on
+   * the strength of a matching NAME is exactly the mistake that would put one
+   * company's dispute onto another company.
+   */
+  if (brokerPolicy === undefined) {
+    out.push(check("broker_policy", "unknown", "Broker policies were not evaluated for this match.", false));
+  } else if (brokerPolicy.unresolvedBroker) {
+    // `unknown` by default, and `warn` where the carrier asked to be told.
+    // Never `fail` either way: a gap in what we know about a company is not
+    // evidence about the company, and blocking on it would quietly take real
+    // freight off the board for a reason nobody could find.
+    out.push(check(
+      "broker_policy",
+      brokerPolicy.unresolvedBehavior === "warn" ? "warn" : "unknown",
+      "This posting carries no MC number that resolves to a broker profile, so no working policy can be applied to it.",
+      false,
+    ));
+  } else if (brokerPolicy.effect === "blocked") {
+    const notice = brokerPolicy.notices[0];
+    out.push(check(
+      "broker_policy", "fail",
+      // Always names WHOSE policy it is. A dispatch organization's decision
+      // must never read as though the carrier made it.
+      `${noticeHeadline(notice)}${notice.explanation ? ` ${notice.explanation}` : ""}`,
+      true,
+    ));
+  } else if (brokerPolicy.effect === "deprioritize") {
+    const notice = brokerPolicy.notices[0];
+    out.push(check(
+      "broker_policy", "warn",
+      `${noticeHeadline(notice)} It is still bookable; it ranks below everything else.`,
+      false,
+    ));
+  } else if (brokerPolicy.effect === "warning") {
+    const notice = brokerPolicy.notices[0];
+    out.push(check(
+      "broker_policy", "warn",
+      `${noticeHeadline(notice)}${notice.explanation ? ` ${notice.explanation}` : ""}`,
+      false,
+    ));
+  } else {
+    out.push(check("broker_policy", "pass", "Nothing in this workspace's broker policies stops it.", false));
+  }
+
   void allIn;
   return out;
 }
@@ -535,7 +605,18 @@ function buildMatch(
     { city: tc.loop.expectedEmptyCity ?? "", state: tc.loop.expectedEmptyState ?? "" },
     listing.origin,
   ) ?? 0;
-  const checks = evaluateChecks(listing, tc);
+  /*
+   * ★ EVALUATED ONCE, HERE, FOR THIS TRUCK'S CARRIER ★
+   * The carrier is taken from the truck's own context, never from the caller's
+   * organization: a provider searching for a Baxter truck is governed by
+   * BAXTER's carrier policies plus its own dispatch-organization ones, and
+   * reading `ctx.organizationId` as the carrier would apply the provider's
+   * policies to somebody else's freight.
+   */
+  const brokerPolicy = evaluateBrokerPolicyFor(ctx, listing, {
+    carrierOrganizationId: tc.carrier?.organizationId ?? tc.truck.carrierOrganizationId,
+  });
+  const checks = evaluateChecks(listing, tc, brokerPolicy);
   const totalMiles = deadhead + listing.loadedMiles;
   const allIn = listing.offeredRateCents !== undefined && totalMiles > 0
     ? Math.round(listing.offeredRateCents / totalMiles)
@@ -560,7 +641,18 @@ function buildMatch(
       ?? workedWithBefore(listing.broker.name, ctx.organizationId),
   };
 
-  const score = scoreMatch(scoring, rankingPreferences(ctx.organizationId).weights);
+  const scored = scoreMatch(scoring, rankingPreferences(ctx.organizationId).weights);
+  /*
+   * ★ DEPRIORITIZE MOVES THE SCORE. IT DOES NOT HIDE THE LOAD ★
+   * The multiplier is applied to the TOTAL only. The component breakdown keeps
+   * saying what the rate, the deadhead and the profit were actually worth, so a
+   * dispatcher looking at a load that has sunk to the bottom can see both why
+   * it would otherwise have ranked and what pushed it down. Zeroing it, or
+   * dropping the row, would be a hard block wearing a softer word.
+   */
+  const score = brokerPolicy.rankMultiplier === 1
+    ? scored
+    : { ...scored, total: Math.round(scored.total * brokerPolicy.rankMultiplier) };
   const at = nowIso();
   const eligible = isEligible(checks);
 
@@ -586,6 +678,7 @@ function buildMatch(
     status: eligible ? "eligible" : "ineligible",
     score,
     checks,
+    brokerPolicy,
     deadheadMiles: deadhead,
     loadedMiles: listing.loadedMiles,
     totalMiles,
@@ -648,6 +741,10 @@ export function reconcileMatches(ctx: MtLoopContext, searchSessionId?: string): 
         const scoreChanged = Math.abs(rebuilt.score.total - existing.score.total) >= 1;
         existing.score = rebuilt.score;
         existing.checks = rebuilt.checks;
+        // The policy travels with the rescore. A block written five minutes ago
+        // has to reach a match that was built this morning, or the Opportunity
+        // would go on offering a load the company has already refused.
+        existing.brokerPolicy = rebuilt.brokerPolicy;
         existing.deadheadMiles = rebuilt.deadheadMiles;
         existing.totalMiles = rebuilt.totalMiles;
         existing.allInRatePerMileCents = rebuilt.allInRatePerMileCents;

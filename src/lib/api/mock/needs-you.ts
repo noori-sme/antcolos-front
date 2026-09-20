@@ -44,6 +44,10 @@ import { isWorkforceNeedsYouId, workforceNeedsYouItems } from "./workforce-needs
 import { accessNeedsYouItems, isAccessNeedsYouId } from "./access-needs-you";
 import { isReferralNeedsYouId, referralNeedsYouItems } from "./referral-needs-you";
 import { importNeedsYouItems, isImportNeedsYouId } from "./import-needs-you";
+import {
+  applyBrokerPolicyItemAction, brokerPolicyNeedsYouItems,
+  findBrokerPolicyNeedsYouItem, isBrokerPolicyNeedsYouId,
+} from "./broker-policy-needs-you";
 import { attachAutomation, executeDecision } from "./needs-you-automation";
 
 const LATENCY_MS = 180;
@@ -131,6 +135,11 @@ function allItems(ctx: ServiceContext): NeedsYouItem[] {
     // answering it is what makes the item stop existing — and until somebody
     // does, the row is visibly not imported rather than quietly guessed at.
     ...importNeedsYouItems(ctx),
+    // A broker working policy an owner has not decided: a proposal that is
+    // blocking nothing, or a temporary safety hold that is blocking everything.
+    // Derived from the policy, so approving or rejecting it — or letting a hold
+    // lapse — is what makes the row stop existing.
+    ...brokerPolicyNeedsYouItems(ctx),
     // Derived above, so the document rows it seeds are already in place.
     ...compliance,
   ];
@@ -194,6 +203,13 @@ function visibleTo(ctx: ServiceContext, item: NeedsYouItem): boolean {
   // person and not a load — so without this the item would silently vanish for
   // exactly the reviewer it is addressed to.
   if (isReferralNeedsYouId(item.id)) return true;
+
+  // Broker policy items are gated at the source on the private-customer
+  // permission and scoped to the organization the policy BELONGS to. The
+  // entity-kind narrowing below has no case for a policy — deliberately,
+  // because a policy is not a load, a truck or a person — so without this the
+  // one item asking an owner to decide would silently vanish.
+  if (isBrokerPolicyNeedsYouId(item.id)) return true;
 
   // Import items are gated at the source on `workforce:manage` and scoped to
   // the caller's own organization there. The entity-kind narrowing below has no
@@ -354,7 +370,11 @@ function find(ctx: ServiceContext, itemId: string): NeedsYouItem {
     ? allItems(ctx).find((n) => n.id === itemId)
     : isDocumentNeedsYouId(itemId)
       ? findDocumentNeedsYouItem(ctx, itemId)
-      : mockStore.org(ctx.organizationId).needsYou.find((n) => n.id === itemId);
+      // A broker policy item is decided IN the queue, so it is found here
+      // rather than refused like the read-only derived rows above.
+      : isBrokerPolicyNeedsYouId(itemId)
+        ? findBrokerPolicyNeedsYouItem(ctx, itemId)
+        : mockStore.org(ctx.organizationId).needsYou.find((n) => n.id === itemId);
   if (!item) throw new NotFoundError("Needs You item");
   mockStore.assertOwned(ctx.organizationId, item.organizationId);
   if (!visibleTo(ctx, item)) throw new PermissionDeniedError(item.requires);
@@ -372,7 +392,31 @@ function persist(
   ctx: ServiceContext,
   item: NeedsYouItem,
   next: NeedsYouItem,
+  /**
+   * Set only by `decide`, and only for producers that turn a queue decision
+   * into a real command in their own module.
+   *
+   * Passed rather than re-derived from `next.automation`, so the one press that
+   * approves a broker policy is unambiguously the press that happened here —
+   * not something inferred later from a record a screen could have supplied.
+   */
+  decision?: { optionId: string; note?: string },
 ): NeedsYouItem {
+  // A broker policy decision is not an overlay on a queue row: approve or
+  // reject runs the registry's OWN command against the canonical policy, so
+  // the queue and the Broker policies screen can never disagree about what was
+  // decided. Anything that is not a decision stays an overlay.
+  if (isBrokerPolicyNeedsYouId(item.id)) {
+    return applyBrokerPolicyItemAction(ctx, item, {
+      status: next.status,
+      assigneeMembershipId: next.assigneeMembershipId,
+      snoozedUntil: next.snoozedUntil,
+      snoozeReason: next.snoozeReason,
+      resolvedAt: next.resolvedAt,
+      resolutionNote: next.resolutionNote,
+      historyEntry: next.history[next.history.length - 1],
+    }, decision);
+  }
   if (isInsuranceNeedsYouId(item.id)) {
     replaceInsuranceNeedsYou(next);
     return next;
@@ -570,7 +614,7 @@ export const mockNeedsYouService: NeedsYouService = {
       automation: outcome.automation,
       history: appendHistory(item, { actor: ctx.actor, action: "resolved", note }),
     };
-    return persist(ctx, item, next);
+    return persist(ctx, item, next, { optionId: input.optionId, note: input.note });
   },
 
   async resolve(ctx, itemId, note) {

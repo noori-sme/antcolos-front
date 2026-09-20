@@ -34,6 +34,8 @@ import { resetNegotiations } from "./negotiation";
 import { resetMatches } from "./opportunity-matching";
 import { resetDrafts } from "./outreach-drafts";
 import { resetPartyRegistry } from "./party-registry";
+import { resetBrokerPolicies } from "./broker-policy-registry";
+import { resetBrokerPolicyNeedsYou } from "./broker-policy-needs-you";
 import { resetProfileStore } from "./profile-store";
 import { resetRanking } from "./ranking";
 import { resetExtractionQueue } from "./rate-con-extractions";
@@ -113,6 +115,10 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   { id: "drivers", holds: "Driver profiles and their carrier relationships", module: "driver-registry.ts", reset: resetDriverRegistry },
   { id: "carriers", holds: "Carrier organizations and operating authority", module: "carrier-registry.ts", reset: resetCarrierRegistry },
   { id: "parties", holds: "Brokers, shippers, receivers, facilities and contacts", module: "party-registry.ts", reset: resetPartyRegistry },
+  // Beside the parties, because a broker working policy is a statement ABOUT a
+  // canonical party and is meaningless without one. After it, so a reset leaves
+  // no policy pointing at a broker profile that has been rebuilt.
+  { id: "broker_policies", holds: "Private broker working policies, their approvals and exceptions", module: "broker-policy-registry.ts", reset: resetBrokerPolicies },
   { id: "agreements", holds: "Contracts, relationships, versions and signatures", module: "agreement-registry.ts", reset: resetAgreementRegistry },
   // THE membership roster. Before the operational layers, because the MT Loop
   // board and the responsibility engine both read who is in a workspace from
@@ -216,6 +222,7 @@ export const MOCK_STORES: readonly MockStoreEntry[] = [
   { id: "work_assignments", holds: "Who has claimed which piece of workspace work", module: "dispatch-workspace.ts", reset: resetWorkAssignments },
   { id: "compliance_needs_you", holds: "Compliance's own Needs You state", module: "compliance-needs-you.ts", reset: resetComplianceNeedsYou },
   { id: "document_needs_you", holds: "Document Center's own Needs You state", module: "document-needs-you.ts", reset: resetDocumentNeedsYou },
+  { id: "broker_policy_needs_you", holds: "What a person did to a broker-policy queue row", module: "broker-policy-needs-you.ts", reset: resetBrokerPolicyNeedsYou },
 
   /* -- Audit, risk and the integration boundary -------------------------- */
   { id: "audit", holds: "The ONE audit ledger", module: "audit-ledger.ts", reset: resetAuditLedger },

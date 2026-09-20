@@ -1,5 +1,6 @@
 import type { DriverReviewStatus } from "./driver-review";
 import type { Cents, IsoDateTime } from "./common";
+import type { BrokerPolicyEvaluation } from "./broker-policy";
 import type { EquipmentType } from "./load";
 
 /**
@@ -373,7 +374,18 @@ export type MatchCheckKey =
   | "broker_credit"
   | "mc_age"
   | "hazmat"
-  | "profitability";
+  | "profitability"
+  /**
+   * This organization's own working policy about this broker.
+   *
+   * A check rather than a separate stage, and deliberately so: a policy is one
+   * more reason a load does or does not suit this truck, and it belongs
+   * alongside the equipment, the deadhead and the credit in the same list a
+   * dispatcher already reads. Giving it a stage of its own would make a private
+   * operating preference look like a different kind of fact from everything
+   * else about the load, which it is not.
+   */
+  | "broker_policy";
 
 export const CHECK_LABEL: Record<MatchCheckKey, string> = {
   equipment: "Equipment",
@@ -391,6 +403,7 @@ export const CHECK_LABEL: Record<MatchCheckKey, string> = {
   mc_age: "MC age",
   hazmat: "Hazmat",
   profitability: "Profitability",
+  broker_policy: "Broker working policy",
 };
 
 /* -------------------------------------------------------------------------- */
@@ -570,6 +583,22 @@ export interface OpportunityMatch {
   status: MatchStatus;
   score: MatchScore;
   checks: MatchCheck[];
+
+  /**
+   * What this organization's own broker working policies say about this load.
+   *
+   * ★ CARRIED, NOT RE-DERIVED ★
+   * Evaluated once, from the canonical policy record, when the match is built
+   * and again on every rescore. The Opportunity renders THIS — it does not ask
+   * the policy registry a second question while it draws — so Search and the
+   * Opportunity cannot end up disagreeing, and a screen cannot accidentally
+   * evaluate with a different audience than the search did.
+   *
+   * Booking re-evaluates from the same canonical record immediately before it
+   * commits, which is a different thing and the reason it is a different call:
+   * a policy written after this was built has to bite.
+   */
+  brokerPolicy?: BrokerPolicyEvaluation;
 
   deadheadMiles: number;
   loadedMiles: number;
