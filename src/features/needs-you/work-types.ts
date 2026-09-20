@@ -142,6 +142,8 @@ export const CATEGORY_MODULE: Record<NeedsYouCategory, NeedsYouModule> = {
   workforce_onboarding_blocked: "workforce",
   workforce_start_approval: "workforce",
   workforce_offboarding_incomplete: "workforce",
+  workforce_leave_return_due: "workforce",
+  workforce_availability_drift: "workforce",
   qualification_review_required: "workforce",
   qualification_replacement_available: "workforce",
 

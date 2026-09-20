@@ -4,8 +4,10 @@ import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, MOCK_USER, appliedSeedTemplate,
 } from "@/lib/session/fixtures";
 import { notifyRosterChanged } from "@/lib/session/membership-store";
-import type {
-  IsoDateTime, Membership, PermissionKey, ResponsibilityFunction,
+import {
+  AVAILABILITY_TAKES_WORK,
+  type IsoDateTime, type Membership, type MembershipAvailability,
+  type PermissionKey, type ResponsibilityFunction,
 } from "@/types";
 
 /**
@@ -44,34 +46,12 @@ import type {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Whether this membership can pick work up right now.
- *
- * Kept apart from `MembershipStatus`, which is about the SEAT: a suspended
- * membership is not a member at all, while an on-leave one is a member who
- * cannot take work this week. Collapsing them would make "route around them for
- * now" indistinguishable from "they are gone".
+ * The vocabulary moved to `@/types/membership` when a third module started
+ * reading it, and is re-exported here so every existing importer of this file
+ * keeps working unchanged. One definition, three readers.
  */
-export type MembershipAvailability =
-  | "available"
-  /** Working, but not this shift. */
-  | "off_shift"
-  | "on_leave"
-  /** Present and refusing new work — at capacity, or on something else. */
-  | "unavailable";
-
-export const AVAILABILITY_LABEL: Record<MembershipAvailability, string> = {
-  available: "Available",
-  off_shift: "Off shift",
-  on_leave: "On leave",
-  unavailable: "Not taking work",
-};
-
-export const AVAILABILITY_TAKES_WORK: Record<MembershipAvailability, boolean> = {
-  available: true,
-  off_shift: false,
-  on_leave: false,
-  unavailable: false,
-};
+export { AVAILABILITY_LABEL, AVAILABILITY_TAKES_WORK } from "@/types";
+export type { MembershipAvailability } from "@/types";
 
 /* -------------------------------------------------------------------------- */
 /* The profile beside the membership                                           */

@@ -23,6 +23,10 @@ import {
   useQualificationRecords,
 } from "./hooks";
 import { OffboardDialog } from "./offboard-dialog";
+import { LeaveDialog } from "./leave-dialog";
+import {
+  AvailabilityPanel, FunctionsPanel, NextActionPanel, StartDatePanel,
+} from "./engagement-panels";
 
 /**
  * One engagement, and the canonical records around it.
@@ -43,6 +47,7 @@ export function EngagementDetailScreen({ engagementId }: { engagementId: string 
   const canSeeQualification = useCan("qualification:view");
 
   const [offboardOpen, setOffboardOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [actionError, setActionError] = useState<string | undefined>();
 
   if (view.isPending) return <LoadingSkeleton />;
@@ -65,7 +70,10 @@ export function EngagementDetailScreen({ engagementId }: { engagementId: string 
     setActionError(undefined);
     action.mutate(input, {
       onError: (e) => setActionError(e instanceof Error ? e.message : "That did not work."),
-      onSuccess: () => setOffboardOpen(false),
+      onSuccess: () => {
+        setOffboardOpen(false);
+        setLeaveOpen(false);
+      },
     });
   };
 
@@ -153,6 +161,42 @@ export function EngagementDetailScreen({ engagementId }: { engagementId: string 
               : "Not ended."}
           </Row>
         </dl>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-[0.9375rem] font-semibold text-fg">What happens next</h2>
+        <NextActionPanel view={view.data} />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-[0.9375rem] font-semibold text-fg">When this began</h2>
+        <StartDatePanel view={view.data} />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-[0.9375rem] font-semibold text-fg">What they do here</h2>
+        <FunctionsPanel
+          view={view.data}
+          canManage={canManage}
+          pending={action.isPending}
+          onAssign={(functionKey) => run({ kind: "assignFunction", input: { functionKey } })}
+          onRemove={(functionKey) => run({
+            kind: "removeFunction",
+            input: { functionKey, reason: "Removed from the workforce page." },
+          })}
+        />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-[0.9375rem] font-semibold text-fg">Availability</h2>
+        <AvailabilityPanel
+          view={view.data}
+          canManage={canManage}
+          pending={action.isPending}
+          onRecordLeave={() => setLeaveOpen(true)}
+          onEndLeave={(leaveId) => run({ kind: "endLeave", input: { leaveId } })}
+          onReconcile={() => run({ kind: "reconcileAvailability" })}
+        />
       </section>
 
       <section className="space-y-2">
@@ -301,6 +345,15 @@ export function EngagementDetailScreen({ engagementId }: { engagementId: string 
           ))}
         </ol>
       </section>
+
+      <LeaveDialog
+        personName={engagement.person.displayName}
+        open={leaveOpen}
+        onOpenChange={setLeaveOpen}
+        pending={action.isPending}
+        error={actionError}
+        onSubmit={(input) => run({ kind: "recordLeave", input })}
+      />
 
       <OffboardDialog
         engagementId={engagementId}

@@ -1,15 +1,37 @@
 import {
-  QUALIFICATION_CATEGORY_LABEL,
+  QUALIFICATION_CATEGORY_LABEL, WORKFORCE_LEAVE_REASON_LABEL,
   type NeedsYouCategory, type NeedsYouItem, type NeedsYouRecommendedAction,
   type NeedsYouSeverity, type PermissionKey, type WorkforceEngagement,
 } from "@/types";
+import { availabilityProjection, currentLeave } from "@/lib/workforce/availability";
+import { memberIn } from "./membership-directory";
 import type { ServiceContext } from "../contracts/context";
 import { buildOnboardingChecklist } from "./workforce-onboarding";
-import { engagementsFor, outstandingOffboarding } from "./workforce";
 import { recordsWithNewerVersion } from "./qualification";
 import { packagesForOrganization, isShareUsable } from "./document-shares";
-import { liveEngagementFor } from "./workforce-store";
+import {
+  engagementsForOrganization, ensureSeeded, incompleteOffboardingFor,
+  liveEngagementFor,
+} from "./workforce-store";
+import { seedWorkforce } from "./workforce-seed";
 import { nowIso } from "./time";
+
+/**
+ * Read straight from the store rather than through `workforce.ts`.
+ *
+ * Not a style choice: the workforce SERVICE now reads this file back, so that
+ * a directory row can say how many things are waiting on somebody without
+ * unfolding them. Importing the service here would close that loop into a
+ * module cycle. Both of the thin wrappers this replaced did exactly what the
+ * two lines below do — seed on first read, then filter — and the store is a
+ * leaf that every module may read.
+ */
+function engagementsFor(organizationId: string) {
+  ensureSeeded(seedWorkforce);
+  return engagementsForOrganization(organizationId);
+}
+
+const outstandingOffboarding = incompleteOffboardingFor;
 
 /**
  * Workforce and qualification-file items that are REAL.
@@ -213,8 +235,110 @@ function engagementItems(ctx: ServiceContext, engagement: WorkforceEngagement): 
     }));
   }
 
+  // 5. Somebody was expected back and nobody has said whether they are.
+  //
+  //    ★ WHY THIS EXISTS AT ALL ★
+  //    Because the alternative is worse. An expected return date passing is not
+  //    evidence that anybody returned, so Antcolos does not mark them back —
+  //    and a person who is silently still away, with their seat silently marked
+  //    available again, is somebody a load gets routed to. One item, and it
+  //    stops existing the moment anybody records an answer either way.
+  //
+  //    Raised only for an ACTIVE engagement: a person who has left or been
+  //    stood down is not overdue from a holiday.
+  if (engagement.state === "active") {
+    const live = currentLeave(engagement, nowIso());
+    if (live?.expectedReturnDate && live.expectedReturnDate < nowIso()) {
+      out.push(item({
+        id: `${WORKFORCE_ITEM_PREFIX}leave_${engagement.id}_${live.id}`,
+        organizationId: engagement.organizationId,
+        category: "workforce_leave_return_due",
+        severity: "medium",
+        title: `${engagement.person.displayName} was expected back on ${live.expectedReturnDate.slice(0, 10)}`,
+        reason: `${WORKFORCE_LEAVE_REASON_LABEL[live.reason]} leave was recorded until `
+          + `${live.expectedReturnDate.slice(0, 10)} and nobody has said whether they returned. `
+          + "Antcolos will not assume it.",
+        // Says what is and is not true downstream, because the assumption
+        // people bring to an availability record is that it is a dispatch one.
+        detail: "While this is open they stay unavailable for work routing. It says nothing about "
+          + "whether a truck may be dispatched — Dispatch, Maintenance, Safety and the ELD own that.",
+        entity,
+        action: {
+          kind: "update_availability",
+          label: "Record whether they came back",
+          requires: ["workforce:manage"],
+          href: `/workforce/${engagement.id}`,
+        },
+        requires: ["workforce:view"],
+        createdAt: live.expectedReturnDate,
+        dueAt: live.expectedReturnDate,
+      }));
+    }
+  }
+
+  // 6. The HR fact and the work-routing signal disagree.
+  //
+  //    ★ THE ITEM THAT MAKES A NON-TRANSACTIONAL WRITE SURVIVABLE ★
+  //    Recording leave writes an engagement and then asks the access system to
+  //    change a seat, with no transaction around the two. Three things
+  //    routinely separate them afterwards and none of them is exotic: a leave
+  //    recorded for next Monday becoming effective with no scheduler to notice,
+  //    somebody marking the person available through the directory's own
+  //    command, and the second write failing outright.
+  //
+  //    Each leaves somebody who is away still being offered work, or somebody
+  //    who is back still invisible to it — and before this item, nothing
+  //    anywhere could tell. Applying it is idempotent, so it is safe to retry
+  //    and it stops existing the moment the two agree.
+  const drift = availabilityProjection(
+    engagement,
+    engagement.membershipId
+      ? memberIn(engagement.organizationId, engagement.membershipId)?.availability
+      : undefined,
+    nowIso(),
+  );
+  if (!drift.inSync) {
+    out.push(item({
+      id: `${WORKFORCE_ITEM_PREFIX}drift_${engagement.id}`,
+      organizationId: engagement.organizationId,
+      category: "workforce_availability_drift",
+      // High rather than critical: work may be routed to somebody who is away,
+      // which is bad and is not a former worker still holding their access.
+      severity: "high",
+      title: `Work routing disagrees with ${engagement.person.displayName}'s recorded leave`,
+      reason: drift.summary,
+      detail: "Leave is the recorded fact and the seat's availability is the operational "
+        + "projection of it. Putting them back in step changes only that projection — it "
+        + "grants nothing, revokes nothing and declares no dispatch readiness.",
+      entity,
+      action: {
+        kind: "update_availability",
+        label: "Put work routing back in step",
+        requires: ["workforce:manage"],
+        href: `/workforce/${engagement.id}`,
+      },
+      requires: ["workforce:view"],
+      createdAt: engagement.updatedAt,
+    }));
+  }
+
   void ctx;
   return out;
+}
+
+/**
+ * How many items one engagement currently produces.
+ *
+ * Exported so a workforce directory row can say "two things are waiting"
+ * without this module growing a second queue. It asks the SAME derivation the
+ * queue does — two answers to "does this need somebody" is how a badge comes to
+ * say 3 while the list shows 1.
+ *
+ * `engagementItems` does not read its context (`void ctx` below), so counting
+ * needs none. If that ever stops being true this must take one.
+ */
+export function engagementNeedsYouCount(engagement: WorkforceEngagement): number {
+  return engagementItems(undefined as unknown as ServiceContext, engagement).length;
 }
 
 /* -------------------------------------------------------------------------- */

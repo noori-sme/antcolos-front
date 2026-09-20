@@ -1,4 +1,7 @@
 import type { IsoDateTime } from "./common";
+import type { MembershipAvailability } from "./membership";
+import type { PermissionKey } from "./permission";
+import type { ResponsibilityFunction } from "./responsibility";
 import type { ActorRef } from "./user";
 
 /**
@@ -46,28 +49,79 @@ import type { ActorRef } from "./user";
 /* -------------------------------------------------------------------------- */
 
 /**
- * The basis of the working relationship. Exactly three values.
+ * The basis of the working relationship, as the ORGANIZATION states it.
  *
- * A "temporary" or "other" classification would be a field nobody could act on
- * and a question nobody had asked. Adding one later is one line plus a
- * migration; adding one now would be a guess.
+ * ███ NOT A LEGAL DETERMINATION ███
+ * Every value below is a fact the organization supplied about its own
+ * arrangement. Antcolos does not apply the IRS common-law test, the FLSA
+ * economic-reality test, any state ABC test or any other classification
+ * standard, and nothing in this product should be read as agreeing that a
+ * person so labelled is correctly classified. `WORKFORCE_CLASSIFICATION_NOTICE`
+ * says exactly that, and every screen that offers this choice prints it.
+ *
+ * ★ WHAT IS DELIBERATELY NOT HERE ★
+ * `company_driver` is NOT a value, and adding it would be the mistake this
+ * module exists to avoid. A company driver is already representable twice over:
+ * `EngagementType` in `./driver-profile` is the driver registry's own
+ * company_driver/owner_operator distinction, which decides a driver's paperwork
+ * and their pay, and `driver_action` is the function they perform here. Putting
+ * a third copy on this record would create exactly the second classification
+ * system the boundaries forbid, and the three copies would disagree.
  */
 export type WorkforceClassification =
   | "employee"
   | "independent_contractor"
-  | "owner_operator";
+  | "owner_operator"
+  /**
+   * A principal of the business — the person whose organization this is.
+   *
+   * Distinct from `employee` because the question "who is answerable for this
+   * carrier" has an answer that is not a payroll fact, and distinct from the
+   * Owner membership role because holding every permission is access, not a
+   * working relationship. A solo owner-operator is usually BOTH: the
+   * classification says what their relationship with the business is, and it
+   * still grants nothing.
+   */
+  | "organization_owner"
+  /**
+   * Somebody an outside organization supplies — an outsourced dispatcher, a
+   * contracted safety consultant, an agency yard hand.
+   *
+   * Kept apart from `independent_contractor` because the counterparty is a
+   * different kind of thing: the agreement is with their provider, not with
+   * them, and when that provider's authority ends so does theirs. The provider
+   * itself lives in the directory and the agreement in Contracts; this value
+   * only records that the person reaches this organization through one.
+   */
+  | "external_worker";
 
 export const WORKFORCE_CLASSIFICATION_LABEL: Record<WorkforceClassification, string> = {
   employee: "Employee",
   independent_contractor: "Independent contractor",
   owner_operator: "Owner-operator",
+  organization_owner: "Organization owner",
+  external_worker: "External / outsourced worker",
 };
 
 export const WORKFORCE_CLASSIFICATION_DESCRIPTION: Record<WorkforceClassification, string> = {
   employee: "Works for the organization on its payroll. Payroll itself is outside Antcolos.",
   independent_contractor: "Engaged under a contract for services. Paid against that contract, never through payroll.",
   owner_operator: "Brings their own equipment and is settled against loads. Settlements belong to the Settlements module, never to this record.",
+  organization_owner: "A principal of this business. Says nothing about their permissions, which are granted only through Access.",
+  external_worker: "Reaches this organization through an outside provider. Their authority here ends when the provider's does.",
 };
+
+/**
+ * Printed wherever a classification is chosen or shown. Not a tooltip.
+ *
+ * A dropdown that offers "Employee" and "Independent contractor" without this
+ * sentence teaches an operator that Antcolos checked. It did not, it cannot,
+ * and the difference between those two labels is the one a regulator audits.
+ */
+export const WORKFORCE_CLASSIFICATION_NOTICE =
+  "Classification is a fact this organization supplies, not a determination Antcolos makes. "
+  + "Antcolos applies no worker-classification test and offers no opinion on whether a label "
+  + "is correct. Employment law, tax treatment and benefits eligibility are outside this product.";
 
 /* -------------------------------------------------------------------------- */
 /* Lifecycle                                                                   */
@@ -208,6 +262,12 @@ export type WorkforceEventKind =
   | "onboarding_step_waived"
   | "access_step_requested"
   | "offboarding_step_recorded"
+  | "function_assigned"
+  | "function_removed"
+  | "leave_recorded"
+  | "leave_ended"
+  | "leave_cancelled"
+  | "start_date_recorded"
   | "note";
 
 export const WORKFORCE_EVENT_LABEL: Record<WorkforceEventKind, string> = {
@@ -228,6 +288,12 @@ export const WORKFORCE_EVENT_LABEL: Record<WorkforceEventKind, string> = {
   onboarding_step_waived: "Onboarding step waived",
   access_step_requested: "Access step requested",
   offboarding_step_recorded: "Offboarding step recorded",
+  function_assigned: "Function assigned",
+  function_removed: "Function removed",
+  leave_recorded: "Leave recorded",
+  leave_ended: "Returned from leave",
+  leave_cancelled: "Leave cancelled",
+  start_date_recorded: "Start date recorded",
   note: "Note",
 };
 
@@ -242,6 +308,352 @@ export interface WorkforceEngagementEvent {
   fromState?: WorkforceEngagementState;
   toState?: WorkforceEngagementState;
 }
+
+/* -------------------------------------------------------------------------- */
+/* When it began, and who says so                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHERE A START DATE CAME FROM. Two values, and the whole point is the gap.
+ *
+ * A carrier migrating onto Antcolos says "Sam has driven for us since March
+ * 2024". Antcolos did not see that happen, has no evidence of it, and the
+ * honest record of it is a CLAIM. What Antcolos did see is the day somebody
+ * authorised pressed Start, and that is a different kind of fact.
+ *
+ * Collapsing the two is how a twenty-year carrier arrives on a new system
+ * looking as though it hired everybody the afternoon somebody uploaded a
+ * spreadsheet — and, worse, how a date a regulator may ask about silently
+ * acquires an authority nobody gave it.
+ *
+ * ★ WHY NOT `ImportedAssertion<T>` ★
+ * Because that type is already right and already used, and this is the SAME
+ * distinction at a smaller scale. `ImportedAssertion` carries `occurredAt` vs
+ * `receivedAt`, a `FactVerification` and a full `Provenance` chain, and a
+ * roster import produces one for `startedWithCarrier`. This record does not
+ * replace it: when an engagement came from an import, `assertionRef` points at
+ * the assertion the import module owns, and the fields here are the small
+ * projection a screen needs. When somebody typed the date in by hand there is
+ * no assertion to point at, and inventing an empty one would claim a
+ * provenance chain that does not exist.
+ */
+export type WorkforceStartDateBasis =
+  /**
+   * The organization states it. Antcolos observed nothing.
+   *
+   * Typed in during migration, imported from a roster, or recorded when an
+   * engagement was created for somebody who has worked here for years.
+   */
+  | "asserted_by_organization"
+  /**
+   * Antcolos watched it happen: somebody authorised activated the engagement
+   * on this date, in this product, and the audit ledger has the line.
+   */
+  | "observed_by_antcolos";
+
+export const WORKFORCE_START_BASIS_LABEL: Record<WorkforceStartDateBasis, string> = {
+  asserted_by_organization: "Stated by this organization",
+  observed_by_antcolos: "Recorded in Antcolos",
+};
+
+export const WORKFORCE_START_BASIS_DESCRIPTION: Record<WorkforceStartDateBasis, string> = {
+  asserted_by_organization:
+    "This organization says the relationship began on this date. Antcolos did not see it happen and holds no evidence of it.",
+  observed_by_antcolos:
+    "Somebody authorised started this engagement in Antcolos on this date, and the audit ledger records who.",
+};
+
+/**
+ * The start date, and what kind of fact it is.
+ *
+ * `value` deliberately duplicates `WorkforceEngagement.startDate` rather than
+ * replacing it: every existing reader of `startDate` keeps working unchanged,
+ * and a record migrated from before this field existed has a date with no
+ * provenance — which is the truth about it, and better said than guessed.
+ */
+export interface WorkforceStartDate {
+  value: IsoDateTime;
+  basis: WorkforceStartDateBasis;
+  /** When this provenance was recorded. Never the same as `value`. */
+  recordedAt: IsoDateTime;
+  recordedBy: ActorRef;
+  /** The organization's own words about where the date came from. */
+  note?: string;
+  /** The `ImportedAssertion` this came from, when an import supplied it. */
+  assertionRef?: { importRunId: string; rowId: string };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Functions — what somebody DOES here, which is not what they may do          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One organizational function this person performs, and who said so.
+ *
+ * ███ A FUNCTION IS NOT A PERMISSION ███
+ * Assigning `dispatch` here grants nothing. It does not create a membership, it
+ * does not add a key, and `WorkforceService` has no method that could. What it
+ * does is let the product NOTICE a mismatch — somebody the organization says
+ * dispatches, whose seat cannot open the dispatch board — and offer the
+ * authorized route to fix it through Access. Showing the gap is the feature;
+ * closing it silently would be the second authorization system this module
+ * exists not to build.
+ *
+ * ★ WHY `ResponsibilityFunction` AND NOT A NEW VOCABULARY ★
+ * Because Antcolos already names kinds of work, in `./responsibility`, and the
+ * routing engine already reads that vocabulary. A second list — "dispatcher",
+ * "accounting support", "safety support" — would be eight words meaning almost
+ * the same eight things, and the day they drifted apart nobody would know which
+ * screen was right. `MembershipProfile.functions` declares what a SEAT may be
+ * routed work for; this declares what a PERSON does for the organization, which
+ * is a different subject and is representable for somebody with no seat at all.
+ */
+export interface WorkforceFunctionAssignment {
+  functionKey: ResponsibilityFunction;
+  /** Who assigned it. Required: an assignment nobody owns cannot be reviewed. */
+  assignedByMembershipId: string;
+  assignedByName: string;
+  assignedAt: IsoDateTime;
+  /** The organization's own words — "runs the west desk", "backs up payroll". */
+  note?: string;
+}
+
+/**
+ * A function this person performs that their access does not support.
+ *
+ * DERIVED on every read from the permission catalog and the membership's
+ * effective permissions. Never stored, because a stored gap is a gap that stays
+ * on screen after somebody fixed it.
+ */
+export interface WorkforceFunctionGap {
+  functionKey: ResponsibilityFunction;
+  label: string;
+  /** Catalog keys this function ordinarily needs and this seat does not hold. */
+  missing: PermissionKey[];
+  /** Why the gap exists, in the operator's language. */
+  reason: string;
+  /**
+   * What a person may do about it — always a route into Access, never a button
+   * that grants anything here.
+   */
+  remedy: "grant_through_access" | "invite_to_workspace" | "no_seat_needed";
+}
+
+export const WORKFORCE_FUNCTION_REMEDY_LABEL: Record<
+  WorkforceFunctionGap["remedy"], string
+> = {
+  grant_through_access: "Change their permissions in Access",
+  invite_to_workspace: "Invite them to this workspace",
+  no_seat_needed: "No Antcolos access is needed for this",
+};
+
+/* -------------------------------------------------------------------------- */
+/* Leave and temporary unavailability                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHY somebody is away, in the coarsest terms that are still useful.
+ *
+ * ★ DELIBERATELY COARSE ★
+ * `medical` and nothing more. There is no diagnosis field, no condition, no
+ * accommodation, no certification and no place to type one, because an
+ * operational availability record is not a medical record and a text box on an
+ * HR screen is where one accidentally becomes the other. What dispatch needs to
+ * know is that this person is away until the 14th.
+ *
+ * ███ NOT AN FMCSA DUTY STATUS AND NOT A LEAVE ENTITLEMENT ███
+ * None of these values is an ELD duty status, an hours-of-service record, or a
+ * determination that any statutory leave applies. FMLA, ADA, USERRA, state
+ * leave laws and paid-time-off accrual are outside this product entirely.
+ */
+export type WorkforceLeaveReason =
+  | "planned_time_off"
+  | "medical"
+  | "family"
+  | "personal"
+  | "military"
+  | "training"
+  /** Away at the organization's instruction, short of a suspension. */
+  | "administrative"
+  | "other";
+
+export const WORKFORCE_LEAVE_REASON_LABEL: Record<WorkforceLeaveReason, string> = {
+  planned_time_off: "Planned time off",
+  medical: "Medical",
+  family: "Family",
+  personal: "Personal",
+  military: "Military",
+  training: "Training",
+  administrative: "Administrative",
+  other: "Other",
+};
+
+export const WORKFORCE_LEAVE_NOTICE =
+  "This records that somebody is away and roughly why, so work is not routed to them. "
+  + "It is not a medical record, not an FMCSA duty status, and not a determination that "
+  + "any statutory leave applies. Do not enter diagnoses or other sensitive detail.";
+
+export type WorkforceLeaveStatus =
+  /** Recorded, and the start date has not arrived. */
+  | "planned"
+  /** Under way today. */
+  | "current"
+  /** They came back, or it was recorded as finished. */
+  | "ended"
+  /** It was called off before it started or before it finished. */
+  | "cancelled";
+
+export const WORKFORCE_LEAVE_STATUS_LABEL: Record<WorkforceLeaveStatus, string> = {
+  planned: "Planned",
+  current: "Away now",
+  ended: "Returned",
+  cancelled: "Cancelled",
+};
+
+/**
+ * One period of temporary unavailability.
+ *
+ * ★ NOT A LIFECYCLE STATE ★
+ * Somebody on leave is still `active`. Leave is a fact ABOUT an active
+ * engagement, which is why it is a record beside the state rather than a value
+ * inside it: a carrier that turned "on holiday" into an engagement state would
+ * have to decide what ending the holiday means for somebody who was suspended
+ * the week before, and there is no good answer.
+ *
+ * It is also not `suspended`, which is the organization withdrawing somebody
+ * from work, usually indefinitely, usually for cause. The two are kept apart
+ * because "away until the 14th" and "we have stood them down" must never be
+ * indistinguishable to whoever reads this a year later.
+ */
+export interface WorkforceLeaveRecord {
+  id: string;
+  reason: WorkforceLeaveReason;
+  status: WorkforceLeaveStatus;
+  startDate: IsoDateTime;
+  /** When they are expected back. Absent when genuinely nobody knows. */
+  expectedReturnDate?: IsoDateTime;
+  /** Set when they actually returned. Never guessed from the expected date. */
+  actualReturnDate?: IsoDateTime;
+  recordedByMembershipId: string;
+  recordedByName: string;
+  recordedAt: IsoDateTime;
+  /**
+   * Who approved it, when the organization approves leave at all.
+   *
+   * Optional on purpose: plenty of small carriers do not approve anything, and
+   * a required field they cannot fill would be filled with the recorder's own
+   * name — which would make "approved" mean nothing.
+   */
+  approvedByMembershipId?: string;
+  approvedByName?: string;
+  /** Operational note only. Never sensitive detail; see the notice above. */
+  note?: string;
+  endedByMembershipId?: string;
+  endedByName?: string;
+  endedAt?: IsoDateTime;
+  /**
+   * What the seat's availability read BEFORE this leave displaced it.
+   *
+   * ★ WHY THIS FIELD HAS TO EXIST ★
+   * `MembershipAvailability` is single-valued, so a seat cannot hold two
+   * reasons at once. Somebody who was already `off_shift` and then goes on
+   * leave has their `off_shift` overwritten by `on_leave` — and without this
+   * field, ending the leave would announce them `available`, which is a reason
+   * nobody gave and a person the routing engine would start handing work to.
+   *
+   * Provenance, not a second availability store: it is written once, read once
+   * when the leave ends, and nothing else consults it.
+   */
+  seatAvailabilityBefore?: MembershipAvailability;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Availability — the one typed signal, and its exact limits                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether this person is working right now, as far as HR knows.
+ *
+ * ███ WHAT THIS IS NOT ███
+ * It is not a statement that a truck may be dispatched. It is not an
+ * hours-of-service determination. It is not a qualification. A driver who is
+ * `working` by this signal may still be out of service for four other reasons
+ * that four other modules own, and this one has never read any of them.
+ *
+ * The honest scope is narrow and worth stating on screen: a person who is away
+ * should not be routed work, and this is the field that says so.
+ */
+export type WorkforceAvailabilityState =
+  | "working"
+  | "on_leave"
+  /** Leave is recorded but has not started yet. They are working today. */
+  | "leave_planned"
+  /** The organization has stood them down. Not leave. */
+  | "suspended"
+  /** Prospective, onboarding, or ended: not somebody to route work to. */
+  | "not_engaged";
+
+export const WORKFORCE_AVAILABILITY_LABEL: Record<WorkforceAvailabilityState, string> = {
+  working: "Working",
+  on_leave: "Away",
+  leave_planned: "Leave planned",
+  suspended: "Stood down",
+  not_engaged: "Not working here",
+};
+
+/**
+ * Whether the operational routing signal actually agrees with the HR fact.
+ *
+ * DERIVED on every read, stored nowhere. See `availabilityProjection` in
+ * `src/lib/workforce/availability.ts` for why a comparison has to exist at all:
+ * a future leave becoming effective, somebody changing the seat independently,
+ * and a failed projection write all produce a disagreement that nothing else
+ * would notice.
+ */
+export interface WorkforceAvailabilityProjection {
+  /** True when a leave covers today on an engagement somebody works under. */
+  managedByLeave: boolean;
+  /** What leave says the seat should read. `undefined` = leave has no opinion. */
+  desired?: MembershipAvailability;
+  /** What the seat actually reads, when the person holds one. */
+  actual?: MembershipAvailability;
+  /** False means the routing engine and HR disagree, and somebody must act. */
+  inSync: boolean;
+  summary: string;
+}
+
+export interface WorkforceAvailability {
+  state: WorkforceAvailabilityState;
+  /**
+   * The state of the operational projection onto the person's seat.
+   *
+   * Kept beside `state` rather than folded into it: "this person is away" and
+   * "the routing engine has not been told" are different facts, and a screen
+   * that showed only the first would be the screen that hid the second.
+   */
+  projection: WorkforceAvailabilityProjection;
+  /** The leave that produced it, when leave did. */
+  leave?: WorkforceLeaveRecord;
+  /** One line, in the operator's language. Printed, not inferred by a screen. */
+  summary: string;
+  /**
+   * Whether the responsibility engine should consider routing work here.
+   *
+   * ★ NOT A DISPATCH DECISION ★
+   * False means "do not hand this person work". True means only "HR knows of no
+   * reason not to" — never that a load may be assigned, a truck is roadworthy,
+   * or a driver is qualified and has hours. Those four answers belong to
+   * Dispatch, Maintenance, Safety and the ELD, and none of them reads this.
+   */
+  availableForWork: boolean;
+  /** Said out loud wherever this is shown. */
+  limitation: string;
+}
+
+export const WORKFORCE_AVAILABILITY_LIMITATION =
+  "This says whether HR knows of a reason not to route work to this person. It never "
+  + "declares a truck dispatch-ready, a driver qualified, or hours available — Dispatch, "
+  + "Maintenance, Safety and the ELD own those, and none of them reads this field.";
 
 /* -------------------------------------------------------------------------- */
 /* The record                                                                  */
@@ -274,7 +686,34 @@ export interface WorkforceEngagement {
   positionTitle: string;
   /** Intended or actual start. Absent while nobody has decided one. */
   startDate?: IsoDateTime;
+  /**
+   * WHAT KIND OF FACT `startDate` is, when anybody recorded that.
+   *
+   * Absent on a record made before this field existed, and absent is not
+   * `observed_by_antcolos`: "nobody said" and "Antcolos watched it happen" are
+   * different, and defaulting one to the other would manufacture a provenance
+   * the ledger cannot support. Activation NEVER overwrites an asserted date or
+   * relabels its basis — see `WorkforceService.activate`.
+   */
+  startDateProvenance?: WorkforceStartDate;
   endDate?: IsoDateTime;
+  /**
+   * Organizational functions this person performs. Zero or many.
+   *
+   * MANY on purpose: at a five-truck carrier one person dispatches, does the
+   * safety filing and chases invoices, and a single-valued field would force
+   * whoever entered them to pick the lie that fits. Not one of these grants a
+   * permission; see `WorkforceFunctionAssignment`.
+   */
+  functions: WorkforceFunctionAssignment[];
+  /**
+   * Periods of temporary unavailability, newest last. Append-mostly.
+   *
+   * Kept on the engagement because leave is a fact about THIS organizational
+   * relationship — a driver on holiday at one carrier is not on holiday at
+   * another — and a person-level leave store would say otherwise.
+   */
+  leave: WorkforceLeaveRecord[];
   /**
    * The membership that supervises this person, by reference.
    *
@@ -513,6 +952,55 @@ export interface WorkforceEngagementView {
   links: WorkforceLink[];
   /** Outstanding offboarding steps from a previous end, if any failed. */
   incompleteOffboarding: OffboardingResultStep[];
+  /** Derived on read from the leave records and the engagement state. */
+  availability: WorkforceAvailability;
+  /**
+   * Functions whose permissions this person's seat does not hold.
+   *
+   * Derived from the permission catalog and the membership's EFFECTIVE
+   * permissions on every read, so granting the key makes the gap disappear
+   * without anybody touching this module.
+   */
+  functionGaps: WorkforceFunctionGap[];
+  /**
+   * How many Needs You items this engagement is currently producing.
+   *
+   * A COUNT of the existing derived projection, never a second queue: the items
+   * themselves stay in Needs You, and this number exists so a directory row can
+   * say "two things are waiting" without unfolding them.
+   */
+  openNeedsYouCount: number;
+  /**
+   * The single next HR action, or absent when there is none.
+   *
+   * Derived. A row with nothing waiting says nothing, which is the difference
+   * between a queue and a wall of badges.
+   */
+  nextAction?: WorkforceNextAction;
+}
+
+/**
+ * What the product would have somebody do next about this engagement.
+ *
+ * Never a command: it names the action and the permission it needs, and the
+ * screen decides whether to offer a button. A `requires` the reader does not
+ * hold still shows the line — knowing somebody else must act is useful, and
+ * hiding it is how work sits for a month.
+ */
+export interface WorkforceNextAction {
+  kind:
+    | "decide_on_candidate"
+    | "finish_onboarding"
+    | "activate"
+    | "finish_offboarding"
+    | "record_return_from_leave"
+    | "reconcile_availability"
+    | "close_function_gap"
+    | "record_start_date_basis";
+  label: string;
+  detail: string;
+  requires: PermissionKey[];
+  href?: string;
 }
 
 export interface WorkforceLink {
@@ -533,6 +1021,10 @@ export interface WorkforceFilters {
   search?: string;
   /** Only engagements this membership supervises. */
   managedByMembershipId?: string;
+  /** Only engagements performing this organizational function. */
+  functionKey?: ResponsibilityFunction;
+  /** Only people who are away right now. */
+  onLeaveOnly?: boolean;
   /** Off by default: ended engagements are history, not the roster. */
   includeEnded?: boolean;
 }
@@ -545,4 +1037,8 @@ export interface WorkforceSummary {
   onboardingOutstanding: number;
   /** Engagements whose offboarding did not finish. */
   offboardingIncomplete: number;
+  /** Working engagements whose person is away today. */
+  onLeave: number;
+  /** Assigned functions this organization's seats cannot actually perform. */
+  functionGaps: number;
 }

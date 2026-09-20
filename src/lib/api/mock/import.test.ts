@@ -321,6 +321,15 @@ describe("the carrier's history stays the carrier's history", () => {
      */
     expect(created.startDate).toBe(START);
     expect(created.source.kind).toBe("roster_import");
+    /*
+     * And carried as a CLAIM. Antcolos watched none of this and holds no
+     * evidence of it, so the date keeps the basis that says so — relabelling
+     * it as something Antcolos observed would give the carrier's own
+     * spreadsheet an authority nobody gave it.
+     */
+    expect(created.startDateProvenance?.basis).toBe("asserted_by_organization");
+    expect(created.startDateProvenance?.value).toBe(START);
+    expect(created.startDateProvenance?.recordedAt).not.toBe(START);
   });
 
   it("keeps the claim readable as the carrier's unverified assertion", async () => {

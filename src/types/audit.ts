@@ -189,6 +189,13 @@ export type AuditAction =
   | "workforce.onboarding_step_waived"
   | "workforce.access_step_requested"
   | "workforce.offboarding_step_recorded"
+  | "workforce.function_assigned"
+  | "workforce.function_removed"
+  | "workforce.leave_recorded"
+  | "workforce.leave_ended"
+  | "workforce.leave_cancelled"
+  | "workforce.availability_reconciled"
+  | "workforce.start_date_recorded"
   /**
    * Somebody said which real person an imported row is, or that it is nobody
    * Antcolos holds.

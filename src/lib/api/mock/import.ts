@@ -647,11 +647,36 @@ async function commitPerson(
       // date it asserts — never today. `receivedAt` on the claim is when we
       // learned it, and the two stay different fields forever.
       startDate: asserted?.occurredAt,
+      /*
+       * ★ AND CARRIED AS A CLAIM, NOT AS AN OBSERVATION ★
+       * A roster file is the carrier telling Antcolos something. Antcolos
+       * watched none of it and holds no evidence of it, so the engagement
+       * records the basis as asserted and points back at the row that said so
+       * — which keeps `ImportedAssertion`'s full provenance chain reachable
+       * from the engagement without copying one byte of it onto the record.
+       */
+      startDateBasis: asserted ? "asserted_by_organization" : undefined,
+      startDateNote: asserted ? IMPORT_ASSERTION_BASIS : undefined,
       source: {
         kind: "roster_import",
         id: claim.id,
         label: IMPORT_ASSERTION_BASIS,
       },
+      /*
+       * ★ A PERSON ALREADY ANSWERED THIS ★
+       * The workforce module refuses to create somebody its matcher thinks is
+       * probably already on the roster — the same matcher this module runs, on
+       * the same evidence, so it would refuse every contested row a person had
+       * explicitly resolved as `create`.
+       *
+       * Getting here means either nothing plausible was found, or a human
+       * looked at this exact candidate list and said these are different
+       * people. Passing the candidates back is that decision being carried,
+       * not being bypassed: it acknowledges the ones a person set aside and
+       * nothing else, so a candidate that appears AFTER they decided still
+       * stops the write.
+       */
+      confirmedDistinctFrom: resolution.candidates.map((c) => c.entityId.replace(/^weng:/, "")),
     });
     return {
       claimId: claim.id,
