@@ -1,7 +1,7 @@
 "use client";
 
 import { Building2, Check, Copy, Plus, ShieldCheck, UserRound, Users } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -29,6 +29,7 @@ import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
+import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 
@@ -70,6 +71,26 @@ function sameSet(a: readonly PermissionKey[], b: ReadonlySet<PermissionKey>): bo
  */
 export function InviteFlow() {
   const router = useRouter();
+  /**
+   * ★ THE REFERRAL HANDOFF ★
+   *
+   * A company that accepted a referral lands here with `?referral=`. What
+   * arrives is PREFILL and nothing else: a name, an address, the referrer's
+   * name and the free-text title the referrer typed, shown as context.
+   *
+   * Notice what the handoff cannot carry and therefore cannot decide — the
+   * invitation kind, the permission set, the engagement type, the expiry. Every
+   * one of those is still chosen on this screen by somebody holding
+   * `invitations:create`, which is exactly the point: accepting a referral is
+   * an expression of interest, and this is where the actual decisions are made.
+   *
+   * The one thing it carries that is more than a prefill is
+   * `existingEngagementId`, which makes acceptance CONNECT a workforce record
+   * this organization already has rather than start a second one. That is the
+   * access module's own `InvitationDraft.engagementId`, not a new mechanism.
+   */
+  const referralId = useSearchParams().get("referral");
+  const [handoff, setHandoff] = useState<ReferralHandoff | null>(null);
   const { membership, organization } = useActiveMembership();
   const ctx = useServiceContext();
   const myPermissions = usePermissions();
@@ -104,6 +125,23 @@ export function InviteFlow() {
     () => new Set(grantablePermissionKeys(myPermissions, orgType)),
     [myPermissions, orgType],
   );
+
+  useEffect(() => {
+    if (!ctx || !referralId) return;
+    let cancelled = false;
+    void services.referrals.handoff(ctx, referralId).then((result) => {
+      if (cancelled || !result) return;
+      setHandoff(result);
+      // Prefilled, and still editable. The reviewer confirms the identity and
+      // the contact details — what a stranger typed into a referral form is
+      // evidence of an introduction, not a verified fact about the person.
+      setRecipientName(result.recipientName);
+      setRecipientEmail(result.recipientEmail);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx, referralId]);
 
   useEffect(() => {
     if (!ctx) return;
@@ -236,6 +274,10 @@ export function InviteFlow() {
         permissions: safe,
         scopedToCarrierName: isDispatchOrg ? organization.displayName : undefined,
         expiresAt: expiryIso(expiryDays),
+        // Present only when Workforce already holds a live engagement for this
+        // person. It is what makes acceptance a CONNECTION rather than a second
+        // record — the access module's existing behaviour, not a new one.
+        engagementId: handoff?.existingEngagementId,
       });
     } catch (error) {
       setRefusal(
@@ -246,6 +288,16 @@ export function InviteFlow() {
       );
       setSending(false);
       return;
+    }
+
+    /*
+     * The referral learns the id of the invitation that came out of it, AFTER
+     * the canonical command returned one. The referral module has no way to
+     * create an invitation and this is the only direction the link is ever
+     * written in.
+     */
+    if (referralId) {
+      void services.referrals.recordInvitation(ctx, referralId, invitation.id);
     }
 
     setSentToken(invitation.token);
@@ -273,6 +325,30 @@ export function InviteFlow() {
         title="Invite to Antcolos"
         description={`Everyone you invite joins ${organization.displayName} with exactly the access you choose here.`}
       />
+
+      {handoff ? (
+        <div className="rounded-lg border border-st-info/35 bg-st-info-bg/40 px-4 py-3">
+          <p className="text-[0.8125rem] font-semibold text-fg">
+            From a referral by {handoff.referrerName}
+          </p>
+          <p className="mt-1 text-[0.8125rem] text-fg-muted">
+            They suggested {handoff.recipientName} for
+            {" "}&ldquo;{handoff.proposedTitleContext}&rdquo;. That is the
+            referrer&apos;s description and nothing else &mdash; it is not a
+            role, it grants nothing, and what this person will actually be able
+            to do is what you choose below.
+          </p>
+          {handoff.existingEngagementId ? (
+            <p className="mt-2 text-[0.8125rem] text-fg-muted">
+              This organization already has a workforce record for them. Sending
+              this invitation connects that record rather than starting a second.
+            </p>
+          ) : null}
+          <p className="mt-2 text-[0.75rem] text-fg-subtle">
+            {handoff.meaningOfAcceptance}
+          </p>
+        </div>
+      ) : null}
 
       {stage === "type" ? (
         <TypeStep presets={presets} roles={roles} onChoose={choose} />

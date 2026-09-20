@@ -178,6 +178,18 @@ export type NeedsYouCategory =
    */
   | "invitation_acceptance_incomplete"
 
+  /* ---- Referrals. Derived from referrals waiting on a company decision. ---- */
+  /**
+   * Somebody outside this company introduced a person to it, and nobody has
+   * said yes or no.
+   *
+   * Raised only while `pending_review` is true and the referral is still open,
+   * so it disappears when a decision is recorded and never because anybody
+   * tidied the queue. It carries the introduction and nothing about the
+   * candidate's Antcolos account, which the company has no business reading.
+   */
+  | "referral_review"
+
   /* ---- Import. Derived from claims the matcher would not decide. ---- */
   /**
    * A row from a carrier's own records that could be one of their people and
@@ -247,6 +259,8 @@ export type NeedsYouEntityKind =
   | "workforce_engagement"
   /** One invitation to one person. Never the seat it would create. */
   | "invitation"
+  /** One introduction. Never the person, and never the seat it might lead to. */
+  | "referral"
   /** One carrier's pinned custody record of one document version. */
   | "qualification_record"
   /**
@@ -326,6 +340,10 @@ export type NeedsYouActionKind =
   /* ---- Access ---- */
   /** Look at an acceptance that did not finish, and at what is missing. */
   | "review_acceptance"
+
+  /* ---- Referrals ---- */
+  /** Decide whether this company is interested in somebody introduced to it. */
+  | "review_referral"
 
   /* ---- Import ---- */
   /** Say which existing record an imported row is, or that it is nobody's. */
@@ -457,6 +475,7 @@ export const SEVERITY_LABEL: Record<NeedsYouSeverity, string> = {
 
 export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
   invitation_acceptance_incomplete: "Acceptance did not finish",
+  referral_review: "Referral to review",
   import_claim_unresolved: "Imported row needs you",
   rate_con_verification: "Rate con to verify",
   unassigned_load: "Unassigned load",

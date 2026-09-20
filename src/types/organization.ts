@@ -7,6 +7,21 @@ export interface Organization {
   displayName: string;
   dotNumber?: string;
   mcNumber?: string;
+  /**
+   * The organization's verified Antcolos handle, e.g. `northline-freight`.
+   *
+   * One more way to NAME the organization whose id is above — never a second
+   * identity. It is unique across Antcolos, it is how somebody outside the
+   * company refers to it when they know neither its legal name nor its MC
+   * number, and anything that resolves it stores the `id` it resolved to and
+   * keeps the handle only as provenance.
+   *
+   * Absent on an organization that has not claimed one. A workspace with no
+   * handle is reachable by name search and by its registration numbers, and is
+   * never given a generated one — a handle somebody did not choose is a public
+   * identifier they did not agree to.
+   */
+  username?: string;
   timeZone: string;
   /**
    * A dispatch organization with exactly one person in it and no team.

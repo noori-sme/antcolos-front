@@ -372,6 +372,51 @@ export const httpServices: AntcolosServices = {
     endSeat: notImplemented("access.endSeat"),
     leaveOrganization: notImplemented("access.leaveOrganization"),
   },
+  /*
+   * ███ REFERRALS: WHAT THE SERVER OWES THAT A BROWSER CANNOT ███
+   *
+   * More than serialization, and the list is not optional:
+   *
+   *   • The claim token. Minted from a CSPRNG, stored as a hash, compared in
+   *     constant time, single-use and expiring. The mock's token is
+   *     `Math.random` in a tab.
+   *   • The email. A transactional provider, its credentials, the send, and the
+   *     delivery webhook — which is the ONLY thing allowed to write `delivered`
+   *     or `bounced`. A sender never writes its own delivery receipt.
+   *   • The rate limits in `REFERRAL_LIMITS`, enforced server-side per referrer,
+   *     per recipient address and per target organization, before the email is
+   *     queued. The mock counts what one tab has seen.
+   *   • The duplicate guard, as a unique partial index on
+   *     `(targetOrganizationId, candidateEmail) WHERE still open` — not a read
+   *     followed by a write, which two requests race straight through.
+   *   • `ReferringIdentity` DOES NOT CROSS THE WIRE. Derive it from the session
+   *     the server issued. The claim token proves which referral, never who is
+   *     holding it, and the addressee match belongs on this side against the
+   *     authenticated principal.
+   *   • `referrals:review` and the organization scope, checked here. A referral
+   *     for another organization answers as missing, never as forbidden.
+   *   • The opt-out list, durable and never readable through an endpoint.
+   */
+  referrals: {
+    searchOrganizations: notImplemented("referrals.searchOrganizations"),
+    resolveOrganization: notImplemented("referrals.resolveOrganization"),
+    disclose: notImplemented("referrals.disclose"),
+    submit: notImplemented("referrals.submit"),
+    myReferrals: notImplemented("referrals.myReferrals"),
+    withdraw: notImplemented("referrals.withdraw"),
+    resend: notImplemented("referrals.resend"),
+    companyInbox: notImplemented("referrals.companyInbox"),
+    companyGet: notImplemented("referrals.companyGet"),
+    accept: notImplemented("referrals.accept"),
+    reject: notImplemented("referrals.reject"),
+    handoff: notImplemented("referrals.handoff"),
+    recordInvitation: notImplemented("referrals.recordInvitation"),
+    lookUpClaim: notImplemented("referrals.lookUpClaim"),
+    claim: notImplemented("referrals.claim"),
+    decline: notImplemented("referrals.decline"),
+    reportUnwanted: notImplemented("referrals.reportUnwanted"),
+    recordDelivery: notImplemented("referrals.recordDelivery"),
+  },
   /**
    * Import.
    *

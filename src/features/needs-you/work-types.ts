@@ -78,6 +78,12 @@ export const MODULE_LABEL: Record<NeedsYouModule, string> = {
 export const CATEGORY_MODULE: Record<NeedsYouCategory, NeedsYouModule> = {
   invitation_acceptance_incomplete: "access",
 
+  /* Referrals. Routed to ACCESS rather than a module of their own: the people
+     who triage an introduction are the people who run invitations, and the
+     only thing a referral can ever hand off to is the invitation flow. It is
+     grouped with them, not equated with them. */
+  referral_review: "access",
+
   /* Import. Routed to WORKFORCE rather than a module of its own: the question
      is who somebody on this carrier's roster is, and the people who can answer
      it are the people who run the roster. */
