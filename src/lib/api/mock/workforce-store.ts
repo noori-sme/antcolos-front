@@ -60,6 +60,10 @@ export function nextEventId(): string {
   return rowId("wev");
 }
 
+export function nextLeaveId(): string {
+  return rowId("wlv");
+}
+
 /* -------------------------------------------------------------------------- */
 /* Seed                                                                        */
 /* -------------------------------------------------------------------------- */

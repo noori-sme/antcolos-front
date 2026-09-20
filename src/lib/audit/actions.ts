@@ -92,6 +92,17 @@ export const AUDIT_ACTIONS: readonly AuditActionMeta[] = [
   { key: "workforce.onboarding_step_waived", label: "Onboarding step waived", module: "workforce", permissionSensitive: true },
   { key: "workforce.access_step_requested", label: "Access step requested", module: "workforce", permissionSensitive: true },
   { key: "workforce.offboarding_step_recorded", label: "Offboarding step recorded", module: "workforce" },
+  // A function is NOT a permission, so none of these is permission-sensitive.
+  // Marking them so would teach a reviewer that assigning one changed access,
+  // which is exactly the confusion the module is built to prevent.
+  { key: "workforce.function_assigned", label: "Function assigned", module: "workforce" },
+  { key: "workforce.function_removed", label: "Function removed", module: "workforce" },
+  { key: "workforce.leave_recorded", label: "Leave recorded", module: "workforce" },
+  { key: "workforce.leave_ended", label: "Returned from leave", module: "workforce" },
+  { key: "workforce.leave_cancelled", label: "Leave cancelled", module: "workforce" },
+  // High value: the date a regulator asks about, and the one field an
+  // activation must never silently rewrite.
+  { key: "workforce.start_date_recorded", label: "Start date recorded", module: "workforce", highValue: true },
   // The judgement an import is not allowed to make for itself.
   { key: "workforce.import_identity_resolved", label: "Imported row resolved to a person", module: "workforce", highValue: true },
 

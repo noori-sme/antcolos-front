@@ -3,7 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import type {
-  EndEngagementInput, SuspendInput, WaiveStepInput,
+  AssignFunctionInput, CreateEngagementInput, EndEngagementInput,
+  EndLeaveInput, RecordLeaveInput, RecordStartDateInput, RemoveFunctionInput,
+  SuspendInput, WaiveStepInput,
 } from "@/lib/api/contracts/workforce";
 import type { AdoptDocumentInput } from "@/lib/api/contracts/qualification";
 import { useServiceContext } from "@/lib/api/use-service-context";
@@ -96,7 +98,12 @@ type EngagementAction =
   | { kind: "restore" }
   | { kind: "reject"; reason: string }
   | { kind: "waive"; input: WaiveStepInput }
-  | { kind: "offboard"; input: EndEngagementInput };
+  | { kind: "offboard"; input: EndEngagementInput }
+  | { kind: "assignFunction"; input: AssignFunctionInput }
+  | { kind: "removeFunction"; input: RemoveFunctionInput }
+  | { kind: "recordLeave"; input: RecordLeaveInput }
+  | { kind: "endLeave"; input: EndLeaveInput }
+  | { kind: "recordStartDate"; input: RecordStartDateInput };
 
 /**
  * One mutation for every engagement command.
@@ -119,6 +126,15 @@ export function useEngagementAction(engagementId: string) {
         case "reject": return services.workforce.reject(ctx, engagementId, action.reason);
         case "waive": return services.workforce.waiveStep(ctx, engagementId, action.input);
         case "offboard": return services.workforce.offboard(ctx, engagementId, action.input);
+        case "assignFunction":
+          return services.workforce.assignFunction(ctx, engagementId, action.input);
+        case "removeFunction":
+          return services.workforce.removeFunction(ctx, engagementId, action.input);
+        case "recordLeave":
+          return services.workforce.recordLeave(ctx, engagementId, action.input);
+        case "endLeave": return services.workforce.endLeave(ctx, engagementId, action.input);
+        case "recordStartDate":
+          return services.workforce.recordStartDate(ctx, engagementId, action.input);
       }
     },
     onSuccess: () => {
@@ -155,5 +171,41 @@ export function useAdoptionPreview(documentId: string | null) {
     queryFn: () => services.qualification.previewAdoption(ctx!, documentId!),
     enabled: Boolean(ctx && documentId),
     staleTime: 0,
+  });
+}
+
+/**
+ * Creating an engagement, or connecting one for somebody already known.
+ *
+ * ONE mutation for both, because they are one command: the difference between
+ * "connect this person" and "record somebody who has no account" is which
+ * identity fields the input carries, not which service it calls. Two hooks
+ * would be two code paths that could disagree about the duplicate check.
+ */
+export function useCreateEngagement() {
+  const ctx = useServiceContext();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateEngagementInput) => {
+      if (!ctx) throw new Error("No workspace selected.");
+      return services.workforce.create(ctx, input);
+    },
+    onSuccess: () => {
+      if (!ctx) return;
+      void client.invalidateQueries({ queryKey: [...orgKey(ctx.organizationId), "workforce"] });
+      void client.invalidateQueries({ queryKey: [...orgKey(ctx.organizationId), "needs-you"] });
+    },
+  });
+}
+
+/** The people a manager or an approver can be chosen from. Memberships, never titles. */
+export function useWorkspaceColleagues() {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx
+      ? [...orgKey(ctx.organizationId), "workforce", "colleagues"]
+      : ["workforce", "no-context", "colleagues"],
+    queryFn: () => services.responsibility.assignable(ctx!),
+    enabled: Boolean(ctx),
   });
 }

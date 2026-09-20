@@ -647,6 +647,16 @@ async function commitPerson(
       // date it asserts — never today. `receivedAt` on the claim is when we
       // learned it, and the two stay different fields forever.
       startDate: asserted?.occurredAt,
+      /*
+       * ★ AND CARRIED AS A CLAIM, NOT AS AN OBSERVATION ★
+       * A roster file is the carrier telling Antcolos something. Antcolos
+       * watched none of it and holds no evidence of it, so the engagement
+       * records the basis as asserted and points back at the row that said so
+       * — which keeps `ImportedAssertion`'s full provenance chain reachable
+       * from the engagement without copying one byte of it onto the record.
+       */
+      startDateBasis: asserted ? "asserted_by_organization" : undefined,
+      startDateNote: asserted ? IMPORT_ASSERTION_BASIS : undefined,
       source: {
         kind: "roster_import",
         id: claim.id,

@@ -1,31 +1,39 @@
 import {
-  WORKFORCE_CLASSIFICATION_LABEL, WORKFORCE_STATE_LABEL,
+  RESPONSIBILITY_FUNCTION_LABEL, WORKFORCE_CLASSIFICATION_LABEL,
+  WORKFORCE_LEAVE_REASON_LABEL, WORKFORCE_START_BASIS_LABEL,
+  WORKFORCE_STATE_LABEL,
   type ActorRef, type AuditAction, type OffboardingResult,
   type OffboardingResultStep, type OnboardingChecklist, type PermissionKey,
   isRestrictedQualificationCategory,
   type WorkforceEngagement, type WorkforceEngagementState,
   type WorkforceEngagementView, type WorkforceEventKind, type WorkforceFilters,
-  type WorkforceLink, type WorkforceSummary,
+  type WorkforceFunctionAssignment, type WorkforceLeaveRecord,
+  type WorkforceLink, type WorkforceNextAction, type WorkforceSummary,
 } from "@/types";
 import { assertTransition } from "@/lib/workforce/lifecycle";
+import { availabilityFor, currentLeave, isLeaveCurrent } from "@/lib/workforce/availability";
+import { functionGapsFor } from "@/lib/workforce/functions";
 import {
   NotFoundError, PermissionDeniedError, type ServiceContext,
 } from "../contracts/context";
 import type {
-  AccessStepRequestInput, ClassificationChangeInput, CreateEngagementInput,
-  EndEngagementInput, LinkContractInput, ManagerChangeInput, SuspendInput,
+  AccessStepRequestInput, AssignFunctionInput, CancelLeaveInput,
+  ClassificationChangeInput, CreateEngagementInput, EndEngagementInput,
+  EndLeaveInput, LinkContractInput, ManagerChangeInput, RecordLeaveInput,
+  RecordStartDateInput, RemoveFunctionInput, SuspendInput,
   TakeShareForwardInput, WaiveStepInput, WorkforceService,
 } from "../contracts/workforce";
 import {
   amendEngagement, engagementById, engagementsForOrganization, ensureSeeded,
-  incompleteOffboardingFor, liveEngagementFor, nextEngagementId, putEngagement,
-  putIncompleteOffboarding, putWaiver,
+  incompleteOffboardingFor, liveEngagementFor, nextEngagementId, nextLeaveId,
+  putEngagement, putIncompleteOffboarding, putWaiver,
 } from "./workforce-store";
 import { buildOnboardingChecklist } from "./workforce-onboarding";
 import { buildOffboardingPlan, runOffboardingSteps } from "./workforce-offboarding";
 import { seedWorkforce } from "./workforce-seed";
 import { appendAuditEvent, recordCrossOrganizationAttempt } from "./audit";
-import { memberIn } from "./membership-directory";
+import { engagementNeedsYouCount } from "./workforce-needs-you";
+import { memberIn, setMembershipAvailability } from "./membership-directory";
 import { sharePackageById } from "./document-store";
 import { recordsForDriver } from "./qualification-store";
 import { nowIso } from "./time";
@@ -99,6 +107,31 @@ export class OnboardingIncompleteError extends Error {
       + ". Resolve it there, or have somebody authorised waive it with a reason.",
     );
     this.name = "OnboardingIncompleteError";
+  }
+}
+
+/**
+ * Refusing a start date nobody will say the provenance of.
+ *
+ * Not pedantry: "the carrier says March 2019" and "Antcolos saw it in March
+ * 2019" are different claims with different weight, and the field is one a
+ * regulator may ask about. A default would silently pick the stronger one.
+ */
+export class MissingStartDateBasisError extends Error {
+  constructor() {
+    super(
+      "A start date needs a basis. Say whether this organization is stating the date or "
+      + "whether Antcolos observed it — they are different claims, and Antcolos will not guess.",
+    );
+    this.name = "MissingStartDateBasisError";
+  }
+}
+
+/** Refusing to act on leave that is not this engagement's, or is already over. */
+export class LeaveNotFoundError extends Error {
+  constructor(readonly leaveId: string) {
+    super(`No open leave record ${leaveId} on this engagement.`);
+    this.name = "LeaveNotFoundError";
   }
 }
 
@@ -287,16 +320,143 @@ function linksFor(engagement: WorkforceEngagement): WorkforceLink[] {
   return links;
 }
 
+/**
+ * The next HR action, derived.
+ *
+ * ★ ONE, AND OFTEN NONE ★
+ * An active person with nothing outstanding gets `undefined`, and that is the
+ * whole discipline: a field that always has a value becomes a badge on every
+ * row, and a badge on every row is read by nobody. The order below is a
+ * priority, not a list — an unfinished offboarding outranks everything, because
+ * somebody who has left still holds something.
+ */
+function nextActionFor(
+  engagement: WorkforceEngagement,
+  functionGapCount: number,
+  now: string,
+): WorkforceNextAction | undefined {
+  const href = `/workforce/${engagement.id}`;
+
+  if (incompleteOffboardingFor(engagement.id).length > 0) {
+    return {
+      kind: "finish_offboarding",
+      label: "Finish the offboarding",
+      detail: "This person has left and something they held did not end. Until it does, they still hold it.",
+      requires: ["workforce:end"],
+      href,
+    };
+  }
+
+  if (engagement.state === "prospective") {
+    return {
+      kind: "decide_on_candidate",
+      label: "Decide about this person",
+      detail: "They were taken forward and nobody has decided. Start onboarding, or record that they are not being taken forward.",
+      requires: ["workforce:manage"],
+      href,
+    };
+  }
+
+  if (engagement.state === "onboarding") {
+    const checklist = buildOnboardingChecklist(engagement);
+    return checklist.readyToActivate
+      ? {
+        kind: "activate",
+        label: "Start them",
+        detail: "Every step the other modules own is done or waived. Nobody has started them.",
+        requires: ["workforce:manage"],
+        href,
+      }
+      : {
+        kind: "finish_onboarding",
+        label: `Finish ${checklist.outstanding.length} onboarding step${checklist.outstanding.length === 1 ? "" : "s"}`,
+        detail: `Outstanding in the module that owns ${checklist.outstanding.length === 1 ? "it" : "them"}: `
+          + checklist.outstanding.map((o) => o.label).join(", "),
+        requires: ["workforce:manage"],
+        href,
+      };
+  }
+
+  if (engagement.state === "active") {
+    // Overdue leave beats a function gap: somebody the organization believes is
+    // back and has not said so is a person work may be routed to wrongly.
+    const live = currentLeave(engagement, now);
+    if (live?.expectedReturnDate && live.expectedReturnDate < now) {
+      return {
+        kind: "record_return_from_leave",
+        label: "Record whether they came back",
+        detail: `They were expected back on ${live.expectedReturnDate.slice(0, 10)}. Antcolos will not assume it — `
+          + "say they returned, or record a new expected date.",
+        requires: ["workforce:manage"],
+        href,
+      };
+    }
+
+    if (functionGapCount > 0) {
+      return {
+        kind: "close_function_gap",
+        label: `Access does not match ${functionGapCount} recorded function${functionGapCount === 1 ? "" : "s"}`,
+        detail: "This organization says they do this work and their seat cannot. Assigning a function here has "
+          + "granted nothing; changing it is Access's to do.",
+        // The permission that would actually close it, so the line says who can
+        // rather than sending everybody to a screen half of them cannot use.
+        requires: ["members:edit"],
+        href: "/settings/users",
+      };
+    }
+
+    if (engagement.startDate && !engagement.startDateProvenance) {
+      return {
+        kind: "record_start_date_basis",
+        label: "Say where the start date came from",
+        detail: "This engagement has a start date and nothing recording whether this organization stated it or "
+          + "Antcolos observed it. That difference is the one a regulator asks about.",
+        requires: ["workforce:manage"],
+        href,
+      };
+    }
+  }
+
+  return undefined;
+}
+
 function project(engagement: WorkforceEngagement): WorkforceEngagementView {
   const member = engagement.membershipId
     ? memberIn(engagement.organizationId, engagement.membershipId)
     : undefined;
+  const now = nowIso();
+
+  // The membership's EFFECTIVE permissions, computed by the access system and
+  // read here. This module has never computed a permission and does not start.
+  const functionGaps = functionGapsFor(
+    engagement,
+    member?.status === "active" ? member.permissions : undefined,
+  );
+
   return {
     engagement,
     hasActiveMembership: member?.status === "active",
     links: linksFor(engagement),
     incompleteOffboarding: incompleteOffboardingFor(engagement.id),
+    availability: availabilityFor(engagement, now),
+    functionGaps,
+    // A COUNT of the existing derived projection. The items themselves stay in
+    // Needs You; this exists so a row can say "two things are waiting" without
+    // this module growing a second queue to keep in step.
+    openNeedsYouCount: countNeedsYouFor(engagement),
+    nextAction: nextActionFor(engagement, functionGaps.length, now),
   };
+}
+
+/**
+ * How many Needs You items this engagement currently produces.
+ *
+ * Deliberately asks the ONE derivation rather than re-deciding what counts.
+ * Two answers to "does this need somebody" is how a badge comes to say 3 while
+ * the queue shows 1.
+ */
+function countNeedsYouFor(engagement: WorkforceEngagement): number {
+  return engagementNeedsYouCount(engagement);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -332,6 +492,9 @@ export const mockWorkforceService: WorkforceService = {
         if (filters.state?.length && !filters.state.includes(e.state)) return false;
         if (filters.classification?.length && !filters.classification.includes(e.classification)) return false;
         if (filters.managedByMembershipId && e.managerMembershipId !== filters.managedByMembershipId) return false;
+        if (filters.functionKey
+          && !e.functions.some((f) => f.functionKey === filters.functionKey)) return false;
+        if (filters.onLeaveOnly && currentLeave(e, nowIso()) === undefined) return false;
         if (search) {
           const haystack = [e.person.displayName, e.positionTitle, e.person.email ?? ""]
             .join(" ").toLowerCase();
@@ -359,9 +522,13 @@ export const mockWorkforceService: WorkforceService = {
     } as WorkforceSummary["byState"];
     const byClassification = {
       employee: 0, independent_contractor: 0, owner_operator: 0,
+      organization_owner: 0, external_worker: 0,
     } as WorkforceSummary["byClassification"];
     let onboardingOutstanding = 0;
     let offboardingIncomplete = 0;
+    let onLeave = 0;
+    let functionGaps = 0;
+    const at = nowIso();
     for (const e of all) {
       byState[e.state] += 1;
       byClassification[e.classification] += 1;
@@ -369,10 +536,15 @@ export const mockWorkforceService: WorkforceService = {
         onboardingOutstanding += 1;
       }
       if (incompleteOffboardingFor(e.id).length > 0) offboardingIncomplete += 1;
+      if (e.state === "active" && currentLeave(e, at)) onLeave += 1;
+      const member = e.membershipId ? memberIn(e.organizationId, e.membershipId) : undefined;
+      functionGaps += functionGapsFor(
+        e, member?.status === "active" ? member.permissions : undefined,
+      ).length;
     }
     return {
       total: all.length, byState, byClassification,
-      onboardingOutstanding, offboardingIncomplete,
+      onboardingOutstanding, offboardingIncomplete, onLeave, functionGaps,
     };
   },
 
@@ -391,6 +563,11 @@ export const mockWorkforceService: WorkforceService = {
     });
     if (existing) throw new DuplicateEngagementError(existing.id);
 
+    // A start date with no basis is refused rather than guessed. The default a
+    // caller would get wrong is the dangerous one — a migrated carrier's 2019
+    // date silently recorded as something Antcolos watched happen.
+    if (input.startDate && !input.startDateBasis) throw new MissingStartDateBasisError();
+
     const at = nowIso();
     const state: WorkforceEngagementState = input.startOnboarding ? "onboarding" : "prospective";
     const manager = input.managerMembershipId
@@ -406,6 +583,24 @@ export const mockWorkforceService: WorkforceService = {
       state,
       positionTitle: input.positionTitle,
       startDate: input.startDate,
+      startDateProvenance: input.startDate && input.startDateBasis
+        ? {
+          value: input.startDate,
+          basis: input.startDateBasis,
+          recordedAt: at,
+          recordedBy: ctx.actor,
+          note: input.startDateNote,
+        }
+        : undefined,
+      // Recorded, never granted. Nothing between this line and the permission
+      // system, and `AssignFunctionInput` carries no key that could be.
+      functions: (input.functions ?? []).map((functionKey) => ({
+        functionKey,
+        assignedByMembershipId: ctx.membershipId,
+        assignedByName: ctx.actor.displayNameSnapshot,
+        assignedAt: at,
+      })),
+      leave: [],
       managerMembershipId: manager?.membershipId,
       managerName: manager?.displayName,
       source: input.source,
@@ -523,9 +718,36 @@ export const mockWorkforceService: WorkforceService = {
     const checklist = buildOnboardingChecklist(engagement);
     if (!checklist.readyToActivate) throw new OnboardingIncompleteError(checklist.outstanding);
 
+    /**
+     * ███ THE START DATE IS NOT TOUCHED IF IT ALREADY EXISTS ███
+     *
+     * A carrier migrating onto Antcolos records that somebody has driven for
+     * them since 2019, and then activates the engagement today. If activation
+     * wrote today's date — or kept the date but relabelled its basis as
+     * something Antcolos observed — the carrier's own assertion would silently
+     * acquire an authority nobody gave it, and a twenty-year workforce would
+     * read as though it were hired the week they signed up.
+     *
+     * So: an existing date and its provenance survive activation byte for byte.
+     * Only an EMPTY date is filled, and only then is the basis `observed` —
+     * which is true, because that is exactly what just happened here.
+     */
+    const observedStart = engagement.startDate === undefined;
+    const startedAt = engagement.startDate ?? nowIso();
     return project(transition(ctx, engagement, "active",
       `${engagement.person.displayName} started as ${engagement.positionTitle}`,
-      { startDate: engagement.startDate ?? nowIso() }));
+      observedStart
+        ? {
+          startDate: startedAt,
+          startDateProvenance: {
+            value: startedAt,
+            basis: "observed_by_antcolos",
+            recordedAt: startedAt,
+            recordedBy: ctx.actor,
+            note: "Recorded when the engagement was activated in Antcolos.",
+          },
+        }
+        : {}));
   },
 
   async suspend(ctx, engagementId, input: SuspendInput) {
@@ -634,6 +856,302 @@ export const mockWorkforceService: WorkforceService = {
     });
     audit(ctx, "workforce.contract_linked", next,
       `Linked contract changed to ${input.contractId}`, "workforce.contract_linked");
+    return project(next);
+  },
+
+  /* ------------------------------------------------------------------------ */
+  /* When it began                                                             */
+  /* ------------------------------------------------------------------------ */
+
+  async recordStartDate(ctx, engagementId, input: RecordStartDateInput) {
+    await wait();
+    required(ctx, "workforce:view", "workforce:manage");
+    const engagement = own(ctx, engagementId);
+
+    const at = nowIso();
+    const previous = engagement.startDateProvenance;
+    const next = amendEngagement(engagementId, {
+      startDate: input.startDate,
+      startDateProvenance: {
+        value: input.startDate,
+        basis: input.basis,
+        recordedAt: at,
+        recordedBy: ctx.actor,
+        note: input.note,
+        assertionRef: input.assertionRef,
+      },
+    }, {
+      kind: "start_date_recorded",
+      summary: `Start date recorded as ${input.startDate.slice(0, 10)} `
+        + `(${WORKFORCE_START_BASIS_LABEL[input.basis].toLowerCase()})`,
+      // The PREVIOUS value goes in the history line, because correcting a start
+      // date is the change somebody will later need to see the shape of. The
+      // record holds one date; the history holds every date it ever held.
+      detail: previous
+        ? `Previously ${previous.value.slice(0, 10)} `
+          + `(${WORKFORCE_START_BASIS_LABEL[previous.basis].toLowerCase()}). ${input.note ?? ""}`.trim()
+        : input.note,
+      actor: ctx.actor,
+    });
+    audit(ctx, "workforce.start_date_recorded", next,
+      `Start date recorded as ${input.startDate.slice(0, 10)}, `
+      + `${WORKFORCE_START_BASIS_LABEL[input.basis].toLowerCase()}`,
+      "workforce.start_date_recorded");
+    return project(next);
+  },
+
+  /* ------------------------------------------------------------------------ */
+  /* Functions — recorded, never granted                                       */
+  /* ------------------------------------------------------------------------ */
+
+  async assignFunction(ctx, engagementId, input: AssignFunctionInput) {
+    await wait();
+    // `workforce:manage` and nothing else. Deliberately NOT `members:manage`:
+    // asking for it would be this module quietly agreeing that recording what
+    // somebody does is the same kind of act as changing what they may do.
+    required(ctx, "workforce:view", "workforce:manage");
+    const engagement = own(ctx, engagementId);
+
+    if (engagement.functions.some((f) => f.functionKey === input.functionKey)) {
+      return project(engagement);
+    }
+
+    const label = RESPONSIBILITY_FUNCTION_LABEL[input.functionKey];
+    const assignment: WorkforceFunctionAssignment = {
+      functionKey: input.functionKey,
+      assignedByMembershipId: ctx.membershipId,
+      assignedByName: ctx.actor.displayNameSnapshot,
+      assignedAt: nowIso(),
+      note: input.note,
+    };
+    const next = amendEngagement(engagementId, {
+      functions: [...engagement.functions, assignment],
+    }, {
+      kind: "function_assigned",
+      summary: `${label} assigned to ${engagement.person.displayName}`,
+      // Said on the record itself, because it is the assumption every reader
+      // brings to an HR screen that lists "Dispatch" beside somebody's name.
+      detail: "Recording what somebody does. It has granted no permission, created no membership "
+        + "and changed no access. Where their seat cannot do this work, the engagement says so "
+        + "and points at Access.",
+      actor: ctx.actor,
+    });
+    audit(ctx, "workforce.function_assigned", next,
+      `${label} assigned to ${engagement.person.displayName}. This granted no permission.`,
+      "workforce.function_assigned");
+    return project(next);
+  },
+
+  async removeFunction(ctx, engagementId, input: RemoveFunctionInput) {
+    await wait();
+    required(ctx, "workforce:view", "workforce:manage");
+    const engagement = own(ctx, engagementId);
+    if (!input.reason.trim()) {
+      throw new Error("Removing a function needs a reason. Taking a responsibility off somebody is not a typo fix.");
+    }
+    if (!engagement.functions.some((f) => f.functionKey === input.functionKey)) {
+      return project(engagement);
+    }
+
+    const label = RESPONSIBILITY_FUNCTION_LABEL[input.functionKey];
+    const next = amendEngagement(engagementId, {
+      functions: engagement.functions.filter((f) => f.functionKey !== input.functionKey),
+    }, {
+      kind: "function_removed",
+      summary: `${label} removed from ${engagement.person.displayName}`,
+      // Symmetrical to the line above, and worth saying for the same reason:
+      // somebody who stops dispatching keeps every key they were ever granted
+      // until Access takes them away.
+      detail: `${input.reason.trim()} — this revoked no permission. If their access should narrow, `
+        + "that is Access's to do.",
+      actor: ctx.actor,
+    });
+    audit(ctx, "workforce.function_removed", next,
+      `${label} removed from ${engagement.person.displayName}: ${input.reason.trim()}. `
+      + "This revoked no permission.",
+      "workforce.function_removed");
+    return project(next);
+  },
+
+  /* ------------------------------------------------------------------------ */
+  /* Leave                                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  async recordLeave(ctx, engagementId, input: RecordLeaveInput) {
+    await wait();
+    required(ctx, "workforce:view", "workforce:manage");
+    const engagement = own(ctx, engagementId);
+
+    // Leave is a fact about somebody who works here. Recording it against a
+    // candidate or somebody who has left would be recording a holiday for
+    // somebody with no job, and the state it implies is already the answer.
+    if (engagement.state !== "active") {
+      throw new Error(
+        `Leave can only be recorded for an active engagement. This one is `
+        + `${WORKFORCE_STATE_LABEL[engagement.state].toLowerCase()}.`,
+      );
+    }
+    if (input.expectedReturnDate && input.expectedReturnDate < input.startDate) {
+      throw new Error("The expected return is before the leave starts.");
+    }
+    if (currentLeave(engagement, nowIso())) {
+      throw new Error(
+        "This person is already recorded as away. End the current leave before recording another, "
+        + "so the history says what actually happened rather than two overlapping guesses.",
+      );
+    }
+
+    const at = nowIso();
+    const approver = input.approvedByMembershipId
+      ? memberIn(ctx.organizationId, input.approvedByMembershipId)
+      : undefined;
+    if (input.approvedByMembershipId && !approver) {
+      throw new NotFoundError(`Membership ${input.approvedByMembershipId}`);
+    }
+
+    const record: WorkforceLeaveRecord = {
+      id: nextLeaveId(),
+      reason: input.reason,
+      status: input.startDate > at ? "planned" : "current",
+      startDate: input.startDate,
+      expectedReturnDate: input.expectedReturnDate,
+      recordedByMembershipId: ctx.membershipId,
+      recordedByName: ctx.actor.displayNameSnapshot,
+      recordedAt: at,
+      approvedByMembershipId: approver?.membershipId,
+      approvedByName: approver?.displayName,
+      note: input.note,
+    };
+
+    const label = WORKFORCE_LEAVE_REASON_LABEL[input.reason].toLowerCase();
+    const next = amendEngagement(engagementId, {
+      leave: [...engagement.leave, record],
+      // ★ THE STATE DOES NOT MOVE ★
+      // They are still active. Leave is a fact about an active engagement, not
+      // a lifecycle state, and turning it into one would make "away until the
+      // 14th" indistinguishable from "we have stood them down".
+    }, {
+      kind: "leave_recorded",
+      summary: `${engagement.person.displayName} away (${label}) from ${input.startDate.slice(0, 10)}`
+        + `${input.expectedReturnDate ? ` until ${input.expectedReturnDate.slice(0, 10)}` : ""}`,
+      detail: approver
+        ? `Approved by ${approver.displayName}. The engagement stays active.`
+        : "The engagement stays active. Nobody is recorded as approving it.",
+      actor: ctx.actor,
+    });
+
+    // ★ THE ROUTING SIGNAL IS NOT WRITTEN HERE ★
+    // Workforce holds no routing flag. Availability lives on the membership
+    // profile, the responsibility engine's candidate gate reads it through
+    // `takesWork`, and the way to change it is the membership directory's own
+    // command — exactly as offboarding calls `setMembershipStatus` rather than
+    // writing a second copy of a seat's state.
+    //
+    // Only when the leave is CURRENT: marking somebody unavailable for a
+    // holiday three weeks out would take them off the board today.
+    if (record.status === "current" && engagement.membershipId) {
+      setMembershipAvailability(engagement.membershipId, "on_leave");
+    }
+
+    audit(ctx, "workforce.leave_recorded", next,
+      `Leave recorded for ${engagement.person.displayName} (${label}) from `
+      + `${input.startDate.slice(0, 10)}. The engagement stays active.`,
+      "workforce.leave_recorded");
+    return project(next);
+  },
+
+  async endLeave(ctx, engagementId, input: EndLeaveInput) {
+    await wait();
+    required(ctx, "workforce:view", "workforce:manage");
+    const engagement = own(ctx, engagementId);
+
+    const record = engagement.leave.find(
+      (l) => l.id === input.leaveId && l.status !== "ended" && l.status !== "cancelled",
+    );
+    if (!record) throw new LeaveNotFoundError(input.leaveId);
+
+    const at = nowIso();
+    const returned = input.actualReturnDate ?? at;
+    const next = amendEngagement(engagementId, {
+      leave: engagement.leave.map((l) => (l.id === record.id
+        ? {
+          ...l,
+          status: "ended" as const,
+          // The ACTUAL return, never the expected one. A person who came back
+          // four days late came back four days late, and a record that quietly
+          // wrote the planned date would erase the only fact worth having.
+          actualReturnDate: returned,
+          endedByMembershipId: ctx.membershipId,
+          endedByName: ctx.actor.displayNameSnapshot,
+          endedAt: at,
+          note: input.note ?? l.note,
+        }
+        : l)),
+    }, {
+      kind: "leave_ended",
+      summary: `${engagement.person.displayName} returned on ${returned.slice(0, 10)}`,
+      detail: record.expectedReturnDate && returned.slice(0, 10) !== record.expectedReturnDate.slice(0, 10)
+        ? `Expected back on ${record.expectedReturnDate.slice(0, 10)}.`
+        : undefined,
+      actor: ctx.actor,
+    });
+
+    // ★ ELIGIBLE TO BE CONSIDERED. NOT DECLARED READY. ★
+    // `available` on the membership profile means the responsibility engine may
+    // consider them again — nothing more. It is not a statement that a load may
+    // be assigned, that a truck is roadworthy or that a driver is qualified and
+    // has hours: Dispatch, Maintenance, Safety and the ELD own those four
+    // answers, none of them reads this field, and returning from leave has told
+    // none of them anything.
+    if (engagement.membershipId) {
+      setMembershipAvailability(engagement.membershipId, "available");
+    }
+
+    audit(ctx, "workforce.leave_ended", next,
+      `${engagement.person.displayName} returned from leave on ${returned.slice(0, 10)}. `
+      + "They are eligible to be considered for work again; this declares no dispatch readiness.",
+      "workforce.leave_ended");
+    return project(next);
+  },
+
+  async cancelLeave(ctx, engagementId, input: CancelLeaveInput) {
+    await wait();
+    required(ctx, "workforce:view", "workforce:manage");
+    const engagement = own(ctx, engagementId);
+    if (!input.reason.trim()) throw new Error("Cancelling leave needs a reason.");
+
+    const record = engagement.leave.find(
+      (l) => l.id === input.leaveId && l.status !== "ended" && l.status !== "cancelled",
+    );
+    if (!record) throw new LeaveNotFoundError(input.leaveId);
+
+    const wasCurrent = isLeaveCurrent(record, nowIso());
+    const next = amendEngagement(engagementId, {
+      leave: engagement.leave.map((l) => (l.id === record.id
+        ? {
+          ...l,
+          status: "cancelled" as const,
+          endedByMembershipId: ctx.membershipId,
+          endedByName: ctx.actor.displayNameSnapshot,
+          endedAt: nowIso(),
+        }
+        : l)),
+    }, {
+      kind: "leave_cancelled",
+      summary: `Leave from ${record.startDate.slice(0, 10)} cancelled`,
+      // Cancelled and ended are kept apart: one of them means the leave never
+      // happened, and a reader a year later needs to be able to tell which.
+      detail: `${input.reason.trim()} — cancelled, which is not the same as returned from.`,
+      actor: ctx.actor,
+    });
+
+    if (wasCurrent && engagement.membershipId) {
+      setMembershipAvailability(engagement.membershipId, "available");
+    }
+
+    audit(ctx, "workforce.leave_cancelled", next,
+      `Leave from ${record.startDate.slice(0, 10)} cancelled: ${input.reason.trim()}`,
+      "workforce.leave_cancelled");
     return project(next);
   },
 

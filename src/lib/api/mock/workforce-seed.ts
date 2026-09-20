@@ -1,6 +1,7 @@
 import type {
-  ActorRef, WorkforceClassification, WorkforceEngagement,
-  WorkforceEngagementState,
+  ActorRef, ResponsibilityFunction, WorkforceClassification,
+  WorkforceEngagement, WorkforceEngagementState, WorkforceLeaveRecord,
+  WorkforceStartDateBasis,
 } from "@/types";
 import { daysFromNow } from "./time";
 
@@ -60,7 +61,23 @@ interface SeedRow {
   managerMembershipId?: string;
   managerName?: string;
   sourceLabel: string;
+  /** Organizational functions. Recorded facts, not permissions. */
+  functions?: ResponsibilityFunction[];
+  /**
+   * What kind of fact the start date is.
+   *
+   * Left ABSENT on most rows on purpose. Those engagements pre-date the
+   * provenance field, and "nobody recorded where this date came from" is the
+   * truth about them — filling it in would manufacture a provenance and hide
+   * the migration case the product has to handle.
+   */
+  startBasis?: WorkforceStartDateBasis;
+  startNote?: string;
+  /** Built from the start date, so a fixture's leave lands relative to it. */
+  leave?: (startDate: string) => WorkforceLeaveRecord[];
 }
+
+const HR_ACTOR = { membershipId: "mem_northline_safety", name: "Tess Ferraro" };
 
 const ROWS: SeedRow[] = [
   {
@@ -76,6 +93,10 @@ const ROWS: SeedRow[] = [
     managerMembershipId: "mem_northline_safety",
     managerName: "Tess Ferraro",
     sourceLabel: "From the existing driver relationship with Northline Freight",
+    // A driver who drives. One function, no seat, and NO function gap: a driver
+    // who never opens the app still drives, and an item telling somebody to fix
+    // that would be an item nothing needs doing about.
+    functions: ["driver_action"],
   },
   {
     id: "weng_nl_marcus",
@@ -132,6 +153,13 @@ const ROWS: SeedRow[] = [
     positionTitle: "Safety & compliance lead",
     startedDaysAgo: 420,
     sourceLabel: "Entered by hand when the workforce record was created",
+    // ★ THREE FUNCTIONS, ONE PERSON ★
+    // The small-carrier case the single-valued field could not hold: she runs
+    // safety, files the compliance paperwork and handles the documents. Her
+    // seat carries `compliance:view` and `documents:view`, so none of these
+    // raises a gap — which is the point. Gaps are for mismatches, not for
+    // everybody who does more than one thing.
+    functions: ["safety", "compliance", "documents"],
   },
   {
     // ★ EMPLOYED, NO ACCOUNT ★
@@ -148,6 +176,29 @@ const ROWS: SeedRow[] = [
     managerMembershipId: "mem_northline_safety",
     managerName: "Tess Ferraro",
     sourceLabel: "Entered by hand; this person has no Antcolos account",
+    // ★ A FUNCTION GAP THAT IS REAL ★
+    // Northline says Priya does the maintenance coordination. She has no
+    // Antcolos account at all, so she cannot open the screen that work happens
+    // on. The engagement says so and points at an invitation; it has not
+    // created one, and recording the function granted her nothing.
+    functions: ["maintenance"],
+    // ★ AWAY, AND STILL ACTIVE ★
+    // The distinction the whole leave model exists for: she is on the roster,
+    // her engagement is `active`, and work should not be routed to her this
+    // week. Nothing here says a truck is unavailable.
+    leave: () => [{
+      id: "wlv_nl_priya_1",
+      reason: "family",
+      status: "current",
+      startDate: daysFromNow(-6),
+      expectedReturnDate: daysFromNow(8),
+      recordedByMembershipId: HR_ACTOR.membershipId,
+      recordedByName: HR_ACTOR.name,
+      recordedAt: daysFromNow(-9),
+      approvedByMembershipId: HR_ACTOR.membershipId,
+      approvedByName: HR_ACTOR.name,
+      note: "Away for two weeks.",
+    }],
   },
   {
     // ★ AN EXISTING DRIVER, NOT YET CONNECTED TO AN ACCOUNT ★
@@ -171,6 +222,15 @@ const ROWS: SeedRow[] = [
     positionTitle: "Driver",
     startedDaysAgo: 640,
     sourceLabel: "From the existing driver relationship with Northline Freight",
+    functions: ["driver_action"],
+    // ★ THE ONE FIXTURE THAT MUST SURVIVE EVERYTHING ★
+    // Northline STATES this person has driven for them since well before they
+    // were on Antcolos. Antcolos saw none of it. Activating the engagement,
+    // connecting an account and accepting an invitation must all leave this
+    // date and this basis exactly as they are — asserted by the organization,
+    // never relabelled as something Antcolos observed.
+    startBasis: "asserted_by_organization",
+    startNote: "Northline's own records. Antcolos did not observe this and holds no evidence of it.",
   },
 ];
 
@@ -228,10 +288,27 @@ export function seedWorkforce(): WorkforceEngagement[] {
       state: row.state,
       positionTitle: row.positionTitle,
       startDate,
+      startDateProvenance: row.startBasis
+        ? {
+          value: startDate,
+          basis: row.startBasis,
+          // When the CLAIM was recorded, which is not when it was true.
+          recordedAt: createdAt,
+          recordedBy: SYSTEM,
+          note: row.startNote,
+        }
+        : undefined,
       endDate,
       managerMembershipId: row.managerMembershipId,
       managerName: row.managerName,
       membershipId: row.membershipId,
+      functions: (row.functions ?? []).map((functionKey) => ({
+        functionKey,
+        assignedByMembershipId: "system",
+        assignedByName: "Antcolos",
+        assignedAt: createdAt,
+      })),
+      leave: row.leave?.(startDate) ?? [],
       carrierRelationshipId: row.driverProfileId
         ? `deng_${row.driverProfileId}_${row.organizationId}`
         : undefined,
