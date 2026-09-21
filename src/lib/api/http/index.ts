@@ -453,6 +453,36 @@ export const httpServices: AntcolosServices = {
    * constraint on `sourceRef`, so a retried job cannot post the same load twice
    * and inflate somebody's record.
    */
+  /**
+   * Factoring.
+   *
+   * ███ NO FACTORING COMPANY HAS AUTHORIZED ANTCOLOS ███ Implementing this
+   * adapter is not enough on its own: a live check needs the provider's own
+   * authorization, held on the SERVER and never handed to a browser. The
+   * backend also owes encryption at rest for credit limits and rejection
+   * reasons, append-only storage of results, server-side enforcement of both
+   * the permissions and the carrier boundary, audit retention for overrides,
+   * and provider-specific rate limiting.
+   */
+  factoring: {
+    connection: notImplemented("factoring.connection"),
+    connect: notImplemented("factoring.connect"),
+    disconnect: notImplemented("factoring.disconnect"),
+    policy: notImplemented("factoring.policy"),
+    setPolicy: notImplemented("factoring.setPolicy"),
+    status: notImplemented("factoring.status"),
+    statuses: notImplemented("factoring.statuses"),
+    history: notImplemented("factoring.history"),
+    check: notImplemented("factoring.check"),
+    fallbackPrefill: notImplemented("factoring.fallbackPrefill"),
+    recordResult: notImplemented("factoring.recordResult"),
+    evaluateBooking: notImplemented("factoring.evaluateBooking"),
+    override: notImplemented("factoring.override"),
+    previewImport: notImplemented("factoring.previewImport"),
+    commitImport: notImplemented("factoring.commitImport"),
+    importBatches: notImplemented("factoring.importBatches"),
+    importRows: notImplemented("factoring.importRows"),
+  },
   profile: {
     initialize: notImplemented("profile.initialize"),
     getOwn: notImplemented("profile.getOwn"),

@@ -1,4 +1,5 @@
 import type { DriverReviewStatus } from "./driver-review";
+import type { FactoringStatusView } from "./factoring";
 import type { Cents, IsoDateTime } from "./common";
 import type { BrokerPolicyEvaluation } from "./broker-policy";
 import type { EquipmentType } from "./load";
@@ -650,6 +651,20 @@ export interface MatchWithListing {
   driver?: MatchDriverState;
   /** Present when a draft covers this match. */
   draftId?: string;
+  /**
+   * Whether the CARRIER ON THIS MATCH's factor will fund this broker.
+   *
+   * Carried as DATA on the row, for the same reason `driver` is: a card that
+   * asked a service mid-render would keep showing a two-minute-old answer,
+   * because its props had not changed. It is resolved against
+   * `match.carrierOrganizationId` — never against whoever is looking — so a
+   * dispatch workspace covering two carriers gets two different answers about
+   * the same broker on the same screen, which is the truth.
+   *
+   * Absent when the viewer may not see factoring, or when the listing carries
+   * no broker MC to ask about. Absent is never "approved".
+   */
+  factoring?: FactoringStatusView;
 }
 
 /* -------------------------------------------------------------------------- */

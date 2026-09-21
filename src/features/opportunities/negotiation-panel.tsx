@@ -15,6 +15,7 @@ import {
   acceptOnTheTable, recordBrokerRound, recordOurOffer, sampleBrokerReply, walkAway,
 } from "@/lib/api/mock/negotiation";
 import { bookNegotiation, canBook, recordDriverConsent } from "@/lib/api/mock/booking";
+import { BookingFactoringPanel } from "@/features/factoring/booking-factoring-panel";
 import { InfoTip } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +120,8 @@ export function NegotiationPanel({
                   return out.status === "ok" ? { status: "ok" } : { status: "blocked" };
                 })}
               bookCheck={ctx ? canBook(summary.negotiation.negotiationId, ctx) : undefined}
+              ctx={ctx}
+              onFactoringOverridden={onChanged}
               onConsent={(answer) =>
                 void act(() => recordDriverConsent(summary.booking!.bookingId, answer, ctx!))}
             />
@@ -135,7 +138,7 @@ type BookCheckLike = ReturnType<typeof canBook>;
 
 function NegotiationRow({
   summary, booking, busy, onCounter, onTheirReply, onSampleReply, onAccept,
-  onWalkAway, onBook, bookCheck, onConsent, rateConStatus,
+  onWalkAway, onBook, bookCheck, onConsent, rateConStatus, ctx, onFactoringOverridden,
 }: {
   summary: NegotiationSummary;
   booking?: BookingRecord;
@@ -155,6 +158,9 @@ function NegotiationRow({
   onBook: () => void;
   bookCheck?: BookCheckLike;
   onConsent: (answer: "accepted" | "declined") => void;
+  ctx: MtLoopContext | null;
+  /** Re-reads the gate after an authorized override is recorded. */
+  onFactoringOverridden: () => void;
 }) {
   const n = summary.negotiation;
   const [open, setOpen] = useState(n.status === "waiting_on_you" || n.status === "agreed");
@@ -368,6 +374,8 @@ function NegotiationRow({
         <BookConfirm
           check={bookCheck}
           busy={busy}
+          ctx={ctx}
+          onFactoringOverridden={onFactoringOverridden}
           onCancel={() => setForm("none")}
           onConfirm={() => { onBook(); setForm("none"); }}
         />
@@ -452,14 +460,32 @@ function Reason({
  * cannot promise something different from what happens.
  */
 function BookConfirm({
-  check, busy, onCancel, onConfirm,
+  check, busy, ctx, onFactoringOverridden, onCancel, onConfirm,
 }: {
   check?: BookCheckLike;
   busy: boolean;
+  ctx: MtLoopContext | null;
+  onFactoringOverridden: () => void;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const [acknowledged, setAcknowledged] = useState(false);
+
+  /*
+   * The factoring panel appears in BOTH branches below, and that is deliberate.
+   * A dispatcher about to commit a truck needs to see which factor answered and
+   * how fresh it is even when nothing is blocking — a screen that mentioned
+   * factoring only when it went wrong would teach them to read silence as
+   * approval.
+   */
+  const factoring = check?.factoring && ctx ? (
+    <BookingFactoringPanel
+      gate={check.factoring}
+      ctx={ctx}
+      busy={busy}
+      onOverridden={onFactoringOverridden}
+    />
+  ) : null;
 
   if (!check || !check.ok || !check.preview) {
     return (
@@ -470,6 +496,7 @@ function BookConfirm({
             <li key={b.kind} className="text-[0.75rem] leading-relaxed text-fg-muted">{b.detail}</li>
           ))}
         </ul>
+        {factoring}
         <Button variant="ghost" size="sm" className="mt-2" onClick={onCancel}>Close</Button>
       </div>
     );
@@ -534,6 +561,7 @@ function BookConfirm({
         ) : null}
         <li>{p.brokerName} is written on the load as given. It is not linked to a saved broker profile.</li>
       </ul>
+      {factoring}
       <div className="mt-2 flex flex-wrap gap-2">
         <Button
           variant="primary"

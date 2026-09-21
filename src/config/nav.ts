@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Briefcase, Building2, CalendarClock, ClipboardList, Container, FileBadge,
   FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
-  Inbox, Layers, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
+  Inbox, Landmark, Layers, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
   Share2,
   ReceiptText, Route, Satellite, ScrollText, Settings2, Shield, ShieldCheck,
   TriangleAlert, Truck, UserCircle, UserPlus, Users, UsersRound, Wrench,
@@ -166,6 +166,10 @@ export const SETTINGS_NAV: NavSection[] = [
       { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:create"] },
       { label: "Roles and permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
       { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["integrations:view"] },
+      // Connection and policy only. A dispatcher never comes here to work a
+      // load — the factoring answer lives on the Load Search result and the
+      // Opportunity, which is where the decision is actually made.
+      { label: "Factoring", href: "/settings/factoring", icon: Landmark, requires: ["factoring:view"] },
       // What the ranking learns from, and what it never touches. Not a setting —
       // there is nothing on the page to change — but it belongs here rather than
       // beside the ranking sliders, because it is an account of what happens to

@@ -14,6 +14,8 @@ import { effectiveVisibility, redact, sendsAnyMoney } from "./driver-visibility"
 import type { FullOpportunityFacts, RedactedFacts } from "./driver-visibility";
 import { recordDriverAnswer } from "./driver-workflow-adapter";
 import { truckContextFrom } from "./truck-registry";
+import { factoringStatusSync, policyForSync } from "./factoring-registry";
+import { driverFactoringLabel, type DriverFactoringLabel } from "@/lib/factoring";
 // The shared simulated round trip. A seeder can suppress it; a person never does.
 import { sleep } from "./latency";
 
@@ -191,6 +193,35 @@ export function driverGate(matchId: string, ctx: MtLoopContext): DriverGate {
   }
 }
 
+/**
+ * What this carrier's factoring policy says about putting THIS load in front of
+ * a driver, and the sentence that goes with it.
+ *
+ * Read against the carrier on the match. Returns nothing when the viewer may
+ * not see factoring or the listing carries no broker MC — and "nothing" is a
+ * pass, not an approval: the payload simply carries no factoring claim, which
+ * is the honest state when nobody has asked.
+ */
+function factoringLabelFor(
+  row: MatchWithListing,
+  ctx: MtLoopContext,
+): DriverFactoringLabel | undefined {
+  if (!ctx.permissions.has("factoring:view")) return undefined;
+  const carrierOrganizationId = row.match.carrierOrganizationId;
+  try {
+    const status = row.factoring ?? factoringStatusSync(ctx, {
+      carrierOrganizationId,
+      brokerNameObserved: row.listing.broker.name,
+      brokerMcNumber: row.listing.broker.mcNumber,
+      listingId: row.listing.listingId,
+      dispatchCycleId: row.match.dispatchCycleId,
+    });
+    return driverFactoringLabel(status, policyForSync(carrierOrganizationId));
+  } catch {
+    return undefined;
+  }
+}
+
 function lastComment(review: DriverReview): string | undefined {
   return [...review.decisions].reverse().find((d) => d.comment)?.comment;
 }
@@ -214,7 +245,15 @@ export type ReviewOutcome =
   | { status: "already_sent"; review: DriverReview }
   | { status: "needs_reason" }
   | { status: "closed" }
-  | { status: "undeliverable"; reason: string };
+  | { status: "undeliverable"; reason: string }
+  /**
+   * The carrier forbids putting unapproved freight in front of a driver.
+   *
+   * Its own outcome rather than a generic refusal, because it is not a
+   * permission problem and telling a dispatcher "you are not allowed" would
+   * send them to an administrator instead of to the factor.
+   */
+  | { status: "factoring_not_approved"; reason: string };
 
 /**
  * Send one opportunity to the driver on that truck.
@@ -254,6 +293,23 @@ export async function sendOpportunityToDriver(
   const driver = driverViewSync(loop.driverProfileId, truckCtx, carrier?.organizationId);
   if (!driver || !carrier) return { status: "not_found" };
 
+  /*
+   * ★ THE CARRIER'S FACTORING POLICY, ENFORCED AT THE SEAM ★
+   *
+   * Read from the carrier on the MATCH, not from the workspace sending it, and
+   * checked here rather than in the dialog — a rule only the UI ran would be a
+   * decoration. A carrier that allows driver review before approval (the
+   * default) passes straight through and the payload carries the honest label
+   * instead.
+   */
+  const factoring = factoringLabelFor(row, ctx);
+  if (factoring && !factoring.mayShareWithDriver) {
+    return {
+      status: "factoring_not_approved",
+      reason: `${carrier.displayName} does not send loads to a driver before factoring has approved them.`,
+    };
+  }
+
   const engagementType: EngagementType = driver.engagementType;
   const visibility = effectiveVisibility(carrier.organizationId, engagementType, ctx);
 
@@ -269,6 +325,7 @@ export async function sendOpportunityToDriver(
     driverProfileId: driver.driverProfileId,
     truckUnit: row.match.truckUnit,
     ...redact(facts, visibility),
+    factoringNote: factoring?.label,
     note: note?.trim() || undefined,
     channel,
     sentAt: nowIso(),
@@ -364,6 +421,14 @@ export interface DriverSendPreview {
   visibility: EffectiveVisibility;
   /** The whole truth, for the dispatcher's own eyes on a phone call. */
   full: FullOpportunityFacts;
+  /**
+   * What the carrier's factoring policy says about sending this one.
+   *
+   * Carried on the preview so the dialog can state it before anybody presses
+   * send, and so a policy that forbids it is visible rather than discovered
+   * when the send is refused.
+   */
+  factoring?: DriverFactoringLabel;
 }
 
 /**
@@ -403,6 +468,7 @@ export function previewForDriver(
     facts: redact(full, visibility),
     visibility,
     full,
+    factoring: factoringLabelFor(row, ctx),
   };
 }
 

@@ -153,6 +153,22 @@ export interface OutgoingOpportunity {
   driverPayEstimateCents?: Cents;
   accessorialTerms?: string;
 
+  /**
+   * What the carrier's policy says about booking this load, in one line.
+   *
+   * ★ A DRIVER IS NEVER TOLD A LOAD IS FUNDED WHEN NOBODY HAS ASKED ★
+   * An opportunity can legitimately go out before factoring has cleared it —
+   * many carriers want the driver's answer first — but it must not READ as
+   * bookable. This carries the honest sentence ("Driver review allowed ·
+   * Booking requires factoring approval") and is absent only where the
+   * carrier's policy does not require factoring at all.
+   *
+   * It never carries a credit limit, a factor's name or a rejection reason:
+   * that is the carrier's banking relationship, and a driver is not a party
+   * to it.
+   */
+  factoringNote?: string;
+
   /** What the dispatcher wants to say about it. */
   note?: string;
   /**

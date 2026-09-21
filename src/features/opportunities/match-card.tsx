@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowRight, Check, Circle, Handshake, Mail, Minus, Star, TriangleAlert,
+  ArrowRight, Check, Circle, Handshake, Landmark, Mail, Minus, Star, TriangleAlert,
   UserCheck, X,
 } from "lucide-react";
 import { useState } from "react";
@@ -13,6 +13,7 @@ import {
   type MatchCheck, type MatchCheckOutcome, type MatchWithListing,
 } from "@/types";
 import { Metric, Tip } from "@/features/mt-loop/tip";
+import { FactoringChip } from "@/features/factoring/factoring-chip";
 import { BrokerPolicyChip } from "@/features/directory/broker-policy-chip";
 import { WorkingPolicyDialog } from "@/features/directory/working-policy-dialog";
 import { cn } from "@/lib/utils";
@@ -32,7 +33,7 @@ import { cn } from "@/lib/utils";
  */
 export function MatchCard({
   row, rank, busy, onShortlist, onDismiss, onRestore, onOpenDraft, onTalkToBroker,
-  askBlockedBecause, onSendToDriver, driverState,
+  askBlockedBecause, onSendToDriver, onCheckFactoring, driverState,
 }: {
   row: MatchWithListing;
   /** 1-based place in the short list. Absent for everything below it. */
@@ -54,6 +55,17 @@ export function MatchCard({
   askBlockedBecause?: string;
   /** Put this load in front of the driver before anybody negotiates it. */
   onSendToDriver?: () => void;
+  /**
+   * Open the carrier's fallback factoring workflow for this load.
+   *
+   * ★ PRESENT ONLY WHERE THERE IS NO AUTOMATIC CHECK ★
+   * With a working automatic connection the status simply appears and this is
+   * absent — a "Check with factoring" button beside a completed result would
+   * imply a manual step that does not exist. Where the carrier has no
+   * authorized API, this is the one contextual button, and it opens the
+   * carrier's own configured workflow rather than pretending to call anybody.
+   */
+  onCheckFactoring?: () => void;
   /**
    * Where the driver review has got to.
    *
@@ -98,6 +110,13 @@ export function MatchCard({
               {listing.destination.city}, {listing.destination.state}
             </span>
             <StatusChip status={match.status} listingStatus={listing.status} />
+            {/*
+              The factoring answer rides on the line the dispatcher is already
+              reading. It is not a stage, a lane or a step — it is an
+              eligibility fact about this broker for this carrier, next to the
+              other eligibility facts.
+            */}
+            {row.factoring ? <FactoringChip status={row.factoring} /> : null}
             <span className="text-[0.75rem] font-normal text-fg-muted">{match.truckUnit}</span>
           </p>
 
@@ -229,6 +248,18 @@ export function MatchCard({
               somewhere else on the page. Each opens its own dialog with the
               load already in it.
             */}
+            {onCheckFactoring ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={onCheckFactoring}
+                data-testid="check-with-factoring"
+              >
+                <Landmark className="size-3.5" aria-hidden />
+                Check with factoring
+              </Button>
+            ) : null}
             {onSendToDriver ? (
               <Button variant="secondary" size="sm" disabled={busy} onClick={onSendToDriver}>
                 <UserCheck className="size-3.5" aria-hidden />

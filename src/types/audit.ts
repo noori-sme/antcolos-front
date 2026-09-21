@@ -97,6 +97,16 @@ export type AuditModule =
    * of event.
    */
   | "referrals"
+  /**
+   * Whether the carrier's factor will fund an invoice on a broker.
+   *
+   * Its own module rather than a corner of `invoices` or `directory`, because
+   * a factoring answer is neither. It is not an invoice — it happens days
+   * before one exists — and it is not a directory fact, because it belongs to
+   * ONE carrier's arrangement with ONE factor and would leak between
+   * competitors the moment it was filed against the global broker profile.
+   */
+  | "factoring"
   | "risk";
 
 /* -------------------------------------------------------------------------- */
@@ -234,6 +244,14 @@ export type AuditAction =
   | "referrals.declined_by_company"
   | "referrals.invitation_started"
   | "referrals.email_delivery_failed"
+  /* Factoring. `factoring.override_recorded` is HIGH VALUE: it is the moment
+     somebody decided to haul freight the carrier's own policy refused, and the
+     reason on it is the only account of why. ------------------------------- */
+  | "factoring.connection_changed"
+  | "factoring.policy_changed"
+  | "factoring.check_recorded"
+  | "factoring.import_committed"
+  | "factoring.override_recorded"
   | "audit.event_corrected"
   | "audit.export_prepared";
 
@@ -272,6 +290,10 @@ export type AuditEntityKind =
   | "risk_case"
   /** One introduction. NEVER the person, the company or the seat it may lead to. */
   | "referral"
+  /** ONE carrier's arrangement with ONE factoring account. Never the provider. */
+  | "factoring_connection"
+  /** ONE answer about ONE broker, for ONE carrier, from ONE factoring account. */
+  | "factoring_check"
   | "audit_event";
 
 export interface AuditEntityRef {

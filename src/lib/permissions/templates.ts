@@ -56,6 +56,13 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // carriers, which equipment, what the agreement allows. They read them and
       // never the money, and cannot issue, sign, amend or end one.
       "contracts:view",
+      // Whether the carrier's factor will fund a broker is a question that
+      // arrives in the middle of searching for a load, so the dispatcher both
+      // sees the answer and can go and get one. They cannot connect the
+      // account, import the factor's list, change the booking policy or
+      // override a block — those are the carrier's, and `factoring:manage` is
+      // carrier-only for that reason.
+      "factoring:view", "factoring:check",
     ],
   },
   {

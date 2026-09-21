@@ -225,6 +225,15 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   // creates one, and the handoff still needs `invitations:create`.
   { key: "referrals:review", label: "Review referrals", description: "See people somebody outside the company introduced, and record whether this company is interested. Never creates a membership, a role, permissions or an employment record.", group: "invitations", sensitive: true, scopeNote: "Only referrals sent to this organization, and only this organization's decision. Recording interest grants the person nothing \u2014 an invitation is still a separate, authorized act." },
 
+  // ---- Factoring ---------------------------------------------------------
+  // Written for a carrier owner: "your factor" is how they say it, and every
+  // description below says what the person will be able to do with the money
+  // side of the business rather than with a screen.
+  { key: "factoring:view", label: "See factoring results", description: "See whether your factor will fund an invoice on a broker, when it was last checked, and any conditions on it.", group: "factoring", financial: true, scopeNote: "Your own organization's results. A dispatch organization holding this sees only the carriers that granted it dispatch authority, and never another carrier's factoring account." },
+  { key: "factoring:check", label: "Run and record factoring checks", description: "Ask your factor about a broker, and write down the answer that comes back by email, portal or phone.", group: "factoring", financial: true, prerequisites: ["factoring:view"], scopeNote: "Recording an answer states what your factor said. It never creates an approval on its own, and every result keeps who recorded it and what the evidence was." },
+  { key: "factoring:manage", label: "Manage the factoring connection", description: "Connect or change the factoring account, import your factor's debtor list, and set the rules about booking unapproved freight.", group: "factoring", financial: true, sensitive: true, orgTypes: ["CARRIER"], prerequisites: ["factoring:view"], scopeNote: "A carrier's own arrangement with its own factor. It is never delegated — a dispatch organization cannot connect, change or import for a carrier, whatever that carrier has granted it." },
+  { key: "factoring:override", label: "Book past a factoring block", description: "Book a load your factor has refused or has not approved, on the record, with a reason. The strongest factoring permission there is.", group: "factoring", financial: true, sensitive: true, prerequisites: ["factoring:view"], scopeNote: "Only where the carrier's own policy permits an override. Every use requires a reason and writes one audit entry that can never be edited or removed." },
+
   // ---- Organization settings ---------------------------------------------
   { key: "organization:manage", label: "Manage organization settings", description: "Edit the organization's details and billing information.", group: "organization", sensitive: true },
   { key: "integrations:view", label: "View integrations", description: "See which outside tools are connected.", group: "organization" },
@@ -265,6 +274,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   claims: "Claims",
   contracts: "Contracts and relationships",
   workforce: "Workforce & HR",
+  factoring: "Factoring",
   members: "Organization members",
   invitations: "Invitations",
   organization: "Organization settings",
@@ -276,7 +286,7 @@ export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "loads", "dispatch", "tracking", "driver_workflow", "drivers", "trucks", "trailers",
   "fleet", "eld", "customers", "documents", "settlements", "invoices", "reports",
   "accounting", "fuel", "compliance", "maintenance", "insurance", "claims",
-  "contracts", "workforce", "members", "invitations", "organization", "audit",
+  "contracts", "workforce", "factoring", "members", "invitations", "organization", "audit",
 ] as const;
 
 /**

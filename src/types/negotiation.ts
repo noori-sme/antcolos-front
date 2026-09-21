@@ -435,6 +435,18 @@ export type BookingBlockKind =
   | "carrier_cannot_haul"
   | "truck_unavailable"
   | "already_booked"
+  /**
+   * The carrier's factor will not fund this broker, or there is no current
+   * answer and the carrier's policy requires one.
+   *
+   * Its own kind rather than folded into `carrier_cannot_haul`, because they
+   * are different problems with different fixes: an authority problem is
+   * permanent until the carrier sorts it out, and a factoring block is often
+   * one phone call away — or an authorized override with a reason. It is also
+   * not `broker_policy`: that one is a company CHOOSING not to work somebody,
+   * and this one is a third party declining to fund the invoice.
+   */
+  | "factoring"
   | "not_permitted"
   /**
    * An active broker working policy, or an unapproved safety hold, stops it.
@@ -461,6 +473,7 @@ export const BOOKING_BLOCK_LABEL: Record<BookingBlockKind, string> = {
   carrier_cannot_haul: "This carrier cannot legally haul",
   truck_unavailable: "This truck is not available",
   already_booked: "This cycle already has a load on it",
+  factoring: "Factoring does not clear this broker",
   not_permitted: "You are not allowed to book",
   broker_policy: "A broker working policy stops this",
   broker_policy_conflict: "This dispatch company will not work this broker",

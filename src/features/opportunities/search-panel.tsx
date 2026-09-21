@@ -1,6 +1,8 @@
 "use client";
 
-import { ArrowRight, Handshake, Radar, RefreshCw, Search, Unplug, UserRound } from "lucide-react";
+import {
+  ArrowRight, Handshake, Landmark, Radar, RefreshCw, Search, Unplug, UserRound,
+} from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +17,9 @@ import {
 } from "@/lib/api/mock/search-session";
 import type { MtLoopContext } from "@/lib/api/mock/mt-loop";
 import { SendToDriverDialog } from "@/features/driver-review/send-to-driver-dialog";
+import { FactoringChip } from "@/features/factoring/factoring-chip";
+import { CheckWithFactoringDialog } from "@/features/factoring/check-with-factoring-dialog";
+import { useAutomaticFactoringChecks } from "@/features/factoring/use-automatic-checks";
 import { TalkToBrokerDialog } from "./talk-to-broker-dialog";
 import { InfoTip, Metric } from "@/features/mt-loop/tip";
 import { cn } from "@/lib/utils";
@@ -49,11 +54,25 @@ export function SearchPanel({
 }) {
   const [talkTo, setTalkTo] = useState<MatchWithListing | null>(null);
   const [sendTo, setSendTo] = useState<string | null>(null);
+  /**
+   * The row whose fallback factoring workflow is open.
+   *
+   * ★ THE CHECK STARTS WHERE THE LOAD IS ★
+   * A dispatcher who has just seen a load is the person who needs its factoring
+   * answer, and sending them to a settings screen to get it is the step this
+   * whole design exists to avoid. Same dialog as the Opportunity list, reading
+   * the same canonical record.
+   */
+  const [checking, setChecking] = useState<MatchWithListing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [asking, setAsking] = useState<"pause" | "close" | null>(null);
   const [reason, setReason] = useState("");
+
+  // The same background sweep the Opportunity list runs. Shared dedupe means
+  // the two surfaces never ask the same factor about the same broker twice.
+  useAutomaticFactoringChecks(top, ctx, onChanged);
 
   async function run(fn: () => Promise<SearchOutcome>, success: string) {
     if (!ctx) return;
@@ -320,7 +339,19 @@ export function SearchPanel({
               ) : null}
               <Metric label="Empty" value={`${row.match.deadheadMiles} mi`} />
               <Metric label="Score" value={String(row.match.score.total)} />
+              {row.factoring ? <FactoringChip status={row.factoring} /> : null}
               <span className="flex-1" />
+              {row.factoring?.offersManualCheck ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="check-with-factoring"
+                  onClick={() => setChecking(row)}
+                >
+                  <Landmark className="size-3.5" aria-hidden />
+                  Check with factoring
+                </Button>
+              ) : null}
               {/*
                 ★ THE DRIVER IS ASKED FROM HERE TOO ★
                 Northline's rule is driver-first, and the first moment a
@@ -340,6 +371,23 @@ export function SearchPanel({
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {checking && ctx ? (
+        <CheckWithFactoringDialog
+          ctx={ctx}
+          subject={{
+            carrierOrganizationId: checking.match.carrierOrganizationId,
+            brokerNameObserved: checking.listing.broker.name,
+            brokerMcNumber: checking.listing.broker.mcNumber,
+            proposedAmountCents: checking.listing.offeredRateCents,
+            dispatchCycleId: checking.match.dispatchCycleId,
+            listingId: checking.listing.listingId,
+            laneLabel: `${checking.listing.origin.city}, ${checking.listing.origin.state} → ${checking.listing.destination.city}, ${checking.listing.destination.state}`,
+          }}
+          onClose={() => setChecking(null)}
+          onRecorded={onChanged}
+        />
       ) : null}
 
       {sendTo ? (

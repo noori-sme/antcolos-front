@@ -9,6 +9,7 @@ import { mockComplianceService } from "./mock/compliance";
 import { mockDocumentsService } from "./mock/documents";
 import { mockImportService } from "./mock/import";
 import { mockDirectoryService, mockHomeService } from "./mock/home";
+import { mockFactoringService } from "./mock/factoring";
 import { mockFuelService, mockIftaService } from "./mock/fuel";
 import { mockFleetService } from "./mock/fleet-operations";
 import { mockEldService } from "./mock/eld";
@@ -54,6 +55,7 @@ const mockServices: AntcolosServices = {
   import: mockImportService,
   referrals: mockReferralsService,
   profile: mockProfileService,
+  factoring: mockFactoringService,
 };
 
 export const services: AntcolosServices =

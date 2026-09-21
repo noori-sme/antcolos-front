@@ -25,6 +25,10 @@ export {
   ProfileInputError, ProfileNotFoundError, UsernameImmutableError,
 } from "./profile";
 export type * from "./import";
+export type * from "./factoring";
+export {
+  FactoringOverrideNotPermittedError, FactoringReasonRequiredError,
+} from "./factoring";
 
 
 
@@ -35,6 +39,7 @@ import type { AuditService } from "./audit";
 import type { RiskService } from "./risk";
 import type { ComplianceService } from "./compliance";
 import type { DirectoryService } from "./directory";
+import type { FactoringService } from "./factoring";
 import type { FuelService, IftaService } from "./fuel";
 import type { FleetService } from "./fleet";
 import type { EldService } from "./eld";
@@ -140,6 +145,16 @@ export interface AntcolosServices {
    * is still the one invitation command.
    */
   referrals: ReferralsService;
+  /**
+   * Whether the carrier's factor will fund an invoice on a broker.
+   *
+   * ███ NOT CONNECTED TO ANY FACTORING COMPANY ███ Every result carries the
+   * source it came from, and `live_api` is reserved: no factor has authorized
+   * Antcolos. It owns no broker identity — an answer attaches to a canonical
+   * Party through a verified MC or to nothing at all — and no load, no booking
+   * and no permission. It can only say what somebody's factor said, and when.
+   */
+  factoring: FactoringService;
   /**
    * The permanent, organization-independent career record.
    *
