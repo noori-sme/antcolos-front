@@ -51,6 +51,7 @@ const ENTITY_ICON: Record<NeedsYouEntityKind, LucideIcon> = {
   workforce_engagement: Briefcase, qualification_record: IdCard, invitation: Mail,
   import_claim: UserSearch,
   referral: UserPlus,
+  broker_policy: ShieldAlert,
 };
 
 /** Severity as a two-letter mark rather than a word. Colour is never the only cue. */

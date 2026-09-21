@@ -14,6 +14,8 @@ import {
 } from "@/types";
 import { Metric, Tip } from "@/features/mt-loop/tip";
 import { FactoringChip } from "@/features/factoring/factoring-chip";
+import { BrokerPolicyChip } from "@/features/directory/broker-policy-chip";
+import { WorkingPolicyDialog } from "@/features/directory/working-policy-dialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -150,6 +152,19 @@ export function MatchCard({
               <span>{listing.sightings.length > 1 ? `${listing.sightings.length} sources` : listing.sourceName}</span>
             </Tip>
           </p>
+
+          {/*
+            ★ THE BROKER WORKING POLICY, WHERE THE DECISION IS ACTUALLY MADE ★
+            A Load Search result and an Opportunity are the two places a broker
+            decision is real, so the policy is shown here and nowhere on the
+            outer board. Compact by default — one badge — with whose policy it
+            is, why, and until when behind "Why?".
+
+            It renders what the MATCH carried. The matching service evaluated it
+            from the canonical record; this asks nothing, so it cannot disagree
+            with what Search decided or with what Booking will decide.
+          */}
+          <BrokerPolicyChip evaluation={match.brokerPolicy} className="mt-1.5" />
 
           {/*
             ★ PROBLEMS AS CHIPS, NOT PARAGRAPHS ★
@@ -360,6 +375,29 @@ export function MatchCard({
               the same way.
             </p>
           </div>
+
+          {/*
+            ★ THE CONTEXTUAL ENTRY POINT ★
+            A dispatcher finds out what a broker is like while they are looking
+            at their freight, so this is where the decision can be taken — with
+            the broker and the carrier already filled in. It opens the SAME
+            dialog and writes the SAME canonical record as the Broker profile
+            and the Broker policies list.
+
+            Present only when the broker resolved to a canonical profile: a
+            policy is written against the company the register confirmed, never
+            against a name off a load board.
+          */}
+          {match.brokerPolicy?.brokerPartyId ? (
+            <div className="sm:col-span-2 border-t border-border pt-2.5">
+              <WorkingPolicyDialog
+                brokerPartyId={match.brokerPolicy.brokerPartyId}
+                brokerName={match.brokerPolicy.brokerNameSnapshot}
+                carrierOrganizationId={match.carrierOrganizationId}
+                scopes={["carrier", "dispatch_organization"]}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </li>
