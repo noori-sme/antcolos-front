@@ -1,7 +1,8 @@
 "use client";
 
 import {
-  Building2, ChevronRight, MapPin, Search, ScanLine, TriangleAlert, UserRound,
+  Building2, ChevronRight, MapPin, Search, ScanLine, ShieldAlert, TriangleAlert,
+  UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -155,14 +156,32 @@ export function DirectoryScreen() {
         title="Directory"
         description="The brokers, shippers and receivers you work with, the places they ship from, and the people who answer the phone."
         actions={
-          <Can permission="customers:resolve">
-            <Button variant="primary" asChild>
-              <Link href="/directory/review">
-                <ScanLine aria-hidden />
-                Review a rate confirmation
-              </Link>
-            </Button>
-          </Can>
+          <>
+            {/*
+              ★ THE CENTRAL ENTRY POINT ★
+              Broker working policies are a daily operating tool, not
+              configuration, so the way in is here in the broker directory
+              rather than buried in Organization Settings. Settings keeps only
+              the authority configuration — who may propose, who may approve,
+              how long a hold lasts.
+            */}
+            <Can permission="customers:view">
+              <Button variant="secondary" asChild>
+                <Link href="/directory/brokers/policies">
+                  <ShieldAlert aria-hidden />
+                  Broker policies
+                </Link>
+              </Button>
+            </Can>
+            <Can permission="customers:resolve">
+              <Button variant="primary" asChild>
+                <Link href="/directory/review">
+                  <ScanLine aria-hidden />
+                  Review a rate confirmation
+                </Link>
+              </Button>
+            </Can>
+          </>
         }
       />
 

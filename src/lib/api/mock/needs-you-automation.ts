@@ -140,6 +140,47 @@ function pair(
  * that no backend behaviour stands behind.
  */
 const PLAYBOOKS: Partial<Record<NeedsYouCategory, Playbook>> = {
+  /* ---- Broker working policy: the one decision a rule must never take --- */
+  /**
+   * ★ WHY THIS IS A ONE-PRESS DECISION AND NOT A HANDOFF ★
+   * Everything that could be worked out already has been: the broker was
+   * resolved to its canonical profile, the scope decided whose policy this is,
+   * and the routing put it in front of the one person entitled to answer. What
+   * is left is a commercial judgement about who a company will work with, which
+   * is exactly the kind of thing the queue exists to stop a rule from taking.
+   *
+   * Pressing either option runs the registry's own command against the
+   * canonical policy — there is no second approval path — so the queue can
+   * never say approved while the Broker policies screen says proposed.
+   */
+  broker_policy_approval: {
+    prework: [
+      "Broker resolved to its profile",
+      "Scope and owner established",
+      "Evidence gathered",
+      "Routed to the owner",
+    ],
+    options: (item) =>
+      pair(
+        item,
+        {
+          label: "Approve the policy",
+          downstream: [
+            "Put the policy into force for this organization",
+            "Apply it in Load Search, the Opportunity and Booking",
+            "Write the decision to the audit ledger",
+          ],
+        },
+        {
+          label: "Reject it",
+          downstream: [
+            "Leave the broker unrestricted",
+            "Keep the proposal and its history for the record",
+          ],
+        },
+      ),
+  },
+
   /* ---- Insurance renewal: the archetype -------------------------------- */
   expiring_policy: {
     prework: [

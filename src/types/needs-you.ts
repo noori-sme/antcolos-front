@@ -219,6 +219,19 @@ export type NeedsYouCategory =
    */
   | "import_claim_unresolved"
 
+  /* ---- Broker Work Policies. Derived from the policy record itself. ---- */
+  /**
+   * An owner has not decided a broker working policy.
+   *
+   * Covers both shapes of the same question: a PROPOSAL, which does nothing at
+   * all until somebody says yes, and a TEMPORARY SAFETY HOLD, which is already
+   * stopping freight and lapses by itself if nobody decides. Routed to the
+   * owner of the organization the policy belongs to — the Carrier Owner for a
+   * carrier policy, the Dispatch Company Owner for a dispatch one — and never
+   * to whoever happened to propose it.
+   */
+  | "broker_policy_approval"
+
   /* ---- Audit & Risk. Derived from open risk cases, never seeded. ---- */
   /** A high-severity risk case somebody has been made responsible for. */
   | "risk_case_assigned"
@@ -292,7 +305,15 @@ export type NeedsYouEntityKind =
   /** One ELD or telematics device. Never the truck it happens to be on. */
   | "eld_device"
   /** One organization's link to a provider. */
-  | "eld_connection";
+  | "eld_connection"
+  /**
+   * One organization's private working policy about one broker.
+   *
+   * NEVER the broker. A policy is a decision this company took; the company it
+   * is about is a canonical Directory record that no policy may write to, and
+   * conflating the two is how a private opinion ends up on a public profile.
+   */
+  | "broker_policy";
 
 export interface NeedsYouEntityRef {
   kind: NeedsYouEntityKind;
@@ -384,6 +405,10 @@ export type NeedsYouActionKind =
   /* ---- Audit & Risk ---- */
   /** Open the case and work it. The queue is never where a case is closed. */
   | "investigate_risk"
+
+  /* ---- Broker Work Policies ---- */
+  /** Read a proposed broker policy, and approve or reject it. */
+  | "review_broker_policy"
 
   /* ---- ELD & Telematics ---- */
   /** Look at a device that has gone quiet or is reporting an error. */
@@ -492,6 +517,7 @@ export const SEVERITY_LABEL: Record<NeedsYouSeverity, string> = {
 };
 
 export const CATEGORY_LABEL: Record<NeedsYouCategory, string> = {
+  broker_policy_approval: "Broker policy to decide",
   invitation_acceptance_incomplete: "Acceptance did not finish",
   referral_review: "Referral to review",
   import_claim_unresolved: "Imported row needs you",

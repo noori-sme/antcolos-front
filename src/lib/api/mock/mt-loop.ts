@@ -834,14 +834,31 @@ function toCard(
     ...facts,
     stage,
     evidence: evidenceFor(cycle),
-    nextAction: nextActionFor(cycle, {
-      // "Is the next thing mine to do?" is a question about the canonical
-      // answer; "has anybody picked it up?" is a question about the claim.
-      isMine,
-      claimedByMe,
-      claimed: Boolean(loop.claimedByMembershipId),
-      responsibleName: responsible?.displayName,
-    }),
+    /*
+     * ★ ONE ACTION, AND ONLY WHERE THE WORK ACTUALLY IS ★
+     * An Opportunity a broker policy has stopped is not a truck problem and
+     * cannot be fixed on the board: the decision belongs to an owner, and the
+     * record belongs to the Opportunity. So the outer card offers exactly one
+     * way through — open the Opportunity — and carries no policy control, no
+     * explanation, no evidence and no approval history of its own.
+     */
+    nextAction: facts.progress.key === "broker_policy_blocked"
+      ? {
+        label: "Review opportunity",
+        href: `/dispatch/trucks/${loop.truckId}`,
+        reason: "A broker working policy is stopping this Opportunity. The policy, "
+          + "who owns it and what it says are inside the Opportunity; approving or "
+          + "lifting it is an owner's decision in Needs You.",
+        requires: ["loads:view"],
+      }
+      : nextActionFor(cycle, {
+        // "Is the next thing mine to do?" is a question about the canonical
+        // answer; "has anybody picked it up?" is a question about the claim.
+        isMine,
+        claimedByMe,
+        claimed: Boolean(loop.claimedByMembershipId),
+        responsibleName: responsible?.displayName,
+      }),
     blockers,
     can: abilitiesFor(loop, ctx, workspace),
   };

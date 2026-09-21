@@ -29,6 +29,8 @@ import {
   AUTHORITY_LABEL, IDENTITY_DESCRIPTION, PROVENANCE_LABEL,
 } from "./directory-labels";
 import { usePartyContext } from "./use-party-context";
+import { WorkingPolicyDialog } from "./working-policy-dialog";
+import { BrokerPolicySection } from "./broker-policy-section";
 
 /**
  * One company's permanent profile.
@@ -64,6 +66,9 @@ export function PartyProfileScreen({ partyId }: { partyId: string }) {
 
   const [view, setView] = useState<PartyProfileView | null | "denied">(null);
   const [tab, setTab] = useState<Tab>("overview");
+  // Setting a broker policy changes the registry, not any React state, so this
+  // is what tells the Working policy section below to look again.
+  const [policyVersion, setPolicyVersion] = useState(0);
   const [loads, setLoads] = useState<Record<string, Load>>({});
   const [busy, setBusy] = useState(false);
 
@@ -162,6 +167,46 @@ export function PartyProfileScreen({ partyId }: { partyId: string }) {
           party.dbaName && party.dbaName !== party.legalName
             ? `Trading as ${party.dbaName}`
             : formatCityState(party.primaryAddress)
+        }
+        actions={
+          /*
+            ★ PROMINENT, ON EVERY BROKER PROFILE ★
+            "Do we work with these people, and on what terms?" is a question a
+            dispatcher asks while looking at the company, so the answer and the
+            control are in the header rather than five tabs down. The same
+            dialog opens from a Load Search result and from an Opportunity, and
+            all three write the one canonical record.
+
+            Only for brokers: a shipper has no MC number, no operating
+            authority and nothing for a working policy to be about.
+          */
+          party.roles.includes("broker") && serviceCtx ? (
+            <WorkingPolicyDialog
+              brokerPartyId={party.partyId}
+              brokerName={party.dbaName ?? party.legalName}
+              /*
+                A carrier writes its own carrier policy from here. A dispatch
+                workspace writes only its OWN organization policy: a
+                carrier-scoped decision belongs to a specific carrier, and the
+                profile screen has no truck and therefore no carrier in view.
+                Guessing one would be the routing mistake this whole feature is
+                built to avoid, so the carrier-scoped control lives where a
+                carrier is actually named — the Load Search result and the
+                Opportunity.
+              */
+              carrierOrganizationId={
+                serviceCtx.workspaceKind === "carrier_organization"
+                  ? serviceCtx.organizationId
+                  : undefined
+              }
+              scopes={
+                serviceCtx.workspaceKind === "carrier_organization"
+                  ? ["carrier"]
+                  : ["dispatch_organization"]
+              }
+              onWritten={() => setPolicyVersion((v) => v + 1)}
+            />
+          ) : undefined
         }
       />
 
@@ -266,6 +311,10 @@ export function PartyProfileScreen({ partyId }: { partyId: string }) {
           </button>
         ))}
       </div>
+
+      {tab === "overview" && party.roles.includes("broker") ? (
+        <BrokerPolicySection brokerPartyId={party.partyId} version={policyVersion} />
+      ) : null}
 
       {tab === "overview" ? (
         <div className="grid gap-4 lg:grid-cols-2">

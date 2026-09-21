@@ -799,6 +799,20 @@ export type MtLoopProgressKey =
   | "asked_brokers"
   /** At least one came back. The ball is with this workspace. */
   | "broker_replied"
+  /**
+   * An Opportunity this truck already has cannot progress: an active broker
+   * working policy is stopping it, and an owner has to decide.
+   *
+   * ★ THE ONLY PLACE A BROKER POLICY APPEARS ON THE OUTER BOARD ★
+   * Never as a control, never on a truck that has no Opportunity yet, and never
+   * with the explanation, the evidence or the approval history attached. Before
+   * a truck has a Load Search result or an Opportunity there is no broker
+   * decision to make, and a policy control on every card would be noise on
+   * every card. The card says the one thing that is true — human action is
+   * required — and the detail lives in the Opportunity and in Needs You where
+   * it can actually be acted on.
+   */
+  | "broker_policy_blocked"
   /** A price is agreed and nothing is booked against it yet. */
   | "price_agreed"
   /** Booked, and the signed rate confirmation has not come back. */

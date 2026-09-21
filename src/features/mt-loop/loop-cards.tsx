@@ -37,6 +37,10 @@ import { cn, useNow } from "@/lib/utils";
 /** The badge tone. Coloured only when the ball is with the person reading. */
 export function progressTone(progress: MtLoopProgress) {
   if (progress.key === "stopped") return "danger" as const;
+  // A blocked Opportunity is not the truck being stopped — the cycle is fine
+  // and the work is not — so it reads as a warning rather than as a halt, and
+  // the card still offers its one way through.
+  if (progress.key === "broker_policy_blocked") return "warning" as const;
   if (progress.key === "rolling") return "success" as const;
   return progress.yourTurn ? ("info" as const) : ("neutral" as const);
 }

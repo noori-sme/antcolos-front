@@ -13,6 +13,7 @@ import { packagesForOrganization, recipientLabel } from "./document-shares";
 import { sessionLoadRef, trackingAuditForLedger } from "./tracking-registry";
 import { dispatchAccessEventsFor } from "./truck-registry";
 import { hoursFromNow } from "./time";
+import { brokerPoliciesOwnedBy } from "./broker-policy-registry";
 
 /**
  * ★ WHERE THE LEDGER READS FROM ★
@@ -448,6 +449,65 @@ const fleetDispatchFeed: ModuleAuditFeed<ServiceContext> = {
   },
 };
 
+/* -------------------------------------------------------------------------- */
+/* Directory — broker working policies                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Who decided this company would not work with that broker, and when.
+ *
+ * ★ A PROJECTION, NOT A SECOND LEDGER ★
+ * The policy keeps its own append-only history, exactly as the settlement trail
+ * and the fuel ledger keep theirs. This reads that history and joins it to
+ * everything else that happened that day; it writes nothing back, and a policy
+ * gains no audit log it did not already have. One history entry produces one
+ * ledger row, forever, because `projectionId` derives the row id from the
+ * entry's own id — which is what makes "an owner-approved exception writes
+ * exactly one audit event" arithmetic rather than a promise.
+ *
+ * ★ WHAT NEVER TRAVELS ★
+ * The private explanation. A policy's reason CATEGORY is on the summary so an
+ * auditor can see what kind of decision this was; the sentence somebody wrote
+ * about a broker stays on the policy, readable only by the organization that
+ * owns it. The ledger is partitioned by organization anyway, but the summary is
+ * written to be safe even where a redacted export is read by somebody else.
+ */
+const brokerPolicyFeed: ModuleAuditFeed<ServiceContext> = {
+  module: "directory",
+  requires: ["customers:view"],
+  mock: false,
+  read(ctx) {
+    if (!has(ctx, "customers:view")) return [];
+    const out: ModuleAuditRecord[] = [];
+    for (const policy of brokerPoliciesOwnedBy(ctx.organizationId)) {
+      for (const entry of policy.history) {
+        out.push({
+          entryId: entry.id,
+          recordId: policy.policyId,
+          action: "directory.party_changed",
+          sourceAction: `broker_policy.${entry.kind}`,
+          occurredAt: entry.at,
+          actor: entry.actor,
+          entity: ref(
+            "party",
+            policy.brokerPartyId,
+            policy.brokerNameSnapshot,
+            `/directory/${policy.brokerPartyId}`,
+          ),
+          relatedEntities: [
+            ref("organization", policy.organizationId, policy.organizationNameSnapshot),
+          ],
+          // The action, the scope and the reason CATEGORY. Never the sentence.
+          summary: entry.note,
+          source: entry.actor.source === "system" ? "system" : "human",
+          outcome: "succeeded",
+        });
+      }
+    }
+    return out;
+  },
+};
+
 export const AUDIT_FEEDS: readonly ModuleAuditFeed<ServiceContext>[] = [
   loadsFeed,
   fuelFeed,
@@ -457,6 +517,7 @@ export const AUDIT_FEEDS: readonly ModuleAuditFeed<ServiceContext>[] = [
   trackingFeed,
   documentSharesFeed,
   fleetDispatchFeed,
+  brokerPolicyFeed,
 ];
 
 /** Reads every feed the caller is entitled to. A feed that throws is skipped

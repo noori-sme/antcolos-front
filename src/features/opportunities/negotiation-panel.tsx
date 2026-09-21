@@ -459,6 +459,8 @@ function BookConfirm({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const [acknowledged, setAcknowledged] = useState(false);
+
   if (!check || !check.ok || !check.preview) {
     return (
       <div className="mt-3 rounded-md border border-st-danger/40 bg-st-danger-bg/50 px-3 py-2.5">
@@ -474,9 +476,41 @@ function BookConfirm({
   }
 
   const p = check.preview;
+  const policy = p.brokerPolicy;
+  const mustAcknowledge = policy?.requiresAcknowledgement === true;
   return (
     <div className="mt-3 rounded-md border border-primary/40 bg-surface px-3 py-2.5">
       <p className="text-[0.8125rem] font-medium text-fg">Book {p.lane} on unit {p.truckUnit}?</p>
+
+      {/*
+        ★ A WARNING IS READ BEFORE THE MONEY IS COMMITTED, NEVER AFTER ★
+        This is the one place a `warning` policy appears at booking, and it
+        never joins the block list: a warning that could refuse a booking would
+        be a hard block that skipped an owner. Where the organization has asked
+        for it, the confirmation insists somebody says they read it — which
+        delays the press and does not forbid it.
+      */}
+      {policy ? (
+        <div className="mt-2 rounded-md border border-st-warning/40 bg-st-warning-bg/40 px-2.5 py-2">
+          <p className="text-[0.75rem] font-medium text-fg">{policy.detail}</p>
+          {policy.evaluation.notices[0]?.explanation ? (
+            <p className="mt-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
+              {policy.evaluation.notices[0].explanation}
+            </p>
+          ) : null}
+          {mustAcknowledge ? (
+            <label className="mt-1.5 flex items-center gap-2 text-[0.75rem] text-fg">
+              <input
+                type="checkbox"
+                checked={acknowledged}
+                onChange={() => setAcknowledged((v) => !v)}
+                className="size-3.5 rounded border-border"
+              />
+              I have read this
+            </label>
+          ) : null}
+        </div>
+      ) : null}
       <ul className="mt-1.5 space-y-0.5 text-[0.75rem] leading-relaxed text-fg-muted">
         <li>A load is created at {money(p.rateCents)} for {p.loadedMiles.toLocaleString()} loaded miles, under {p.carrierName}.</li>
         <li>
@@ -501,7 +535,12 @@ function BookConfirm({
         <li>{p.brokerName} is written on the load as given. It is not linked to a saved broker profile.</li>
       </ul>
       <div className="mt-2 flex flex-wrap gap-2">
-        <Button variant="primary" size="sm" disabled={busy} onClick={onConfirm}>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={busy || (mustAcknowledge && !acknowledged)}
+          onClick={onConfirm}
+        >
           Book it
         </Button>
         <Button variant="ghost" size="sm" onClick={onCancel}>Not yet</Button>
