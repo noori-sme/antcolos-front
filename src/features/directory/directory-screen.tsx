@@ -17,7 +17,10 @@ import type {
   DirectoryListing, Facility, Party, PartyContact, PartyRole, PartyStanding,
 } from "@/types";
 import { cn } from "@/lib/utils";
-import { PartyStatusChip, RatingStars, RoleChip, StandingChip } from "./directory-chips";
+import {
+  AuthorityChip, ClaimChip, IdentityChip, PartyStatusChip, RatingStars, RoleChip,
+  StandingChip,
+} from "./directory-chips";
 import {
   CONTACT_KIND_LABEL, formatCityState, formatDate, formatMcNumber, formatPhone,
 } from "./directory-labels";
@@ -353,7 +356,16 @@ function CompanyList({ listings, total }: { listings: DirectoryListing[]; total:
                 {l.roles.map((r) => (
                   <RoleChip key={r} role={r} />
                 ))}
-                <PartyStatusChip status={l.status} />
+                {/*
+                  A broker carries its own identity chip, which already says
+                  more than "Needs review" would. The generic status chip is
+                  for everything else.
+                */}
+                {l.identityState
+                  ? <IdentityChip state={l.identityState} />
+                  : <PartyStatusChip status={l.status} />}
+                {l.authorityStatus ? <AuthorityChip status={l.authorityStatus} /> : null}
+                <ClaimChip state={l.claimState} />
                 <StandingChip standing={l.standing} />
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.75rem] text-fg-muted">

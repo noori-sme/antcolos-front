@@ -53,6 +53,28 @@ describe("normalizeScac", () => {
 });
 
 describe("normalizeCompanyName", () => {
+  it("strips a suffix that another suffix was hiding", () => {
+    // Regression. These two rules used to run once each, in order, so a
+    // spelled-out "L.L.C." was dropped and the "Group" behind it was not —
+    // giving one company two keys, which is the exact failure this module
+    // exists to prevent.
+    const expected = "cornerstone freight";
+    for (const printed of [
+      "Cornerstone Freight Group LLC",
+      "Cornerstone Freight Group, L.L.C.",
+      "CORNERSTONE FREIGHT GROUP, L.L.C.",
+      "Cornerstone Freight Holdings Inc",
+      "Cornerstone Freight International Corp",
+    ]) {
+      assert.equal(normalizeCompanyName(printed), expected, printed);
+    }
+  });
+
+  it("never strips a name down to nothing", () => {
+    // A name made only of suffixes keeps its first word rather than vanishing.
+    assert.equal(normalizeCompanyName("Group LLC"), "group");
+  });
+
   it("folds the ways one company gets printed into one key", () => {
     const expected = "apex logistics";
     for (const printed of [

@@ -1,11 +1,13 @@
+import { BadgeCheck, CircleHelp, Clock, ShieldAlert, TriangleAlert } from "lucide-react";
 import type {
-  MatchConfidence, PartyRecordStatus, PartyRole, PartyStanding,
-  PartyVerificationState,
+  AuthorityStatus, BrokerIdentityState, MatchConfidence, PartyClaimState,
+  PartyRecordStatus, PartyRole, PartyStanding, PartyVerificationState,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import {
-  CONFIDENCE_LABEL, PARTY_ROLE_LABEL, PARTY_STATUS_LABEL, STANDING_LABEL,
-  VERIFICATION_LABEL,
+  AUTHORITY_DESCRIPTION, AUTHORITY_LABEL, CLAIM_DESCRIPTION, CLAIM_LABEL,
+  CONFIDENCE_LABEL, IDENTITY_DESCRIPTION, IDENTITY_LABEL, PARTY_ROLE_LABEL,
+  PARTY_STATUS_LABEL, STANDING_LABEL, VERIFICATION_LABEL,
 } from "./directory-labels";
 
 const CHIP = "shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium";
@@ -129,6 +131,111 @@ export function RatingStars({ rating }: { rating?: number }) {
           ★
         </span>
       ))}
+    </span>
+  );
+}
+
+const CLAIM_TONE: Record<PartyClaimState, string> = {
+  unclaimed: "bg-st-neutral-bg text-st-neutral",
+  claim_pending: "bg-st-warning-bg text-st-warning",
+  claimed: "bg-st-success-bg text-st-success",
+};
+
+/**
+ * Whether the company behind this profile has claimed it.
+ *
+ * Neutral-toned on purpose. Unclaimed is not a problem to be fixed — it is the
+ * ordinary state of a broker who has never heard of Antcolos — and colouring it
+ * amber would tell dispatchers to distrust perfectly good register data.
+ */
+export function ClaimChip({
+  state,
+  className,
+  showUnclaimed = false,
+}: {
+  state: PartyClaimState;
+  className?: string;
+  showUnclaimed?: boolean;
+}) {
+  if (state === "unclaimed" && !showUnclaimed) return null;
+  return (
+    <span className={cn(CHIP, CLAIM_TONE[state], className)} title={CLAIM_DESCRIPTION[state]}>
+      {CLAIM_LABEL[state]}
+    </span>
+  );
+}
+
+const IDENTITY_TONE: Record<BrokerIdentityState, string> = {
+  verified: "bg-st-success-bg text-st-success",
+  pending: "bg-st-neutral-bg text-st-neutral",
+  conflicted: "bg-st-danger-bg text-st-danger",
+};
+
+const IDENTITY_ICON = {
+  verified: BadgeCheck,
+  pending: Clock,
+  conflicted: TriangleAlert,
+} as const;
+
+/**
+ * What FMCSA said about who this company is.
+ *
+ * The axis people most want to collapse into "verified", and the reason this
+ * chip exists separately from `ClaimChip`: a profile is routinely
+ * "FMCSA verified" and "Unclaimed" at the same time, and both chips render
+ * side by side rather than fighting over one word.
+ */
+export function IdentityChip({
+  state,
+  className,
+}: {
+  state: BrokerIdentityState;
+  className?: string;
+}) {
+  const Icon = IDENTITY_ICON[state];
+  return (
+    <span
+      className={cn(CHIP, "inline-flex items-center gap-1", IDENTITY_TONE[state], className)}
+      title={IDENTITY_DESCRIPTION[state]}
+    >
+      <Icon aria-hidden className="size-3" />
+      {IDENTITY_LABEL[state]}
+    </span>
+  );
+}
+
+const AUTHORITY_TONE: Record<AuthorityStatus, string> = {
+  active: "bg-st-success-bg text-st-success",
+  inactive: "bg-st-warning-bg text-st-warning",
+  revoked: "bg-st-danger-bg text-st-danger",
+  unknown: "bg-st-neutral-bg text-st-neutral",
+};
+
+/**
+ * Whether they may broker freight today.
+ *
+ * Hidden when `active`, like every other "nothing to see here" chip in this
+ * file: a row of green authority badges would bury the revoked one, which is
+ * the only one anybody needs to act on.
+ */
+export function AuthorityChip({
+  status,
+  className,
+  showActive = false,
+}: {
+  status: AuthorityStatus;
+  className?: string;
+  showActive?: boolean;
+}) {
+  if (status === "active" && !showActive) return null;
+  const Icon = status === "unknown" ? CircleHelp : ShieldAlert;
+  return (
+    <span
+      className={cn(CHIP, "inline-flex items-center gap-1", AUTHORITY_TONE[status], className)}
+      title={AUTHORITY_DESCRIPTION[status]}
+    >
+      <Icon aria-hidden className="size-3" />
+      {AUTHORITY_LABEL[status]}
     </span>
   );
 }
