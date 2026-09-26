@@ -4,15 +4,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthShell, AuthSwitchLink } from "./shell";
 import { StepProgress } from "./controls";
-import { StepEmail } from "./step-email";
+import { StepDetails } from "./step-details";
 import { StepVerify } from "./step-verify";
-import { StepUsername } from "./step-username";
-import { StepPassword } from "./step-password";
 import { CODE_LENGTH } from "./rules";
 import { useStageFocus } from "./use-stage-focus";
 import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
 
-const STEPS = ["email", "verify", "username", "password"] as const;
+const STEPS = ["details", "verify"] as const;
 type Step = (typeof STEPS)[number];
 
 /**
@@ -28,15 +26,14 @@ type Step = (typeof STEPS)[number];
 export function SignUpScreen() {
   const router = useRouter();
   const invitationReturn = useInvitationReturnPath();
-  const [step, setStep] = useState<Step>("email");
+  const [step, setStep] = useState<Step>("details");
   const [email, setEmail] = useState("");
-  const [username, setUsername] = useState("");
   const headingRef = useStageFocus<HTMLHeadingElement>(step);
 
   const copy: Record<Step, { title: string; description: React.ReactNode }> = {
-    email: {
+    details: {
       title: "Create your Antcolos account",
-      description: "Start with the email address you use for work.",
+      description: "Start with your details and the email address you use for work.",
     },
     verify: {
       title: "Check your email",
@@ -48,15 +45,6 @@ export function SignUpScreen() {
         </>
       ),
     },
-    username: {
-      title: "Choose your username",
-      description:
-        "This is how teammates and dispatchers will see you across Antcolos. It is permanent, so pick carefully.",
-    },
-    password: {
-      title: "Create a password",
-      description: "Last step. Choose something strong that you do not use anywhere else.",
-    },
   };
 
   const stepNumber = STEPS.indexOf(step) + 1;
@@ -67,7 +55,7 @@ export function SignUpScreen() {
       description={copy[step].description}
       headingRef={headingRef}
       footer={
-        step === "email" ? (
+        step === "details" ? (
           <AuthSwitchLink prompt="Already have an account?" href="/sign-in" label="Sign in" />
         ) : null
       }
@@ -81,37 +69,19 @@ export function SignUpScreen() {
 
       <StepProgress current={stepNumber} total={STEPS.length} />
 
-      {step === "email" ? (
-        <StepEmail email={email} onEmailChange={setEmail} onSent={() => setStep("verify")} />
-      ) : step === "verify" ? (
+      {step === "details" ? (
+        <StepDetails onEmailChange={setEmail} onSent={() => setStep("verify")} />
+      ) : (
         <StepVerify
           email={email}
-          onVerified={() => setStep("username")}
-          onBack={() => setStep("email")}
-        />
-      ) : step === "username" ? (
-        <StepUsername
-          username={username}
-          onUsernameChange={setUsername}
-          onChosen={() => setStep("password")}
-          onBack={() => setStep("verify")}
-        />
-      ) : (
-        <StepPassword
-          email={email}
-          username={username}
-          // Everybody goes to the profile step: the permanent record is
-          // created for every account, not only for people arriving on their
-          // own. An invitation is not lost, it rides through in `?next=` and
-          // the profile step hands off to it instead of to role selection.
-          onCreated={() =>
+          onVerified={() =>
             router.push(
               invitationReturn
                 ? `/onboarding/profile?next=${encodeURIComponent(invitationReturn)}`
                 : "/onboarding/profile",
             )
           }
-          onBack={() => setStep("username")}
+          onBack={() => setStep("details")}
         />
       )}
     </AuthShell>

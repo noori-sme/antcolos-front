@@ -1,4 +1,3 @@
-import { Check } from "lucide-react";
 import { PASSWORD_REQUIREMENTS } from "./rules";
 import { cn } from "@/lib/utils";
 
@@ -12,30 +11,50 @@ import { cn } from "@/lib/utils";
  * when the field takes focus.
  */
 export function PasswordChecklist({ id, value }: { id: string; value: string }) {
+  const metCount = PASSWORD_REQUIREMENTS.filter((r) => r.test(value)).length;
+  const totalCount = PASSWORD_REQUIREMENTS.length;
+  
+  let strengthLabel = "Weak";
+  let strengthColor = "bg-st-danger";
+  let segmentsToFill = 1;
+
+  if (value.length === 0) {
+    strengthLabel = "None";
+    strengthColor = "bg-border";
+    segmentsToFill = 0;
+  } else if (metCount === totalCount) {
+    strengthLabel = "Strong";
+    strengthColor = "bg-st-success";
+    segmentsToFill = 4;
+  } else if (metCount >= 3) {
+    strengthLabel = "Good";
+    strengthColor = "bg-st-info";
+    segmentsToFill = 3;
+  } else if (metCount >= 2) {
+    strengthLabel = "Fair";
+    strengthColor = "bg-st-warning";
+    segmentsToFill = 2;
+  }
+
   return (
-    <ul id={id} className="mt-2.5 space-y-1.5">
-      {PASSWORD_REQUIREMENTS.map((requirement) => {
-        const met = requirement.test(value);
-        return (
-          <li key={requirement.id} className="flex items-center gap-2 text-[0.75rem]">
-            <span
-              aria-hidden
+    <div className="mt-2.5">
+      {/* Strength Indicator */}
+      <div className="mb-3 flex items-center gap-2">
+        <div className="flex h-1.5 flex-1 gap-1">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <div
+              key={idx}
               className={cn(
-                "flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
-                met
-                  ? "border-st-success bg-st-success text-white"
-                  : "border-border-strong bg-surface-sunken",
+                "h-full flex-1 rounded-full transition-colors duration-300",
+                idx < segmentsToFill ? strengthColor : "bg-border"
               )}
-            >
-              {met ? <Check className="size-2.5" strokeWidth={3} /> : null}
-            </span>
-            <span className={cn("transition-colors", met ? "text-fg" : "text-fg-muted")}>
-              {requirement.label}
-            </span>
-            <span className="sr-only">{met ? "— met" : "— not met"}</span>
-          </li>
-        );
-      })}
-    </ul>
+            />
+          ))}
+        </div>
+        <span className="w-12 text-right text-[0.6875rem] font-medium text-fg-muted uppercase tracking-wider">
+          {strengthLabel}
+        </span>
+      </div>
+    </div>
   );
 }

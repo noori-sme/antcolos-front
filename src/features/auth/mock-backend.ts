@@ -52,9 +52,24 @@ const INVITATIONS: Record<string, { organization: string; role: string; expired:
 /* Sign up — request a verification code                                       */
 /* -------------------------------------------------------------------------- */
 
+export interface SignupInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  password: string;
+}
+
 export interface SendCodeResult {
   /** Always true in the mock. A real backend may rate-limit or reject. */
   sent: true;
+}
+
+/** Pretends to sign up and email a verification code. Sends nothing. */
+export async function mockSignup(input: SignupInput): Promise<SendCodeResult> {
+  void input; // the real adapter sends the code to this address
+  await sleep(LATENCY_MS);
+  return { sent: true };
 }
 
 /** Pretends to email a verification code. Sends nothing. */
