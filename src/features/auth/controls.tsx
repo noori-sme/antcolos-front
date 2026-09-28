@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, ArrowLeft } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -165,10 +165,11 @@ export function BackLink({ onClick, label = "Back" }: { onClick: () => void; lab
       type="button"
       onClick={onClick}
       className={cn(
-        "text-[0.8125rem] font-medium text-fg-muted underline-offset-4 transition-colors",
+        "inline-flex items-center gap-1.5 text-[0.8125rem] font-medium text-fg-muted underline-offset-4 transition-colors",
         "hover:text-fg hover:underline focus-visible:text-fg focus-visible:underline",
       )}
     >
+      <ArrowLeft className="size-3.5" />
       {label}
     </button>
   );

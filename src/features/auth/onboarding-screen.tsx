@@ -1,8 +1,8 @@
 "use client";
 
 import { Building2, Headset, Plus, Truck, UserRound } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
 import { AuthShell } from "./shell";
 import { AccountFlowProgress, BackLink, ChoiceCard } from "./controls";
 import { CarrierVerification } from "./carrier-verification";
@@ -14,32 +14,11 @@ import { useStageFocus } from "./use-stage-focus";
 type Stage = "role" | "carrier" | "driver" | "dispatch-fork" | "create-org" | "individual";
 type Role = "carrier-owner" | "driver" | "dispatch";
 
-/**
- * Onboarding — asked once, after the account and the permanent profile exist.
- *
- * It is the THIRD stage of getting an account, not the second: signup creates
- * the account, `/onboarding/profile` creates the permanent career record, and
- * only then does anybody get asked how they will use Antcolos. The order is
- * the product saying that a person is not their role — the profile set up a
- * step ago survives every answer given here, and every later change of answer.
- *
- * A returning user never lands here: Sign In goes straight to the product,
- * because their role and organization were settled the first time.
- *
- * Every path that is more than a choice owns its own screen: a carrier owner
- * has to prove the carrier is theirs, a new dispatch organization has to
- * confirm the address carriers will hear from, an individual dispatcher has to
- * confirm their work address, and a driver has to confirm theirs before they
- * get the profile that is theirs for good. None of them finishes here.
- *
- * Joining an existing dispatch organization is not offered here any more. It
- * was never something this screen could do on its own — an invitation link
- * carries the authorization — so it lives entirely in the invitation flow at
- * /invite/[code], which is unchanged and still works.
- */
 export function OnboardingScreen() {
   const router = useRouter();
-  const [stage, setStage] = useState<Stage>("role");
+  const searchParams = useSearchParams();
+  const initialStage = (searchParams?.get("step") as Stage) || "role";
+  const [stage, setStage] = useState<Stage>(initialStage);
   const [role, setRole] = useState<Role | null>(null);
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 

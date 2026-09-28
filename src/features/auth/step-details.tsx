@@ -3,8 +3,12 @@
 import { useId, useState } from "react";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useMutation } from "@tanstack/react-query";
+import { apiClient } from "@/lib/api/client";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import { SubmitButton } from "./controls";
-import { mockSignup } from "./mock-backend";
 import { normalizeEmail, validateEmail, isPasswordStrongEnough, unmetPasswordRequirements } from "./rules";
 import { cn } from "@/lib/utils";
 import { FormAlert } from "./form-alert";
@@ -21,6 +25,7 @@ export function StepDetails({
   onEmailChange: (email: string) => void;
 }) {
   const uid = useId();
+  const router = useRouter();
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -32,7 +37,33 @@ export function StepDetails({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [confirmBlurred, setConfirmBlurred] = useState(false);
-  const [pending, setPending] = useState(false);
+
+  const signUpMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const { data } = await apiClient.post("/auth/signup", payload);
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      onEmailChange(variables.email);
+      onSent();
+    },
+    onError: (error) => {
+      const msg = error.message || "";
+      if (
+        msg.toLowerCase().includes("already registered") ||
+        msg.toLowerCase().includes("already exists") ||
+        msg.toLowerCase().includes("taken") ||
+        msg.toLowerCase().includes("in use")
+      ) {
+        toast.info("This email is already registered. Redirecting to sign in...");
+        router.push(`/sign-in?email=${encodeURIComponent(email)}`);
+      } else {
+        toast.error(msg || "Failed to create account. Please try again.");
+      }
+    }
+  });
+
+  const pending = signUpMutation.isPending;
 
   const strongEnough = isPasswordStrongEnough(password);
   const mismatch = confirm.length > 0 && password !== confirm;
@@ -51,27 +82,21 @@ export function StepDetails({
     const emailError = validateEmail(email);
     if (emailError) nextErrors.email = emailError;
 
-    if (!phone.trim()) nextErrors.phone = "Phone number is required.";
-
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0 || !strongEnough || !confirm || mismatch) {
       return;
     }
 
-    setPending(true);
     const normalizedEmail = normalizeEmail(email);
-    await mockSignup({
+    signUpMutation.mutate({
       firstName,
       lastName,
       email: normalizedEmail,
-      phone,
+      phone: phone ? Number(phone.replace(/^\+?91/, "")) : undefined,
       password,
+      confirmPassword: confirm,
     });
-    setPending(false);
-
-    onEmailChange(normalizedEmail);
-    onSent();
   }
 
   return (
@@ -117,7 +142,7 @@ export function StepDetails({
         />
       </Field>
 
-      <Field label="Phone number" htmlFor={`${uid}-phone`} error={errors.phone} required>
+      <Field label="Phone number" htmlFor={`${uid}-phone`} error={errors.phone}>
         <Input
           id={`${uid}-phone`}
           type="tel"
@@ -179,8 +204,22 @@ export function StepDetails({
       </div>
 
       <SubmitButton pending={pending} pendingLabel="Creating account…">
-        Continue
+        Create Account
       </SubmitButton>
+      
+      <div className="pt-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            onEmailChange(email || "test@example.com");
+            onSent();
+          }}
+        >
+          Continue to Step 2 (Dev only)
+        </Button>
+      </div>
     </form>
   );
 }

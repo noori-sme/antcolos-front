@@ -1,17 +1,17 @@
 "use client";
 
 import { Check, LoaderCircle, X } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { apiClient } from "@/lib/api/client";
 import { BackLink, SubmitButton } from "./controls";
-import { mockCheckUsername } from "./mock-backend";
 import { USERNAME_MAX_LENGTH, USERNAME_RULES_TEXT, validateUsername } from "./rules";
 import { cn } from "@/lib/utils";
 
 type Availability = "idle" | "checking" | "available" | "taken";
-
-/** Pause after the last keystroke before asking whether the name is free. */
-const DEBOUNCE_MS = 450;
 
 /** An answer is stored with the name it belongs to, never on its own. */
 interface Answer {
@@ -37,7 +37,7 @@ export function StepUsername({
   username: string;
   onUsernameChange: (username: string) => void;
   onChosen: () => void;
-  onBack: () => void;
+  onBack?: () => void;
 }) {
   const uid = useId();
   const inputId = `${uid}-username`;
@@ -50,25 +50,47 @@ export function StepUsername({
   const shapeError = value.length > 0 ? validateUsername(value) : null;
   const eligible = value.length > 0 && !shapeError;
 
+  const checkUsernameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const { data } = await apiClient.get<{ available: boolean }>(`/auth/username-available?username=${name}`);
+      return data.available;
+    },
+    onSuccess: (isAvailable, name) => {
+      setAnswer({
+        name,
+        result: isAvailable ? "available" : "taken",
+        suggestions: [],
+      });
+    },
+    onError: (error) => {
+      const errorMsg = (
+        <span>
+          We're experiencing some technical issues. Please try again later.{" "}
+          <span className="text-[10px] opacity-70">(CORS)</span>
+        </span>
+      );
+
+      if (error.message === "Network Error" || error.message.includes("Network Error")) {
+        toast.error(errorMsg);
+      } else {
+        toast.error(errorMsg);
+      }
+    }
+  });
+
   const currentAnswer = answer && answer.name === value ? answer : null;
   const availability: Availability = !eligible
     ? "idle"
-    : currentAnswer
-      ? currentAnswer.result
-      : "checking";
+    : checkUsernameMutation.isPending
+      ? "checking"
+      : currentAnswer
+        ? currentAnswer.result
+        : "idle";
 
-  useEffect(() => {
+  function handleCheckAvailability() {
     if (!eligible) return;
-    const timer = setTimeout(async () => {
-      const result = await mockCheckUsername(value);
-      setAnswer({
-        name: value,
-        result: result.status,
-        suggestions: result.status === "taken" ? result.suggestions : [],
-      });
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [eligible, value]);
+    checkUsernameMutation.mutate(value);
+  }
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -84,6 +106,7 @@ export function StepUsername({
       <div className="space-y-1.5">
         <label htmlFor={inputId} className="block text-[0.8125rem] font-medium text-fg">
           Username
+          <span className="ml-1 text-st-danger">*</span>
         </label>
 
         <div className="relative">
@@ -107,25 +130,28 @@ export function StepUsername({
             aria-describedby={`${statusId} ${rulesId}`}
             className={cn(
               "pl-7",
-              availability === "checking" && "pr-10",
+              "pr-[4.5rem]",
               invalid && "border-st-danger focus-visible:border-st-danger",
               availability === "available" && "border-st-success focus-visible:border-st-success",
             )}
           />
-          {availability === "checking" ? (
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-              <LoaderCircle className="size-4 animate-spin text-fg-subtle" aria-hidden />
-            </span>
-          ) : null}
+          <div className="absolute inset-y-0 right-1.5 flex items-center">
+
+            <Button
+              type="button"
+              className={cn("!h-6.5 !text-[11px]", eligible && !currentAnswer && "animate-pulse")}
+              variant={availability === "available" ? "secondary" : "primary"}
+              disabled={!eligible || !!currentAnswer}
+              onClick={handleCheckAvailability}
+            >
+              {availability === "checking" ? <><LoaderCircle className="!text-black size-4 animate-spin text-fg-subtle" aria-hidden />Checking</> : availability === "available" ? "Verified" : availability === "taken" ? "Taken" : "Verify"}
+            </Button>
+          </div>
         </div>
 
         {/* One live region for every outcome, so only one thing is ever announced. */}
         <p id={statusId} aria-live="polite" className="min-h-4 text-[0.75rem]">
-          {shapeError ? (
-            <span className="text-st-danger">{shapeError}</span>
-          ) : availability === "checking" ? (
-            <span className="text-fg-subtle">Checking availability…</span>
-          ) : availability === "available" ? (
+          {shapeError ?? availability === "available" ? (
             <span className="inline-flex items-center gap-1.5 font-medium text-st-success">
               <Check className="size-3.5" strokeWidth={3} aria-hidden />
               @{value} is available
@@ -167,9 +193,11 @@ export function StepUsername({
         Continue
       </SubmitButton>
 
-      <div className="pt-1">
-        <BackLink onClick={onBack} />
-      </div>
+      {onBack && (
+        <div className="pt-1">
+          <BackLink onClick={onBack} />
+        </div>
+      )}
     </form>
   );
 }

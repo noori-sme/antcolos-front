@@ -1,17 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useId, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useId, useState, useEffect } from "react";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { AuthShell, AuthSwitchLink } from "./shell";
 import { FormAlert } from "./form-alert";
 import { PasswordField } from "./password-field";
 import { SubmitButton } from "./controls";
-import { mockSignIn } from "./mock-backend";
+import { UnverifiedEmailModal } from "./modals/unverified-email-modal";
+import { VerifyEmailModal } from "./modals/verify-email-modal";
 import { normalizeEmail, validateEmail } from "./rules";
 import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
+import { useMutation } from "@tanstack/react-query";
+import { apiClient } from "@/lib/api/client";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,18 +30,75 @@ import { cn } from "@/lib/utils";
 export function SignInScreen() {
   const router = useRouter();
   const invitationReturn = useInvitationReturnPath();
+  const searchParams = useSearchParams();
+  const verifyToken = searchParams?.get("verifyToken") || null;
+
   const uid = useId();
   const emailId = `${uid}-email`;
   const passwordId = `${uid}-password`;
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(searchParams?.get("email") || "");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem("antcolos_remember_email");
+    
+    // Only prefill from localStorage if searchParams didn't already provide an email
+    if (savedEmail && !searchParams?.get("email")) {
+      setEmail(savedEmail);
+    }
+  }, [searchParams]);
 
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+
+  const signInMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const { data } = await apiClient.post("/auth/login", payload);
+      return data;
+    },
+    onSuccess: (data) => {
+      if (remember) {
+        localStorage.setItem("antcolos_remember_email", email);
+      } else {
+        localStorage.removeItem("antcolos_remember_email");
+      }
+
+      if (data.user?.nextStep === "choose-username") {
+        sessionStorage.setItem("antcolos_signup_step", "username");
+        sessionStorage.setItem("antcolos_signup_email", email);
+        sessionStorage.setItem("antcolos_signup_from_login", "true");
+        router.push("/sign-up");
+        return;
+      }
+
+      if (data.user?.nextStep === "carrier-onboarding") {
+        router.push("/onboarding?step=carrier");
+        return;
+      }
+
+      // Fully authenticated (no nextStep). Save token so Home Routes can be accessed.
+      if (data.accessToken) {
+        document.cookie = `antcolos_token=${data.accessToken}; path=/; max-age=86400; SameSite=Lax`;
+      }
+      
+      router.push(invitationReturn ?? "/home");
+    },
+    onError: (error) => {
+      const msg = error.message || "";
+      if (msg.toLowerCase().includes("verify your email")) {
+        setUnverifiedEmail(email);
+        setFormError(null);
+      } else {
+        setFormError(msg || "Email or password is incorrect. Check both and try again.");
+      }
+    }
+  });
+
+  const pending = signInMutation.isPending;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -53,21 +115,17 @@ export function SignInScreen() {
     setFormError(null);
     if (nextEmailError || nextPasswordError) return;
 
-    setPending(true);
-    const result = await mockSignIn(normalizeEmail(email), password);
-    if (result.status === "ok") {
-      // An invitation that sent them here is where they go back to.
-      router.push(invitationReturn ?? "/home");
-      return;
-    }
-    setPending(false);
-    setFormError("Email or password is incorrect. Check both and try again.");
+    signInMutation.mutate({
+      email: normalizeEmail(email),
+      password
+    });
   }
 
   return (
-    <AuthShell
-      title="Sign in to Antcolos"
-      description="Welcome back. Enter your details to open your dashboard."
+    <>
+      <AuthShell
+        title="Sign in to Antcolos"
+        description="Welcome back. Enter your details to open your dashboard."
       footer={
         <AuthSwitchLink prompt="New to Antcolos?" href="/sign-up" label="Create an account" />
       }
@@ -137,7 +195,7 @@ export function SignInScreen() {
             disabled={pending}
             className="size-4 shrink-0 cursor-pointer accent-primary"
           />
-          Keep me signed in on this device
+          Remember me
         </label>
 
         <SubmitButton pending={pending} pendingLabel="Signing in…">
@@ -145,5 +203,16 @@ export function SignInScreen() {
         </SubmitButton>
       </form>
     </AuthShell>
+
+    <UnverifiedEmailModal
+      email={unverifiedEmail}
+      onClose={() => setUnverifiedEmail(null)}
+    />
+
+    <VerifyEmailModal 
+      token={verifyToken} 
+      onClose={() => {}} 
+    />
+    </>
   );
 }

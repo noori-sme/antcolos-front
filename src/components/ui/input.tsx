@@ -7,6 +7,7 @@ export const Input = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <input
     ref={ref}
+    suppressHydrationWarning
     className={cn(
       "h-control w-full rounded-md border border-border bg-surface px-3 text-[0.875rem] text-fg shadow-e1 transition-colors",
       "placeholder:text-fg-subtle hover:border-border-strong",

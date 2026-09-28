@@ -1,16 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AuthShell, AuthSwitchLink } from "./shell";
 import { StepProgress } from "./controls";
 import { StepDetails } from "./step-details";
 import { StepVerify } from "./step-verify";
+import { StepUsername } from "./step-username";
 import { CODE_LENGTH } from "./rules";
 import { useStageFocus } from "./use-stage-focus";
 import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
 
-const STEPS = ["details", "verify"] as const;
+const STEPS = ["details", "verify", "username"] as const;
 type Step = (typeof STEPS)[number];
 
 /**
@@ -28,7 +29,49 @@ export function SignUpScreen() {
   const invitationReturn = useInvitationReturnPath();
   const [step, setStep] = useState<Step>("details");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [mounted, setMounted] = useState(false);
+  const [fromLogin, setFromLogin] = useState(false);
   const headingRef = useStageFocus<HTMLHeadingElement>(step);
+
+  useEffect(() => {
+    setMounted(true);
+    const savedStep = sessionStorage.getItem("antcolos_signup_step") as Step | null;
+    const savedEmail = sessionStorage.getItem("antcolos_signup_email");
+    const isFromLogin = sessionStorage.getItem("antcolos_signup_from_login") === "true";
+
+    if (savedStep && STEPS.includes(savedStep)) {
+      setStep(savedStep);
+    }
+    if (savedEmail) {
+      setEmail(savedEmail);
+    }
+    if (isFromLogin) {
+      setFromLogin(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    sessionStorage.setItem("antcolos_signup_step", step);
+    sessionStorage.setItem("antcolos_signup_email", email);
+  }, [step, email, mounted]);
+
+  // Clear storage when successfully finishing the flow
+  const handleFinished = () => {
+    sessionStorage.removeItem("antcolos_signup_step");
+    sessionStorage.removeItem("antcolos_signup_email");
+    sessionStorage.removeItem("antcolos_signup_from_login");
+    router.push(
+      invitationReturn
+        ? `/onboarding/profile?next=${encodeURIComponent(invitationReturn)}`
+        : "/onboarding/profile",
+    );
+  };
+
+  if (!mounted) {
+    return null; // Prevent hydration mismatch
+  }
 
   const copy: Record<Step, { title: string; description: React.ReactNode }> = {
     details: {
@@ -37,13 +80,12 @@ export function SignUpScreen() {
     },
     verify: {
       title: "Check your email",
-      description: (
-        <>
-          We sent a {CODE_LENGTH}-digit code to{" "}
-          <span className="font-medium text-fg">{email || "your email address"}</span>. Enter it
-          below to confirm the address is yours.
-        </>
-      ),
+      description: "We just need to verify your email address to continue.",
+    },
+    username: {
+      title: "Choose your username",
+      description:
+        "This is how teammates and dispatchers will see you across Antcolos. It is permanent, so pick carefully.",
     },
   };
 
@@ -71,17 +113,18 @@ export function SignUpScreen() {
 
       {step === "details" ? (
         <StepDetails onEmailChange={setEmail} onSent={() => setStep("verify")} />
-      ) : (
+      ) : step === "verify" ? (
         <StepVerify
           email={email}
-          onVerified={() =>
-            router.push(
-              invitationReturn
-                ? `/onboarding/profile?next=${encodeURIComponent(invitationReturn)}`
-                : "/onboarding/profile",
-            )
-          }
+          onVerified={() => setStep("username")}
           onBack={() => setStep("details")}
+        />
+      ) : (
+        <StepUsername
+          username={username}
+          onUsernameChange={setUsername}
+          onChosen={handleFinished}
+          onBack={fromLogin ? undefined : () => setStep("verify")}
         />
       )}
     </AuthShell>

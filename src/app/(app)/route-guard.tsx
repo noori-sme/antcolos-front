@@ -16,6 +16,16 @@ export function RouteGuard({ children }: { children: ReactNode }) {
   const required = requiredPermissionsForPath(pathname);
   const allowed = useCanAll(required);
 
+  // Check if token exists in cookies
+  const hasToken = typeof document !== 'undefined' && document.cookie.includes('antcolos_token=');
+  const isBrowser = typeof window !== 'undefined';
+
+  if (isBrowser && !hasToken) {
+    // If no token is found, redirect to sign-in instantly
+    window.location.href = '/sign-in';
+    return null;
+  }
+
   if (!allowed) return <Forbidden required={required} />;
   return <>{children}</>;
 }
