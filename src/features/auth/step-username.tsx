@@ -151,7 +151,12 @@ export function StepUsername({
 
         {/* One live region for every outcome, so only one thing is ever announced. */}
         <p id={statusId} aria-live="polite" className="min-h-4 text-[0.75rem]">
-          {shapeError ?? availability === "available" ? (
+          {shapeError ? (
+            <span className="inline-flex items-center gap-1.5 font-medium text-st-danger">
+              <X className="size-3.5" strokeWidth={3} aria-hidden />
+              {shapeError}
+            </span>
+          ) : availability === "available" ? (
             <span className="inline-flex items-center gap-1.5 font-medium text-st-success">
               <Check className="size-3.5" strokeWidth={3} aria-hidden />
               @{value} is available
