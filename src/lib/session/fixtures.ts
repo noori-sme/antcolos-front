@@ -18,9 +18,9 @@ import type {
 
 export const MOCK_USER: User = {
   id: "usr_sam",
-  displayName: "Sam Murtaza",
-  email: "sam@antcolos.com",
-  phone: "+1 (312) 555-0148",
+  displayName: "",
+  email: "",
+  phone: "",
   locale: "en-US",
   timeZone: "America/Los_Angeles",
   preferences: {
@@ -41,8 +41,8 @@ export const MOCK_USER: User = {
  */
 export const NEWCOMER_USER: User = {
   id: "usr_newcomer",
-  displayName: "Alex Rivera",
-  email: "alex.rivera@example.com",
+  displayName: "",
+  email: "",
   locale: "en-US",
   timeZone: "America/Chicago",
   preferences: {

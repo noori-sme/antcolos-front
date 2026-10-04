@@ -1,14 +1,21 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
+import { toast } from "sonner";
 import { LogOut, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage, initialsOf } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ACCOUNT_NAV } from "@/config/nav";
 import { useSession } from "@/lib/session/hooks";
+import { LockedSection } from "./locked-section";
 
 /**
  * The account area is personal and permanent — never permission-gated. A user
@@ -16,9 +23,27 @@ import { useSession } from "@/lib/session/hooks";
  */
 export function AccountMenu() {
   const { user } = useSession();
+  const router = useRouter();
+  const [showSignOut, setShowSignOut] = useState(false);
   const items = ACCOUNT_NAV.flatMap((s) => s.items);
 
+  const handleSignOut = () => {
+    Cookies.remove("antcolos_token", { path: "/" });
+    Cookies.remove("antcolos_next_step", { path: "/" });
+    Cookies.remove("antcolos_user_role", { path: "/" });
+    Cookies.remove("antcolos_org_type", { path: "/" });
+    Cookies.remove("antcolos_org_role", { path: "/" });
+    
+    sessionStorage.removeItem("antcolos_signup_step");
+    sessionStorage.removeItem("antcolos_signup_email");
+    sessionStorage.removeItem("antcolos_signup_from_login");
+    
+    toast.success("Signed out successfully");
+    router.push("/sign-in");
+  };
+
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger
         className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
@@ -38,27 +63,50 @@ export function AccountMenu() {
           <p className="truncate text-[0.75rem] text-fg-subtle">{user.email}</p>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Personal</DropdownMenuLabel>
-        {items.map((item) => (
-          <DropdownMenuItem key={item.href} asChild>
-            <Link href={item.href}>
-              <item.icon aria-hidden />
-              {item.label}
+        <LockedSection>
+          <DropdownMenuLabel>Personal</DropdownMenuLabel>
+          {items.map((item) => (
+            <DropdownMenuItem key={item.href} asChild>
+              <Link href={item.href}>
+                <item.icon aria-hidden />
+                {item.label}
+              </Link>
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href="/settings/organization">
+              <Settings2 aria-hidden />
+              Organization settings
             </Link>
           </DropdownMenuItem>
-        ))}
+        </LockedSection>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/settings/organization">
-            <Settings2 aria-hidden />
-            Organization settings
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem>
+        <DropdownMenuItem 
+          className="text-st-danger focus:text-st-danger focus:bg-st-danger-bg [&_svg]:text-st-danger"
+          onSelect={(e) => {
+            e.preventDefault();
+            setShowSignOut(true);
+          }}
+        >
           <LogOut aria-hidden />
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+
+    <Dialog open={showSignOut} onOpenChange={setShowSignOut}>
+      <DialogContent title="Sign out" description="Are you sure you want to sign out? You will need to sign in again to access your account.">
+        <div className="mt-6 flex justify-end gap-3">
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
+          <Button variant="danger" onClick={handleSignOut}>
+            Sign out
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

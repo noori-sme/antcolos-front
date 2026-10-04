@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { site } from "@/config/brand";
 import "@/styles/globals.css";
 import { Providers } from "./providers";
+import { SplashScreen } from "@/components/splash-screen";
 
 const sans = Inter({
   subsets: ["latin"],
@@ -43,6 +44,7 @@ export default function RootLayout({
       className={`${sans.variable} ${mono.variable}`}
     >
       <body className="font-sans antialiased">
+        <SplashScreen />
         <Providers>{children}</Providers>
       </body>
     </html>

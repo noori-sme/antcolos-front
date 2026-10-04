@@ -206,20 +206,6 @@ export function StepDetails({
       <SubmitButton pending={pending} pendingLabel="Creating account…">
         Create Account
       </SubmitButton>
-      
-      <div className="pt-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          onClick={() => {
-            onEmailChange(email || "test@example.com");
-            onSent();
-          }}
-        >
-          Continue to Step 2 (Dev only)
-        </Button>
-      </div>
     </form>
   );
 }

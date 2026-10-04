@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Logo } from "@/components/brand/logo";
 import { useNeedsYouCount } from "@/features/needs-you/hooks";
-import { useActiveMembership } from "@/lib/session/hooks";
+import { useActiveMembership, useSession } from "@/lib/session/hooks";
 import { AccountMenu } from "./account-menu";
 import { MobileNavDrawer } from "./mobile-nav";
 import { SidebarLogoTrigger } from "./sidebar";
 import { SidebarModeMenu } from "./sidebar-mode-menu";
 import { DensityToggle, ThemeToggle } from "./theme-density-controls";
+import { LockedSection, useIsDriver } from "./locked-section";
 
 function NeedsYouButton() {
   const { data } = useNeedsYouCount();
@@ -33,10 +34,14 @@ function NeedsYouButton() {
 
 export function Topbar() {
   const { organization, membership } = useActiveMembership();
+  const { user } = useSession();
+  const isDriver = useIsDriver();
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface/90 px-3 backdrop-blur-sm sm:px-4">
-      <MobileNavDrawer />
+      <LockedSection hideIcon className="lg:hidden">
+        <MobileNavDrawer />
+      </LockedSection>
       <div className="lg:hidden">
         <Logo size="sm" />
       </div>
@@ -45,31 +50,44 @@ export function Topbar() {
           to the navigation. It renders in no other mode. */}
       <SidebarLogoTrigger />
 
-      <div className="hidden min-w-0 items-center gap-2.5 lg:flex">
-        <span className="truncate text-[0.875rem] font-medium text-fg">
-          {organization?.displayName}
-        </span>
-        {/* Three workspace kinds, not two: a one-person dispatch workspace is
-            not a dispatch organization, and is never labelled as one. */}
-        <Badge tone="outline">
-          {organization ? WORKSPACE_KIND_LABEL[workspaceKindOf(organization)] : null}
-        </Badge>
-        {membership?.scope.loads === "assigned" ? (
-          <Badge tone="info">Assigned loads only</Badge>
-        ) : null}
-      </div>
+      {isDriver ? (
+        <div className="hidden min-w-0 items-center gap-2.5 lg:flex">
+          <span className="truncate text-[0.875rem] font-medium text-fg">
+            Welcome, {user?.displayName || "Driver"}
+          </span>
+        </div>
+      ) : (
+        <div className="hidden min-w-0 items-center gap-2.5 lg:flex">
+          <span className="truncate text-[0.875rem] font-medium text-fg">
+            {organization?.displayName}
+          </span>
+          {/* Three workspace kinds, not two: a one-person dispatch workspace is
+              not a dispatch organization, and is never labelled as one. */}
+          <Badge tone="outline">
+            {organization ? WORKSPACE_KIND_LABEL[workspaceKindOf(organization)] : null}
+          </Badge>
+          {membership?.scope.loads === "assigned" ? (
+            <Badge tone="info">Assigned loads only</Badge>
+          ) : null}
+        </div>
+      )}
 
       <div className="ml-auto flex items-center gap-1">
-        <Button variant="ghost" size="icon" aria-label="Search" className="hidden sm:inline-flex">
-          <Search aria-hidden />
-        </Button>
-        <SidebarModeMenu className="hidden lg:inline-flex" />
-        <DensityToggle className="hidden sm:inline-flex" />
-        <ThemeToggle />
-        <NeedsYouButton />
-        <Button variant="ghost" size="icon" aria-label="Notifications" className="hidden sm:inline-flex">
-          <Bell aria-hidden />
-        </Button>
+        <LockedSection hideIcon className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" aria-label="Search" className="hidden sm:inline-flex">
+            <Search aria-hidden />
+          </Button>
+          <SidebarModeMenu className="hidden lg:inline-flex" />
+          <DensityToggle className="hidden sm:inline-flex" />
+          <ThemeToggle />
+          <NeedsYouButton />
+          <Button variant="ghost" size="icon" aria-label="Notifications" className="hidden sm:inline-flex">
+            <Bell aria-hidden />
+          </Button>
+        </LockedSection>
+      </div>
+      
+      <div className="flex items-center">
         <Separator orientation="vertical" className="mx-1 h-6" />
         <AccountMenu />
       </div>

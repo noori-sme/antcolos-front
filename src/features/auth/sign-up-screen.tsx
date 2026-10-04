@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import Cookies from "js-cookie";
 import { AuthShell, AuthSwitchLink } from "./shell";
 import { StepProgress } from "./controls";
 import { StepDetails } from "./step-details";
@@ -39,14 +40,30 @@ export function SignUpScreen() {
     const savedStep = sessionStorage.getItem("antcolos_signup_step") as Step | null;
     const savedEmail = sessionStorage.getItem("antcolos_signup_email");
     const isFromLogin = sessionStorage.getItem("antcolos_signup_from_login") === "true";
+    const nextStepCookie = Cookies.get("antcolos_next_step");
+    const token = Cookies.get("antcolos_token");
 
-    if (savedStep && STEPS.includes(savedStep)) {
-      setStep(savedStep);
+    if (nextStepCookie === "choose-username" && token) {
+      setStep("username");
+      setFromLogin(true);
+    } else if (savedStep && STEPS.includes(savedStep)) {
+      // The username step strictly requires authentication.
+      // If the token is missing, their session expired. Reset them to the beginning.
+      if (savedStep === "username" && !token) {
+        sessionStorage.removeItem("antcolos_signup_step");
+        sessionStorage.removeItem("antcolos_signup_email");
+        sessionStorage.removeItem("antcolos_signup_from_login");
+        router.push("/sign-in");
+        return;
+      } else {
+        setStep(savedStep);
+      }
     }
+    
     if (savedEmail) {
       setEmail(savedEmail);
     }
-    if (isFromLogin) {
+    if (isFromLogin && token) {
       setFromLogin(true);
     }
   }, []);
@@ -109,7 +126,9 @@ export function SignUpScreen() {
         </div>
       ) : null}
 
-      <StepProgress current={stepNumber} total={STEPS.length} />
+      {step !== "verify" ? (
+        <StepProgress current={stepNumber} total={STEPS.length} />
+      ) : null}
 
       {step === "details" ? (
         <StepDetails onEmailChange={setEmail} onSent={() => setStep("verify")} />

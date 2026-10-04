@@ -89,15 +89,6 @@ export function StepVerify({
             </>
           )}
         </Button>
-
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          onClick={onVerified}
-        >
-          Continue to Step 3 (Dev only)
-        </Button>
       </div>
 
       <div className="pt-2">

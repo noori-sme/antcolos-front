@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { MobileTabBar } from "./mobile-nav";
 import { Sidebar, SidebarOverlay } from "./sidebar";
 import { Topbar } from "./topbar";
+import { LockedSection } from "./locked-section";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -16,16 +17,20 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       <div className="flex min-h-dvh bg-canvas">
-        <Sidebar />
+        <LockedSection className="z-40">
+          <Sidebar />
+        </LockedSection>
         <SidebarOverlay />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
-          <main
-            id="main"
-            className="flex-1 px-page-x py-page-y pb-[5.5rem] lg:pb-page-y"
-          >
-            <div className="mx-auto w-full max-w-[100rem]">{children}</div>
-          </main>
+          <LockedSection className="flex-1 flex flex-col" message="Thanks for choosing Antcolos! Right now, you do not have access to this dashboard.">
+            <main
+              id="main"
+              className="flex-1 px-page-x py-page-y pb-[5.5rem] lg:pb-page-y"
+            >
+              <div className="mx-auto w-full max-w-[100rem]">{children}</div>
+            </main>
+          </LockedSection>
         </div>
       </div>
       <MobileTabBar />

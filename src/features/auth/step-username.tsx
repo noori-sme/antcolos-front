@@ -78,6 +78,20 @@ export function StepUsername({
     }
   });
 
+  const setUsernameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const { data } = await apiClient.post("/auth/username", { username: name });
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Username set successfully!");
+      onChosen();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to set username. Please try again.");
+    }
+  });
+
   const currentAnswer = answer && answer.name === value ? answer : null;
   const availability: Availability = !eligible
     ? "idle"
@@ -94,8 +108,8 @@ export function StepUsername({
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (availability !== "available") return;
-    onChosen();
+    if (availability !== "available" || setUsernameMutation.isPending) return;
+    setUsernameMutation.mutate(value);
   }
 
   const invalid = Boolean(shapeError) || availability === "taken";
@@ -194,8 +208,12 @@ export function StepUsername({
         </p>
       </div>
 
-      <SubmitButton pendingLabel="Saving…" disabled={availability !== "available"}>
-        Continue
+      <SubmitButton 
+        pending={setUsernameMutation.isPending} 
+        pendingLabel="Setting username…" 
+        disabled={availability !== "available" || setUsernameMutation.isPending}
+      >
+        Set Username
       </SubmitButton>
 
       {onBack && (

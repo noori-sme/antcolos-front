@@ -8,6 +8,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 export function VerifyEmailModal({
   token,
@@ -18,6 +19,7 @@ export function VerifyEmailModal({
 }) {
   const router = useRouter();
   const [activeToken, setActiveToken] = useState(token);
+  const [mountTime] = useState(() => Date.now());
 
   useEffect(() => {
     if (token && token !== activeToken) {
@@ -30,15 +32,58 @@ export function VerifyEmailModal({
       const { data } = await apiClient.post("/auth/verify-email", { token: tokenToVerify });
       return data;
     },
-    onSettled: () => {
-      // Instantly remove token from URL when we get any response,
-      // but activeToken keeps the modal open.
+    onSuccess: (data) => {
+      const elapsed = Date.now() - mountTime;
+      const delay = Math.max(0, 2400 - elapsed); // Wait for global loader (2300ms) to hide
+
+      setTimeout(() => {
+        if (data.user?.emailVerified) {
+          if (data.user?.nextStep === "choose-username") {
+            toast.success("Email verified successfully! 🎉 Now let's pick a unique username.");
+          } else if (data.user?.nextStep) {
+            toast.success("Email verified successfully! 🎉 Let's continue setting up your account.");
+          } else {
+            toast.success("Email verified successfully! 🎉 Welcome back to Antcolos.");
+          }
+        }
+
+        if (data.user?.nextStep === "choose-username") {
+          sessionStorage.setItem("antcolos_signup_step", "username");
+          sessionStorage.setItem("antcolos_signup_email", data.user.email);
+          sessionStorage.setItem("antcolos_signup_from_login", "true");
+          router.push("/sign-up");
+          return;
+        }
+        
+        if (data.user?.nextStep === "carrier-onboarding") {
+          router.push("/onboarding?step=carrier");
+          return;
+        }
+        
+        if (data.user?.nextStep === "select-role") {
+          router.push("/onboarding?step=role");
+          return;
+        }
+
+        if (data.user?.nextStep === "verify-carrier") {
+          router.push("/onboarding?step=verify-carrier");
+          return;
+        }
+
+        if (!data.user?.nextStep) {
+           router.push("/home");
+           return;
+        }
+      }, delay);
+    },
+    onError: () => {
+      // Only remove from URL if it failed, so they stay on sign-in page
       router.replace("/sign-in", { scroll: false });
     }
   });
 
   useEffect(() => {
-    if (activeToken) {
+    if (activeToken && !verifyMutation.isPending && !verifyMutation.isSuccess && !verifyMutation.isError) {
       verifyMutation.mutate(activeToken);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

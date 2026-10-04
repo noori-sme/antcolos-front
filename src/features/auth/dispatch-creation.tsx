@@ -14,7 +14,6 @@ import {
   mockVerifyOrgCode,
 } from "./mock-backend";
 import {
-  ORG_CODE_TTL_SECONDS,
   maskEmail,
   normalizeEmail,
   validateEmail,
@@ -23,10 +22,12 @@ import {
 } from "./rules";
 import { useStageFocus } from "./use-stage-focus";
 import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/api/client";
+import { toast } from "sonner";
 
-type Stage = "details" | "code" | "done";
+type Stage = "details" | "address" | "done";
 
-const STAGE_NUMBER: Record<Stage, number> = { details: 1, code: 2, done: 3 };
+const STAGE_NUMBER: Record<Stage, number> = { details: 1, address: 2, done: 3 };
 
 /**
  * Creating a dispatch organization.
@@ -51,22 +52,32 @@ export function DispatchCreation({
 
   const [ownerName, setOwnerName] = useState("");
   const [orgName, setOrgName] = useState("");
-  const [orgEmail, setOrgEmail] = useState("");
+  const [handle, setHandle] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  
+  // Address fields
+  const [addressLine1, setAddressLine1] = useState("");
+  const [addressLine2, setAddressLine2] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [city, setCity] = useState("");
+  const [addressState, setAddressState] = useState("");
+  const [country, setCountry] = useState("US");
+
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const heading: Record<Stage, { title: string; description: React.ReactNode }> = {
     details: {
       title: "Create your dispatch organization",
       description: "This is the organization carriers and drivers will see when they work with you.",
     },
-    code: {
-      title: "Confirm your organization's email",
-      description:
-        "We sent a 6-digit code to your organization's official address. Confirming it proves the mailbox is yours before carriers start receiving mail from it.",
+    address: {
+      title: "Company Address",
+      description: "Where is your dispatch organization located? You can skip this and add it later.",
     },
     done: {
       title: "Your dispatch organization is ready",
-      description:
-        "You are its owner. You can invite dispatchers, connect the carriers you dispatch for, and set what each person is allowed to see.",
+      description: "You are its owner. You can invite dispatchers, connect the carriers you dispatch for, and set what each person is allowed to see.",
     },
   };
 
@@ -82,41 +93,62 @@ export function DispatchCreation({
         <DispatchDetailsForm
           ownerName={ownerName}
           orgName={orgName}
-          orgEmail={orgEmail}
-          onOwnerNameChange={setOwnerName}
-          onOrgNameChange={setOrgName}
-          onOrgEmailChange={setOrgEmail}
-          onSent={() => setStage("code")}
+          handle={handle}
+          companyEmail={companyEmail}
+          companyPhone={companyPhone}
+          serverError={serverError}
+          onOwnerNameChange={(v) => { setServerError(null); setOwnerName(v); }}
+          onOrgNameChange={(v) => { setServerError(null); setOrgName(v); }}
+          onHandleChange={(v) => { setServerError(null); setHandle(v); }}
+          onCompanyEmailChange={(v) => { setServerError(null); setCompanyEmail(v); }}
+          onCompanyPhoneChange={(v) => { setServerError(null); setCompanyPhone(v); }}
+          onSent={() => {
+            setServerError(null);
+            setStage("address");
+          }}
           onBack={onBack}
         />
       ) : null}
 
-      {stage === "code" ? (
-        <CodeVerification
-          ttlSeconds={ORG_CODE_TTL_SECONDS}
-          onVerify={mockVerifyOrgCode}
-          onResend={() => mockSendOrgCode(normalizeEmail(orgEmail))}
-          onVerified={async () => {
-            await mockCreateDispatchOrganization({
-              ownerLegalName: ownerName.trim(),
-              organizationName: orgName.trim(),
-              organizationEmail: normalizeEmail(orgEmail),
-            });
-            setStage("done");
+      {stage === "address" ? (
+        <DispatchAddressForm
+          addressLine1={addressLine1}
+          addressLine2={addressLine2}
+          postalCode={postalCode}
+          city={city}
+          addressState={addressState}
+          country={country}
+          onAddressLine1Change={setAddressLine1}
+          onAddressLine2Change={setAddressLine2}
+          onPostalCodeChange={setPostalCode}
+          onCityChange={setCity}
+          onAddressStateChange={setAddressState}
+          onCountryChange={setCountry}
+          onBack={() => setStage("details")}
+          onComplete={async () => {
+            try {
+              await apiClient.post("/auth/company-details", {
+                companyName: orgName.trim(),
+                handle: handle.trim(),
+                legalOwnerName: ownerName.trim(),
+                companyEmail: companyEmail.trim(),
+                companyPhone: companyPhone.trim(),
+                companyAddress: {
+                  addressLine1: addressLine1.trim(),
+                  addressLine2: addressLine2.trim(),
+                  postalCode: postalCode.trim(),
+                  city: city.trim(),
+                  state: addressState.trim(),
+                  country: country.trim(),
+                }
+              });
+              setStage("done");
+            } catch (err) {
+              const errorMessage = err instanceof Error ? err.message : "Failed to create dispatch organization";
+              setServerError(errorMessage);
+              setStage("details");
+            }
           }}
-          addressLine={
-            <div className="rounded-md border border-border bg-surface-sunken px-3.5 py-2.5">
-              <p className="text-[0.75rem] text-fg-muted">
-                Code sent to your organization&apos;s email
-              </p>
-              <p className="mt-0.5 font-mono text-[0.875rem] font-medium text-fg break-all">
-                {maskEmail(normalizeEmail(orgEmail))}
-              </p>
-            </div>
-          }
-          submitLabel="Verify and create organization"
-          pendingLabel="Verifying…"
-          footerLeft={<BackLink onClick={() => setStage("details")} label="Change details" />}
         />
       ) : null}
 
@@ -127,8 +159,7 @@ export function DispatchCreation({
             <div className="min-w-0 text-[0.8125rem]">
               <p className="font-medium text-fg">{orgName.trim()} is set up.</p>
               <p className="mt-0.5 text-fg-muted">
-                You are the owner, and {maskEmail(normalizeEmail(orgEmail))} is confirmed as its
-                official address.
+                You are the owner.
               </p>
             </div>
           </div>
@@ -144,45 +175,64 @@ export function DispatchCreation({
 function DispatchDetailsForm({
   ownerName,
   orgName,
-  orgEmail,
+  handle,
+  companyEmail,
+  companyPhone,
+  serverError,
   onOwnerNameChange,
   onOrgNameChange,
-  onOrgEmailChange,
+  onHandleChange,
+  onCompanyEmailChange,
+  onCompanyPhoneChange,
   onSent,
   onBack,
 }: {
   ownerName: string;
   orgName: string;
-  orgEmail: string;
+  handle: string;
+  companyEmail: string;
+  companyPhone: string;
+  serverError: string | null;
   onOwnerNameChange: (v: string) => void;
   onOrgNameChange: (v: string) => void;
-  onOrgEmailChange: (v: string) => void;
+  onHandleChange: (v: string) => void;
+  onCompanyEmailChange: (v: string) => void;
+  onCompanyPhoneChange: (v: string) => void;
   onSent: () => void;
   onBack: () => void;
 }) {
   const uid = useId();
   const nameId = `${uid}-owner`;
   const orgId = `${uid}-org`;
+  const handleId = `${uid}-handle`;
   const emailId = `${uid}-email`;
-  const emailNoteId = `${uid}-email-note`;
+  const phoneId = `${uid}-phone`;
 
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
 
-  const nameError = submitted ? validateFullName(ownerName) : null;
-  const orgError = submitted ? validateOrgName(orgName) : null;
-  // Only the shape is checked. Reusing the owner's personal address is allowed
-  // on purpose — for a one-person dispatch outfit it is the same mailbox.
-  const emailError = submitted ? validateEmail(orgEmail) : null;
+  // Parse serverError to see which field it belongs to
+  const errText = serverError?.toLowerCase() || "";
+  const sErrPhone = errText.includes("phone number") ? serverError : null;
+  const sErrName = errText.includes("owner name") ? serverError : null;
+  const sErrOrg = errText.includes("organization name") ? serverError : null;
+  const sErrHandle = errText.includes("handle") ? serverError : null;
+  const sErrEmail = errText.includes("email") ? serverError : null;
+
+  const nameError = (submitted ? validateFullName(ownerName) : null) || sErrName;
+  const orgError = (submitted ? validateOrgName(orgName) : null) || sErrOrg;
+  const handleError = (submitted ? (handle.trim() ? null : "Enter an organization handle.") : null) || sErrHandle;
+  const emailError = (submitted ? validateEmail(companyEmail) : null) || sErrEmail;
+  const phoneError = sErrPhone;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (sending) return;
     setSubmitted(true);
-    if (validateFullName(ownerName) || validateOrgName(orgName) || validateEmail(orgEmail)) return;
+    if (validateFullName(ownerName) || validateOrgName(orgName) || !handle.trim() || validateEmail(companyEmail)) return;
 
     setSending(true);
-    await mockSendOrgCode(normalizeEmail(orgEmail));
+    // Move to next step immediately
     onSent();
   }
 
@@ -193,6 +243,7 @@ function DispatchDetailsForm({
         htmlFor={nameId}
         hint={nameError ? undefined : "The person legally responsible for this organization."}
         error={nameError ?? undefined}
+        required
       >
         <Input
           id={nameId}
@@ -213,6 +264,7 @@ function DispatchDetailsForm({
         htmlFor={orgId}
         hint={orgError ? undefined : "Carriers and drivers will see this name."}
         error={orgError ?? undefined}
+        required
       >
         <Input
           id={orgId}
@@ -227,34 +279,204 @@ function DispatchDetailsForm({
         />
       </Field>
 
-      <div className="space-y-1.5">
-        <label htmlFor={emailId} className="block text-[0.8125rem] font-medium text-fg">
-          Organization email address
-        </label>
+      <Field
+        label="Organization Handle"
+        htmlFor={handleId}
+        error={handleError ?? undefined}
+        required
+      >
+        <Input
+          id={handleId}
+          type="text"
+          value={handle}
+          onChange={(e) => onHandleChange(e.target.value)}
+          placeholder="acmehaulage"
+          disabled={sending}
+          aria-invalid={handleError ? true : undefined}
+          className={cn(handleError && "border-st-danger focus-visible:border-st-danger")}
+        />
+      </Field>
+
+      <Field
+        label="Company Email"
+        htmlFor={emailId}
+        error={emailError ?? undefined}
+        required
+      >
         <Input
           id={emailId}
           type="email"
-          value={orgEmail}
-          onChange={(e) => onOrgEmailChange(e.target.value)}
-          autoComplete="email"
-          placeholder="dispatch@meridian.com"
+          value={companyEmail}
+          onChange={(e) => onCompanyEmailChange(e.target.value)}
+          placeholder="ops@acmehaulage.com"
           disabled={sending}
           aria-invalid={emailError ? true : undefined}
-          aria-describedby={emailNoteId}
           className={cn(emailError && "border-st-danger focus-visible:border-st-danger")}
         />
-        {emailError ? (
-          <p role="alert" className="text-[0.75rem] text-st-danger">{emailError}</p>
-        ) : null}
-        <p id={emailNoteId} className="text-[0.75rem] leading-relaxed text-fg-subtle">
-          This will be your organization&apos;s official email for communication with carriers. It
-          can be the same address you use for your personal Antcolos account.
-        </p>
-      </div>
+      </Field>
 
-      <SubmitButton pending={sending} pendingLabel="Sending code…">
+      <Field
+        label="Company Phone"
+        htmlFor={phoneId}
+        error={phoneError ?? undefined}
+      >
+        <Input
+          id={phoneId}
+          type="tel"
+          value={companyPhone}
+          onChange={(e) => onCompanyPhoneChange(e.target.value)}
+          placeholder="4155551000"
+          disabled={sending}
+          aria-invalid={phoneError ? true : undefined}
+          className={cn(phoneError && "border-st-danger focus-visible:border-st-danger")}
+        />
+      </Field>
+
+      <SubmitButton pending={sending} pendingLabel="Continuing…">
         Continue
       </SubmitButton>
+
+    </form>
+  );
+}
+
+function DispatchAddressForm({
+  addressLine1,
+  addressLine2,
+  postalCode,
+  city,
+  addressState,
+  country,
+  onAddressLine1Change,
+  onAddressLine2Change,
+  onPostalCodeChange,
+  onCityChange,
+  onAddressStateChange,
+  onCountryChange,
+  onBack,
+  onComplete,
+}: {
+  addressLine1: string;
+  addressLine2: string;
+  postalCode: string;
+  city: string;
+  addressState: string;
+  country: string;
+  onAddressLine1Change: (v: string) => void;
+  onAddressLine2Change: (v: string) => void;
+  onPostalCodeChange: (v: string) => void;
+  onCityChange: (v: string) => void;
+  onAddressStateChange: (v: string) => void;
+  onCountryChange: (v: string) => void;
+  onBack: () => void;
+  onComplete: () => Promise<void>;
+}) {
+  const uid = useId();
+  const line1Id = `${uid}-line1`;
+  const line2Id = `${uid}-line2`;
+  const zipId = `${uid}-zip`;
+  const cityId = `${uid}-city`;
+  const stateId = `${uid}-state`;
+  const countryId = `${uid}-country`;
+
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    await onComplete();
+  }
+
+  async function handleSkip() {
+    if (saving) return;
+    setSaving(true);
+    await onComplete();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
+      <Field label="Address Line 1" htmlFor={line1Id}>
+        <Input
+          id={line1Id}
+          type="text"
+          value={addressLine1}
+          onChange={(e) => onAddressLine1Change(e.target.value)}
+          placeholder="123 Market St"
+          disabled={saving}
+        />
+      </Field>
+      
+      <Field label="Address Line 2" htmlFor={line2Id}>
+        <Input
+          id={line2Id}
+          type="text"
+          value={addressLine2}
+          onChange={(e) => onAddressLine2Change(e.target.value)}
+          placeholder="Suite 400"
+          disabled={saving}
+        />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="City" htmlFor={cityId}>
+          <Input
+            id={cityId}
+            type="text"
+            value={city}
+            onChange={(e) => onCityChange(e.target.value)}
+            placeholder="San Francisco"
+            disabled={saving}
+          />
+        </Field>
+        <Field label="State / Province" htmlFor={stateId}>
+          <Input
+            id={stateId}
+            type="text"
+            value={addressState}
+            onChange={(e) => onAddressStateChange(e.target.value)}
+            placeholder="CA"
+            disabled={saving}
+          />
+        </Field>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Postal Code" htmlFor={zipId}>
+          <Input
+            id={zipId}
+            type="text"
+            value={postalCode}
+            onChange={(e) => onPostalCodeChange(e.target.value)}
+            placeholder="94105"
+            disabled={saving}
+          />
+        </Field>
+        <Field label="Country" htmlFor={countryId}>
+          <Input
+            id={countryId}
+            type="text"
+            value="US"
+            readOnly
+            disabled
+          />
+        </Field>
+      </div>
+
+      <div className="flex flex-col gap-3 pt-2">
+        <SubmitButton pending={saving} pendingLabel="Saving…">
+          Save Address
+        </SubmitButton>
+        <Button 
+          type="button" 
+          variant="outline" 
+          onClick={handleSkip} 
+          disabled={saving}
+          className="w-full"
+        >
+          Skip for now
+        </Button>
+      </div>
 
       <div className="pt-1">
         <BackLink onClick={onBack} />

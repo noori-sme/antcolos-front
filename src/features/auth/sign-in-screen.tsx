@@ -52,7 +52,6 @@ export function SignInScreen() {
 
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   const signInMutation = useMutation({
@@ -80,10 +79,12 @@ export function SignInScreen() {
         return;
       }
 
-      // Fully authenticated (no nextStep). Save token so Home Routes can be accessed.
-      if (data.accessToken) {
-        document.cookie = `antcolos_token=${data.accessToken}; path=/; max-age=86400; SameSite=Lax`;
+      if (data.user?.nextStep === "select-role") {
+        router.push("/onboarding?step=role");
+        return;
       }
+
+      // Fully authenticated (no nextStep). Token is handled by the API interceptor.
       
       router.push(invitationReturn ?? "/home");
     },
@@ -91,9 +92,8 @@ export function SignInScreen() {
       const msg = error.message || "";
       if (msg.toLowerCase().includes("verify your email")) {
         setUnverifiedEmail(email);
-        setFormError(null);
       } else {
-        setFormError(msg || "Email or password is incorrect. Check both and try again.");
+        toast.error(msg || "Email or password is incorrect. Check both and try again.");
       }
     }
   });
@@ -112,7 +112,6 @@ export function SignInScreen() {
 
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
-    setFormError(null);
     if (nextEmailError || nextPasswordError) return;
 
     signInMutation.mutate({
@@ -136,7 +135,6 @@ export function SignInScreen() {
             We&apos;ll take you straight back to it.
           </FormAlert>
         ) : null}
-        {formError ? <FormAlert tone="danger" title={formError} /> : null}
 
         <Field label="Email address" htmlFor={emailId} error={emailError ?? undefined}>
           <Input
@@ -146,7 +144,6 @@ export function SignInScreen() {
             onChange={(e) => {
               setEmail(e.target.value);
               if (emailError) setEmailError(null);
-              if (formError) setFormError(null);
             }}
             onBlur={() => setEmail((v) => v.trim())}
             autoComplete="email"
@@ -175,7 +172,6 @@ export function SignInScreen() {
             onChange={(value) => {
               setPassword(value);
               if (passwordError) setPasswordError(null);
-              if (formError) setFormError(null);
             }}
             autoComplete="current-password"
             placeholder="Your password"

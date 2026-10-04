@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useIsActive } from "./nav-link";
 import { SidebarContent } from "./sidebar";
 import { useVisibleNav } from "./use-visible-nav";
+import { LockedSection } from "./locked-section";
 
 /** Slide-over drawer holding the full navigation on small screens. */
 export function MobileNavDrawer() {
@@ -60,23 +61,25 @@ export function MobileTabBar() {
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
-      <ul className="grid grid-cols-5">
-        {mobilePrimary.map((item) => (
-          <li key={item.href}>
-            <MobileTabLink href={item.href} label={item.label} icon={item.icon} />
+      <LockedSection hideIcon className="w-full">
+        <ul className="grid grid-cols-5">
+          {mobilePrimary.map((item) => (
+            <li key={item.href}>
+              <MobileTabLink href={item.href} label={item.label} icon={item.icon} />
+            </li>
+          ))}
+          <li>
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="flex h-14 w-full flex-col items-center justify-center gap-1 text-fg-muted transition-colors active:bg-surface-hover"
+            >
+              <MoreHorizontal aria-hidden className="size-5" />
+              <span className="text-[0.6875rem] leading-none font-medium">More</span>
+            </button>
           </li>
-        ))}
-        <li>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="flex h-14 w-full flex-col items-center justify-center gap-1 text-fg-muted transition-colors active:bg-surface-hover"
-          >
-            <MoreHorizontal aria-hidden className="size-5" />
-            <span className="text-[0.6875rem] leading-none font-medium">More</span>
-          </button>
-        </li>
-      </ul>
+        </ul>
+      </LockedSection>
     </nav>
   );
 }

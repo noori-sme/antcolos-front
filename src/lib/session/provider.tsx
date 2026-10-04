@@ -1,6 +1,10 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { apiClient } from "@/lib/api/client";
+import Cookies from "js-cookie";
+import { usePathname } from "next/navigation";
+import { SplashScreen } from "@/components/splash-screen";
 import {
   createContext, useCallback, useEffect, useMemo, useState,
   useSyncExternalStore, type ReactNode,
@@ -65,7 +69,58 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
   const newcomer = scenario === "newcomer";
 
-  const user = newcomer ? NEWCOMER_USER : MOCK_USER;
+  const { data: fetchedUser, isLoading } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: async () => {
+      const token = Cookies.get('antcolos_token');
+      if (!token) return null;
+      
+      const isOrgAdmin = Cookies.get('antcolos_org_type');
+      const endpoint = isOrgAdmin ? '/auth/me' : '/auth/individual/me';
+      
+      const response = await apiClient.get(endpoint);
+      const data = response.data?.user || response.data;
+      
+      if (data?.individualRole) {
+        Cookies.set('antcolos_user_role', data.individualRole, { path: '/', expires: 7 });
+        Cookies.remove('antcolos_org_type', { path: '/' });
+        Cookies.remove('antcolos_org_role', { path: '/' });
+      } else if (data?.organizationType) {
+        Cookies.set('antcolos_org_type', data.organizationType, { path: '/', expires: 7 });
+        Cookies.set('antcolos_org_role', data.role, { path: '/', expires: 7 });
+        Cookies.remove('antcolos_user_role', { path: '/' });
+      } else {
+        Cookies.remove('antcolos_user_role', { path: '/' });
+        Cookies.remove('antcolos_org_type', { path: '/' });
+        Cookies.remove('antcolos_org_role', { path: '/' });
+      }
+      
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const pathname = usePathname();
+  const isAuthPage = pathname === '/sign-in' || pathname === '/sign-up';
+
+  useEffect(() => {
+    if (!isLoading && !fetchedUser && !isAuthPage) {
+      window.location.href = '/sign-in';
+    }
+  }, [isLoading, fetchedUser, isAuthPage]);
+
+  const baseUser = newcomer ? NEWCOMER_USER : MOCK_USER;
+  const user = useMemo(() => {
+    if (!fetchedUser) return baseUser;
+    return {
+      ...baseUser,
+      id: fetchedUser.id,
+      email: fetchedUser.email,
+      displayName: fetchedUser.name,
+      username: fetchedUser.username,
+      avatarUrl: fetchedUser.avatarUrl || baseUser.avatarUrl,
+    };
+  }, [baseUser, fetchedUser]);
 
   /**
    * The seats this person holds, READ FROM A STORE rather than from a frozen

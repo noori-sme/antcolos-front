@@ -62,7 +62,7 @@ export function ChoiceCard({
   selected,
   disabled,
 }: {
-  icon: LucideIcon;
+  icon: React.ElementType;
   title: string;
   description: string;
   onSelect: () => void;
