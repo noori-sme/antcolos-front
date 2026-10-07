@@ -29,9 +29,11 @@ export const fileApiClient = axios.create({
 });
 
 import Cookies from "js-cookie";
+import { toast } from "sonner";
 
 /**
  * Helper to make backend validation messages more user-friendly
+ * ... (abridged) ...
  */
 function formatErrorMessage(msg: string): string {
   if (!msg || typeof msg !== "string") return msg;
@@ -146,6 +148,18 @@ function setupInterceptors(client: AxiosInstance) {
       }
       
       const errorMessage = backendMessage || error.message || "An unexpected error occurred.";
+
+      const isMeEndpoint = url.includes('/auth/me') || url.includes('/auth/individual/me');
+      if ((error.response?.status === 403 || error.response?.status === 401) && isMeEndpoint) {
+        Cookies.remove('antcolos_token', { path: '/' });
+        Cookies.remove('antcolos_next_step', { path: '/' });
+        Cookies.remove('antcolos_user_role', { path: '/' });
+        Cookies.remove('antcolos_org_type', { path: '/' });
+        Cookies.remove('antcolos_org_role', { path: '/' });
+        toast.error("Session expired. Please sign in again.");
+        window.location.href = '/sign-in';
+        return Promise.reject(new Error("Session expired. Please sign in again."));
+      }
 
       // Do not trigger global logout for authentication endpoints
       const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register');

@@ -315,7 +315,6 @@ function CarrierDetailsForm({
 
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<CarrierLookupResult | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const submitCarrierMutation = useMutation({
     mutationFn: async () => {
@@ -351,7 +350,6 @@ function CarrierDetailsForm({
     onError: (error: any) => {
       const msg = getFriendlyErrorMessage(error);
       toast.error(msg);
-      setSubmitError(msg);
     }
   });
 
@@ -368,7 +366,6 @@ function CarrierDetailsForm({
     if (submitCarrierMutation.isPending) return;
     setSubmitted(true);
     setResult(null);
-    setSubmitError(null);
 
     if (validateFullName(ownerName) || mcError || dotError || validateCarrierIdentifiers(mc, dot)) {
       return;
@@ -380,12 +377,6 @@ function CarrierDetailsForm({
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-4">
       {result ? <LookupProblem result={result} /> : null}
-      
-      {submitError ? (
-        <FormAlert tone="danger" title="Could not verify carrier">
-          {submitError}
-        </FormAlert>
-      ) : null}
 
       <Field
         label="Owner's full legal name"
@@ -446,10 +437,6 @@ function CarrierDetailsForm({
       <SubmitButton pending={submitCarrierMutation.isPending} pendingLabel="Submitting...">
         Find my carrier
       </SubmitButton>
-
-      <div className="pt-1">
-        <BackLink onClick={onBack} />
-      </div>
     </form>
   );
 }
@@ -507,7 +494,6 @@ function CarrierReview({
   onBack: () => void;
 }) {
   const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
 
   const { data: lookupData, isLoading } = useQuery({
     queryKey: ["carrierLookup", mc, dot],
@@ -575,7 +561,6 @@ function CarrierReview({
     onError: (error: any) => {
       const msg = getFriendlyErrorMessage(error);
       toast.error(msg);
-      setSendError(msg);
       setSending(false);
     }
   });
@@ -583,7 +568,6 @@ function CarrierReview({
   async function handleSend() {
     if (sending) return;
     setSending(true);
-    setSendError(null);
     submitCarrierMutation.mutate();
   }
 
@@ -618,12 +602,6 @@ function CarrierReview({
           address is what proves the carrier is yours.
         </p>
       </div>
-
-      {sendError ? (
-        <FormAlert tone="danger" title="Could not send link">
-          {sendError}
-        </FormAlert>
-      ) : null}
 
       <SubmitButton
         type="button"

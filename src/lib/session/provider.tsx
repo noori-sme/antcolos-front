@@ -73,7 +73,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     queryKey: ['currentUser'],
     queryFn: async () => {
       const token = Cookies.get('antcolos_token');
-      if (!token) return null;
+      const nextStep = Cookies.get('antcolos_next_step');
+      if (!token || nextStep) return null;
       
       const isOrgAdmin = Cookies.get('antcolos_org_type');
       const endpoint = isOrgAdmin ? '/auth/me' : '/auth/individual/me';
@@ -102,12 +103,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const pathname = usePathname();
   const isAuthPage = pathname === '/sign-in' || pathname === '/sign-up';
+  const isOnboardingPage = pathname.startsWith('/onboarding');
 
   useEffect(() => {
-    if (!isLoading && !fetchedUser && !isAuthPage) {
+    const nextStep = Cookies.get('antcolos_next_step');
+    if (!isLoading && !fetchedUser && !isAuthPage && !isOnboardingPage && !nextStep) {
       window.location.href = '/sign-in';
     }
-  }, [isLoading, fetchedUser, isAuthPage]);
+  }, [isLoading, fetchedUser, isAuthPage, isOnboardingPage]);
 
   const baseUser = newcomer ? NEWCOMER_USER : MOCK_USER;
   const user = useMemo(() => {
