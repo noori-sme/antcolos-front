@@ -31,7 +31,7 @@ export function SignInScreen() {
   const router = useRouter();
   const invitationReturn = useInvitationReturnPath();
   const searchParams = useSearchParams();
-  const verifyToken = searchParams?.get("verifyToken") || null;
+  const verifyToken = searchParams?.get("verifyToken") || searchParams?.get("token") || null;
 
   const uid = useId();
   const emailId = `${uid}-email`;

@@ -5,7 +5,14 @@ export function middleware(request: NextRequest) {
   const token = request.cookies.get('antcolos_token')?.value
   const nextStep = request.cookies.get('antcolos_next_step')?.value
   const pathname = request.nextUrl.pathname
-  const isAuthPage = pathname === '/sign-in' || pathname === '/sign-up';
+  const isAuthPage = 
+    pathname === '/sign-in' || 
+    pathname === '/sign-up' || 
+    pathname.startsWith('/verify-email') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/invite') ||
+    pathname.startsWith('/invitation') ||
+    pathname.startsWith('/referral');
 
   // 1. If no token, they must be unauthenticated.
   if (!token) {
@@ -49,7 +56,7 @@ export function middleware(request: NextRequest) {
     }
     
     // Prevent access to any protected routes (like /home) if there is an active nextStep.
-    const isAllowedRoute = pathname.startsWith('/onboarding') || pathname.startsWith('/sign-up') || pathname.startsWith('/sign-in');
+    const isAllowedRoute = pathname.startsWith('/onboarding') || pathname.startsWith('/sign-up') || pathname.startsWith('/sign-in') || pathname.startsWith('/verify-email');
     if (!isAllowedRoute) {
       return NextResponse.redirect(new URL('/onboarding', request.url))
     }
@@ -62,7 +69,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/home', request.url))
   }
 
-  if (isAuthPage || pathname.startsWith('/onboarding')) {
+  const isStrictAuthPage = pathname === '/sign-in' || pathname === '/sign-up' || pathname.startsWith('/forgot-password');
+  
+  if (isStrictAuthPage || pathname.startsWith('/onboarding')) {
     return NextResponse.redirect(new URL('/home', request.url))
   }
 

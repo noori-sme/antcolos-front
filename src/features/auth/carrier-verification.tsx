@@ -494,6 +494,14 @@ function CarrierReview({
   onBack: () => void;
 }) {
   const [sending, setSending] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
 
   const { data: lookupData, isLoading } = useQuery({
     queryKey: ["carrierLookup", mc, dot],
@@ -556,7 +564,9 @@ function CarrierReview({
       };
       
       Cookies.set("antcolos_carrier_data", JSON.stringify(payloadToSave), { expires: 1 });
-      onCodeSent();
+      setCountdown(60);
+      setSending(false);
+      toast.success("Verification link sent again!");
     },
     onError: (error: any) => {
       const msg = getFriendlyErrorMessage(error);
@@ -566,7 +576,7 @@ function CarrierReview({
   });
 
   async function handleSend() {
-    if (sending) return;
+    if (sending || countdown > 0) return;
     setSending(true);
     submitCarrierMutation.mutate();
   }
@@ -591,7 +601,7 @@ function CarrierReview({
 
       <div className="rounded-md border border-border bg-surface-sunken px-3.5 py-3">
         <p className="text-[0.8125rem] leading-relaxed text-fg-muted">
-          We&apos;ll send a verification link to the email address publicly listed for this carrier
+          A verification link has been sent to the email address publicly listed for this carrier
           in FMCSA records.
         </p>
         <p className="mt-2 font-mono text-[0.875rem] font-medium text-fg break-all">
@@ -607,9 +617,10 @@ function CarrierReview({
         type="button"
         pending={submitCarrierMutation.isPending}
         pendingLabel="Sending link…"
+        disabled={countdown > 0}
         onClick={handleSend}
       >
-        Send verification link
+        {countdown > 0 ? `Resend verification link in ${countdown}s` : "Resend verification link"}
       </SubmitButton>
 
       <div className="pt-1">

@@ -22,6 +22,7 @@ import {
   validateRoleName,
 } from "@/lib/permissions";
 import { services } from "@/lib/api";
+import { apiClient } from "@/lib/api/client";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import type { TemplateSummary } from "@/lib/api/contracts/access";
 import { subscribeRoster } from "@/lib/session/membership-store";
@@ -79,12 +80,69 @@ export function RolesScreen() {
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
   useEffect(() => subscribeRoster(refresh), [refresh]);
+  
   useEffect(() => {
     if (!ctx) return;
     let cancelled = false;
-    void services.access.templates(ctx).then((rows) => {
-      if (!cancelled) setSummaries(rows);
+    
+    // Fetch from actual API instead of the mock services.access.templates
+    apiClient.get('/organizations/roles').then((res) => {
+      if (cancelled) return;
+      const roles = res.data?.roles || [];
+      const mappedSummaries: TemplateSummary[] = roles.map((r: any) => {
+        // Filter out unknown permissions from backend to prevent UI crashes
+        const validPermissions = (r.permissions || [])
+          .map((p: string) => {
+            // Basic mapping for backend formats if needed, or just let it fall through
+            // e.g. 'settlement.create' -> 'settlements:create'
+            let key = p.replace(/\./g, ':');
+            if (key === 'settlement:read') key = 'settlements:view';
+            if (key === 'settlement:create') key = 'settlements:create';
+            if (key === 'settlement:update') key = 'settlements:create'; // approximate
+            if (key === 'invoice:read') key = 'invoices:view';
+            if (key === 'invoice:create') key = 'invoices:create';
+            if (key === 'expense:read') key = 'expenses:view';
+            if (key === 'expense:update') key = 'expenses:view'; // approximate
+            if (key === 'membership:list') key = 'members:view';
+            if (key === 'invitation:list') key = 'invitations:view';
+            if (key === 'load:read') key = 'loads:view';
+            if (key === 'load:create') key = 'loads:create';
+            if (key === 'truck:read') key = 'trucks:view';
+            if (key === 'truck:create') key = 'trucks:create';
+            if (key === 'document:read') key = 'documents:view';
+            if (key === 'document:create') key = 'documents:upload';
+            return key;
+          })
+          .filter((p: string) => {
+             try {
+               permissionMeta(p as PermissionKey);
+               return true;
+             } catch {
+               return false;
+             }
+          });
+
+        return {
+          template: {
+            id: r.id,
+            name: r.name,
+            description: r.description || "",
+            permissions: validPermissions,
+            version: 1, // API currently does not provide version
+            seeded: ["Admin", "Dispatcher", "Driver", "Accountant"].includes(r.name), // Mark as seeded if standard
+            archived: false,
+            createdAt: r.createdAt || new Date().toISOString(),
+            updatedAt: r.updatedAt || new Date().toISOString(),
+          },
+          memberCount: 0, // Need future API support for actual member count
+          behindCount: 0,
+        };
+      });
+      setSummaries(mappedSummaries);
+    }).catch(() => {
+      if (!cancelled) setSummaries([]);
     });
+
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.organizationId, ctx?.membershipId, tick]);
@@ -441,6 +499,7 @@ function TemplateRow({
             size="sm"
             onClick={onDelete}
             disabled={busy || inUse || template.seeded}
+            className="text-st-danger hover:bg-st-danger/10 hover:text-st-danger"
             title={
               template.seeded
                 ? "Roles that came with the workspace cannot be deleted"

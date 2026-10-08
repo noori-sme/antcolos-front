@@ -33,52 +33,24 @@ export function VerifyEmailModal({
       return data;
     },
     onSuccess: (data) => {
-      const elapsed = Date.now() - mountTime;
-      const delay = Math.max(0, 2400 - elapsed); // Wait for global loader (2300ms) to hide
-
-      setTimeout(() => {
-        if (data.user?.emailVerified) {
-          if (data.user?.nextStep === "choose-username") {
-            toast.success("Email verified successfully! 🎉 Now let's pick a unique username.");
-          } else if (data.user?.nextStep) {
-            toast.success("Email verified successfully! 🎉 Let's continue setting up your account.");
-          } else {
-            toast.success("Email verified successfully! 🎉 Welcome back to Antcolos.");
-          }
-        }
-
+      if (data.user?.emailVerified) {
         if (data.user?.nextStep === "choose-username") {
-          sessionStorage.setItem("antcolos_signup_step", "username");
-          sessionStorage.setItem("antcolos_signup_email", data.user.email);
-          sessionStorage.setItem("antcolos_signup_from_login", "true");
-          router.push("/sign-up");
-          return;
+          toast.success("Email verified successfully! 🎉 Now let's pick a unique username.");
+        } else if (data.user?.nextStep) {
+          toast.success("Email verified successfully! 🎉 Let's continue setting up your account.");
+        } else {
+          toast.success("Email verified successfully! 🎉 Welcome back to Antcolos.");
         }
-        
-        if (data.user?.nextStep === "carrier-onboarding") {
-          router.push("/onboarding?step=carrier");
-          return;
-        }
-        
-        if (data.user?.nextStep === "select-role") {
-          router.push("/onboarding?step=role");
-          return;
-        }
-
-        if (data.user?.nextStep === "verify-carrier") {
-          router.push("/onboarding?step=verify-carrier");
-          return;
-        }
-
-        if (!data.user?.nextStep) {
-           router.push("/home");
-           return;
-        }
-      }, delay);
+      }
     },
     onError: () => {
-      // Only remove from URL if it failed, so they stay on sign-in page
-      router.replace("/sign-in", { scroll: false });
+      // Stay on the current page to show the error message, but redirect to sign-in after a delay
+      const pathname = typeof window !== "undefined" ? window.location.pathname : "/sign-in";
+      router.replace(pathname, { scroll: false });
+      
+      setTimeout(() => {
+        router.push("/sign-in");
+      }, 3000);
     }
   });
 
@@ -92,6 +64,47 @@ export function VerifyEmailModal({
   const handleClose = () => {
     setActiveToken(null);
     onClose();
+  };
+
+  const handleSuccessAction = () => {
+    const user = verifyMutation.data?.user;
+    
+    setActiveToken(null);
+    onClose();
+
+    if (user?.nextStep === "choose-username") {
+      sessionStorage.setItem("antcolos_signup_step", "username");
+      sessionStorage.setItem("antcolos_signup_email", user.email);
+      sessionStorage.setItem("antcolos_signup_from_login", "true");
+      router.push("/sign-up");
+      return;
+    }
+    
+    if (user?.nextStep === "carrier-onboarding") {
+      router.push("/onboarding?step=carrier");
+      return;
+    }
+    
+    if (user?.nextStep === "select-role") {
+      router.push("/onboarding?step=role");
+      return;
+    }
+
+    if (user?.nextStep === "verify-carrier") {
+      router.push("/onboarding?step=verify-carrier");
+      return;
+    }
+
+    if (!user?.nextStep) {
+      router.push("/home");
+      return;
+    }
+    
+    // Fallback if none matched
+    const pathname = typeof window !== "undefined" ? window.location.pathname : "/sign-in";
+    if (pathname === "/verify-email") {
+      router.push("/sign-in");
+    }
   };
 
   return (
@@ -138,8 +151,8 @@ export function VerifyEmailModal({
                       <DialogPrimitive.Description className="text-[0.875rem] text-fg-muted">
                         Your email address has been successfully verified. You can now sign in to your account.
                       </DialogPrimitive.Description>
-                      <Button className="w-full mt-4" onClick={handleClose}>
-                        Sign in now
+                      <Button className="w-full mt-4" onClick={handleSuccessAction}>
+                        Continue
                       </Button>
                     </div>
                   ) : (
@@ -153,9 +166,15 @@ export function VerifyEmailModal({
                       <DialogPrimitive.Description className="text-[0.875rem] text-fg-muted">
                         {verifyMutation.error?.message || "Email verification token is invalid or expired."}
                       </DialogPrimitive.Description>
-                      <Button variant="outline" className="w-full mt-4" onClick={handleClose}>
-                        Close
-                      </Button>
+                      <div className="mt-4 flex w-full flex-col items-center justify-center space-y-3">
+                        <div className="flex items-center space-x-2 text-sm text-fg-muted">
+                          <Loader2 className="size-4 animate-spin" />
+                          <span>Redirecting to Sign In page...</span>
+                        </div>
+                        <Button variant="outline" className="w-full" onClick={() => router.push("/sign-in")}>
+                          Go to Sign In now
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </motion.div>

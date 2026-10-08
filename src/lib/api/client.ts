@@ -162,7 +162,7 @@ function setupInterceptors(client: AxiosInstance) {
       }
 
       // Do not trigger global logout for authentication endpoints
-      const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register');
+      const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/verify-email');
 
       // Handle 401 Unauthorized globally (e.g., Token Refresh)
       if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
