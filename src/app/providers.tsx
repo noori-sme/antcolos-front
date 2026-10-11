@@ -4,9 +4,21 @@ import { ThemeProvider } from "next-themes";
 import type { ReactNode } from "react";
 import { QueryProvider } from "@/lib/query/provider";
 import { SessionProvider } from "@/lib/session/provider";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
+import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 export function Providers({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    const pendingToast = sessionStorage.getItem("antcolos_pending_toast");
+    if (pendingToast) {
+      toast.success(pendingToast);
+      sessionStorage.removeItem("antcolos_pending_toast");
+    }
+  }, [pathname]);
+
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryProvider>

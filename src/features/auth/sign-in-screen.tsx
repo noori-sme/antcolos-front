@@ -14,7 +14,7 @@ import { UnverifiedEmailModal } from "./modals/unverified-email-modal";
 import { VerifyEmailModal } from "./modals/verify-email-modal";
 import { normalizeEmail, validateEmail } from "./rules";
 import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
  */
 export function SignInScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const invitationReturn = useInvitationReturnPath();
   const searchParams = useSearchParams();
   const verifyToken = searchParams?.get("verifyToken") || searchParams?.get("token") || null;
@@ -85,6 +86,8 @@ export function SignInScreen() {
       }
 
       // Fully authenticated (no nextStep). Token is handled by the API interceptor.
+      queryClient.setQueryData(['currentUser'], data.user || data);
+      sessionStorage.setItem("antcolos_pending_toast", data.message || "Successfully signed in.");
       
       router.push(invitationReturn ?? "/home");
     },

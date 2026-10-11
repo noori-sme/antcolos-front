@@ -37,8 +37,7 @@ export function AccountMenu() {
     sessionStorage.removeItem("antcolos_signup_step");
     sessionStorage.removeItem("antcolos_signup_email");
     sessionStorage.removeItem("antcolos_signup_from_login");
-    
-    toast.success("Signed out successfully");
+    sessionStorage.setItem("antcolos_pending_toast", "Signed out successfully");
     router.push("/sign-in");
   };
 

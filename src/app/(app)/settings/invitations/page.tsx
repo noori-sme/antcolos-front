@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { InvitationsScreen } from "@/features/access/invitations-screen";
 import { RequiresPermission } from "@/features/access/owner-guard";
 
@@ -16,7 +17,9 @@ export const metadata = { title: "Invitations" };
 export default function Page() {
   return (
     <RequiresPermission permission="invitations:create" title="Only the owner can invite people">
-      <InvitationsScreen />
+      <Suspense fallback={null}>
+        <InvitationsScreen />
+      </Suspense>
     </RequiresPermission>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, ChevronRight, Info, Link2, Search, ShieldCheck } from "lucide-react";
+import { Building2, ChevronRight, Link2, Search, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,9 +13,8 @@ import {
 import type {
   OrganizationType, PermissionGroup, PermissionKey, PermissionMeta,
 } from "@/types";
-import { FinancialChip, SensitiveChip } from "./permission-chips";
-import { NeverGrantableNotice } from "./permission-summary";
 import { cn } from "@/lib/utils";
+import { FinancialChip, SensitiveChip } from "./permission-chips";
 
 /**
  * The reference view: every permission this workspace can hand out, in plain
@@ -97,14 +96,6 @@ export function PermissionCatalog({ orgType }: { orgType: OrganizationType }) {
         </p>
       </div>
 
-      <p className="flex gap-2 rounded-md border border-border bg-surface-sunken px-3 py-2.5 text-[0.8125rem] leading-relaxed text-fg-muted">
-        <Info className="mt-px size-4 shrink-0 text-fg-subtle" aria-hidden />
-        <span>
-          These are the building blocks. A role is a saved set of them, and a person&rsquo;s
-          actual access is whatever their membership ends up with — roles, plus anything added
-          or taken away for them specifically.
-        </span>
-      </p>
 
       {shown === 0 && unavailableMatches.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-8 text-center text-[0.8125rem] text-fg-muted">
@@ -186,8 +177,6 @@ export function PermissionCatalog({ orgType }: { orgType: OrganizationType }) {
           </ul>
         </section>
       ) : null}
-
-      <NeverGrantableNotice />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import {
   Archive, ArchiveRestore, BookOpen, Copy, History, Lock, Pencil, Plus,
-  ShieldCheck, Trash2, Users,
+  ShieldCheck, Trash2, Users, Loader2
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -23,18 +23,16 @@ import {
 } from "@/lib/permissions";
 import { services } from "@/lib/api";
 import { apiClient } from "@/lib/api/client";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { toast } from "sonner";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import type { TemplateSummary } from "@/lib/api/contracts/access";
 import { subscribeRoster } from "@/lib/session/membership-store";
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
 import type { OrganizationType, PermissionKey, PermissionTemplate } from "@/types";
-import { PermissionPicker } from "./permission-picker";
+import { ApiPermissionPicker } from "./api-permission-picker";
 import { PermissionCatalog } from "./permission-catalog";
-import {
-  NeverGrantableNotice,
-  PermissionSummary,
-  SensitiveAccessWarning,
-} from "./permission-summary";
+
 import { ApplyTemplatePanel } from "./apply-template-panel";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +42,40 @@ type View =
   | { mode: "apply"; template: PermissionTemplate };
 
 type Tab = "roles" | "catalog";
+
+function getFriendlyErrorMessage(err: any): string {
+  const msg = err?.response?.data?.message || err?.message || "An unexpected error occurred.";
+  if (typeof msg === "string" && msg.includes("Invalid permission")) {
+    const match = msg.match(/Invalid permission '([^']+)'/);
+    const perm = match ? ` (${match[1]})` : "";
+    return `This role contains outdated permissions${perm}. Please edit and save it first to automatically update them.`;
+  }
+  return msg;
+}
+
+function migrateKey(p: string) {
+  if (typeof p !== "string" || !p.includes(":")) return p;
+  let key = p.replace(/:/g, '.');
+  key = key.replace(/^trucks\./, 'truck.');
+  key = key.replace(/^loads\./, 'load.');
+  key = key.replace(/^settlements\./, 'settlement.');
+  key = key.replace(/^invoices\./, 'invoice.');
+  key = key.replace(/^expenses\./, 'expense.');
+  key = key.replace(/^documents\./, 'document.');
+  key = key.replace(/^members\./, 'membership.');
+  key = key.replace(/^invitations\./, 'invitation.');
+  
+  if (key === 'truck.view') return 'truck.read';
+  if (key === 'load.view') return 'load.read';
+  if (key === 'settlement.view') return 'settlement.read';
+  if (key === 'invoice.view') return 'invoice.read';
+  if (key === 'expense.view') return 'expense.read';
+  if (key === 'document.view') return 'document.read';
+  if (key === 'document.upload') return 'document.create';
+  if (key === 'membership.view') return 'membership.list';
+  if (key === 'invitation.view') return 'invitation.list';
+  return key;
+}
 
 /**
  * Roles and permissions.
@@ -66,8 +98,8 @@ export function RolesScreen() {
   const [tab, setTab] = useState<Tab>("roles");
   const [summaries, setSummaries] = useState<TemplateSummary[] | null>(null);
   const [view, setView] = useState<View>({ mode: "list" });
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ tone: "info" | "success" | "danger"; title: string; body?: string } | null>(null);
+  const [busyState, setBusyState] = useState<{ id: string; action: string } | null>(null);
+
 
   const orgType: OrganizationType = organization?.type ?? "CARRIER";
 
@@ -90,46 +122,14 @@ export function RolesScreen() {
       if (cancelled) return;
       const roles = res.data?.roles || [];
       const mappedSummaries: TemplateSummary[] = roles.map((r: any) => {
-        // Filter out unknown permissions from backend to prevent UI crashes
-        const validPermissions = (r.permissions || [])
-          .map((p: string) => {
-            // Basic mapping for backend formats if needed, or just let it fall through
-            // e.g. 'settlement.create' -> 'settlements:create'
-            let key = p.replace(/\./g, ':');
-            if (key === 'settlement:read') key = 'settlements:view';
-            if (key === 'settlement:create') key = 'settlements:create';
-            if (key === 'settlement:update') key = 'settlements:create'; // approximate
-            if (key === 'invoice:read') key = 'invoices:view';
-            if (key === 'invoice:create') key = 'invoices:create';
-            if (key === 'expense:read') key = 'expenses:view';
-            if (key === 'expense:update') key = 'expenses:view'; // approximate
-            if (key === 'membership:list') key = 'members:view';
-            if (key === 'invitation:list') key = 'invitations:view';
-            if (key === 'load:read') key = 'loads:view';
-            if (key === 'load:create') key = 'loads:create';
-            if (key === 'truck:read') key = 'trucks:view';
-            if (key === 'truck:create') key = 'trucks:create';
-            if (key === 'document:read') key = 'documents:view';
-            if (key === 'document:create') key = 'documents:upload';
-            return key;
-          })
-          .filter((p: string) => {
-             try {
-               permissionMeta(p as PermissionKey);
-               return true;
-             } catch {
-               return false;
-             }
-          });
-
         return {
           template: {
             id: r.id,
             name: r.name,
             description: r.description || "",
-            permissions: validPermissions,
+            permissions: (r.permissions || []).map(migrateKey),
             version: 1, // API currently does not provide version
-            seeded: ["Admin", "Dispatcher", "Driver", "Accountant"].includes(r.name), // Mark as seeded if standard
+            seeded: false, // Wait for backend to provide a flag if some roles shouldn't be deletable
             archived: false,
             createdAt: r.createdAt || new Date().toISOString(),
             updatedAt: r.updatedAt || new Date().toISOString(),
@@ -153,11 +153,11 @@ export function RolesScreen() {
   );
 
   const act = useCallback(
-    async (id: string, run: () => Promise<void>) => {
-      setBusyId(id);
-      setNotice(null);
+    async (id: string, action: string, run: () => Promise<void>) => {
+      setBusyState({ id, action });
+
       await run();
-      setBusyId(null);
+      setBusyState(null);
       refresh();
     },
     [refresh],
@@ -176,24 +176,13 @@ export function RolesScreen() {
         orgType={orgType}
         grantable={grantable}
         onCancel={() => setView({ mode: "list" })}
-        onSaved={(saved, wasEdit) => {
+        onSaved={(saved, wasEdit, backendMsg) => {
           setView({ mode: "list" });
-          setNotice(
-            wasEdit
-              ? {
-                tone: "info",
-                title: `Saved “${saved.name}”.`,
-                body:
-                  "Nobody's access changed. The people who already hold this role keep exactly "
-                  + "what they were given — use “Apply to people” when you want to move them onto "
-                  + "this version, and you will see the before and after for each of them first.",
-              }
-              : {
-                tone: "success",
-                title: `Created “${saved.name}”.`,
-                body: "Nobody holds it yet. Apply it to somebody, or attach it to an invitation.",
-              },
-          );
+          if (wasEdit) {
+            toast.success(backendMsg || `Saved "${saved.name}" successfully.`);
+          } else {
+            toast.success(backendMsg || `Created "${saved.name}" successfully.`);
+          }
           refresh();
         }}
       />
@@ -206,7 +195,7 @@ export function RolesScreen() {
         template={view.template}
         onDone={(message) => {
           setView({ mode: "list" });
-          if (message) setNotice({ tone: "success", title: message });
+          if (message) toast.success(message);
           refresh();
         }}
         onCancel={() => setView({ mode: "list" })}
@@ -249,13 +238,7 @@ export function RolesScreen() {
 
       {tab === "roles" ? (
         <div className="space-y-section">
-          {notice ? (
-            <FormAlert tone={notice.tone} title={notice.title}>
-              {notice.body ? <p>{notice.body}</p> : null}
-            </FormAlert>
-          ) : null}
 
-          <OwnerRoleCard />
 
           {behindTotal > 0 ? (
             <FormAlert
@@ -292,28 +275,38 @@ export function RolesScreen() {
                 <TemplateRow
                   key={summary.template.id}
                   summary={summary}
-                  busy={busyId === summary.template.id}
+                  busy={busyState?.id === summary.template.id}
+                  busyAction={busyState?.id === summary.template.id ? busyState.action : undefined}
                   onEdit={() => setView({ mode: "edit", template: summary.template })}
                   onApply={() => setView({ mode: "apply", template: summary.template })}
                   onDuplicate={() =>
-                    act(summary.template.id, async () => {
-                      const result = await services.access.duplicateTemplate(ctx, summary.template.id);
-                      if (result.status === "refused") {
-                        setNotice({ tone: "danger", title: "That role was not duplicated.", body: result.message });
+                    act(summary.template.id, "duplicate", async () => {
+                      try {
+                        const draft = {
+                          name: summary.template.name + " Copy",
+                          description: summary.template.description,
+                          permissions: summary.template.permissions
+                        };
+                        await apiClient.post('/organizations/roles', draft);
+                        toast.success(`Duplicated "${summary.template.name}".`);
+                      } catch (err: any) {
+                        toast.error("That role was not duplicated.", { description: getFriendlyErrorMessage(err) });
                       }
                     })}
                   onArchive={() =>
-                    act(summary.template.id, async () => {
+                    act(summary.template.id, "archive", async () => {
                       const result = await services.access.setTemplateArchived(ctx, summary.template.id, true);
                       if (result.status === "refused") {
-                        setNotice({ tone: "danger", title: "That role was not archived.", body: result.message });
+                        toast.error("That role was not archived.", { description: result.message });
                       }
                     })}
                   onDelete={() =>
-                    act(summary.template.id, async () => {
-                      const result = await services.access.deleteTemplate(ctx, summary.template.id);
-                      if (result.status === "refused") {
-                        setNotice({ tone: "danger", title: "That role was not deleted.", body: result.message });
+                    act(summary.template.id, "delete", async () => {
+                      try {
+                        await apiClient.delete(`/organizations/roles/${summary.template.id}`);
+                        toast.success(`Role "${summary.template.name}" deleted.`);
+                      } catch (err: any) {
+                        toast.error(err.message || "That role was not deleted.");
                       }
                     })}
                 />
@@ -333,22 +326,25 @@ export function RolesScreen() {
                   <TemplateRow
                     key={summary.template.id}
                     summary={summary}
-                    busy={busyId === summary.template.id}
+                    busy={busyState?.id === summary.template.id}
+                    busyAction={busyState?.id === summary.template.id ? busyState.action : undefined}
                     onEdit={() => setView({ mode: "edit", template: summary.template })}
                     onApply={null}
                     onDuplicate={() =>
-                      act(summary.template.id, async () => {
+                      act(summary.template.id, "duplicate", async () => {
                         await services.access.duplicateTemplate(ctx, summary.template.id);
                       })}
                     onArchive={() =>
-                      act(summary.template.id, async () => {
+                      act(summary.template.id, "archive", async () => {
                         await services.access.setTemplateArchived(ctx, summary.template.id, false);
                       })}
                     onDelete={() =>
-                      act(summary.template.id, async () => {
-                        const result = await services.access.deleteTemplate(ctx, summary.template.id);
-                        if (result.status === "refused") {
-                          setNotice({ tone: "danger", title: "That role was not deleted.", body: result.message });
+                      act(summary.template.id, "delete", async () => {
+                        try {
+                          await apiClient.delete(`/organizations/roles/${summary.template.id}`);
+                          toast.success(`Role "${summary.template.name}" deleted.`);
+                        } catch (err: any) {
+                          toast.error(err.message || "That role was not deleted.");
                         }
                       })}
                   />
@@ -398,37 +394,12 @@ function TabButton({
   );
 }
 
-function OwnerRoleCard() {
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-sunken p-4">
-      <span
-        aria-hidden
-        className="flex size-9 shrink-0 items-center justify-center rounded-md bg-surface text-fg-muted shadow-e1"
-      >
-        <Lock className="size-[1.125rem]" />
-      </span>
-      <div className="min-w-0">
-        <p className="flex flex-wrap items-center gap-2 text-[0.9375rem] font-semibold text-fg">
-          Owner
-          <span className="rounded-full bg-st-neutral-bg px-2 py-0.5 text-[0.6875rem] font-medium text-st-neutral">
-            Permanent
-          </span>
-        </p>
-        <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-fg-muted">
-          You. Full access to everything, always. Owner is not built out of permissions, so it
-          cannot be edited, restricted, archived, deleted, applied to somebody or handed out in an
-          invitation — transferring ownership is a separate, deliberate act.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 function TemplateRow({
-  summary, busy, onEdit, onApply, onDuplicate, onArchive, onDelete,
+  summary, busy, busyAction, onEdit, onApply, onDuplicate, onArchive, onDelete,
 }: {
   summary: TemplateSummary;
   busy: boolean;
+  busyAction?: string;
   onEdit: () => void;
   onApply: (() => void) | null;
   onDuplicate: () => void;
@@ -487,31 +458,42 @@ function TemplateRow({
             Edit
           </Button>
           <Button variant="ghost" size="sm" onClick={onDuplicate} disabled={busy}>
-            <Copy aria-hidden />
+            {busyAction === "duplicate" ? (
+              <Loader2 className="animate-spin" aria-hidden />
+            ) : (
+              <Copy aria-hidden />
+            )}
             Duplicate
           </Button>
           <Button variant="ghost" size="sm" onClick={onArchive} disabled={busy}>
             {template.archived ? <ArchiveRestore aria-hidden /> : <Archive aria-hidden />}
             {template.archived ? "Restore" : "Archive"}
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onDelete}
-            disabled={busy || inUse || template.seeded}
-            className="text-st-danger hover:bg-st-danger/10 hover:text-st-danger"
-            title={
-              template.seeded
-                ? "Roles that came with the workspace cannot be deleted"
-                : inUse
-                  ? "Roles that people hold cannot be deleted"
-                  : undefined
+          <ConfirmDialog
+            title="Delete role"
+            description={`Are you sure you want to delete the "${template.name}" role? This action cannot be undone.`}
+            onConfirm={onDelete}
+            destructive
+            trigger={
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy || inUse || template.seeded}
+                className="text-st-danger hover:bg-st-danger/10 hover:text-st-danger"
+                title={
+                  template.seeded
+                    ? "Roles that came with the workspace cannot be deleted"
+                    : inUse
+                      ? "Roles that people hold cannot be deleted"
+                      : undefined
+                }
+                aria-label={`Delete ${template.name}`}
+              >
+                <Trash2 aria-hidden />
+                Delete
+              </Button>
             }
-            aria-label={`Delete ${template.name}`}
-          >
-            <Trash2 aria-hidden />
-            Delete
-          </Button>
+          />
         </div>
       </div>
 
@@ -541,36 +523,57 @@ function TemplateEditor({
   orgType: OrganizationType;
   grantable: ReadonlySet<PermissionKey>;
   onCancel: () => void;
-  onSaved: (saved: PermissionTemplate, wasEdit: boolean) => void;
+  onSaved: (saved: PermissionTemplate, wasEdit: boolean, backendMsg?: string) => void;
 }) {
   const ctx = useServiceContext();
   const [name, setName] = useState(template?.name ?? "");
   const [description, setDescription] = useState(template?.description ?? "");
-  const [permissions, setPermissions] = useState<Set<PermissionKey>>(
+  const [permissions, setPermissions] = useState<Set<string>>(
     () => new Set(template?.permissions ?? []),
   );
+
+  useEffect(() => {
+    setPermissions(new Set(template?.permissions ?? []));
+  }, [template?.id]);
+
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
 
   const selected = useMemo(() => [...permissions], [permissions]);
   const nameError = submitted ? validateRoleName(name, existingNames) : null;
-  const gaps = useMemo(() => missingPrerequisites(selected), [selected]);
   const memberCount = summary?.memberCount ?? 0;
 
   async function save() {
     if (!ctx) return;
     setSubmitted(true);
-    setRefusal(null);
     if (validateRoleName(name, existingNames)) return;
     setSaving(true);
     const draft = { name, description, permissions: selected };
-    const result = template
-      ? await services.access.updateTemplate(ctx, template.id, draft)
-      : await services.access.createTemplate(ctx, draft);
-    setSaving(false);
-    if (result.status === "refused") setRefusal(result.message);
-    else onSaved(result.template, Boolean(template));
+    
+    try {
+      if (template) {
+        const res = await apiClient.patch(`/organizations/roles/${template.id}`, { ...draft, syncMembers: false });
+        onSaved({ ...template, name, description, permissions: selected as PermissionKey[] }, true, res.data?.message);
+      } else {
+        const res = await apiClient.post('/organizations/roles', draft);
+        onSaved({
+          id: res.data?.id || "new",
+          organizationId: ctx.organizationId,
+          name,
+          description,
+          permissions: selected as PermissionKey[],
+          version: 1,
+          seeded: false,
+          archived: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, false, res.data?.message);
+      }
+    } catch (err: any) {
+      toast.error("That role was not saved.", { description: getFriendlyErrorMessage(err) });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -583,10 +586,6 @@ function TemplateEditor({
             : "Give the role a name, then choose exactly what anyone you apply it to can do."
         }
       />
-
-      {refusal ? (
-        <FormAlert tone="danger" title="That role was not saved.">{refusal}</FormAlert>
-      ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
         <div className="min-w-0 space-y-4">
@@ -639,7 +638,6 @@ function TemplateEditor({
             </div>
           ) : null}
 
-          <NeverGrantableNotice />
         </div>
 
         <div className="min-w-0 space-y-4">
@@ -651,41 +649,17 @@ function TemplateEditor({
             </p>
           </div>
 
-          <PermissionPicker
-            orgType={orgType}
+          <ApiPermissionPicker
             selected={permissions}
             onChange={setPermissions}
-            grantable={grantable}
           />
-
-          {gaps.length > 0 ? (
-            <PrerequisiteNotice
-              gaps={gaps}
-              onAdd={() => {
-                const next = new Set(permissions);
-                for (const gap of gaps) {
-                  if (grantable.has(gap.needs)) next.add(gap.needs);
-                }
-                setPermissions(next);
-              }}
-            />
-          ) : null}
-
-          <SensitiveAccessWarning permissions={selected} />
-
-          {selected.length > 0 ? (
-            <div>
-              <h3 className="mb-2 text-[0.875rem] font-semibold text-fg">Summary</h3>
-              <PermissionSummary permissions={selected} />
-            </div>
-          ) : null}
 
           <div className="flex flex-wrap gap-2">
             <Button
               variant="primary" size="lg" onClick={save}
               disabled={saving} aria-busy={saving || undefined}
             >
-              {saving ? "Saving…" : template ? "Save changes" : "Create role"}
+              {saving ? (template ? "Saving…" : "Creating…") : template ? "Save changes" : "Create role"}
             </Button>
             <Button variant="ghost" size="lg" onClick={onCancel} disabled={saving}>
               Cancel
@@ -697,42 +671,4 @@ function TemplateEditor({
   );
 }
 
-/**
- * A prerequisite that is not met, and an offer to fix it.
- *
- * ★ OFFERED, NEVER APPLIED ★
- * Nothing adds the missing permission on its own. A permission editor that
- * completed a selection would be one that granted access nobody ticked, and the
- * reflex that adds "view loads" is the same reflex that would add something
- * much larger later. So the role saves exactly as chosen, and this is a button.
- */
-function PrerequisiteNotice({
-  gaps, onAdd,
-}: {
-  gaps: { key: PermissionKey; needs: PermissionKey }[];
-  onAdd: () => void;
-}) {
-  const needed = [...new Set(gaps.map((g) => g.needs))];
-  return (
-    <FormAlert
-      tone="warning"
-      title={`${gaps.length === 1 ? "One permission needs" : `${gaps.length} permissions need`} another one to work`}
-      role="status"
-    >
-      <ul className="mt-1 space-y-1">
-        {gaps.map((gap) => (
-          <li key={`${gap.key}->${gap.needs}`}>
-            <span className="font-medium text-fg">{permissionMeta(gap.key).label}</span> does
-            nothing without <span className="font-medium text-fg">{permissionMeta(gap.needs).label}</span>.
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2">
-        The role saves exactly as you chose it — nothing is added for you.
-      </p>
-      <Button variant="secondary" size="sm" className="mt-2" onClick={onAdd}>
-        Add {needed.map((k) => permissionMeta(k).label).join(", ")}
-      </Button>
-    </FormAlert>
-  );
-}
+

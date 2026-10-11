@@ -62,6 +62,8 @@ export const PRODUCT_NAV: NavSection[] = [
       // without being allowed to know which truck it is on.
       { label: "ELD & Telematics", href: "/eld", icon: Satellite, requires: ["eld:view", "trucks:view"] },
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
+      { label: "Dispatchers", href: "/people/dispatchers", icon: Users, requires: [] },
+      { label: "Admins", href: "/people/admins", icon: ShieldCheck, requires: [] },
       // The working relationship, which is not the driver record and not the
       // member list. Gated on its own key: somebody who may see who drives here
       // is not thereby somebody who may see on what basis they are employed.

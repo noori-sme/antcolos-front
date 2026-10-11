@@ -26,12 +26,39 @@ import {
 import { invitationPresets, type InvitationPreset } from "./presets";
 import { invitationLink } from "./mock-access";
 import { services } from "@/lib/api";
+import { apiClient } from "@/lib/api/client";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
 import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+// Helper function to map old permission keys to new ones
+function migrateKey(p: string) {
+  if (typeof p !== "string" || !p.includes(":")) return p;
+  let key = p.replace(/:/g, '.');
+  key = key.replace(/^trucks\./, 'truck.');
+  key = key.replace(/^loads\./, 'load.');
+  key = key.replace(/^settlements\./, 'settlement.');
+  key = key.replace(/^invoices\./, 'invoice.');
+  key = key.replace(/^expenses\./, 'expense.');
+  key = key.replace(/^documents\./, 'document.');
+  key = key.replace(/^members\./, 'membership.');
+  key = key.replace(/^invitations\./, 'invitation.');
+  
+  if (key === 'truck.view') return 'truck.read';
+  if (key === 'load.view') return 'load.read';
+  if (key === 'settlement.view') return 'settlement.read';
+  if (key === 'invoice.view') return 'invoice.read';
+  if (key === 'expense.view') return 'expense.read';
+  if (key === 'document.view') return 'document.read';
+  if (key === 'document.upload') return 'document.create';
+  if (key === 'membership.view') return 'membership.list';
+  if (key === 'invitation.view') return 'invitation.list';
+  return key as PermissionKey;
+}
 
 type Stage = "type" | "details" | "review" | "sent";
 
@@ -98,7 +125,26 @@ export function InviteFlow() {
   const [stage, setStage] = useState<Stage>("type");
   const [preset, setPreset] = useState<InvitationPreset | null>(null);
   const [savedRole, setSavedRole] = useState<PermissionTemplate | null>(null);
-  const [roles, setRoles] = useState<PermissionTemplate[]>([]);
+
+  const { data: roles = [], isLoading: isLoadingRoles } = useQuery<PermissionTemplate[]>({
+    queryKey: ["organizations", "roles"],
+    queryFn: async () => {
+      const res = await apiClient.get('/organizations/roles');
+      const rawData = res.data;
+      const apiRoles = rawData?.roles || rawData?.data || (Array.isArray(rawData) ? rawData : []);
+      return apiRoles.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description || "",
+        permissions: (r.permissions || []).map(migrateKey),
+        version: 1,
+        seeded: false,
+        archived: false,
+        createdAt: r.createdAt || new Date().toISOString(),
+        updatedAt: r.updatedAt || new Date().toISOString(),
+      } as PermissionTemplate));
+    },
+  });
 
   const [roleName, setRoleName] = useState("");
   const [recipientName, setRecipientName] = useState("");
@@ -142,22 +188,6 @@ export function InviteFlow() {
       cancelled = true;
     };
   }, [ctx, referralId]);
-
-  useEffect(() => {
-    if (!ctx) return;
-    let cancelled = false;
-    // Archived roles are left out on purpose: they keep working for whoever
-    // already holds one and cannot be handed to anybody new, and an invitation
-    // is exactly "handed to somebody new".
-    void services.access.templates(ctx).then((rows) => {
-      if (!cancelled) {
-        setRoles(rows.map((r) => r.template).filter((t) => !t.archived));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [organization]);
 
   const isDispatchOrg = preset?.kind === "dispatch_org";
   const isDriver = preset?.kind === "driver";
