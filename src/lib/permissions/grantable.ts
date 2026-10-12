@@ -1,5 +1,5 @@
 import type { OrganizationType, PermissionKey, PermissionMeta } from "@/types";
-import { availablePermissions } from "./catalog";
+import { availablePermissions, normalizePermissionKey } from "./catalog";
 
 /**
  * Nobody can hand out access they do not hold themselves.
@@ -27,18 +27,21 @@ export function grantablePermissionKeys(
 }
 
 export function canGrant(
-  granterPermissions: ReadonlySet<PermissionKey>,
-  key: PermissionKey,
+  granterPermissions: ReadonlySet<PermissionKey | string>,
+  key: PermissionKey | string,
 ): boolean {
-  return granterPermissions.has(key);
+  if (granterPermissions.has(key as any)) return true;
+  const normalized = normalizePermissionKey(key);
+  if (normalized && granterPermissions.has(normalized)) return true;
+  return false;
 }
 
 /** The requested keys the granter has no right to hand out. */
 export function ungrantablePermissions(
-  requested: readonly PermissionKey[],
-  granterPermissions: ReadonlySet<PermissionKey>,
-): PermissionKey[] {
-  return requested.filter((k) => !granterPermissions.has(k));
+  requested: readonly (PermissionKey | string)[],
+  granterPermissions: ReadonlySet<PermissionKey | string>,
+): (PermissionKey | string)[] {
+  return requested.filter((k) => !canGrant(granterPermissions, k));
 }
 
 /**
@@ -46,12 +49,17 @@ export function ungrantablePermissions(
  * believed, the result can never exceed the granter's own access.
  */
 export function clampToGrantable(
-  requested: readonly PermissionKey[],
+  requested: readonly (PermissionKey | string)[],
   granterPermissions: ReadonlySet<PermissionKey>,
   orgType: OrganizationType,
 ): PermissionKey[] {
   const allowed = new Set(grantablePermissionKeys(granterPermissions, orgType));
-  return requested.filter((k) => allowed.has(k));
+  return requested.filter((k) => {
+    if (allowed.has(k as PermissionKey)) return true;
+    const normalized = normalizePermissionKey(k);
+    if (normalized && allowed.has(normalized)) return true;
+    return false;
+  }) as PermissionKey[];
 }
 
 /* -------------------------------------------------------------------------- */

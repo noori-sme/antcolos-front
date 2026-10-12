@@ -10,7 +10,7 @@ import {
 import type { PermissionGroup, PermissionKey } from "@/types";
 
 /** Every selected permission, grouped by module, for review before committing. */
-export function PermissionSummary({ permissions }: { permissions: readonly PermissionKey[] }) {
+export function PermissionSummary({ permissions }: { permissions: readonly (PermissionKey | string)[] }) {
   if (permissions.length === 0) {
     return (
       <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-[0.8125rem] text-fg-muted">
@@ -19,12 +19,16 @@ export function PermissionSummary({ permissions }: { permissions: readonly Permi
     );
   }
 
-  const grouped = new Map<PermissionGroup, PermissionKey[]>();
+  const grouped = new Map<PermissionGroup, string[]>();
   for (const key of permissions) {
     const { group } = permissionMeta(key);
     grouped.set(group, [...(grouped.get(group) ?? []), key]);
   }
-  const ordered = PERMISSION_GROUP_ORDER.filter((g) => grouped.has(g));
+  const ordered = Array.from(grouped.keys()).sort((a, b) => {
+    const idxA = PERMISSION_GROUP_ORDER.indexOf(a);
+    const idxB = PERMISSION_GROUP_ORDER.indexOf(b);
+    return (idxA >= 0 ? idxA : 999) - (idxB >= 0 ? idxB : 999);
+  });
 
   return (
     <div className="overflow-hidden rounded-lg border border-border">
@@ -36,7 +40,7 @@ export function PermissionSummary({ permissions }: { permissions: readonly Permi
         {ordered.map((group) => (
           <div key={group} className="px-3.5 py-2.5">
             <dt className="text-[0.75rem] font-semibold text-fg">
-              {PERMISSION_GROUP_LABELS[group]}
+              {PERMISSION_GROUP_LABELS[group] || group}
             </dt>
             <dd className="mt-1 text-[0.8125rem] leading-relaxed text-fg-muted">
               {grouped.get(group)!.map((k) => permissionMeta(k).label).join(" · ")}
@@ -55,7 +59,7 @@ export function PermissionSummary({ permissions }: { permissions: readonly Permi
  * forgive a wrongly granted "view trailers" and will not forgive "see what
  * every load pays".
  */
-export function SensitiveAccessWarning({ permissions }: { permissions: readonly PermissionKey[] }) {
+export function SensitiveAccessWarning({ permissions }: { permissions: readonly (PermissionKey | string)[] }) {
   const financial = financialPermissions(permissions);
   const sensitive = sensitivePermissions(permissions);
   if (financial.length === 0 && sensitive.length === 0) return null;

@@ -61,12 +61,27 @@ export function ErrorState({
   );
 }
 
-export function LoadingSkeleton({ rows = 5 }: { rows?: number }) {
+export function LoadingSkeleton({
+  rows = 5,
+  className,
+}: {
+  rows?: number;
+  className?: string;
+}) {
   return (
-    <div className="space-y-2.5" aria-busy="true" aria-live="polite">
+    <div className={cn("space-y-2.5", className)} aria-busy="true" aria-live="polite">
       <span className="sr-only">Loading</span>
       {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-row w-full" />
+        <div
+          key={i}
+          className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3.5 shadow-e1"
+        >
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-4 w-32 max-w-[50%]" />
+            <Skeleton className="h-3 w-56 max-w-[80%]" />
+          </div>
+          <Skeleton className="h-3.5 w-20 shrink-0" />
+        </div>
       ))}
     </div>
   );

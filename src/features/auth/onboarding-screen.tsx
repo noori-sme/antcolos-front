@@ -2,7 +2,7 @@
 
 import { Building2, Headset, Plus, Truck, UserRound } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
@@ -19,22 +19,50 @@ type Stage = "role" | "carrier" | "verify-carrier" | "driver" | "dispatch-fork" 
 type Role = "carrier-owner" | "driver" | "dispatch" | "individual-dispatcher" | "dispatch-company";
 
 function MultipleHeadsetsIcon(props: React.ComponentProps<"svg">) {
+  const maskId = useId();
+
   return (
     <svg
       {...props}
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
+      viewBox="0 0 27 27"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <g transform="translate(-4, -2) scale(0.85)" opacity="0.5">
-        <path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Zm0 0a9 9 0 1 1 18 0m0 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z" />
-        <path d="M21 16v2a4 4 0 0 1-4 4h-5" />
+      <defs>
+        <mask id={maskId}>
+          <rect width="29" height="29" fill="white" />
+          <g
+            transform="translate(2, 4.5) scale(0.93)"
+            stroke="black"
+            strokeWidth="4.8"
+            fill="black"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Zm0 0a9 9 0 1 1 18 0m0 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z" />
+            <path d="M21 16v2a4 4 0 0 1-4 4h-5" />
+          </g>
+        </mask>
+      </defs>
+
+      {/* 2 flanking background headsets */}
+      <g mask={`url(#${maskId})`} opacity="0.8">
+        <g transform="translate(-2, 1) scale(0.7)">
+          <path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Zm0 0a9 9 0 1 1 18 0m0 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z" />
+          <path d="M21 16v2a4 4 0 0 1-4 4h-5" />
+        </g>
+        <g transform="translate(10.5, 1) scale(0.7)">
+          <path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Zm0 0a9 9 0 1 1 18 0m0 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z" />
+          <path d="M21 16v2a4 4 0 0 1-4 4h-5" />
+        </g>
       </g>
-      <g transform="translate(2, 2) scale(0.9)">
+
+      {/* 1 center foreground headset */}
+      <g transform="translate(2, 4.5) scale(0.93)">
         <path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Zm0 0a9 9 0 1 1 18 0m0 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z" />
         <path d="M21 16v2a4 4 0 0 1-4 4h-5" />
       </g>
@@ -76,6 +104,17 @@ export function OnboardingScreen() {
       return data;
     },
     onSuccess: (data, selectedRole) => {
+      const friendlyMessages: Record<Role, string> = {
+        "carrier-owner": "Role selected! Let's set up your carrier details.",
+        "dispatch-company": "Role selected! Let's create your dispatch organization.",
+        "individual-dispatcher": "You're all set! Welcome to Antcolos as an individual dispatcher.",
+        "driver": "You're all set! Welcome to Antcolos as a driver.",
+        "dispatch": "Role selected! Choose how you dispatch.",
+      };
+
+      const message = data?.message || friendlyMessages[selectedRole] || "Role selected successfully!";
+      toast.success(message);
+
       if (selectedRole === "carrier-owner") {
         updateStage("carrier");
         return;
@@ -85,14 +124,12 @@ export function OnboardingScreen() {
         return;
       }
       if (selectedRole === "individual-dispatcher") {
-        toast.success("You're all set! Welcome to Antcolos.");
         Cookies.remove("antcolos_next_step", { path: "/" });
         router.push("/home");
         return;
       }
-      
+
       // Driver path: Skip additional onboarding and go straight to home
-      toast.success("You're all set! Welcome to Antcolos.");
       Cookies.remove("antcolos_next_step", { path: "/" });
       router.push("/home");
     },
@@ -119,10 +156,10 @@ export function OnboardingScreen() {
   // Each of these runs its own multi-step screen, heading and progress.
   if (stage === "carrier" || stage === "verify-carrier") {
     return (
-      <CarrierVerification 
+      <CarrierVerification
         initialStage={stage === "verify-carrier" ? "review" : "details"}
-        onEnterWorkspace={enterWorkspace} 
-        onBack={() => updateStage("role")} 
+        onEnterWorkspace={enterWorkspace}
+        onBack={() => updateStage("role")}
       />
     );
   }
@@ -199,8 +236,8 @@ export function OnboardingScreen() {
             />
           </div>
           <div className="pt-2">
-            <SubmitButton 
-              pending={selectRoleMutation.isPending} 
+            <SubmitButton
+              pending={selectRoleMutation.isPending}
               pendingLabel="Continuing…"
               disabled={!role || selectRoleMutation.isSuccess}
             >

@@ -85,52 +85,36 @@ export const INVITATION_REFUSAL_REASON: Record<InvitationRefusal, string> = {
 export interface Invitation {
   id: string;
   /** What the invitation link carries. */
-  token: string;
+  token?: string;
   organizationId: string;
   /** Snapshotted so a renamed organization does not rewrite old invitations. */
-  organizationName: string;
-  organizationType: OrganizationType;
-  kind: InvitationKind;
+  organizationName?: string;
+  organizationType?: OrganizationType;
+  kind?: InvitationKind;
   /** How the sender described it — a preset name, or the template's name. */
-  roleName: string;
+  roleName?: string;
+  roleId?: string;
   /**
    * The template this was built from, when one was used. PROVENANCE ONLY.
-   *
-   * Acceptance reads `permissions` below and never this: an invitation sent
-   * against version 2 of a template stays an offer of version 2, even if
-   * somebody saves version 3 while it is in the recipient's inbox.
    */
   templateId?: string;
   templateVersion?: number;
-  /**
-   * Driver invitations only. The carrier decides whether this is a company
-   * driver or an owner-operator — it sets the paperwork and the pay, so it is
-   * not the driver's to choose, and the acceptance screen shows it read-only.
-   */
   engagementType?: EngagementType;
-  recipientName: string;
-  recipientEmail: string;
-  /** Snapshotted too: editing a role later must not silently re-scope a
-   *  pending invitation someone is about to accept. */
-  permissions: PermissionKey[];
-  /**
-   * Dispatch-organization invitations only. Everything granted applies to this
-   * carrier relationship and nothing else — the dispatch organization's other
-   * carrier clients are unaffected.
-   */
+  recipientName?: string;
+  recipientEmail?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  invitedByUserId?: string;
+  invitedUserId?: string | null;
+  /** Snapshotted too */
+  permissions?: (PermissionKey | string)[];
   scopedToCarrierName?: string;
-  /**
-   * The Workforce engagement this invitation connects, when there is one.
-   *
-   * Present when the carrier already recorded this person — a migrated worker
-   * being given an account. It is what makes acceptance a CONNECTION rather
-   * than a hiring: only the engagement's `driverProfileId` is filled in, and
-   * its asserted start date, its state and its history are untouched.
-   */
   engagementId?: string;
   expiresAt: string | null;
   createdAt: string;
-  status: InvitationStatus;
+  updatedAt?: string;
+  status: InvitationStatus | string;
   /**
    * When the recipient accepted. OBSERVED, and only ever this.
    *

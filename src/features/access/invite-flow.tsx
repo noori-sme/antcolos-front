@@ -6,6 +6,7 @@ import { useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import {
   ROLE_NAME_MAX_LENGTH,
@@ -17,7 +18,7 @@ import {
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
 import type { EngagementType, PermissionKey, PermissionTemplate } from "@/types";
 import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
-import { PermissionPicker } from "./permission-picker";
+import { ApiPermissionPicker } from "./api-permission-picker";
 import {
   NeverGrantableNotice,
   PermissionSummary,
@@ -33,7 +34,7 @@ import { validateEmail } from "@/features/auth/rules";
 import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // Helper function to map old permission keys to new ones
 function migrateKey(p: string) {
@@ -84,8 +85,9 @@ function expiryIso(days: number): string | null {
   return d.toISOString();
 }
 
-function sameSet(a: readonly PermissionKey[], b: ReadonlySet<PermissionKey>): boolean {
-  return a.length === b.size && a.every((k) => b.has(k));
+function sameSet(a: readonly (PermissionKey | string)[], b: ReadonlySet<string>): boolean {
+  if (a.length !== b.size) return false;
+  return a.every((k) => b.has(k) || b.has(migrateKey(k)));
 }
 
 /**
@@ -123,6 +125,7 @@ export function InviteFlow() {
   const myPermissions = usePermissions();
 
   const [stage, setStage] = useState<Stage>("type");
+  const queryClient = useQueryClient();
   const [preset, setPreset] = useState<InvitationPreset | null>(null);
   const [savedRole, setSavedRole] = useState<PermissionTemplate | null>(null);
 
@@ -150,7 +153,7 @@ export function InviteFlow() {
   const [recipientName, setRecipientName] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [expiryDays, setExpiryDays] = useState<number>(14);
-  const [permissions, setPermissions] = useState<Set<PermissionKey>>(new Set());
+  const [permissions, setPermissions] = useState<Set<string>>(new Set());
 
   // Driver invitations only. The carrier picks this, never the driver.
   const [engagementType, setEngagementType] = useState<EngagementType | null>(null);
@@ -167,9 +170,10 @@ export function InviteFlow() {
   const orgType = organization?.type ?? "CARRIER";
   const presets = useMemo(() => invitationPresets(orgType), [orgType]);
 
+  const isOwner = membership?.isOwner ?? true;
   const grantable = useMemo(
-    () => new Set(grantablePermissionKeys(myPermissions, orgType)),
-    [myPermissions, orgType],
+    () => (isOwner ? undefined : new Set(grantablePermissionKeys(myPermissions, orgType))),
+    [isOwner, myPermissions, orgType],
   );
 
   useEffect(() => {
@@ -204,8 +208,8 @@ export function InviteFlow() {
     setSavedRole(role ?? null);
     // A preset arrives pre-ticked; anything the granter cannot hand out is
     // dropped rather than silently promised.
-    const base = role ? role.permissions : next.permissions;
-    setPermissions(new Set(clampToGrantable(base, myPermissions, orgType)));
+    const base = role ? role.permissions : next.permissions.map(migrateKey);
+    setPermissions(new Set(isOwner ? base : clampToGrantable(base, myPermissions, orgType)));
     setRoleName(role?.name ?? "");
     setEngagementType(next.kind === "driver" ? "company_driver" : null);
     setSaveAsRole(false);
@@ -245,9 +249,10 @@ export function InviteFlow() {
     setSending(true);
     setRefusal(null);
 
-    // Belt and braces: whatever the UI allowed, the invitation can never exceed
-    // what this owner personally holds.
-    const safe = clampToGrantable(selectedList, myPermissions, orgType);
+    // Belt and braces: non-owner invitations can never exceed what they hold.
+    const safe = (isOwner
+      ? selectedList
+      : clampToGrantable(selectedList, myPermissions, orgType)) as PermissionKey[];
 
     if (!ctx) {
       setSending(false);
@@ -330,10 +335,12 @@ export function InviteFlow() {
       void services.referrals.recordInvitation(ctx, referralId, invitation.id);
     }
 
-    setSentToken(invitation.token);
+    queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
+
+    setSentToken(invitation.token ?? null);
     setSending(false);
     setStage("sent");
-    if (alsoCopy) void copyLink(invitation.token);
+    if (alsoCopy && invitation.token) void copyLink(invitation.token);
   }
 
   async function copyLink(token: string) {
@@ -381,7 +388,12 @@ export function InviteFlow() {
       ) : null}
 
       {stage === "type" ? (
-        <TypeStep presets={presets} roles={roles} onChoose={choose} />
+        <TypeStep
+          presets={presets}
+          roles={roles}
+          isLoadingRoles={isLoadingRoles}
+          onChoose={choose}
+        />
       ) : null}
 
       {stage === "details" && preset ? (
@@ -543,8 +555,7 @@ export function InviteFlow() {
               </p>
             </div>
 
-            <PermissionPicker
-              orgType={orgType}
+            <ApiPermissionPicker
               selected={permissions}
               onChange={setPermissions}
               grantable={grantable}
@@ -801,10 +812,12 @@ function SelectedTypeCard({
 function TypeStep({
   presets,
   roles,
+  isLoadingRoles = false,
   onChoose,
 }: {
   presets: InvitationPreset[];
   roles: PermissionTemplate[];
+  isLoadingRoles?: boolean;
   onChoose: (preset: InvitationPreset, role?: PermissionTemplate) => void;
 }) {
   const custom = presets.find((p) => p.kind === "custom")!;
@@ -854,7 +867,7 @@ function TypeStep({
         </div>
       </section>
 
-      {roles.length > 0 ? (
+      {isLoadingRoles || roles.length > 0 ? (
         <section aria-labelledby={`${headingId}-roles`}>
           <h2 id={`${headingId}-roles`} className="mb-1 text-[0.9375rem] font-semibold text-fg">
             Or use a role you already made
@@ -863,28 +876,32 @@ function TypeStep({
             Your saved custom roles. You can still adjust the permissions for this one invitation.
           </p>
           <div className="space-y-2">
-            {roles.map((role) => (
-              <button
-                key={role.id}
-                type="button"
-                onClick={() => onChoose(custom, role)}
-                className={cn(
-                  "flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-left transition-colors",
-                  "hover:border-border-strong hover:bg-surface-hover",
-                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                )}
-              >
-                <span className="min-w-0">
-                  <span className="block text-[0.875rem] font-medium text-fg">{role.name}</span>
-                  <span className="mt-0.5 block truncate text-[0.75rem] text-fg-muted">
-                    {role.description}
+            {isLoadingRoles ? (
+              <LoadingSkeleton rows={3} />
+            ) : (
+              roles.map((role) => (
+                <button
+                  key={role.id}
+                  type="button"
+                  onClick={() => onChoose(custom, role)}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-left transition-colors",
+                    "hover:border-border-strong hover:bg-surface-hover",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block text-[0.875rem] font-medium text-fg">{role.name}</span>
+                    <span className="mt-0.5 block truncate text-[0.75rem] text-fg-muted">
+                      {role.description}
+                    </span>
                   </span>
-                </span>
-                <span className="shrink-0 text-[0.75rem] text-fg-subtle tabular-nums">
-                  {role.permissions.length} permissions
-                </span>
-              </button>
-            ))}
+                  <span className="shrink-0 text-[0.75rem] text-fg-subtle tabular-nums">
+                    {role.permissions.length} permissions
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </section>
       ) : null}

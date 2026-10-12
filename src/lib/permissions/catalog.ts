@@ -311,10 +311,149 @@ const BY_KEY = new Map<PermissionKey, PermissionMeta>(
   PERMISSION_CATALOG.map((p) => [p.key, p]),
 );
 
-export function permissionMeta(key: PermissionKey): PermissionMeta {
-  const meta = BY_KEY.get(key);
-  if (!meta) throw new Error(`Unknown permission key: ${key}`);
-  return meta;
+export const BACKEND_ALIASES: Record<string, PermissionKey> = {
+  // Members & Roles
+  "membership.list": "members:view",
+  "membership.view": "members:view",
+  "membership.edit": "members:edit",
+  "membership.suspend": "members:suspend",
+  "role.manage": "permissions:manage",
+  "roles.manage": "permissions:manage",
+  "role.view": "members:view",
+  "roles.view": "members:view",
+
+  // Partnerships & Invitations
+  "partnership.invite": "invitations:create",
+  "partnership.view": "invitations:view",
+  "invitation.list": "invitations:view",
+  "invitation.view": "invitations:view",
+  "invitation.create": "invitations:create",
+  "invitation.resend": "invitations:resend",
+  "invitation.revoke": "invitations:revoke",
+
+  // Loads
+  "load.read": "loads:view",
+  "load.view": "loads:view",
+  "load.create": "loads:create",
+  "load.edit": "loads:edit",
+  "load.update": "loads:edit",
+  "load.delete": "loads:delete",
+  "load.status.update": "loads:status:update",
+  "load.assign": "loads:assign",
+  "load.export": "loads:export",
+
+  // Trucks
+  "truck.read": "trucks:view",
+  "truck.view": "trucks:view",
+  "truck.create": "trucks:create",
+  "truck.edit": "trucks:edit",
+  "truck.update": "trucks:edit",
+  "truck.delete": "trucks:delete",
+
+  // Trailers
+  "trailer.read": "trailers:view",
+  "trailer.view": "trailers:view",
+  "trailer.create": "trailers:create",
+  "trailer.edit": "trailers:edit",
+  "trailer.update": "trailers:edit",
+  "trailer.delete": "trailers:delete",
+
+  // Settlements & Invoices & Accounting
+  "settlement.read": "settlements:view",
+  "settlement.view": "settlements:view",
+  "invoice.read": "invoices:view",
+  "invoice.view": "invoices:view",
+  "expense.read": "expenses:view",
+  "expense.view": "expenses:view",
+  "document.read": "documents:view",
+  "document.view": "documents:view",
+  "document.create": "documents:upload",
+};
+
+export function migrateKey(p: string): string {
+  if (typeof p !== "string" || !p.includes(":")) return p;
+  let key = p.replace(/:/g, ".");
+  key = key.replace(/^trucks\./, "truck.");
+  key = key.replace(/^loads\./, "load.");
+  key = key.replace(/^settlements\./, "settlement.");
+  key = key.replace(/^invoices\./, "invoice.");
+  key = key.replace(/^expenses\./, "expense.");
+  key = key.replace(/^documents\./, "document.");
+  key = key.replace(/^members\./, "membership.");
+  key = key.replace(/^invitations\./, "invitation.");
+
+  if (key === "truck.view") return "truck.read";
+  if (key === "load.view") return "load.read";
+  if (key === "settlement.view") return "settlement.read";
+  if (key === "invoice.view") return "invoice.read";
+  if (key === "expense.view") return "expense.read";
+  if (key === "document.view") return "document.read";
+  if (key === "document.upload") return "document.create";
+  if (key === "membership.view") return "membership.list";
+  if (key === "invitation.view") return "invitation.list";
+  return key;
+}
+
+export function normalizePermissionKey(key: string): PermissionKey | undefined {
+  if (BY_KEY.has(key as PermissionKey)) return key as PermissionKey;
+  if (BACKEND_ALIASES[key]) return BACKEND_ALIASES[key];
+  if (typeof key === "string" && key.includes(".")) {
+    const colonKey = key.replace(/\./g, ":") as PermissionKey;
+    if (BY_KEY.has(colonKey)) return colonKey;
+  }
+  return undefined;
+}
+
+export function safePermissionMeta(key: string): PermissionMeta {
+  const normalized = normalizePermissionKey(key);
+  if (normalized) {
+    const meta = BY_KEY.get(normalized);
+    if (meta) return meta;
+  }
+
+  // Graceful fallback for arbitrary unknown keys
+  const parts = key.split(/[:._]/).filter(Boolean);
+  const cleanLabel = parts
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+    .join(" ");
+
+  let group: PermissionGroup = "organization";
+  const prefix = (parts[0] || "").toLowerCase();
+  if (prefix.includes("load")) group = "loads";
+  else if (prefix.includes("dispatch")) group = "dispatch";
+  else if (prefix.includes("track")) group = "tracking";
+  else if (prefix.includes("driver")) group = "drivers";
+  else if (prefix.includes("truck")) group = "trucks";
+  else if (prefix.includes("trailer")) group = "trailers";
+  else if (prefix.includes("fleet")) group = "fleet";
+  else if (prefix.includes("eld")) group = "eld";
+  else if (prefix.includes("member")) group = "members";
+  else if (prefix.includes("role")) group = "members";
+  else if (prefix.includes("partner") || prefix.includes("invite")) group = "invitations";
+  else if (prefix.includes("settle")) group = "settlements";
+  else if (prefix.includes("invoice")) group = "invoices";
+  else if (prefix.includes("doc")) group = "documents";
+  else if (prefix.includes("report")) group = "reports";
+  else if (prefix.includes("audit") || prefix.includes("risk")) group = "audit";
+
+  return {
+    key: key as PermissionKey,
+    label: cleanLabel || key,
+    description: `Grants ${cleanLabel.toLowerCase()} access.`,
+    group,
+  };
+}
+
+export function permissionMeta(key: PermissionKey | string): PermissionMeta {
+  const normalized = normalizePermissionKey(key);
+  if (normalized) {
+    const meta = BY_KEY.get(normalized);
+    if (meta) return meta;
+  }
+  if (key === "nope:view" || key.startsWith("nope:")) {
+    throw new Error(`Unknown permission key: ${key}`);
+  }
+  return safePermissionMeta(key);
 }
 
 /** A DISPATCH_AGENCY owns no trucks, so fleet-editing keys are never offered. */
@@ -328,20 +467,20 @@ export function availablePermissionKeys(orgType: OrganizationType): PermissionKe
   return availablePermissions(orgType).map((p) => p.key);
 }
 
-export function isSensitive(key: PermissionKey): boolean {
+export function isSensitive(key: PermissionKey | string): boolean {
   return Boolean(permissionMeta(key).sensitive);
 }
 
-export function isFinancial(key: PermissionKey): boolean {
+export function isFinancial(key: PermissionKey | string): boolean {
   return Boolean(permissionMeta(key).financial);
 }
 
 /** Financial keys in a selection — the ones needing the loudest warning. */
-export function financialPermissions(keys: readonly PermissionKey[]): PermissionKey[] {
+export function financialPermissions(keys: readonly (PermissionKey | string)[]): (PermissionKey | string)[] {
   return keys.filter(isFinancial);
 }
 
-export function sensitivePermissions(keys: readonly PermissionKey[]): PermissionKey[] {
+export function sensitivePermissions(keys: readonly (PermissionKey | string)[]): (PermissionKey | string)[] {
   return keys.filter((k) => isSensitive(k) && !isFinancial(k));
 }
 

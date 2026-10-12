@@ -31,12 +31,14 @@ export function InvitationRequests() {
   const [filter, setFilter] = useState<"pending" | "all">("pending");
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const { data: requests, isLoading } = useQuery({
+  const { data: requests, isLoading, isFetching } = useQuery({
     queryKey: ["invitation-requests"],
     queryFn: async () => {
       const res = await apiClient.get("/organizations/invitation-requests");
       return (res.data?.data || []) as InvitationRequest[];
     },
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   async function handleAction(id: string, action: "approve" | "reject") {
@@ -62,7 +64,7 @@ export function InvitationRequests() {
     }
   }
 
-  if (isLoading) {
+  if (isLoading || isFetching) {
     return <LoadingSkeleton rows={3} />;
   }
 
@@ -109,7 +111,9 @@ export function InvitationRequests() {
         </div>
       </div>
 
-      {displayed.length === 0 ? (
+      {isLoading || isFetching ? (
+        <LoadingSkeleton rows={3} />
+      ) : displayed.length === 0 ? (
         <EmptyState
           icon={Inbox}
           title={filter === "pending" ? "No pending requests" : "No invitation requests"}
