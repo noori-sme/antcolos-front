@@ -1,13 +1,20 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { scrollToTop } from "@/lib/utils/scroll";
 import { MobileTabBar } from "./mobile-nav";
 import { Sidebar, SidebarOverlay } from "./sidebar";
 import { Topbar } from "./topbar";
 import { LockedSection } from "./locked-section";
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    scrollToTop();
+  }, [pathname]);
   return (
     <TooltipProvider delayDuration={300}>
       <a

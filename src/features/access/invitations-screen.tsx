@@ -19,6 +19,7 @@ import type { Invitation, InvitationStatus } from "@/types";
 import { PermissionSummary } from "./permission-summary";
 import { cn } from "@/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Can } from "@/components/auth/can";
 
 type Tab = "invitations" | "requests";
 
@@ -400,8 +401,9 @@ export function InvitationsScreen() {
           ? "Invitation revoked successfully."
           : "Invitation resent successfully."
       );
-      await refetchInvitations();
-      await queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
+      if (action === "revoke") {
+        await queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
+      }
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || `Failed to ${action} invitation.`;
       setActionError(msg);
@@ -422,12 +424,14 @@ export function InvitationsScreen() {
         title="Invitations"
         description="Everyone you have invited to work with your organization, and where each invitation got to."
         actions={
-          <Button variant="primary" asChild>
-            <Link href="/settings/invitations/new">
-              <Plus aria-hidden />
-              Invite
-            </Link>
-          </Button>
+          <Can permission="invitations:create">
+            <Button variant="primary" asChild>
+              <Link href="/settings/invitations/new">
+                <Plus aria-hidden />
+                Invite
+              </Link>
+            </Button>
+          </Can>
         }
       />
 
@@ -503,9 +507,11 @@ export function InvitationsScreen() {
               }
               action={
                 filter === "all" ? (
-                  <Button variant="primary" asChild>
-                    <Link href="/settings/invitations/new">Send the first invitation</Link>
-                  </Button>
+                  <Can permission="invitations:create">
+                    <Button variant="primary" asChild>
+                      <Link href="/settings/invitations/new">Send the first invitation</Link>
+                    </Button>
+                  </Can>
                 ) : null
               }
             />

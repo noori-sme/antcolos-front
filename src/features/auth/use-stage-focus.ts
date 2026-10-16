@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { scrollToTop } from "@/lib/utils/scroll";
 
 /**
- * Moves focus to the screen's heading whenever the step changes.
+ * Moves focus to the screen's heading and scrolls to top whenever the step changes.
  *
  * That is what tells a screen-reader user the screen moved on; without it focus
  * stays on a button that no longer exists. Skipped on first paint by default,
@@ -23,6 +24,7 @@ export function useStageFocus<T extends HTMLElement>(stage: string, focusOnMount
       isFirstRender.current = false;
       if (!focusOnMount) return;
     }
+    scrollToTop();
     ref.current?.focus();
     // focusOnMount is fixed for the lifetime of a screen; only the stage moves.
     // eslint-disable-next-line react-hooks/exhaustive-deps

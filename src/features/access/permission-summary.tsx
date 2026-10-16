@@ -65,20 +65,19 @@ export function SensitiveAccessWarning({ permissions }: { permissions: readonly 
   if (financial.length === 0 && sensitive.length === 0) return null;
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {financial.length > 0 ? (
         <div
           role="alert"
-          className="flex gap-2.5 rounded-md border border-st-warning/40 bg-st-warning-bg/60 px-3 py-2.5"
+          className="flex gap-2 rounded-md border border-st-warning/40 bg-st-warning-bg/60 px-3 py-2"
         >
-          <TriangleAlert className="mt-px size-4 shrink-0 text-st-warning" aria-hidden />
-          <div className="min-w-0 text-[0.8125rem] leading-relaxed">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-st-warning" aria-hidden />
+          <div className="min-w-0 text-[0.8125rem] leading-snug">
             <p className="font-medium text-fg">
-              This grants access to money and financial information.
+              Grants financial access
             </p>
             <p className="mt-0.5 text-fg-muted">
-              {financial.map((k) => permissionMeta(k).label).join(", ")}. Only give this to people
-              you would let see your books.
+              {financial.map((k) => permissionMeta(k).label).join(", ")}. Only give this to people you would let see your books.
             </p>
           </div>
         </div>
@@ -87,14 +86,13 @@ export function SensitiveAccessWarning({ permissions }: { permissions: readonly 
       {sensitive.length > 0 ? (
         <div
           role="alert"
-          className="flex gap-2.5 rounded-md border border-st-danger/35 bg-st-danger-bg/50 px-3 py-2.5"
+          className="flex gap-2 rounded-md border border-st-danger/35 bg-st-danger-bg/50 px-3 py-2"
         >
-          <TriangleAlert className="mt-px size-4 shrink-0 text-st-danger" aria-hidden />
-          <div className="min-w-0 text-[0.8125rem] leading-relaxed">
-            <p className="font-medium text-fg">This includes powerful permissions.</p>
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-st-danger" aria-hidden />
+          <div className="min-w-0 text-[0.8125rem] leading-snug">
+            <p className="font-medium text-fg">Powerful permissions</p>
             <p className="mt-0.5 text-fg-muted">
-              {sensitive.map((k) => permissionMeta(k).label).join(", ")}. These can delete records
-              or change who else has access.
+              {sensitive.map((k) => permissionMeta(k).label).join(", ")}. Can delete records or change access.
             </p>
           </div>
         </div>

@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { apiClient } from "@/lib/api/client";
 import { useQuery } from "@tanstack/react-query";
+import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
 
 export interface Admin {
@@ -147,12 +148,14 @@ export function AdminsScreen() {
         title="Admins"
         description="Everyone with administrative privileges for your organization."
         actions={
-          <Button variant="primary" asChild>
-            <Link href="/settings/invitations/new">
-              <Plus aria-hidden />
-              Invite Admin
-            </Link>
-          </Button>
+          <Can permission="invitations:create">
+            <Button variant="primary" asChild>
+              <Link href="/settings/invitations/new">
+                <Plus aria-hidden />
+                Invite Admin
+              </Link>
+            </Button>
+          </Can>
         }
       />
 

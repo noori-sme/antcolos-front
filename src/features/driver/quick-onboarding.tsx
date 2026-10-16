@@ -201,13 +201,13 @@ export function QuickOnboarding({
         <div className="space-y-4">
           <div className="overflow-hidden rounded-lg border border-border">
             <dl className="divide-y divide-border">
-              <Row label="Carrier" value={invitation.organizationName} />
+              <Row label="Carrier" value={invitation.organizationName || ""} />
               <Row label="Engagement type" value={ENGAGEMENT_LABEL[engagement]} />
               <Row label="Legal name" value={shown.legalName} />
               <Row label="License number" value={maskCdl(shown.cdlNumber)} mono />
               <Row label="Issuing state" value={shown.cdlState} />
               <Row label="License expiration date" value={shown.cdlExpiresAt ? formatDate(shown.cdlExpiresAt) : "—"} />
-              <Row label="Assigned role" value={invitation.roleName} />
+              <Row label="Assigned role" value={invitation.roleName || ""} />
             </dl>
           </div>
 
@@ -215,10 +215,10 @@ export function QuickOnboarding({
             <h2 className="mb-2 text-[0.875rem] font-semibold text-fg">
               What this role lets you do
             </h2>
-            <PermissionSummary permissions={invitation.permissions} />
+            <PermissionSummary permissions={invitation.permissions ?? []} />
           </div>
 
-          <SharingPlan plan={plan} carrier={invitation.organizationName} />
+          <SharingPlan plan={plan} carrier={invitation.organizationName || ""} />
 
           <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5">
             <input

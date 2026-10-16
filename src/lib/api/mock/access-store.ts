@@ -82,7 +82,7 @@ export function ensureSeeded(seed: () => InvitationSeed[]) {
   if (state.seeded) return;
   state.seeded = true;
   state.invitations = seed().map((invitation) => {
-    const account = accountForEmail(invitation.recipientEmail);
+    const account = invitation.recipientEmail ? accountForEmail(invitation.recipientEmail) : undefined;
     return {
       ...invitation,
       recipientHasAccount: account !== undefined,
@@ -137,7 +137,7 @@ export function invitationById(id: string): Invitation | undefined {
 
 export function invitationByToken(token: string): Invitation | undefined {
   const wanted = token.trim().toUpperCase();
-  const found = state.invitations.find((i) => i.token.toUpperCase() === wanted);
+  const found = state.invitations.find((i) => i.token && i.token.toUpperCase() === wanted);
   return found ? { ...found } : undefined;
 }
 
@@ -164,7 +164,7 @@ export function openInvitationFor(
   const wanted = recipientEmail.trim().toLowerCase();
   const found = state.invitations.find(
     (i) => i.organizationId === organizationId
-      && i.recipientEmail.toLowerCase() === wanted
+      && i.recipientEmail && i.recipientEmail.toLowerCase() === wanted
       && i.status === "pending",
   );
   return found ? { ...found } : undefined;

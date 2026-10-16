@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { apiClient } from "@/lib/api/client";
 import { useQuery } from "@tanstack/react-query";
+import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
 import { daysUntil } from "./driver-rules";
 
@@ -154,12 +155,14 @@ export function CarrierDriversScreen() {
         title="Drivers"
         description="Everyone driving for you, active unit assignments, and account status."
         actions={
-          <Button variant="primary" asChild>
-            <Link href="/settings/invitations/new">
-              <Plus aria-hidden />
-              Invite Driver
-            </Link>
-          </Button>
+          <Can permission="invitations:create">
+            <Button variant="primary" asChild>
+              <Link href="/settings/invitations/new">
+                <Plus aria-hidden />
+                Invite Driver
+              </Link>
+            </Button>
+          </Can>
         }
       />
 

@@ -10,6 +10,7 @@ import {
   useSyncExternalStore, type ReactNode,
 } from "react";
 import { effectivePermissions } from "@/lib/permissions/effective";
+import { normalizePermissionKey, migrateKey } from "@/lib/permissions/catalog";
 import type {
   DensityPreference, Membership, Organization, PermissionKey,
   User,
@@ -101,6 +102,51 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: userPermissionsData } = useQuery({
+    queryKey: ['userPermissions'],
+    queryFn: async () => {
+      const token = Cookies.get('antcolos_token');
+      const nextStep = Cookies.get('antcolos_next_step');
+      if (!token || nextStep) return null;
+
+      try {
+        const response = await apiClient.get('/users/me/permissions');
+        const data = response.data?.data || response.data;
+
+        if (data) {
+          if (data.roleId) {
+            Cookies.set('antcolos_role_id', String(data.roleId), { path: '/', expires: 7 });
+            if (!Cookies.get('antcolos_user_role')) {
+              Cookies.set('antcolos_user_role', String(data.roleId), { path: '/', expires: 7 });
+            }
+          }
+          if (data.roleName) {
+            Cookies.set('antcolos_role_name', String(data.roleName), { path: '/', expires: 7 });
+          }
+          if (data.permissions) {
+            const perms = Array.isArray(data.permissions)
+              ? JSON.stringify(data.permissions)
+              : String(data.permissions);
+            Cookies.set('antcolos_permissions', perms, { path: '/', expires: 7 });
+            Cookies.set('antcolos_user_permissions', perms, { path: '/', expires: 7 });
+          }
+          if (data.roleTemplate) {
+            const tmpl = Array.isArray(data.roleTemplate)
+              ? JSON.stringify(data.roleTemplate)
+              : String(data.roleTemplate);
+            Cookies.set('antcolos_role_template', tmpl, { path: '/', expires: 7 });
+          }
+        }
+
+        return data;
+      } catch (err) {
+        console.error('Failed to fetch user permissions:', err);
+        return null;
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const pathname = usePathname();
   const isAuthPage = 
     pathname === '/sign-in' || 
@@ -109,6 +155,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     pathname.startsWith('/forgot-password') ||
     pathname.startsWith('/invite') ||
     pathname.startsWith('/invitation') ||
+    pathname.startsWith('/invitations') ||
     pathname.startsWith('/referral');
   const isOnboardingPage = pathname.startsWith('/onboarding');
 
@@ -209,10 +256,79 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [organizations, activeMembership],
   );
 
+  const isDriverMembership = useMemo(() => {
+    const roleId =
+      userPermissionsData?.roleId ||
+      Cookies.get('antcolos_role_id') ||
+      Cookies.get('antcolos_user_role') ||
+      Cookies.get('antcolos_org_role');
+    if (roleId && String(roleId).toUpperCase() === 'DRIVER') {
+      return true;
+    }
+    return Boolean(activeMembership?.driverProfileId);
+  }, [userPermissionsData, activeMembership]);
+
   const permissions = useMemo<ReadonlySet<PermissionKey>>(() => {
+    let rawList: string[] = [];
+
+    if (userPermissionsData?.permissions) {
+      rawList = Array.isArray(userPermissionsData.permissions)
+        ? userPermissionsData.permissions
+        : [String(userPermissionsData.permissions)];
+    } else {
+      const cookieVal = Cookies.get('antcolos_permissions') || Cookies.get('antcolos_user_permissions');
+      if (cookieVal) {
+        try {
+          const parsed = JSON.parse(cookieVal);
+          if (Array.isArray(parsed)) rawList = parsed;
+        } catch {
+          rawList = [cookieVal];
+        }
+      }
+    }
+
+    if (rawList.length === 0) {
+      if (userPermissionsData?.roleTemplate) {
+        rawList = Array.isArray(userPermissionsData.roleTemplate)
+          ? userPermissionsData.roleTemplate
+          : [String(userPermissionsData.roleTemplate)];
+      } else {
+        const tmplCookie = Cookies.get('antcolos_role_template');
+        if (tmplCookie) {
+          try {
+            const parsed = JSON.parse(tmplCookie);
+            if (Array.isArray(parsed)) rawList = parsed;
+          } catch {}
+        }
+      }
+    }
+
+    const token = Cookies.get('antcolos_token');
+
+    // Authenticated user with real permissions
+    if (token) {
+      const set = new Set<PermissionKey>();
+      for (const item of rawList) {
+        if (!item) continue;
+        const s = String(item).trim();
+        set.add(s as PermissionKey);
+        const norm = normalizePermissionKey(s);
+        if (norm) set.add(norm);
+        const mig = migrateKey(s);
+        if (mig) set.add(mig as PermissionKey);
+        if (s.includes(".")) {
+          set.add(s.replace(/\./g, ":") as PermissionKey);
+        } else if (s.includes(":")) {
+          set.add(s.replace(/:/g, ".") as PermissionKey);
+        }
+      }
+      return set;
+    }
+
+    // Local unauthenticated mock / demo fallback
     if (!activeMembership || !activeOrganization) return new Set<PermissionKey>();
     return effectivePermissions(activeMembership, activeOrganization);
-  }, [activeMembership, activeOrganization]);
+  }, [userPermissionsData, activeMembership, activeOrganization]);
 
   const switchOrganization = useCallback(
     (membershipId: string) => {
@@ -234,12 +350,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       activeMembership,
       activeOrganization,
       permissions,
-      isDriverMembership: Boolean(activeMembership?.driverProfileId),
+      isDriverMembership,
       density,
       setDensity: setDensityState,
       switchOrganization,
     }),
-    [user, memberships, organizations, activeMembership, activeOrganization, permissions, density, switchOrganization],
+    [user, memberships, organizations, activeMembership, activeOrganization, permissions, isDriverMembership, density, switchOrganization],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

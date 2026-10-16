@@ -226,7 +226,7 @@ describe("the seat is the smallest one that opens a portal", () => {
       {
         id: "mem_probe", userId: "usr_newcomer", organizationId: NORTHLINE.id,
         status: "active", title: "Driver", appliedTemplates: [],
-        grants: invitation.permissions, revocations: [],
+        grants: (invitation.permissions ?? []) as PermissionKey[], revocations: [],
         scope: OWN_RECORDS_SCOPE, isOwner: false, joinedAt: "2026-09-17T00:00:00.000Z",
       },
       NORTHLINE);

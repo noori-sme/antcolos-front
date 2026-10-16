@@ -62,8 +62,8 @@ export const PRODUCT_NAV: NavSection[] = [
       // without being allowed to know which truck it is on.
       { label: "ELD & Telematics", href: "/eld", icon: Satellite, requires: ["eld:view", "trucks:view"] },
       { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
-      { label: "Dispatchers", href: "/people/dispatchers", icon: Users, requires: [] },
-      { label: "Admins", href: "/people/admins", icon: ShieldCheck, requires: [] },
+      { label: "Dispatchers", href: "/people/dispatchers", icon: Users, requires: ["members:view"] },
+      { label: "Admins", href: "/people/admins", icon: ShieldCheck, requires: ["members:view"] },
       // The working relationship, which is not the driver record and not the
       // member list. Gated on its own key: somebody who may see who drives here
       // is not thereby somebody who may see on what basis they are employed.
@@ -138,8 +138,8 @@ export const DRIVER_NAV: NavSection[] = [
       { label: "Home", href: "/driver/home", icon: Home, requires: [], driverOnly: true, primaryMobile: true },
       { label: "Proposals", href: "/driver/proposals", icon: Handshake, requires: ["proposals:view"], driverOnly: true, primaryMobile: true },
       { label: "My loads", href: "/driver/loads", icon: ClipboardList, requires: ["loads:view"], driverOnly: true, primaryMobile: true },
-      { label: "My documents", href: "/driver/documents", icon: FileText, requires: [], driverOnly: true, primaryMobile: true },
-      { label: "My shares", href: "/driver/shares", icon: Share2, requires: [], driverOnly: true },
+      { label: "My documents", href: "/driver/documents", icon: FileText, requires: ["documents:view"], driverOnly: true, primaryMobile: true },
+      { label: "My shares", href: "/driver/shares", icon: Share2, requires: ["documents:view"], driverOnly: true },
       { label: "My compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"], driverOnly: true },
       { label: "My agreements", href: "/contracts", icon: FileSignature, requires: ["contracts:view"], driverOnly: true },
       // The device on the truck they are on, and their own hours-of-service

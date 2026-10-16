@@ -43,5 +43,5 @@ export async function mockListInvitations(organizationId: string): Promise<Invit
 /** The URL that goes in the email. Absolute so it can be pasted anywhere. */
 export function invitationLink(token: string): string {
   const origin = typeof window === "undefined" ? "https://app.antcolos.com" : window.location.origin;
-  return `${origin}/invitation/${token}`;
+  return `${origin}/invitations/accept/${token}`;
 }

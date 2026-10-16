@@ -20,7 +20,6 @@ import type { EngagementType, PermissionKey, PermissionTemplate } from "@/types"
 import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import { ApiPermissionPicker } from "./api-permission-picker";
 import {
-  NeverGrantableNotice,
   PermissionSummary,
   SensitiveAccessWarning,
 } from "./permission-summary";
@@ -33,42 +32,48 @@ import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
 import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
 import { cn } from "@/lib/utils";
+import { useScrollToTop } from "@/lib/utils/scroll";
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
-// Helper function to map old permission keys to new ones
-function migrateKey(p: string) {
-  if (typeof p !== "string" || !p.includes(":")) return p;
-  let key = p.replace(/:/g, '.');
-  key = key.replace(/^trucks\./, 'truck.');
-  key = key.replace(/^loads\./, 'load.');
-  key = key.replace(/^settlements\./, 'settlement.');
-  key = key.replace(/^invoices\./, 'invoice.');
-  key = key.replace(/^expenses\./, 'expense.');
-  key = key.replace(/^documents\./, 'document.');
-  key = key.replace(/^members\./, 'membership.');
-  key = key.replace(/^invitations\./, 'invitation.');
-  
-  if (key === 'truck.view') return 'truck.read';
-  if (key === 'load.view') return 'load.read';
-  if (key === 'settlement.view') return 'settlement.read';
-  if (key === 'invoice.view') return 'invoice.read';
-  if (key === 'expense.view') return 'expense.read';
-  if (key === 'document.view') return 'document.read';
-  if (key === 'document.upload') return 'document.create';
-  if (key === 'membership.view') return 'membership.list';
-  if (key === 'invitation.view') return 'invitation.list';
-  return key as PermissionKey;
+// Helper function to map old permission keys to new ones with dot notation
+function migrateKey(p: string): string {
+  if (typeof p !== "string" || !p.trim()) return "";
+  let key = p.trim();
+  if (key.includes(":")) {
+    key = key.replace(/:/g, ".");
+  }
+  key = key.replace(/^trucks\./, "truck.");
+  key = key.replace(/^loads\./, "load.");
+  key = key.replace(/^settlements\./, "settlement.");
+  key = key.replace(/^invoices\./, "invoice.");
+  key = key.replace(/^expenses\./, "expense.");
+  key = key.replace(/^documents\./, "document.");
+  key = key.replace(/^members\./, "membership.");
+  key = key.replace(/^invitations\./, "invitation.");
+  key = key.replace(/^drivers\./, "driver.");
+  key = key.replace(/^trailers\./, "trailer.");
+  key = key.replace(/^customers\./, "customer.");
+
+  if (key.endsWith(".view")) key = key.replace(/\.view$/, ".read");
+  if (key.endsWith(".upload")) key = key.replace(/\.upload$/, ".create");
+  if (key.endsWith(".edit")) key = key.replace(/\.edit$/, ".update");
+  if (key === "membership.view") key = "membership.list";
+  if (key === "invitation.view") key = "invitation.list";
+  return key;
+}
+
+function getFriendlyErrorMessage(err: any): string {
+  const backendMsg = err.response?.data?.message || err.message;
+  if (Array.isArray(backendMsg)) {
+    return backendMsg.join(", ");
+  }
+  return backendMsg || "An unexpected error occurred.";
 }
 
 type Stage = "type" | "details" | "review" | "sent";
 
-const EXPIRY_CHOICES = [
-  { days: 7, label: "7 days" },
-  { days: 14, label: "14 days" },
-  { days: 30, label: "30 days" },
-  { days: 0, label: "No expiry" },
-] as const;
 
 const KIND_ICON = {
   driver: UserRound,
@@ -125,6 +130,7 @@ export function InviteFlow() {
   const myPermissions = usePermissions();
 
   const [stage, setStage] = useState<Stage>("type");
+  useScrollToTop([stage]);
   const queryClient = useQueryClient();
   const [preset, setPreset] = useState<InvitationPreset | null>(null);
   const [savedRole, setSavedRole] = useState<PermissionTemplate | null>(null);
@@ -150,9 +156,10 @@ export function InviteFlow() {
   });
 
   const [roleName, setRoleName] = useState("");
-  const [recipientName, setRecipientName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [orgName, setOrgName] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
-  const [expiryDays, setExpiryDays] = useState<number>(14);
   const [permissions, setPermissions] = useState<Set<string>>(new Set());
 
   // Driver invitations only. The carrier picks this, never the driver.
@@ -185,7 +192,12 @@ export function InviteFlow() {
       // Prefilled, and still editable. The reviewer confirms the identity and
       // the contact details — what a stranger typed into a referral form is
       // evidence of an introduction, not a verified fact about the person.
-      setRecipientName(result.recipientName);
+      if (result.recipientName) {
+        setOrgName(result.recipientName);
+        const parts = result.recipientName.trim().split(/\s+/);
+        setFirstName(parts[0] || "");
+        setLastName(parts.slice(1).join(" "));
+      }
       setRecipientEmail(result.recipientEmail);
     });
     return () => {
@@ -194,6 +206,9 @@ export function InviteFlow() {
   }, [ctx, referralId]);
 
   const isDispatchOrg = preset?.kind === "dispatch_org";
+  const recipientName = isDispatchOrg
+    ? orgName.trim()
+    : [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
   const isDriver = preset?.kind === "driver";
   const needsRoleName = preset?.kind === "custom" && !savedRole;
   const effectiveRoleName = savedRole?.name ?? (needsRoleName ? roleName.trim() : preset?.label ?? "");
@@ -218,129 +233,134 @@ export function InviteFlow() {
     setStage("details");
   }
 
-  const nameError = submitted && !recipientName.trim()
-    ? isDispatchOrg
-      ? "Enter the organization's name."
-      : "Enter their name."
-    : null;
+  const orgNameError = submitted && !orgName.trim() ? "Enter the organization's name." : null;
+  const firstNameError = submitted && !firstName.trim() ? "Enter their first name." : null;
+  const lastNameError = submitted && !lastName.trim() ? "Enter their last name." : null;
   const emailError = submitted ? validateEmail(recipientEmail) : null;
   const roleNameError =
-    submitted && needsRoleName ? validateRoleName(roleName, []) : null;
+    submitted && needsRoleName ? validateRoleName(roleName, roles.map((r) => r.name)) : null;
   const newRoleNameError =
     submitted && saveAsRole
       ? validateRoleName(newRoleName, roles.map((r) => r.name))
       : null;
+  const permissionsError =
+    submitted && permissions.size === 0 ? "Select at least one permission." : null;
 
   function continueToReview() {
     setSubmitted(true);
     const bad =
-      !recipientName.trim() ||
+      (isDispatchOrg ? !orgName.trim() : !firstName.trim() || !lastName.trim()) ||
       (isDriver && !engagementType) ||
       validateEmail(recipientEmail) ||
-      (needsRoleName && validateRoleName(roleName, [])) ||
-      (saveAsRole && validateRoleName(newRoleName, roles.map((r) => r.name)));
+      (needsRoleName && validateRoleName(roleName, roles.map((r) => r.name))) ||
+      (saveAsRole && validateRoleName(newRoleName, roles.map((r) => r.name))) ||
+      permissions.size === 0;
     if (bad) return;
     setConfirmed(false);
     setStage("review");
   }
 
-  async function commit(alsoCopy: boolean) {
+  async function commit(alsoCopy: boolean = false) {
     if (!organization || !preset || sending || !confirmed) return;
     setSending(true);
     setRefusal(null);
 
     // Belt and braces: non-owner invitations can never exceed what they hold.
-    const safe = (isOwner
+    const safeRaw = isOwner
       ? selectedList
-      : clampToGrantable(selectedList, myPermissions, orgType)) as PermissionKey[];
+      : clampToGrantable(selectedList, myPermissions, orgType);
 
-    if (!ctx) {
-      setSending(false);
-      return;
-    }
+    const safePermissions = Array.from(new Set(safeRaw.map(migrateKey).filter(Boolean)));
 
-    /*
-     * ★ SAVING THE SELECTION AS A ROLE IS A SEPARATE ACT ★
-     * The invitation carries `safe` either way — its own snapshot, taken now.
-     * Saving a role as well records where that snapshot came from and makes it
-     * reusable; it does not make the invitation depend on the role. Editing the
-     * role tomorrow cannot re-scope an invitation somebody is about to accept,
-     * because acceptance reads the snapshot and never the template.
-     */
-    let templateId = savedRole?.id;
-    let templateVersion = savedRole?.version;
-    if (saveAsRole && !savedRole) {
-      const created = await services.access.createTemplate(ctx, {
-        name: newRoleName,
-        description: `Saved from an invitation to ${recipientName.trim()}.`,
-        permissions: safe,
-      });
-      if (created.status === "refused") {
-        setRefusal(`The role was not saved, so the invitation was not sent. ${created.message}`);
-        setSending(false);
-        return;
-      }
-      templateId = created.template.id;
-      templateVersion = created.template.version;
-    }
-
-    /*
-     * ★ THE SERVICE DECIDES, AND A REFUSAL IS READ RATHER THAN THROWN ★
-     *
-     * This screen no longer builds an `Invitation` and does not get the last
-     * word on what goes in one. The service re-checks `invitations:create`,
-     * re-checks that nothing here exceeds what this seat actually holds,
-     * snapshots the organization from the CONTEXT rather than from a field on
-     * this form, and records the issue — or the refusal — in the ledger.
-     *
-     * "You cannot give somebody access you do not have yourself" is a sentence
-     * the owner needs to read, with the keys named, not an exception.
-     */
-    let invitation;
     try {
-      invitation = await services.access.create(ctx, {
-        kind: preset.kind,
-        roleName: effectiveRoleName || preset.label,
-        templateId,
-        templateVersion,
-        engagementType: engagementType ?? undefined,
-        recipientName,
-        recipientEmail,
-        permissions: safe,
-        scopedToCarrierName: isDispatchOrg ? organization.displayName : undefined,
-        expiresAt: expiryIso(expiryDays),
-        // Present only when Workforce already holds a live engagement for this
-        // person. It is what makes acceptance a CONNECTION rather than a second
-        // record — the access module's existing behaviour, not a new one.
-        engagementId: handoff?.existingEngagementId,
-      });
-    } catch (error) {
-      setRefusal(
-        error instanceof PermissionDeniedError
-          ? "You cannot give somebody access you do not have yourself: "
-            + `${error.required.map((k) => permissionMeta(k).label).join(", ")}.`
-          : error instanceof Error ? error.message : "This invitation was not sent.",
-      );
+      let roleIdToUse = "";
+
+      // Check if user selected custom role or checked "Save this as a custom role"
+      const shouldCreateRole =
+        (preset.kind === "custom" && !savedRole) || Boolean(saveAsRole && newRoleName.trim());
+
+      if (shouldCreateRole) {
+        const roleToCreateName =
+          preset.kind === "custom" && !savedRole
+            ? roleName.trim()
+            : newRoleName.trim();
+
+        const roleDraft = {
+          name: roleToCreateName || "Custom Role",
+          description: `Custom role created for ${recipientName.trim()}`,
+          permissions: safePermissions,
+        };
+
+        const roleRes = await apiClient.post("/organizations/roles", roleDraft);
+        const createdRoleData = roleRes.data?.role || roleRes.data?.data || roleRes.data;
+        const createdId = createdRoleData?.id || roleRes.data?.id || roleRes.data?.roleId;
+
+        if (!createdId) {
+          throw new Error("Role was created but no role ID was returned by the server.");
+        }
+
+        roleIdToUse = String(createdId);
+
+        // Invalidate roles query so new role appears in custom roles list
+        queryClient.invalidateQueries({ queryKey: ["organizations", "roles"] });
+      } else if (savedRole) {
+        roleIdToUse = String(savedRole.id);
+      } else {
+        const roleKeyMap: Record<string, string> = {
+          driver: "DRIVER",
+          dispatcher: "DISPATCHER",
+          dispatch_org: "DISPATCHING_COMPANY",
+          employee: "MEMBER",
+        };
+        const standardRoleId = roleKeyMap[preset.kind] || preset.kind.toUpperCase();
+
+        const matched = roles.find(
+          (r) =>
+            r.id?.toUpperCase() === standardRoleId ||
+            r.name.toLowerCase() === preset.label.toLowerCase(),
+        );
+        roleIdToUse = matched ? String(matched.id) : standardRoleId;
+      }
+
+      const fName = isDispatchOrg
+        ? orgName.trim().split(/\s+/)[0] || orgName.trim()
+        : firstName.trim();
+      const lName = isDispatchOrg
+        ? orgName.trim().split(/\s+/).slice(1).join(" ") || "Admin"
+        : lastName.trim();
+
+      const invitePayload = {
+        email: recipientEmail.trim(),
+        firstName: fName,
+        lastName: lName,
+        roleId: roleIdToUse,
+        permissions: safePermissions,
+      };
+
+      const inviteRes = await apiClient.post("/organizations/invitations", invitePayload);
+      const inviteData = inviteRes.data?.data || inviteRes.data?.invitation || inviteRes.data;
+      const token = inviteData?.token || inviteData?.code || inviteData?.id || null;
+
+      if (referralId && ctx) {
+        void services.referrals.recordInvitation(ctx, referralId, inviteData?.id || "sent");
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
+
+      setSentToken(token);
       setSending(false);
-      return;
+      setStage("sent");
+      toast.success(`Invitation sent to ${recipientEmail.trim()}`);
+
+      if (alsoCopy && token) {
+        void copyLink(token);
+      }
+    } catch (err: any) {
+      const displayMsg = getFriendlyErrorMessage(err);
+      setRefusal(displayMsg);
+      toast.error("Failed to send invitation", { description: displayMsg });
+      setSending(false);
     }
-
-    /*
-     * The referral learns the id of the invitation that came out of it, AFTER
-     * the canonical command returned one. The referral module has no way to
-     * create an invitation and this is the only direction the link is ever
-     * written in.
-     */
-    if (referralId) {
-      void services.referrals.recordInvitation(ctx, referralId, invitation.id);
-    }
-
-    queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
-
-    setSentToken(invitation.token ?? null);
-    setSending(false);
-    setStage("sent");
-    if (alsoCopy && invitation.token) void copyLink(invitation.token);
   }
 
   async function copyLink(token: string) {
@@ -481,21 +501,57 @@ export function InviteFlow() {
               </Field>
             ) : null}
 
-            <Field
-              label={isDispatchOrg ? "Organization name" : "Their name"}
-              htmlFor="invite-name"
-              error={nameError ?? undefined}
-            >
-              <Input
-                id="invite-name"
-                value={recipientName}
-                onChange={(e) => setRecipientName(e.target.value)}
-                placeholder={isDispatchOrg ? "Meridian Dispatch" : "Yusuf Demir"}
-                maxLength={80}
-                aria-invalid={nameError ? true : undefined}
-                className={cn(nameError && "border-st-danger")}
-              />
-            </Field>
+            {isDispatchOrg ? (
+              <Field
+                label="Organization name"
+                htmlFor="invite-org-name"
+                error={orgNameError ?? undefined}
+              >
+                <Input
+                  id="invite-org-name"
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  placeholder="Meridian Dispatch"
+                  maxLength={80}
+                  aria-invalid={orgNameError ? true : undefined}
+                  className={cn(orgNameError && "border-st-danger")}
+                />
+              </Field>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="First Name"
+                  htmlFor="invite-first-name"
+                  error={firstNameError ?? undefined}
+                >
+                  <Input
+                    id="invite-first-name"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Enter your first name"
+                    maxLength={40}
+                    aria-invalid={firstNameError ? true : undefined}
+                    className={cn(firstNameError && "border-st-danger")}
+                  />
+                </Field>
+
+                <Field
+                  label="Last Name"
+                  htmlFor="invite-last-name"
+                  error={lastNameError ?? undefined}
+                >
+                  <Input
+                    id="invite-last-name"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Enter your last name"
+                    maxLength={40}
+                    aria-invalid={lastNameError ? true : undefined}
+                    className={cn(lastNameError && "border-st-danger")}
+                  />
+                </Field>
+              </div>
+            )}
 
             <Field
               label={isDispatchOrg ? "Administrator's email" : "Email address"}
@@ -513,34 +569,6 @@ export function InviteFlow() {
                 className={cn(emailError && "border-st-danger")}
               />
             </Field>
-
-            <fieldset>
-              <legend className="mb-1.5 text-[0.8125rem] font-medium text-fg">
-                Invitation expires
-              </legend>
-              <div className="flex flex-wrap gap-1.5">
-                {EXPIRY_CHOICES.map((choice) => (
-                  <button
-                    key={choice.days}
-                    type="button"
-                    aria-pressed={expiryDays === choice.days}
-                    onClick={() => setExpiryDays(choice.days)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-[0.75rem] font-medium transition-colors",
-                      "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                      expiryDays === choice.days
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg",
-                    )}
-                  >
-                    {choice.label}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-1.5 text-[0.75rem] text-fg-subtle">Optional. Links with no expiry stay usable until revoked.</p>
-            </fieldset>
-
-            <NeverGrantableNotice />
           </div>
 
           <div className="min-w-0 space-y-4">
@@ -555,13 +583,19 @@ export function InviteFlow() {
               </p>
             </div>
 
+            <SensitiveAccessWarning permissions={selectedList} />
+
             <ApiPermissionPicker
               selected={permissions}
               onChange={setPermissions}
               grantable={grantable}
             />
 
-            <SensitiveAccessWarning permissions={selectedList} />
+            {permissionsError ? (
+              <p role="alert" className="text-[0.75rem] font-medium text-st-danger">
+                {permissionsError}
+              </p>
+            ) : null}
 
             {changedFromPreset ? (
               <div className="rounded-lg border border-border bg-surface-sunken p-3.5">
@@ -629,10 +663,6 @@ export function InviteFlow() {
                 <ReviewRow label="Engagement type" value={ENGAGEMENT_LABEL[engagementType]} />
               ) : null}
               <ReviewRow label="Organization" value={organization.displayName} />
-              <ReviewRow
-                label="Expires"
-                value={expiryDays > 0 ? `In ${expiryDays} days` : "Never — usable until revoked"}
-              />
               {isDispatchOrg ? (
                 <ReviewRow
                   label="Scope"
@@ -684,18 +714,9 @@ export function InviteFlow() {
               size="lg"
               disabled={!confirmed || sending}
               aria-busy={sending || undefined}
-              onClick={() => commit(false)}
+              onClick={() => commit()}
             >
               {sending ? "Sending…" : "Send invitation"}
-            </Button>
-            <Button
-              variant="secondary"
-              size="lg"
-              disabled={!confirmed || sending}
-              onClick={() => commit(true)}
-            >
-              <Copy aria-hidden />
-              Create and copy link
             </Button>
             <Button variant="ghost" size="lg" onClick={() => setStage("details")}>
               Back
@@ -703,13 +724,13 @@ export function InviteFlow() {
           </div>
           {!confirmed ? (
             <p className="text-[0.75rem] text-fg-subtle">
-              Tick the box above to send or copy the link.
+              Tick the box above to send the invitation.
             </p>
           ) : null}
         </div>
       ) : null}
 
-      {stage === "sent" && sentToken ? (
+      {stage === "sent" ? (
         <div className="max-w-[42rem] space-y-4">
           <div className="flex items-start gap-3 rounded-lg border border-st-success/35 bg-st-success-bg/50 px-4 py-3.5">
             <Check className="mt-px size-5 shrink-0 text-st-success" aria-hidden />
@@ -718,22 +739,26 @@ export function InviteFlow() {
                 Invitation created for {recipientName.trim()}.
               </p>
               <p className="mt-0.5 text-fg-muted">
-                It is pending until they accept. You can revoke it any time from the invitations
-                list.
+                An invitation email has been sent to {recipientEmail.trim()}. It is pending until they accept.
+                You can revoke it any time from the invitations list.
               </p>
             </div>
           </div>
 
-          <Field label="Invitation link" htmlFor="invite-link" hint="Anyone with this link can accept the invitation.">
-            <div className="flex gap-2">
-              <Input id="invite-link" readOnly value={invitationLink(sentToken)} className="font-mono text-[0.75rem]" />
-              <Button variant="secondary" onClick={() => copyLink(sentToken)} className="shrink-0">
-                {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-                {copied ? "Copied" : "Copy"}
-              </Button>
-            </div>
-          </Field>
-          <p aria-live="polite" className="sr-only">{copied ? "Link copied" : ""}</p>
+          {sentToken ? (
+            <>
+              <Field label="Invitation link" htmlFor="invite-link" hint="Anyone with this link can accept the invitation.">
+                <div className="flex gap-2">
+                  <Input id="invite-link" readOnly value={invitationLink(sentToken)} className="font-mono text-[0.75rem]" />
+                  <Button variant="secondary" onClick={() => copyLink(sentToken)} className="shrink-0">
+                    {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              </Field>
+              <p aria-live="polite" className="sr-only">{copied ? "Link copied" : ""}</p>
+            </>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
             <Button variant="primary" onClick={() => router.push("/settings/invitations")}>
@@ -745,8 +770,13 @@ export function InviteFlow() {
                 setStage("type");
                 setPreset(null);
                 setSavedRole(null);
-                setRecipientName("");
+                setFirstName("");
+                setLastName("");
+                setOrgName("");
                 setRecipientEmail("");
+                setRoleName("");
+                setNewRoleName("");
+                setSaveAsRole(false);
                 setPermissions(new Set());
                 setSentToken(null);
                 setSubmitted(false);

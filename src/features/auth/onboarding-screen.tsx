@@ -3,8 +3,9 @@
 import { Building2, Headset, Plus, Truck, UserRound } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useId } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
 import { toast } from "sonner";
 import { AuthShell } from "./shell";
 import { AccountFlowProgress, BackLink, ChoiceCard, SubmitButton } from "./controls";
@@ -72,6 +73,7 @@ function MultipleHeadsetsIcon(props: React.ComponentProps<"svg">) {
 
 export function OnboardingScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const initialStage = (searchParams?.get("step") as Stage) || "role";
   const [stage, setStage] = useState<Stage>(initialStage);
@@ -90,7 +92,10 @@ export function OnboardingScreen() {
     router.push(`/onboarding?step=${newStage}`);
   };
 
-  const enterWorkspace = () => router.push("/home");
+  const enterWorkspace = () => {
+    fetchAndStoreUserPermissions(queryClient);
+    router.push("/home");
+  };
 
   const selectRoleMutation = useMutation({
     mutationFn: async (selectedRole: Role) => {
@@ -125,13 +130,15 @@ export function OnboardingScreen() {
       }
       if (selectedRole === "individual-dispatcher") {
         Cookies.remove("antcolos_next_step", { path: "/" });
+        fetchAndStoreUserPermissions(queryClient);
         router.push("/home");
         return;
       }
 
-      // Driver path: Skip additional onboarding and go straight to home
+      // Driver path: Skip additional onboarding and go straight to driver portal
       Cookies.remove("antcolos_next_step", { path: "/" });
-      router.push("/home");
+      fetchAndStoreUserPermissions(queryClient);
+      router.push("/driver/home");
     },
     onError: (error) => {
       // If we already successfully transitioned the token, ignore token scope errors from accidental double-clicks

@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { apiClient } from "@/lib/api/client";
 import { useQuery } from "@tanstack/react-query";
+import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
 
 export interface TruckAssignment {
@@ -218,12 +219,14 @@ export function FleetRosterScreen() {
         title="Trucks"
         description="Every truck in your fleet, active assignments, and operational status."
         actions={
-          <Button variant="primary" asChild>
-            <Link href="/fleet/trucks/new">
-              <Plus aria-hidden />
-              Add truck
-            </Link>
-          </Button>
+          <Can permission="trucks:create">
+            <Button variant="primary" asChild>
+              <Link href="/fleet/trucks/new">
+                <Plus aria-hidden />
+                Add truck
+              </Link>
+            </Button>
+          </Can>
         }
       />
 

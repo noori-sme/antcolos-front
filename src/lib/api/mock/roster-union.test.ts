@@ -126,7 +126,7 @@ describe("one person, one live seat per organization", () => {
     });
 
     const result = await services.access.accept(
-      invitation.token,
+      invitation.token!,
       {
         userId: paige.userId,
         email: "paige@example.com",

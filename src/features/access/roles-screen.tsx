@@ -34,6 +34,7 @@ import { ApiPermissionPicker } from "./api-permission-picker";
 import { PermissionCatalog } from "./permission-catalog";
 
 import { ApplyTemplatePanel } from "./apply-template-panel";
+import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
 
 type View =
@@ -214,10 +215,12 @@ export function RolesScreen() {
         description="A role is a saved set of permissions you can hand to several people at once. Editing one never changes what anybody can already do."
         actions={
           tab === "roles" ? (
-            <Button variant="primary" onClick={() => setView({ mode: "edit", template: null })}>
-              <Plus aria-hidden />
-              New role
-            </Button>
+            <Can permission="permissions:manage">
+              <Button variant="primary" onClick={() => setView({ mode: "edit", template: null })}>
+                <Plus aria-hidden />
+                New role
+              </Button>
+            </Can>
           ) : undefined
         }
       />
@@ -262,9 +265,11 @@ export function RolesScreen() {
               title="No roles yet"
               description="Make one when you want to give the same set of permissions to more than one person — save it once, then apply it as often as you like."
               action={
-                <Button variant="primary" onClick={() => setView({ mode: "edit", template: null })}>
-                  Create a role
-                </Button>
+                <Can permission="permissions:manage">
+                  <Button variant="primary" onClick={() => setView({ mode: "edit", template: null })}>
+                    Create a role
+                  </Button>
+                </Can>
               }
             />
           ) : null}

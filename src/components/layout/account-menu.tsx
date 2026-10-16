@@ -13,6 +13,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useQueryClient } from "@tanstack/react-query";
 import { ACCOUNT_NAV } from "@/config/nav";
 import { useSession } from "@/lib/session/hooks";
 import { LockedSection } from "./locked-section";
@@ -24,6 +25,7 @@ import { LockedSection } from "./locked-section";
 export function AccountMenu() {
   const { user } = useSession();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showSignOut, setShowSignOut] = useState(false);
   const items = ACCOUNT_NAV.flatMap((s) => s.items);
 
@@ -33,7 +35,13 @@ export function AccountMenu() {
     Cookies.remove("antcolos_user_role", { path: "/" });
     Cookies.remove("antcolos_org_type", { path: "/" });
     Cookies.remove("antcolos_org_role", { path: "/" });
+    Cookies.remove("antcolos_role_id", { path: "/" });
+    Cookies.remove("antcolos_role_name", { path: "/" });
+    Cookies.remove("antcolos_permissions", { path: "/" });
+    Cookies.remove("antcolos_user_permissions", { path: "/" });
+    Cookies.remove("antcolos_role_template", { path: "/" });
     
+    queryClient.clear();
     sessionStorage.removeItem("antcolos_signup_step");
     sessionStorage.removeItem("antcolos_signup_email");
     sessionStorage.removeItem("antcolos_signup_from_login");

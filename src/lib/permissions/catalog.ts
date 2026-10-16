@@ -317,6 +317,12 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "membership.view": "members:view",
   "membership.edit": "members:edit",
   "membership.suspend": "members:suspend",
+  "member.read": "members:view",
+  "members.read": "members:view",
+  "member.view": "members:view",
+  "members.view": "members:view",
+  "member.edit": "members:edit",
+  "members.edit": "members:edit",
   "role.manage": "permissions:manage",
   "roles.manage": "permissions:manage",
   "role.view": "members:view",
@@ -327,47 +333,191 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "partnership.view": "invitations:view",
   "invitation.list": "invitations:view",
   "invitation.view": "invitations:view",
+  "invitation.read": "invitations:view",
+  "invitations.read": "invitations:view",
   "invitation.create": "invitations:create",
+  "invitations.create": "invitations:create",
   "invitation.resend": "invitations:resend",
   "invitation.revoke": "invitations:revoke",
 
   // Loads
   "load.read": "loads:view",
   "load.view": "loads:view",
+  "loads.read": "loads:view",
+  "loads.view": "loads:view",
   "load.create": "loads:create",
+  "loads.create": "loads:create",
   "load.edit": "loads:edit",
+  "loads.edit": "loads:edit",
   "load.update": "loads:edit",
+  "loads.update": "loads:edit",
   "load.delete": "loads:delete",
+  "loads.delete": "loads:delete",
   "load.status.update": "loads:status:update",
   "load.assign": "loads:assign",
   "load.export": "loads:export",
 
+  // Dispatch & Tracking
+  "dispatch.read": "dispatch:view",
+  "dispatch.view": "dispatch:view",
+  "tracking.read": "tracking:view",
+  "tracking.view": "tracking:view",
+  "tracking.share": "tracking:share",
+  "tracking.update.send": "tracking:update:send",
+
+  // Drivers & Driver workflow
+  "driver.read": "drivers:view",
+  "driver.view": "drivers:view",
+  "drivers.read": "drivers:view",
+  "drivers.view": "drivers:view",
+  "driver.create": "drivers:create",
+  "drivers.create": "drivers:create",
+  "driver.edit": "drivers:edit",
+  "drivers.edit": "drivers:edit",
+  "driver.update": "drivers:edit",
+  "drivers.update": "drivers:edit",
+  "driver.delete": "drivers:delete",
+  "drivers.delete": "drivers:delete",
+  "proposal.read": "proposals:view",
+  "proposals.read": "proposals:view",
+  "proposal.view": "proposals:view",
+  "proposals.view": "proposals:view",
+  "proposal.respond": "proposals:respond",
+  "proposals.respond": "proposals:respond",
+  "trip.execute": "trips:execute",
+  "trips.execute": "trips:execute",
+
   // Trucks
   "truck.read": "trucks:view",
   "truck.view": "trucks:view",
+  "trucks.read": "trucks:view",
+  "trucks.view": "trucks:view",
   "truck.create": "trucks:create",
+  "trucks.create": "trucks:create",
   "truck.edit": "trucks:edit",
+  "trucks.edit": "trucks:edit",
   "truck.update": "trucks:edit",
+  "trucks.update": "trucks:edit",
   "truck.delete": "trucks:delete",
+  "trucks.delete": "trucks:delete",
 
   // Trailers
   "trailer.read": "trailers:view",
   "trailer.view": "trailers:view",
+  "trailers.read": "trailers:view",
+  "trailers.view": "trailers:view",
   "trailer.create": "trailers:create",
+  "trailers.create": "trailers:create",
   "trailer.edit": "trailers:edit",
+  "trailers.edit": "trailers:edit",
   "trailer.update": "trailers:edit",
+  "trailers.update": "trailers:edit",
   "trailer.delete": "trailers:delete",
+  "trailers.delete": "trailers:delete",
+
+  // Fleet & ELD
+  "fleet.read": "fleet:view",
+  "fleet.view": "fleet:view",
+  "eld.read": "eld:view",
+  "eld.view": "eld:view",
+  "eld.devices.manage": "eld:devices:manage",
+
+  // Customers
+  "customer.read": "customers:view",
+  "customer.view": "customers:view",
+  "customers.read": "customers:view",
+  "customers.view": "customers:view",
+  "customer.create": "customers:create",
+  "customers.create": "customers:create",
+  "customer.edit": "customers:edit",
+  "customers.edit": "customers:edit",
+  "customer.update": "customers:edit",
+  "customers.update": "customers:edit",
+  "customer.delete": "customers:delete",
+  "customers.delete": "customers:delete",
+
+  // Documents
+  "document.read": "documents:view",
+  "document.view": "documents:view",
+  "documents.read": "documents:view",
+  "documents.view": "documents:view",
+  "document.create": "documents:upload",
+  "documents.create": "documents:upload",
+  "document.upload": "documents:upload",
+  "documents.upload": "documents:upload",
 
   // Settlements & Invoices & Accounting
   "settlement.read": "settlements:view",
   "settlement.view": "settlements:view",
+  "settlements.read": "settlements:view",
+  "settlements.view": "settlements:view",
   "invoice.read": "invoices:view",
   "invoice.view": "invoices:view",
+  "invoices.read": "invoices:view",
+  "invoices.view": "invoices:view",
   "expense.read": "expenses:view",
   "expense.view": "expenses:view",
-  "document.read": "documents:view",
-  "document.view": "documents:view",
-  "document.create": "documents:upload",
+  "expenses.read": "expenses:view",
+  "expenses.view": "expenses:view",
+  "rate.read": "rates:view",
+  "rate.view": "rates:view",
+  "rates.read": "rates:view",
+  "rates.view": "rates:view",
+  "revenue.read": "revenue:view",
+  "revenue.view": "revenue:view",
+
+  // Fuel & IFTA
+  "fuel.read": "fuel:view",
+  "fuel.view": "fuel:view",
+  "mileage.read": "mileage:view",
+  "mileage.view": "mileage:view",
+  "ifta.read": "ifta:view",
+  "ifta.view": "ifta:view",
+
+  // Compliance & Maintenance
+  "compliance.read": "compliance:view",
+  "compliance.view": "compliance:view",
+  "maintenance.read": "maintenance:view",
+  "maintenance.view": "maintenance:view",
+  "maintenance.manage": "maintenance:manage",
+  "maintenance.defects.report": "maintenance:defects:report",
+
+  // Insurance & Claims
+  "insurance.read": "insurance:view",
+  "insurance.view": "insurance:view",
+  "claim.read": "claims:view",
+  "claim.view": "claims:view",
+  "claims.read": "claims:view",
+  "claims.view": "claims:view",
+  "claim.create": "claims:create",
+  "claims.create": "claims:create",
+
+  // Contracts & Workforce & Factoring & Reports & Audit & Settings
+  "contract.read": "contracts:view",
+  "contract.view": "contracts:view",
+  "contracts.read": "contracts:view",
+  "contracts.view": "contracts:view",
+  "contract.create": "contracts:create",
+  "contracts.create": "contracts:create",
+  "workforce.read": "workforce:view",
+  "workforce.view": "workforce:view",
+  "factoring.read": "factoring:view",
+  "factoring.view": "factoring:view",
+  "report.read": "reports:view",
+  "report.view": "reports:view",
+  "reports.read": "reports:view",
+  "reports.view": "reports:view",
+  "audit.read": "audit:view",
+  "audit.view": "audit:view",
+  "risk.read": "risk:view",
+  "risk.view": "risk:view",
+  "organization.manage": "organization:manage",
+  "organization.edit": "organization:manage",
+  "organization.update": "organization:manage",
+  "integration.read": "integrations:view",
+  "integration.view": "integrations:view",
+  "integrations.read": "integrations:view",
+  "integrations.view": "integrations:view",
 };
 
 export function migrateKey(p: string): string {
@@ -375,15 +525,25 @@ export function migrateKey(p: string): string {
   let key = p.replace(/:/g, ".");
   key = key.replace(/^trucks\./, "truck.");
   key = key.replace(/^loads\./, "load.");
+  key = key.replace(/^trailers\./, "trailer.");
+  key = key.replace(/^drivers\./, "driver.");
+  key = key.replace(/^customers\./, "customer.");
   key = key.replace(/^settlements\./, "settlement.");
   key = key.replace(/^invoices\./, "invoice.");
   key = key.replace(/^expenses\./, "expense.");
   key = key.replace(/^documents\./, "document.");
   key = key.replace(/^members\./, "membership.");
   key = key.replace(/^invitations\./, "invitation.");
+  key = key.replace(/^proposals\./, "proposal.");
+  key = key.replace(/^contracts\./, "contract.");
+  key = key.replace(/^claims\./, "claim.");
+  key = key.replace(/^reports\./, "report.");
 
   if (key === "truck.view") return "truck.read";
   if (key === "load.view") return "load.read";
+  if (key === "trailer.view") return "trailer.read";
+  if (key === "driver.view") return "driver.read";
+  if (key === "customer.view") return "customer.read";
   if (key === "settlement.view") return "settlement.read";
   if (key === "invoice.view") return "invoice.read";
   if (key === "expense.view") return "expense.read";
@@ -397,9 +557,42 @@ export function migrateKey(p: string): string {
 export function normalizePermissionKey(key: string): PermissionKey | undefined {
   if (BY_KEY.has(key as PermissionKey)) return key as PermissionKey;
   if (BACKEND_ALIASES[key]) return BACKEND_ALIASES[key];
-  if (typeof key === "string" && key.includes(".")) {
-    const colonKey = key.replace(/\./g, ":") as PermissionKey;
-    if (BY_KEY.has(colonKey)) return colonKey;
+  if (typeof key === "string") {
+    if (key.includes(".")) {
+      const colonKey = key.replace(/\./g, ":") as PermissionKey;
+      if (BY_KEY.has(colonKey)) return colonKey;
+
+      const parts = key.split(".");
+      if (parts.length >= 2) {
+        let entity = parts[0];
+        let action = parts.slice(1).join(":");
+
+        const plurals: Record<string, string> = {
+          load: "loads",
+          truck: "trucks",
+          trailer: "trailers",
+          driver: "drivers",
+          customer: "customers",
+          document: "documents",
+          settlement: "settlements",
+          invoice: "invoices",
+          report: "reports",
+          contract: "contracts",
+          claim: "claims",
+          member: "members",
+          membership: "members",
+          invitation: "invitations",
+          proposal: "proposals",
+        };
+        if (plurals[entity]) entity = plurals[entity];
+
+        if (action === "read" || action === "list") action = "view";
+        else if (action === "update") action = "edit";
+
+        const candidate = `${entity}:${action}` as PermissionKey;
+        if (BY_KEY.has(candidate)) return candidate;
+      }
+    }
   }
   return undefined;
 }

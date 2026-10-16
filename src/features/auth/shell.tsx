@@ -18,16 +18,26 @@ export function AuthShell({
   footer,
   headingRef,
   width = "narrow",
+  className,
 }: {
   title: string;
   description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   headingRef?: Ref<HTMLHeadingElement>;
-  width?: "narrow" | "wide";
+  width?: "narrow" | "medium" | "wide";
+  className?: string;
 }) {
   return (
-    <div className={cn("w-full", width === "narrow" ? "max-w-[25rem]" : "max-w-[46rem]")}>
+    <div
+      className={cn(
+        "w-full",
+        width === "narrow" && "max-w-[25rem]",
+        width === "medium" && "max-w-[36rem]",
+        width === "wide" && "max-w-[46rem]",
+        className
+      )}
+    >
       <div className="mb-6 flex justify-center sm:mb-7">
         <Link
           href="/"
@@ -37,7 +47,7 @@ export function AuthShell({
         </Link>
       </div>
 
-      <div className="rounded-xl border border-border bg-surface p-5 shadow-e2 sm:p-7">
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-e2 sm:p-7">
         <h1
           ref={headingRef}
           tabIndex={-1}

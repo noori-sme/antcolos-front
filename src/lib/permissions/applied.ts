@@ -69,7 +69,7 @@ export function snapshotOf(
       appliedByMembershipId: actor.membershipId,
       appliedByName: actor.displayName,
     },
-    withheld,
+    withheld: withheld as PermissionKey[],
   };
 }
 

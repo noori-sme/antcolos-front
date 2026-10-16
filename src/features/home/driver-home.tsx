@@ -10,6 +10,7 @@ import { LoadStatusBadge } from "@/components/common/status-badge";
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Can } from "@/components/auth/can";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DueLabel } from "@/features/needs-you/due-label";
 import { SeverityBar } from "@/features/needs-you/severity";
@@ -153,12 +154,14 @@ export function DriverHomeScreen() {
                   <ArrowRight aria-hidden />
                 </Link>
               </Button>
-              <Button asChild size="lg" variant="secondary" className="w-full sm:w-auto">
-                <Link href="/driver/documents">
-                  <Upload aria-hidden />
-                  Upload a document
-                </Link>
-              </Button>
+              <Can permission="documents:upload">
+                <Button asChild size="lg" variant="secondary" className="w-full sm:w-auto">
+                  <Link href="/driver/documents">
+                    <Upload aria-hidden />
+                    Upload a document
+                  </Link>
+                </Button>
+              </Can>
             </div>
             <p className="text-[0.75rem] text-fg-subtle">
               Milestones, fuel and rest updates and paperwork live on the trip

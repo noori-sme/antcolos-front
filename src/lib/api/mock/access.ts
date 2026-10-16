@@ -140,9 +140,10 @@ const DRIVER_SEAT_CEILING: readonly PermissionKey[] = [
 ];
 
 function driverSeatPermissions(invitation: Invitation): PermissionKey[] {
-  if (invitation.kind !== "driver") return [...invitation.permissions];
+  const perms = (invitation.permissions ?? []) as PermissionKey[];
+  if (invitation.kind !== "driver") return [...perms];
   const ceiling = new Set<PermissionKey>(DRIVER_SEAT_CEILING);
-  return invitation.permissions.filter((k) => ceiling.has(k));
+  return perms.filter((k) => ceiling.has(k));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -321,10 +322,10 @@ async function runSteps(ctx: StepContext, previous?: AcceptanceRun): Promise<Acc
     const before = liveRelationshipWith(driverProfileId, invitation.organizationId);
     const relationship = await mockCreateRelationship(driverProfileId, {
       carrierId: invitation.organizationId,
-      carrierName: invitation.organizationName,
+      carrierName: invitation.organizationName ?? "",
       engagementType: invitation.engagementType ?? "company_driver",
-      roleName: invitation.roleName,
-      permissions: invitation.permissions,
+      roleName: invitation.roleName ?? "",
+      permissions: (invitation.permissions ?? []) as PermissionKey[],
       // Deliberately empty. The consent the person gave is applied by the
       // document step below, which is the step that reports it. Passing the
       // keys here would attach the links inside this call, and the step named
@@ -644,9 +645,9 @@ export const mockAccessService: AccessService = {
         outcome: "denied",
         entity: { kind: "invitation", id: "new", label: email },
         summary: `Refused to invite ${email} with access the sender does not hold.`,
-        permissionContext: { required: [...draft.permissions], missing: ungrantable },
+        permissionContext: { required: [...draft.permissions] as PermissionKey[], missing: ungrantable as PermissionKey[] },
       });
-      throw new PermissionDeniedError(ungrantable);
+      throw new PermissionDeniedError(ungrantable as PermissionKey[]);
     }
     // The frontend stand-in for a unique constraint. Two open invitations to
     // one person is two working links, and whichever is accepted second is how
@@ -900,7 +901,7 @@ function resolve(token: string, identity: AcceptingIdentity | null): InvitationL
   if (!identity) return { status: "needs-account", invitation };
   const addressee = invitation.recipientUserId !== undefined
     ? invitation.recipientUserId === identity.userId
-    : invitation.recipientEmail.toLowerCase() === identity.email.trim().toLowerCase();
+    : (invitation.recipientEmail?.toLowerCase() ?? "") === identity.email.trim().toLowerCase();
 
   // Nobody has signed up with this address, and the person looking is somebody
   // else: there is no account for this invitation to attach to yet.
@@ -972,7 +973,7 @@ function declineContext(
 ): ServiceContext {
   return {
     organizationId: invitation.organizationId,
-    organizationName: invitation.organizationName,
+    organizationName: invitation.organizationName ?? "",
     workspaceKind: invitation.organizationType === "CARRIER"
       ? "carrier_organization" : "dispatch_organization",
     membershipId: `inv_${invitation.id}`,
@@ -998,7 +999,7 @@ function auditJoined(invitation: Invitation, identity: AcceptingIdentity) {
   {
     appendAuditEvent({
       organizationId: invitation.organizationId,
-      organizationName: invitation.organizationName,
+      organizationName: invitation.organizationName ?? "",
       workspaceKind: invitation.organizationType === "CARRIER"
         ? "carrier_organization" : "dispatch_organization",
       membershipId: `mem_${invitation.id}_${userId}`,

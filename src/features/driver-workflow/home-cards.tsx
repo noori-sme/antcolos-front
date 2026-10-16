@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { milestoneMeta } from "@/lib/driver-workflow/catalog";
+import { useCan } from "@/lib/session/hooks";
 import { relativeTime, useNow } from "@/lib/utils";
 import { useProposals, useTrips } from "./hooks";
 
@@ -18,11 +19,12 @@ import { useProposals, useTrips } from "./hooks";
  */
 
 export function ProposalsWaitingCard() {
+  const canSeeProposals = useCan("proposals:view");
   const proposals = useProposals({ view: "open" });
   const now = useNow();
   const waiting = proposals.data ?? [];
 
-  if (waiting.length === 0) return null;
+  if (!canSeeProposals || waiting.length === 0) return null;
 
   const next = waiting[0];
 
@@ -64,10 +66,11 @@ export function ProposalsWaitingCard() {
 }
 
 export function ActiveTripCard() {
+  const canExecute = useCan("trips:execute") || useCan("loads:view");
   const trips = useTrips();
   const active = (trips.data ?? []).find((t) => t.status === "active");
 
-  if (!active) return null;
+  if (!canExecute || !active) return null;
 
   const current = active.currentMilestone ? milestoneMeta(active.currentMilestone) : undefined;
 

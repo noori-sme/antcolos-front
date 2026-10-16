@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import Cookies from "js-cookie";
 import { LoadingSkeleton } from "@/components/data/states";
 import { driverProfileSync } from "@/features/driver/mock-driver";
 import { useActiveMembership } from "@/lib/session/hooks";
@@ -30,9 +31,11 @@ export function HomeGate() {
   const workspace = useWorkspace();
   const router = useRouter();
 
+  const hasToken = typeof window !== "undefined" && Boolean(Cookies.get("antcolos_token"));
+  const nextStep = typeof window !== "undefined" ? Cookies.get("antcolos_next_step") : null;
   const unattachedDriver = !membership && Boolean(driverProfileSync());
   const toDriverPortal = isDriverMembership || unattachedDriver;
-  const unfinished = !membership && !unattachedDriver;
+  const unfinished = Boolean(nextStep) || (!membership && !unattachedDriver && !hasToken);
 
   useEffect(() => {
     if (toDriverPortal) router.replace("/driver/home");

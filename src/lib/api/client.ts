@@ -68,9 +68,9 @@ function setupInterceptors(client: AxiosInstance) {
   // Request Interceptor
   client.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
-      // Fetch token from cookies if available
+      // Fetch token from cookies if available and Authorization header is not already provided
       const token = Cookies.get('antcolos_token');
-      if (token && config.headers) {
+      if (token && config.headers && !config.headers.Authorization) {
         config.headers.Authorization = `Bearer ${token}`;
       }
       return config;
@@ -86,9 +86,17 @@ function setupInterceptors(client: AxiosInstance) {
       const data = response.data;
       
       if (data && typeof data === 'object') {
-        // If accessToken is present in any response, update it
-        if (data.accessToken) {
-          Cookies.set('antcolos_token', data.accessToken, { expires: 7, path: '/' }); // 7 days
+        // If accessToken is present in any response (or nested under data), update it
+        const token =
+          data.accessToken ||
+          data.access_token ||
+          data.token ||
+          data.data?.accessToken ||
+          data.data?.access_token ||
+          data.data?.token;
+
+        if (token) {
+          Cookies.set('antcolos_token', token, { expires: 7, path: '/' }); // 7 days
         }
 
         // Check if this is an auth or onboarding related endpoint
@@ -149,13 +157,22 @@ function setupInterceptors(client: AxiosInstance) {
       
       const errorMessage = backendMessage || error.message || "An unexpected error occurred.";
 
-      const isMeEndpoint = url.includes('/auth/me') || url.includes('/auth/individual/me');
-      if ((error.response?.status === 403 || error.response?.status === 401) && isMeEndpoint) {
+      const clearAllAuthCookies = () => {
         Cookies.remove('antcolos_token', { path: '/' });
         Cookies.remove('antcolos_next_step', { path: '/' });
         Cookies.remove('antcolos_user_role', { path: '/' });
         Cookies.remove('antcolos_org_type', { path: '/' });
         Cookies.remove('antcolos_org_role', { path: '/' });
+        Cookies.remove('antcolos_role_id', { path: '/' });
+        Cookies.remove('antcolos_role_name', { path: '/' });
+        Cookies.remove('antcolos_permissions', { path: '/' });
+        Cookies.remove('antcolos_user_permissions', { path: '/' });
+        Cookies.remove('antcolos_role_template', { path: '/' });
+      };
+
+      const isMeEndpoint = url.includes('/auth/me') || url.includes('/auth/individual/me');
+      if ((error.response?.status === 403 || error.response?.status === 401) && isMeEndpoint) {
+        clearAllAuthCookies();
         toast.error("Session expired. Please sign in again.");
         window.location.href = '/sign-in';
         return Promise.reject(new Error("Session expired. Please sign in again."));
@@ -171,19 +188,11 @@ function setupInterceptors(client: AxiosInstance) {
         try {
           // No refresh token logic implemented yet.
           // Forcefully log the user out and redirect to sign-in
-          Cookies.remove('antcolos_token', { path: '/' });
-          Cookies.remove('antcolos_next_step', { path: '/' });
-          Cookies.remove('antcolos_user_role', { path: '/' });
-          Cookies.remove('antcolos_org_type', { path: '/' });
-          Cookies.remove('antcolos_org_role', { path: '/' });
+          clearAllAuthCookies();
           window.location.href = '/sign-in';
           return Promise.reject(new Error(errorMessage));
         } catch (refreshError) {
-          Cookies.remove('antcolos_token', { path: '/' });
-          Cookies.remove('antcolos_next_step', { path: '/' });
-          Cookies.remove('antcolos_user_role', { path: '/' });
-          Cookies.remove('antcolos_org_type', { path: '/' });
-          Cookies.remove('antcolos_org_role', { path: '/' });
+          clearAllAuthCookies();
           window.location.href = '/sign-in';
           return Promise.reject(new Error(errorMessage));
         }

@@ -25,5 +25,5 @@ import { useSearchParams } from "next/navigation";
 export function useInvitationReturnPath(): string | null {
   const token = useSearchParams().get("invitation");
   if (!token) return null;
-  return `/invitation/${encodeURIComponent(token)}`;
+  return `/invitations/accept/${encodeURIComponent(token)}`;
 }

@@ -59,7 +59,7 @@ export function WalkthroughPanel() {
           <Step n={2} title="Accept it as the person it names">
             A seeded invitation is already addressed to Alex Rivera, a real account that belongs to
             nothing.{" "}
-            <Walk href="/invitation/INV-NEWDRIVER?fixture=newcomer">Open it as Alex</Walk> — set up
+            <Walk href="/invitations/accept/INV-NEWDRIVER?fixture=newcomer">Open it as Alex</Walk> — set up
             the driver profile, accept, and watch the seat appear.
           </Step>
 
@@ -69,12 +69,12 @@ export function WalkthroughPanel() {
           </Step>
 
           <Step n={4} title="Try it as the wrong person">
-            <Walk href="/invitation/INV-NEWDRIVER">Open Alex&apos;s link as yourself</Walk>. It is
+            <Walk href="/invitations/accept/INV-NEWDRIVER">Open Alex&apos;s link as yourself</Walk>. It is
             refused, by name, rather than quietly attaching to your account.
           </Step>
 
           <Step n={5} title="Accept it twice">
-            Open <Walk href="/invitation/INV-NEWDRIVER?fixture=newcomer">the same link again as
+            Open <Walk href="/invitations/accept/INV-NEWDRIVER?fixture=newcomer">the same link again as
             Alex</Walk>. One seat, one profile, one engagement — it shows you what already exists
             instead of making a second one.
           </Step>
@@ -90,7 +90,7 @@ export function WalkthroughPanel() {
 
           <Step n={7} title="The two edges">
             A person already in another organization keeps both — accept{" "}
-            <Walk href="/invitation/INV-DRIVER-ACCT">the invitation addressed to you</Walk> and the
+            <Walk href="/invitations/accept/INV-DRIVER-ACCT">the invitation addressed to you</Walk> and the
             switcher grows rather than swaps. And a solo owner cannot be removed from their own
             workspace: try it on{" "}
             <Link href="/settings/users" className="text-primary underline-offset-4 hover:underline">

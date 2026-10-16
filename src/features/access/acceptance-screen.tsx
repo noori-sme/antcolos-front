@@ -1,52 +1,93 @@
 "use client";
 
-import { Ban, Building2, CircleCheck, Clock, LoaderCircle, UserRound } from "lucide-react";
+import {
+  Ban,
+  Building2,
+  CheckCircle2,
+  CircleCheck,
+  Clock,
+  LoaderCircle,
+  Mail,
+  ShieldCheck,
+  UserPlus,
+  UserRound,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
+import Cookies from "js-cookie";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { AuthShell } from "@/features/auth/shell";
 import { FormAlert } from "@/features/auth/form-alert";
+import { PasswordField } from "@/features/auth/password-field";
+import { PasswordChecklist } from "@/features/auth/password-checklist";
+import { UsernameField, type UsernameAvailability } from "@/features/auth/username-field";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  isPasswordStrongEnough,
+  USERNAME_RULES_TEXT,
+  validateUsername,
+} from "@/features/auth/rules";
 import { PermissionSummary, SensitiveAccessWarning } from "./permission-summary";
 import { QuickOnboarding } from "@/features/driver/quick-onboarding";
 import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import { services } from "@/lib/api";
+import { apiClient } from "@/lib/api/client";
+import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
 import type {
-  AcceptInput, AcceptingIdentity, InvitationLookup,
+  AcceptInput,
+  AcceptingIdentity,
+  InvitationLookup,
 } from "@/lib/api/contracts/access";
 import { useSession } from "@/lib/session/hooks";
 import { readSessionScenario } from "@/lib/session/scenarios";
 import {
-  ACCEPTANCE_LIMITATION, ACCEPTANCE_STEP_LABEL,
-  type AcceptanceRun, type Invitation,
+  ACCEPTANCE_LIMITATION,
+  ACCEPTANCE_STEP_LABEL,
+  type AcceptanceRun,
+  type Invitation,
 } from "@/types";
 import { cn } from "@/lib/utils";
+
+interface ApiInvitationData {
+  organizationName: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  roleId: string;
+  roleName?: string;
+  expiresAt?: string;
+  existingUser: boolean;
+  permissions?: string[];
+}
+
+
 
 /**
  * The screen an invitation link opens.
  *
- * Whoever follows the link is shown exactly what they are being given before
- * they accept it — the same permission summary the sender confirmed. Somebody
- * without an account is sent through Sign Up carrying the invitation, so they
- * land back here afterwards instead of on a generic welcome screen.
+ * Supports both real backend invitations (via GET /api/v1/invitations/accept/:token)
+ * and mock invitations for development walkthroughs.
  */
-export function InvitationAcceptanceScreen({ token }: { token: string }) {
+export function InvitationAcceptanceScreen({ token: propToken }: { token?: string }) {
   const router = useRouter();
-  /**
-   * Who this tab is.
-   *
-   * The screen does not decide it: it reads `useSession()`, the one place the
-   * signed-in person comes from. That is the shape a real client keeps — the
-   * session decides, the screen relays.
-   *
-   * ███ BUT IN THIS BUILD THE SESSION IS A FIXTURE ███
-   * `useSession()` resolves to MOCK_USER or NEWCOMER_USER according to
-   * `?fixture=`, so this identity is a SIMULATION and anybody can be anybody by
-   * editing the URL. The `?signedin=1` flag it replaced was worse — one boolean
-   * standing in for a person — but neither is authentication. See
-   * `AcceptingIdentity` for what a server must derive instead.
-   */
+  const queryClient = useQueryClient();
   const { user } = useSession();
+
+  // Resolve token from prop or cookie
+  const [token, setToken] = useState<string>(() => {
+    if (propToken) return propToken;
+    if (typeof window !== "undefined") {
+      return Cookies.get("antcolos_invitation_token") || "";
+    }
+    return "";
+  });
+
   const identity = useMemo<AcceptingIdentity>(() => ({
     userId: user.id,
     email: user.email,
@@ -54,23 +95,247 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
     scenario: readSessionScenario(),
   }), [user]);
 
+  // Strip /accept/[token] from URL and persist token in cookie
+  useEffect(() => {
+    const activeToken = propToken || token || Cookies.get("antcolos_invitation_token");
+    if (activeToken) {
+      Cookies.set("antcolos_invitation_token", activeToken, { expires: 7, path: "/" });
+      if (activeToken !== token) {
+        setToken(activeToken);
+      }
+    }
+    // Clean up browser address bar to /invitations
+    if (typeof window !== "undefined" && window.location.pathname.includes("/accept/")) {
+      window.history.replaceState(null, "", "/invitations");
+    }
+  }, [propToken, token]);
+
+  // Real backend invitation data
+  const [apiInvitation, setApiInvitation] = useState<ApiInvitationData | null>(null);
+  const [apiLoading, setApiLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isRejected, setIsRejected] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+
+  // New account form state
+  const [username, setUsername] = useState("");
+  const [usernameAvailability, setUsernameAvailability] = useState<UsernameAvailability>("idle");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Mock state fallback
   const [state, setState] = useState<InvitationLookup | null>(null);
   const [accepting, setAccepting] = useState(false);
-  /** What actually happened, step by step. Never a bare "done". */
   const [run, setRun] = useState<AcceptanceRun | null>(null);
   const [collecting, setCollecting] = useState(false);
-  /** Set when the person turned it down. Nothing was created. */
   const [declined, setDeclined] = useState<Invitation | null>(null);
 
   useEffect(() => {
+    if (!token) {
+      setApiLoading(false);
+      return;
+    }
+
     let cancelled = false;
-    services.access.lookUp(token, identity).then((result) => {
-      if (!cancelled) setState(result);
-    });
+    setApiLoading(true);
+    setErrorMessage(null);
+
+    apiClient
+      .get(`/invitations/accept/${encodeURIComponent(token)}`)
+      .then((res) => {
+        if (cancelled) return;
+        setApiInvitation(res.data);
+        if (res.data?.firstName) {
+          const suggested = `${res.data.firstName}${res.data.lastName ? '_' + res.data.lastName : ''}`
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, '_')
+            .replace(/^_+/, '')
+            .slice(0, 20);
+          if (suggested.length >= 3) {
+            setUsername(suggested);
+          }
+        }
+        setApiLoading(false);
+      })
+      .catch(async (err) => {
+        if (cancelled) return;
+        // If real API failed, check if it's a mock token
+        try {
+          const mockRes = await services.access.lookUp(token, identity);
+          if (!cancelled && mockRes.status !== "not-found") {
+            setState(mockRes);
+            setApiLoading(false);
+            return;
+          }
+        } catch {
+          // ignore mock lookup error
+        }
+
+        if (!cancelled) {
+          const msg =
+            err?.response?.data?.message ||
+            err?.message ||
+            "Invitation is invalid, expired, revoked, or already accepted.";
+          const cleanMsg = Array.isArray(msg) ? msg[0] : msg;
+          setErrorMessage(cleanMsg);
+          setApiLoading(false);
+        }
+      });
+
     return () => {
       cancelled = true;
     };
   }, [token, identity]);
+
+  async function handleCreateAndAccept(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting || rejecting) return;
+
+    const uError = validateUsername(username);
+    if (uError) {
+      setUsernameError(uError);
+      return;
+    }
+    if (usernameAvailability === "taken") {
+      setUsernameError("This username is already taken. Please choose another.");
+      return;
+    }
+    if (!isPasswordStrongEnough(password)) {
+      setPasswordError("Please meet all password strength requirements.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setConfirmError("Passwords do not match.");
+      return;
+    }
+
+    setSubmitting(true);
+    setFormError(null);
+
+    try {
+      const res = await apiClient.post(`/invitations/accept/${encodeURIComponent(token)}`, {
+        username,
+        password,
+        confirmPassword,
+      });
+      const data = res.data || {};
+      const receivedToken =
+        data.accessToken ||
+        data.access_token ||
+        data.token ||
+        data.data?.accessToken ||
+        data.data?.token ||
+        Cookies.get("antcolos_token");
+
+      if (receivedToken) {
+        Cookies.set("antcolos_token", receivedToken, { expires: 7, path: "/" });
+        Cookies.remove("antcolos_invitation_token", { path: "/" });
+        Cookies.remove("antcolos_next_step", { path: "/" });
+        Cookies.remove("antcolos_role_id", { path: "/" });
+        Cookies.remove("antcolos_user_role", { path: "/" });
+        Cookies.remove("antcolos_role_name", { path: "/" });
+        Cookies.remove("antcolos_permissions", { path: "/" });
+        Cookies.remove("antcolos_user_permissions", { path: "/" });
+        Cookies.remove("antcolos_role_template", { path: "/" });
+
+        const permData = await fetchAndStoreUserPermissions(queryClient, receivedToken);
+        toast.success(data.message || `Welcome to ${apiInvitation?.organizationName || "Antcolos"}!`);
+
+        const role =
+          permData?.roleId ||
+          data?.roleId ||
+          apiInvitation?.roleId ||
+          Cookies.get("antcolos_role_id");
+        const isDriver = String(role || "").toUpperCase() === "DRIVER";
+        router.push(isDriver ? "/driver/home" : "/home");
+      } else {
+        Cookies.remove("antcolos_invitation_token", { path: "/" });
+        toast.success(data.message || "Account created! Please sign in to continue.");
+        router.push("/sign-in");
+      }
+    } catch (err: any) {
+      let msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to accept invitation. Please try again.";
+      if (Array.isArray(msg)) {
+        msg = msg[0];
+      }
+      setFormError(msg);
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleExistingAccept() {
+    if (submitting || rejecting) return;
+    setSubmitting(true);
+    setFormError(null);
+
+    try {
+      const res = await apiClient.post(`/invitations/accept/${encodeURIComponent(token)}`, {});
+      const data = res.data || {};
+      const activeToken = Cookies.get("antcolos_token") || data.accessToken || "";
+      if (activeToken) {
+        Cookies.remove("antcolos_invitation_token", { path: "/" });
+        const permData = await fetchAndStoreUserPermissions(queryClient, activeToken);
+        const role =
+          permData?.roleId ||
+          data?.roleId ||
+          apiInvitation?.roleId ||
+          Cookies.get("antcolos_role_id");
+        const isDriver = String(role || "").toUpperCase() === "DRIVER";
+        toast.success(data.message || `Welcome to ${apiInvitation?.organizationName || "Antcolos"}!`);
+        router.push(isDriver ? "/driver/home" : "/home");
+      } else {
+        Cookies.remove("antcolos_invitation_token", { path: "/" });
+        toast.success("Invitation accepted! Please sign in.");
+        router.push("/sign-in");
+      }
+    } catch (err: any) {
+      let msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to accept invitation. Please try again.";
+      if (Array.isArray(msg)) {
+        msg = msg[0];
+      }
+      setFormError(msg);
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleReject() {
+    if (rejecting || submitting) return;
+    setRejecting(true);
+    setFormError(null);
+
+    try {
+      await apiClient.post(`/invitations/reject/${encodeURIComponent(token)}`, {});
+      Cookies.remove("antcolos_invitation_token", { path: "/" });
+      setIsRejected(true);
+      toast.success("Invitation declined.");
+    } catch (err: any) {
+      let msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to reject invitation. Please try again.";
+      if (Array.isArray(msg)) {
+        msg = msg[0];
+      }
+      toast.error(msg);
+    } finally {
+      setRejecting(false);
+    }
+  }
 
   async function accept(input: AcceptInput) {
     if (accepting) return;
@@ -90,6 +355,370 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
     if (!updated) return;
     setCollecting(false);
     setDeclined(updated);
+  }
+
+  if (apiLoading) {
+    return (
+      <AuthShell width="medium" title="Checking your invitation" description="One moment while we open the link.">
+        <div className="flex items-center gap-2.5 text-[0.875rem] text-fg-muted" aria-live="polite">
+          <LoaderCircle className="size-4 animate-spin text-primary" aria-hidden />
+          Checking invitation…
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (isRejected) {
+    return (
+      <AuthShell width="medium" title="Invitation Declined" footer={<SignInLink />}>
+        <div className="space-y-4">
+          <FormAlert
+            tone="info"
+            title={`You declined the invitation from ${apiInvitation?.organizationName || "the organization"}.`}
+          >
+            No account changes were made and no permissions were granted. If you change your mind,
+            ask the organization administrator for a new invitation link.
+          </FormAlert>
+          <Button variant="primary" size="lg" className="w-full" asChild>
+            <Link href="/sign-in">Return to Sign In</Link>
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (!token) {
+    return (
+      <AuthShell width="medium" title="No Invitation Link Found" footer={<SignInLink />}>
+        <div className="space-y-4">
+          <FormAlert tone="info" title="No active invitation found.">
+            Please use the complete link provided in your invitation email to view or accept your invitation.
+          </FormAlert>
+          <Button variant="primary" size="lg" className="w-full" asChild>
+            <Link href="/sign-in">Go to Sign In</Link>
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (errorMessage && !apiInvitation && !state) {
+    return (
+      <AuthShell width="medium" title="This invitation link is not available" footer={<SignInLink />}>
+        <div className="space-y-4">
+          <FormAlert tone="danger" title={errorMessage}>
+            If you think this is a mistake, contact whoever invited you and ask for a new link.
+          </FormAlert>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (apiInvitation) {
+    const isExisting = Boolean(apiInvitation.existingUser);
+    const fullName = [apiInvitation.firstName, apiInvitation.lastName].filter(Boolean).join(" ");
+    const displayName = fullName || apiInvitation.email;
+
+    const welcomeTitle = isExisting
+      ? `Welcome, ${displayName}!`
+      : `Welcome, ${displayName}!`;
+
+    const welcomeDescription = isExisting
+      ? `We are granting you some new permissions in ${apiInvitation.organizationName}.`
+      : `We have invited you to join ${apiInvitation.organizationName} as ${apiInvitation.roleId}.`;
+
+    const isAuthenticated = Boolean(user?.id || Cookies.get("antcolos_token"));
+
+    return (
+      <AuthShell
+        width="medium"
+        title={welcomeTitle}
+        description={welcomeDescription}
+      >
+        <div className="space-y-4">
+          {/* Modern Card with User & Invitation Details */}
+          <div className="rounded-xl border border-border bg-surface-sunken/60 p-3.5 space-y-3 sm:p-5">
+            <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <span className="flex size-8.5 sm:size-9 shrink-0 items-center justify-center rounded-lg bg-surface border border-border text-primary shadow-xs">
+                  <Building2 className="size-4 sm:size-4.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[0.625rem] sm:text-[0.6875rem] font-semibold text-fg-muted uppercase tracking-wider">
+                    Organization
+                  </p>
+                  <p
+                    className="text-[0.875rem] sm:text-[0.9375rem] font-semibold text-fg whitespace-nowrap truncate"
+                    title={apiInvitation.organizationName}
+                  >
+                    {apiInvitation.organizationName}
+                  </p>
+                </div>
+              </div>
+              <span
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.6875rem] sm:text-[0.75rem] font-medium bg-primary/10 text-primary border border-primary/20 max-w-[13rem] sm:max-w-[20rem] whitespace-nowrap"
+                title={`Role: ${apiInvitation.roleId}`}
+              >
+                <ShieldCheck className="size-3.5 shrink-0" />
+                <span className="truncate">
+                  Role: <span className="font-semibold">{apiInvitation.roleId}</span>
+                </span>
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[0.8125rem]">
+              <div className="space-y-0.5">
+                <p className="text-fg-muted text-[0.75rem]">Invited Name</p>
+                <p className="font-medium text-fg">{fullName || "—"}</p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-fg-muted text-[0.75rem]">Email Address</p>
+                <p className="font-medium text-fg break-all">{apiInvitation.email}</p>
+              </div>
+            </div>
+          </div>
+
+          {formError ? <FormAlert tone="danger" title={formError} /> : null}
+
+          {/* New User Account Creation Form */}
+          {!isExisting ? (
+            <form onSubmit={handleCreateAndAccept} className="space-y-4 pt-1">
+              <div className="space-y-3 rounded-lg border border-border/80 bg-surface p-4">
+                <p className="text-[0.8125rem] font-semibold text-fg">Set Up Your Credentials</p>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="accept-username" className="block text-[0.8125rem] font-medium text-fg">
+                    Username
+                    <span className="ml-1 text-st-danger">*</span>
+                  </label>
+                  <UsernameField
+                    id="accept-username"
+                    value={username}
+                    onChange={(val) => {
+                      setUsername(val);
+                      setUsernameError(null);
+                    }}
+                    disabled={submitting || rejecting}
+                    onAvailabilityChange={setUsernameAvailability}
+                  />
+                  {usernameError ? (
+                    <p role="alert" className="text-[0.75rem] text-st-danger">{usernameError}</p>
+                  ) : null}
+                </div>
+
+                <Field
+                  label="Password"
+                  htmlFor="accept-password"
+                  error={passwordError || undefined}
+                  required
+                >
+                  <PasswordField
+                    id="accept-password"
+                    value={password}
+                    onChange={(val) => {
+                      setPassword(val);
+                      setPasswordError(null);
+                    }}
+                    autoComplete="new-password"
+                    disabled={submitting || rejecting}
+                    placeholder="Create a strong password"
+                  />
+                  <PasswordChecklist id="accept-password-checklist" value={password} />
+                </Field>
+
+                <Field
+                  label="Confirm password"
+                  htmlFor="accept-confirm-password"
+                  error={confirmError || undefined}
+                  required
+                >
+                  <PasswordField
+                    id="accept-confirm-password"
+                    value={confirmPassword}
+                    onChange={(val) => {
+                      setConfirmPassword(val);
+                      setConfirmError(null);
+                    }}
+                    autoComplete="new-password"
+                    disabled={submitting || rejecting}
+                    placeholder="Confirm your password"
+                  />
+                </Field>
+              </div>
+
+              {/* Accept & Reject Buttons */}
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  className="w-full sm:flex-1 h-11 text-[0.875rem] font-semibold shadow-sm"
+                  type="submit"
+                  disabled={submitting || rejecting}
+                >
+                  {submitting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <LoaderCircle className="size-4 animate-spin" />
+                      Creating account & accepting…
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <CheckCircle2 className="size-4.5" />
+                      Accept & Create Account
+                    </span>
+                  )}
+                </Button>
+
+                <ConfirmDialog
+                  title="Reject Invitation"
+                  description={`Are you sure you want to decline this invitation to join ${apiInvitation.organizationName}?`}
+                  confirmLabel="Yes, Reject Invitation"
+                  cancelLabel="Cancel"
+                  destructive
+                  onConfirm={handleReject}
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      type="button"
+                      disabled={submitting || rejecting}
+                      className="w-full sm:w-auto h-11 border-border text-fg-muted hover:border-st-danger/40 hover:bg-st-danger-bg/20 hover:text-st-danger transition-colors font-medium"
+                    >
+                      {rejecting ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <LoaderCircle className="size-4 animate-spin" />
+                          Rejecting…
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-2">
+                          <XCircle className="size-4.5 text-st-danger" />
+                          Reject
+                        </span>
+                      )}
+                    </Button>
+                  }
+                />
+              </div>
+
+              <div className="pt-2 text-center text-[0.8125rem] text-fg-muted">
+                Already have an account?{" "}
+                <Link
+                  href="/sign-in"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  Sign in
+                </Link>
+              </div>
+            </form>
+          ) : (
+            /* Existing User Section */
+            <div className="space-y-4 pt-1">
+              {isAuthenticated ? (
+                /* Authenticated User: Accept or Reject Buttons */
+                <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    className="w-full sm:flex-1 h-11 text-[0.875rem] font-semibold shadow-sm"
+                    onClick={() => void handleExistingAccept()}
+                    disabled={submitting || rejecting}
+                  >
+                    {submitting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <LoaderCircle className="size-4 animate-spin" />
+                        Accepting invitation…
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2">
+                        <CheckCircle2 className="size-4.5" />
+                        Accept Invitation
+                      </span>
+                    )}
+                  </Button>
+
+                  <ConfirmDialog
+                    title="Reject Invitation"
+                    description={`Are you sure you want to decline this invitation to join ${apiInvitation.organizationName}?`}
+                    confirmLabel="Yes, Reject Invitation"
+                    cancelLabel="Cancel"
+                    destructive
+                    onConfirm={handleReject}
+                    trigger={
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        type="button"
+                        disabled={submitting || rejecting}
+                        className="w-full sm:w-auto h-11 border-border text-fg-muted hover:border-st-danger/40 hover:bg-st-danger-bg/20 hover:text-st-danger transition-colors font-medium"
+                      >
+                        {rejecting ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <LoaderCircle className="size-4 animate-spin" />
+                            Rejecting…
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-center gap-2">
+                            <XCircle className="size-4.5 text-st-danger" />
+                            Reject
+                          </span>
+                        )}
+                      </Button>
+                    }
+                  />
+                </div>
+              ) : (
+                /* Unauthenticated Existing User: Sign in to Accept or Reject */
+                <div className="space-y-4">
+                  <FormAlert
+                    tone="info"
+                    title={`An account already exists for ${apiInvitation.email}.`}
+                  >
+                    Please sign in to your Antcolos account to accept this invitation and apply your new permissions.
+                  </FormAlert>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
+                    <Button variant="primary" size="lg" className="w-full sm:flex-1 h-11 font-semibold" asChild>
+                      <Link href={`/sign-in?invitation=${encodeURIComponent(token)}`}>
+                        Sign in to Accept
+                      </Link>
+                    </Button>
+
+                    <ConfirmDialog
+                      title="Reject Invitation"
+                      description={`Are you sure you want to decline this invitation to join ${apiInvitation.organizationName}?`}
+                      confirmLabel="Yes, Reject Invitation"
+                      cancelLabel="Cancel"
+                      destructive
+                      onConfirm={handleReject}
+                      trigger={
+                        <Button
+                          variant="outline"
+                          size="lg"
+                          type="button"
+                          disabled={submitting || rejecting}
+                          className="w-full sm:w-auto h-11 border-border text-fg-muted hover:border-st-danger/40 hover:bg-st-danger-bg/20 hover:text-st-danger transition-colors font-medium"
+                        >
+                          {rejecting ? (
+                            <span className="flex items-center justify-center gap-2">
+                              <LoaderCircle className="size-4 animate-spin" />
+                              Rejecting…
+                            </span>
+                          ) : (
+                            <span className="flex items-center justify-center gap-2">
+                              <XCircle className="size-4.5 text-st-danger" />
+                              Reject
+                            </span>
+                          )}
+                        </Button>
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </AuthShell>
+    );
   }
 
   if (declined) {
@@ -340,10 +969,10 @@ export function InvitationAcceptanceScreen({ token }: { token: string }) {
 
         <div>
           <h2 className="mb-2 text-[0.875rem] font-semibold text-fg">What you&apos;ll be able to do</h2>
-          <PermissionSummary permissions={invitation.permissions} />
+          <PermissionSummary permissions={invitation.permissions ?? []} />
         </div>
 
-        <SensitiveAccessWarning permissions={invitation.permissions} />
+        <SensitiveAccessWarning permissions={invitation.permissions ?? []} />
 
         {needsAccount ? (
           <div className="space-y-3">

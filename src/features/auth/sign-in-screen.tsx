@@ -16,6 +16,8 @@ import { normalizeEmail, validateEmail } from "./rules";
 import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
+import Cookies from "js-cookie";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -60,14 +62,17 @@ export function SignInScreen() {
       const { data } = await apiClient.post("/auth/login", payload);
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (remember) {
         localStorage.setItem("antcolos_remember_email", email);
       } else {
         localStorage.removeItem("antcolos_remember_email");
       }
 
-      if (data.user?.nextStep === "choose-username") {
+      const user = data.user || data.data?.user || (data.data?.id ? data.data : data);
+      const nextStep = user?.nextStep || data.nextStep || data.data?.nextStep;
+
+      if (nextStep === "choose-username") {
         sessionStorage.setItem("antcolos_signup_step", "username");
         sessionStorage.setItem("antcolos_signup_email", email);
         sessionStorage.setItem("antcolos_signup_from_login", "true");
@@ -75,21 +80,60 @@ export function SignInScreen() {
         return;
       }
 
-      if (data.user?.nextStep === "carrier-onboarding") {
+      if (nextStep === "carrier-onboarding") {
         router.push("/onboarding?step=carrier");
         return;
       }
 
-      if (data.user?.nextStep === "select-role") {
+      if (nextStep === "select-role") {
         router.push("/onboarding?step=role");
         return;
       }
 
-      // Fully authenticated (no nextStep). Token is handled by the API interceptor.
-      queryClient.setQueryData(['currentUser'], data.user || data);
+      // Extract access token robustly from response or cookies
+      const token =
+        data.accessToken ||
+        data.access_token ||
+        data.token ||
+        data.data?.accessToken ||
+        data.data?.access_token ||
+        data.data?.token ||
+        Cookies.get("antcolos_token");
+
+      if (token) {
+        Cookies.set("antcolos_token", token, { expires: 7, path: "/" });
+      }
+
+      // Remove any onboarding next_step cookie because user is fully onboarded
+      Cookies.remove("antcolos_next_step", { path: "/" });
+
+      // Clear previous user's permission cookies to ensure no stale permissions persist
+      Cookies.remove("antcolos_role_id", { path: "/" });
+      Cookies.remove("antcolos_user_role", { path: "/" });
+      Cookies.remove("antcolos_role_name", { path: "/" });
+      Cookies.remove("antcolos_permissions", { path: "/" });
+      Cookies.remove("antcolos_user_permissions", { path: "/" });
+      Cookies.remove("antcolos_role_template", { path: "/" });
+
+      // Fully authenticated (no nextStep). Update current user cache.
+      queryClient.setQueryData(["currentUser"], user);
+
+      // Call permissions API immediately so after login user only sees their permitted modules and actions
+      const permData = await fetchAndStoreUserPermissions(queryClient, token);
+
       sessionStorage.setItem("antcolos_pending_toast", data.message || "Successfully signed in.");
-      
-      router.push(invitationReturn ?? "/home");
+
+      const roleId =
+        permData?.roleId ||
+        user?.roleId ||
+        user?.individualRole ||
+        Cookies.get("antcolos_role_id") ||
+        Cookies.get("antcolos_user_role");
+
+      const isDriver = String(roleId || "").toUpperCase() === "DRIVER";
+      const targetPath = invitationReturn ?? (isDriver ? "/driver/home" : "/home");
+
+      router.push(targetPath);
     },
     onError: (error) => {
       const msg = error.message || "";

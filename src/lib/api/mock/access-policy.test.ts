@@ -161,7 +161,7 @@ describe("nobody hands out access they do not hold", () => {
   it("clamps as well as refusing, so a later caller cannot widen anything", async () => {
     const issued = await mockAccessService.create(SENDER(), draft());
     // Every key on the invitation is one the sender held.
-    for (const key of issued.permissions) expect(SENDER().permissions.has(key)).toBe(true);
+    for (const key of (issued.permissions ?? []) as PermissionKey[]) expect(SENDER().permissions.has(key)).toBe(true);
   });
 
   it("refuses somebody with no invitations:create at all", async () => {

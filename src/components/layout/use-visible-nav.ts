@@ -42,7 +42,7 @@ export function useVisibleNav() {
     // A driver membership has its own Home and its own load list. Showing the
     // organization-wide equivalents beside them duplicates the destination and
     // the label, so they are dropped rather than shown twice.
-    const DRIVER_REPLACED = new Set(["/home", "/loads", "/dispatch"]);
+    const DRIVER_REPLACED = new Set(["/home", "/loads", "/dispatch", "/needs-you", "/work"]);
     const productSource = driverPortal
       ? PRODUCT_NAV.map((s) => ({
           ...s,

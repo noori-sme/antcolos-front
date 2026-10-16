@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
+import Cookies from "js-cookie";
 import { Button } from "@/components/ui/button";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
@@ -18,6 +20,7 @@ export function VerifyEmailModal({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [activeToken, setActiveToken] = useState(token);
   const [mountTime] = useState(() => Date.now());
 
@@ -96,6 +99,15 @@ export function VerifyEmailModal({
     }
 
     if (!user?.nextStep) {
+      const token =
+        verifyMutation.data?.accessToken ||
+        verifyMutation.data?.access_token ||
+        verifyMutation.data?.token ||
+        verifyMutation.data?.data?.accessToken ||
+        Cookies.get("antcolos_token");
+      if (token) {
+        fetchAndStoreUserPermissions(queryClient, token);
+      }
       router.push("/home");
       return;
     }

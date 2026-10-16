@@ -12,6 +12,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/forgot-password') ||
     pathname.startsWith('/invite') ||
     pathname.startsWith('/invitation') ||
+    pathname.startsWith('/invitations') ||
     pathname.startsWith('/referral');
 
   // 1. If no token, they must be unauthenticated.

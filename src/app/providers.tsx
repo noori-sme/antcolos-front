@@ -8,10 +8,13 @@ import { Toaster, toast } from "sonner";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
+import { scrollToTop } from "@/lib/utils/scroll";
+
 export function Providers({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
+    scrollToTop();
     const pendingToast = sessionStorage.getItem("antcolos_pending_toast");
     if (pendingToast) {
       toast.success(pendingToast);

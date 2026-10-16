@@ -14,6 +14,7 @@ import type {
   OrganizationLookupKind, OrganizationSearchResult, ReferralDisclosure,
 } from "@/types";
 import { cn } from "@/lib/utils";
+import { useScrollToTop } from "@/lib/utils/scroll";
 import { useReferringIdentity } from "./identity";
 
 /**
@@ -46,6 +47,7 @@ export function ReferForm() {
   const baseId = useId();
 
   const [stage, setStage] = useState<Stage>("details");
+  useScrollToTop([stage]);
   const [lookupKind, setLookupKind] = useState<OrganizationLookupKind>("name_search");
   const [lookupValue, setLookupValue] = useState("");
   const [picked, setPicked] = useState<OrganizationSearchResult | null>(null);
