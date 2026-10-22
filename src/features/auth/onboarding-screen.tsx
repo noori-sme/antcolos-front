@@ -75,17 +75,39 @@ export function OnboardingScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
-  const initialStage = (searchParams?.get("step") as Stage) || "role";
+
+  const nextStepCookie = typeof window !== "undefined" ? Cookies.get("antcolos_next_step") : null;
+  const stepParam = searchParams?.get("step") as Stage;
+
+  const initialStage: Stage =
+    stepParam ||
+    (nextStepCookie === "verify-carrier"
+      ? "verify-carrier"
+      : nextStepCookie === "carrier-onboarding"
+      ? "carrier"
+      : nextStepCookie === "company-details"
+      ? "create-org"
+      : "role");
+
   const [stage, setStage] = useState<Stage>(initialStage);
   const [role, setRole] = useState<Role | null>(null);
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
   useEffect(() => {
+    const nextCookie = Cookies.get("antcolos_next_step");
     const step = searchParams?.get("step") as Stage;
     if (step && step !== stage) {
       setStage(step);
+    } else if (!step && nextCookie) {
+      if (nextCookie === "verify-carrier") {
+        setStage("verify-carrier");
+      } else if (nextCookie === "carrier-onboarding") {
+        setStage("carrier");
+      } else if (nextCookie === "company-details") {
+        setStage("create-org");
+      }
     }
-  }, [searchParams]);
+  }, [searchParams, stage]);
 
   const updateStage = (newStage: Stage) => {
     setStage(newStage);
@@ -164,7 +186,7 @@ export function OnboardingScreen() {
   if (stage === "carrier" || stage === "verify-carrier") {
     return (
       <CarrierVerification
-        initialStage={stage === "verify-carrier" ? "review" : "details"}
+        initialStage="details"
         onEnterWorkspace={enterWorkspace}
         onBack={() => updateStage("role")}
       />

@@ -5,7 +5,7 @@ import { useId, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import Cookies from "js-cookie";
@@ -60,14 +60,43 @@ export function CarrierVerification({
   onEnterWorkspace: () => void;
   onBack: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const currentUser = queryClient.getQueryData<any>(["currentUser"]);
+  const savedCarrierData = (() => {
+    try {
+      const data = Cookies.get("antcolos_carrier_data");
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const defaultOwnerName =
+    currentUser?.name ||
+    currentUser?.displayName ||
+    savedCarrierData?.legalName ||
+    "";
+
   const [stage, setStage] = useState<Stage>(initialStage);
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
-  const [ownerName, setOwnerName] = useState("");
-  const [mc, setMc] = useState("");
-  const [dot, setDot] = useState("");
+  const [ownerName, setOwnerName] = useState(defaultOwnerName);
+  const [mc, setMc] = useState(savedCarrierData?.mc || "");
+  const [dot, setDot] = useState(savedCarrierData?.dot || "");
   const [carrier, setCarrier] = useState<(FmcsaCarrier & { email: string }) | null>(null);
   const [isVerified, setIsVerified] = useState(false);
+
+  useEffect(() => {
+    if (!ownerName && defaultOwnerName) {
+      setOwnerName(defaultOwnerName);
+    }
+  }, [defaultOwnerName, ownerName]);
+
+  useEffect(() => {
+    if (initialStage && initialStage !== stage) {
+      setStage(initialStage);
+    }
+  }, [initialStage]);
 
   useEffect(() => {
     if (initialStage === "review" && !carrier) {

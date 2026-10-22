@@ -427,6 +427,11 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
       ? `We are granting you some new permissions in ${apiInvitation.organizationName}.`
       : `We have invited you to join ${apiInvitation.organizationName} as ${apiInvitation.roleId}.`;
 
+    const isFormFilled = Boolean(
+      username.trim() &&
+      password.trim() &&
+      confirmPassword.trim()
+    );
     const isAuthenticated = Boolean(user?.id || Cookies.get("antcolos_token"));
 
     return (
@@ -500,6 +505,7 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
                     }}
                     disabled={submitting || rejecting}
                     onAvailabilityChange={setUsernameAvailability}
+                    required
                   />
                   {usernameError ? (
                     <p role="alert" className="text-[0.75rem] text-st-danger">{usernameError}</p>
@@ -522,6 +528,7 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
                     autoComplete="new-password"
                     disabled={submitting || rejecting}
                     placeholder="Create a strong password"
+                    required
                   />
                   <PasswordChecklist id="accept-password-checklist" value={password} />
                 </Field>
@@ -542,6 +549,7 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
                     autoComplete="new-password"
                     disabled={submitting || rejecting}
                     placeholder="Confirm your password"
+                    required
                   />
                 </Field>
               </div>
@@ -553,7 +561,7 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
                   size="lg"
                   className="w-full sm:flex-1 h-11 text-[0.875rem] font-semibold shadow-sm"
                   type="submit"
-                  disabled={submitting || rejecting}
+                  disabled={submitting || rejecting || !isFormFilled || usernameAvailability === "checking"}
                 >
                   {submitting ? (
                     <span className="flex items-center justify-center gap-2">

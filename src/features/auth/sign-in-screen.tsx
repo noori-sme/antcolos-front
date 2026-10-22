@@ -72,24 +72,6 @@ export function SignInScreen() {
       const user = data.user || data.data?.user || (data.data?.id ? data.data : data);
       const nextStep = user?.nextStep || data.nextStep || data.data?.nextStep;
 
-      if (nextStep === "choose-username") {
-        sessionStorage.setItem("antcolos_signup_step", "username");
-        sessionStorage.setItem("antcolos_signup_email", email);
-        sessionStorage.setItem("antcolos_signup_from_login", "true");
-        router.push("/sign-up");
-        return;
-      }
-
-      if (nextStep === "carrier-onboarding") {
-        router.push("/onboarding?step=carrier");
-        return;
-      }
-
-      if (nextStep === "select-role") {
-        router.push("/onboarding?step=role");
-        return;
-      }
-
       // Extract access token robustly from response or cookies
       const token =
         data.accessToken ||
@@ -102,6 +84,64 @@ export function SignInScreen() {
 
       if (token) {
         Cookies.set("antcolos_token", token, { expires: 7, path: "/" });
+      }
+
+      if (user) {
+        queryClient.setQueryData(["currentUser"], user);
+      }
+
+      if (nextStep) {
+        Cookies.set("antcolos_next_step", nextStep, { expires: 7, path: "/" });
+
+        if (user?.carrierVerification) {
+          const existingData = Cookies.get("antcolos_carrier_data");
+          let parsed: any = {};
+          try {
+            if (existingData) parsed = JSON.parse(existingData);
+          } catch (e) {}
+          Cookies.set(
+            "antcolos_carrier_data",
+            JSON.stringify({
+              legalName: parsed.legalName || user.name || "Your Carrier",
+              mc: parsed.mc || "",
+              dot: parsed.dot || "",
+              ...parsed,
+              email: user.carrierVerification.email || parsed.email,
+            }),
+            { expires: 1, path: "/" }
+          );
+        }
+
+        if (nextStep === "choose-username") {
+          sessionStorage.setItem("antcolos_signup_step", "username");
+          sessionStorage.setItem("antcolos_signup_email", email);
+          sessionStorage.setItem("antcolos_signup_from_login", "true");
+          router.push("/sign-up");
+          return;
+        }
+
+        if (nextStep === "verify-carrier") {
+          router.push("/onboarding?step=verify-carrier");
+          return;
+        }
+
+        if (nextStep === "carrier-onboarding") {
+          router.push("/onboarding?step=carrier");
+          return;
+        }
+
+        if (nextStep === "select-role") {
+          router.push("/onboarding?step=role");
+          return;
+        }
+
+        if (nextStep === "company-details") {
+          router.push("/onboarding?step=create-org");
+          return;
+        }
+
+        router.push(`/onboarding?step=${nextStep}`);
+        return;
       }
 
       // Remove any onboarding next_step cookie because user is fully onboarded
@@ -120,6 +160,9 @@ export function SignInScreen() {
 
       // Call permissions API immediately so after login user only sees their permitted modules and actions
       const permData = await fetchAndStoreUserPermissions(queryClient, token);
+      if (!permData) {
+        return;
+      }
 
       sessionStorage.setItem("antcolos_pending_toast", data.message || "Successfully signed in.");
 

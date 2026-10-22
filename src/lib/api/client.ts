@@ -60,6 +60,31 @@ function formatErrorMessage(msg: string): string {
   return formatted.charAt(0).toUpperCase() + formatted.slice(1);
 }
 
+export const clearAllAuthCookies = () => {
+  Cookies.remove('antcolos_token', { path: '/' });
+  Cookies.remove('antcolos_next_step', { path: '/' });
+  Cookies.remove('antcolos_user_role', { path: '/' });
+  Cookies.remove('antcolos_org_type', { path: '/' });
+  Cookies.remove('antcolos_org_role', { path: '/' });
+  Cookies.remove('antcolos_role_id', { path: '/' });
+  Cookies.remove('antcolos_role_name', { path: '/' });
+  Cookies.remove('antcolos_permissions', { path: '/' });
+  Cookies.remove('antcolos_user_permissions', { path: '/' });
+  Cookies.remove('antcolos_role_template', { path: '/' });
+  Cookies.remove('antcolos_carrier_data', { path: '/' });
+};
+
+export const logoutDueToPermissionsError = () => {
+  clearAllAuthCookies();
+  if (typeof window !== 'undefined') {
+    sessionStorage.setItem("antcolos_pending_error_toast", "We could not verify your permissions. Please sign in again.");
+    toast.error("We could not verify your permissions. Please sign in again.");
+    if (window.location.pathname !== '/sign-in') {
+      window.location.href = '/sign-in';
+    }
+  }
+};
+
 /**
  * Applies identical request/response interceptors to any given Axios instance.
  * Keeps auth and error handling DRY and consistent across both API clients.
@@ -86,6 +111,27 @@ function setupInterceptors(client: AxiosInstance) {
       const data = response.data;
       
       if (data && typeof data === 'object') {
+        const url = response.config.url || '';
+
+        // If permissions API returns an error structure or onboarding/invalid response
+        if (url.includes('/users/me/permissions')) {
+          const permData = data?.data || data;
+          const isInvalidPermissions =
+            !permData ||
+            permData.error ||
+            (typeof permData.statusCode === 'number' && permData.statusCode >= 400) ||
+            permData.nextStep ||
+            permData.user?.nextStep ||
+            permData.scope === 'onboarding' ||
+            permData.user?.scope === 'onboarding' ||
+            (!permData.roleId && !permData.permissions && !permData.roleName);
+
+          if (isInvalidPermissions) {
+            logoutDueToPermissionsError();
+            return Promise.reject(new Error("We could not verify your permissions. Please sign in again."));
+          }
+        }
+
         // If accessToken is present in any response (or nested under data), update it
         const token =
           data.accessToken ||
@@ -100,7 +146,6 @@ function setupInterceptors(client: AxiosInstance) {
         }
 
         // Check if this is an auth or onboarding related endpoint
-        const url = response.config.url || '';
         const isAuthOrOnboarding = url.includes('login') || url.includes('register') || url.includes('onboarding') || url.includes('auth');
         const isMutation = response.config.method?.toLowerCase() !== 'get';
         const nextStep = data.nextStep || data.user?.nextStep;
@@ -157,18 +202,11 @@ function setupInterceptors(client: AxiosInstance) {
       
       const errorMessage = backendMessage || error.message || "An unexpected error occurred.";
 
-      const clearAllAuthCookies = () => {
-        Cookies.remove('antcolos_token', { path: '/' });
-        Cookies.remove('antcolos_next_step', { path: '/' });
-        Cookies.remove('antcolos_user_role', { path: '/' });
-        Cookies.remove('antcolos_org_type', { path: '/' });
-        Cookies.remove('antcolos_org_role', { path: '/' });
-        Cookies.remove('antcolos_role_id', { path: '/' });
-        Cookies.remove('antcolos_role_name', { path: '/' });
-        Cookies.remove('antcolos_permissions', { path: '/' });
-        Cookies.remove('antcolos_user_permissions', { path: '/' });
-        Cookies.remove('antcolos_role_template', { path: '/' });
-      };
+      // If permissions API errors, log out and inform user
+      if (url.includes('/users/me/permissions')) {
+        logoutDueToPermissionsError();
+        return Promise.reject(new Error("We could not verify your permissions. Please sign in again."));
+      }
 
       const isMeEndpoint = url.includes('/auth/me') || url.includes('/auth/individual/me');
       if ((error.response?.status === 403 || error.response?.status === 401) && isMeEndpoint) {

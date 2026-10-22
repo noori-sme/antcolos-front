@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Check, Copy, Plus, ShieldCheck, UserRound, Users } from "lucide-react";
+import { Building2, Check, CheckCircle2, Copy, Plus, Search, ShieldCheck, UserCheck, UserPlus, UserRound, Users, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -164,8 +164,178 @@ export function InviteFlow() {
 
   // Driver invitations only. The carrier picks this, never the driver.
   const [engagementType, setEngagementType] = useState<EngagementType | null>(null);
-  const [saveAsRole, setSaveAsRole] = useState(false);
-  const [newRoleName, setNewRoleName] = useState("");
+  const [userMode, setUserMode] = useState<"new" | "existing">("new");
+  const [selectedMemberId, setSelectedMemberId] = useState<string>("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberRoleFilter, setMemberRoleFilter] = useState<"ALL" | "Driver" | "Dispatcher" | "Admin">("ALL");
+
+  const { data: teamMembers = [], isLoading: isLoadingMembers } = useQuery({
+    queryKey: ["organizations", "team-roster"],
+    queryFn: async () => {
+      try {
+        const [driversRes, dispatchersRes, adminsRes] = await Promise.allSettled([
+          apiClient.get("/organizations/drivers", { params: { pageSize: 100 } }),
+          apiClient.get("/organizations/dispatchers", { params: { pageSize: 100 } }),
+          apiClient.get("/organizations/admins", { params: { pageSize: 100 } }),
+        ]);
+        const members: Array<{
+          id: string;
+          userId: string;
+          name: string;
+          email: string;
+          role: string;
+          status: string;
+          firstName?: string;
+          lastName?: string;
+        }> = [];
+        const seenEmails = new Set<string>();
+
+        if (driversRes.status === "fulfilled") {
+          const list = driversRes.value.data?.data || driversRes.value.data || [];
+          for (const d of Array.isArray(list) ? list : []) {
+            const email = d.email || d.user?.email;
+            if (email && !seenEmails.has(email.toLowerCase())) {
+              seenEmails.add(email.toLowerCase());
+              const uId = String(d.userId || d.user?.id || d.id || "");
+              members.push({
+                id: uId || email,
+                userId: uId,
+                name: [d.firstName, d.lastName].filter(Boolean).join(" ") || d.name || email,
+                email,
+                role: "Driver",
+                status: d.accountStatus || "ACTIVE",
+                firstName: d.firstName || "",
+                lastName: d.lastName || "",
+              });
+            }
+          }
+        }
+
+        if (dispatchersRes.status === "fulfilled") {
+          const list = dispatchersRes.value.data?.data || dispatchersRes.value.data || [];
+          for (const d of Array.isArray(list) ? list : []) {
+            const email = d.email || d.user?.email;
+            if (email && !seenEmails.has(email.toLowerCase())) {
+              seenEmails.add(email.toLowerCase());
+              const uId = String(d.userId || d.user?.id || d.id || "");
+              members.push({
+                id: uId || email,
+                userId: uId,
+                name: [d.firstName, d.lastName].filter(Boolean).join(" ") || d.name || email,
+                email,
+                role: "Dispatcher",
+                status: d.accountStatus || "ACTIVE",
+                firstName: d.firstName || "",
+                lastName: d.lastName || "",
+              });
+            }
+          }
+        }
+
+        if (adminsRes.status === "fulfilled") {
+          const list = adminsRes.value.data?.data || adminsRes.value.data || [];
+          for (const a of Array.isArray(list) ? list : []) {
+            const email = a.email || a.user?.email;
+            if (email && !seenEmails.has(email.toLowerCase())) {
+              seenEmails.add(email.toLowerCase());
+              const uId = String(a.userId || a.user?.id || a.id || "");
+              members.push({
+                id: uId || email,
+                userId: uId,
+                name: [a.firstName, a.lastName].filter(Boolean).join(" ") || a.name || email,
+                email,
+                role: "Admin",
+                status: a.accountStatus || "ACTIVE",
+                firstName: a.firstName || "",
+                lastName: a.lastName || "",
+              });
+            }
+          }
+        }
+
+        return members;
+      } catch {
+        return [];
+      }
+    },
+    enabled: userMode === "existing",
+  });
+
+  const filteredMembers = useMemo(() => {
+    let result = teamMembers;
+
+    if (memberRoleFilter !== "ALL") {
+      result = result.filter((m) => m.role.toLowerCase() === memberRoleFilter.toLowerCase());
+    }
+
+    if (memberSearch.trim()) {
+      const q = memberSearch.trim().toLowerCase();
+      result = result.filter(
+        (m) =>
+          m.name.toLowerCase().includes(q) ||
+          m.email.toLowerCase().includes(q) ||
+          m.role.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [teamMembers, memberRoleFilter, memberSearch]);
+
+  const roleCounts = useMemo(() => {
+    const counts = { ALL: teamMembers.length, Driver: 0, Dispatcher: 0, Admin: 0 };
+    for (const m of teamMembers) {
+      if (m.role === "Driver") counts.Driver++;
+      else if (m.role === "Dispatcher") counts.Dispatcher++;
+      else if (m.role === "Admin") counts.Admin++;
+    }
+    return counts;
+  }, [teamMembers]);
+
+  const selectedUser = useMemo(() => {
+    if (!selectedMemberId && !recipientEmail) return null;
+    return (
+      teamMembers.find(
+        (m) =>
+          (selectedMemberId && (m.id === selectedMemberId || m.userId === selectedMemberId)) ||
+          (recipientEmail && m.email.toLowerCase() === recipientEmail.toLowerCase())
+      ) || null
+    );
+  }, [teamMembers, selectedMemberId, recipientEmail]);
+
+  function handleSelectMember(member: (typeof teamMembers)[0]) {
+    setSelectedMemberId(member.userId || member.id);
+    setRecipientEmail(member.email);
+    setFirstName(member.firstName || member.name.split(" ")[0] || "");
+    setLastName(member.lastName || member.name.split(" ").slice(1).join(" ") || "");
+  }
+
+  function handleDeselectMember() {
+    setSelectedMemberId("");
+    setRecipientEmail("");
+    setFirstName("");
+    setLastName("");
+  }
+
+  function handleSwitchToNew() {
+    setUserMode("new");
+    setSelectedMemberId("");
+    setRecipientEmail("");
+    setFirstName("");
+    setLastName("");
+    setOrgName("");
+    setSubmitted(false);
+  }
+
+  function handleSwitchToExisting() {
+    setUserMode("existing");
+    setSelectedMemberId("");
+    setRecipientEmail("");
+    setFirstName("");
+    setLastName("");
+    setOrgName("");
+    setMemberSearch("");
+    setSubmitted(false);
+  }
 
   const [submitted, setSubmitted] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -208,7 +378,8 @@ export function InviteFlow() {
   const isDispatchOrg = preset?.kind === "dispatch_org";
   const recipientName = isDispatchOrg
     ? orgName.trim()
-    : [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+    : [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
+      (userMode === "existing" ? recipientEmail.trim() : "");
   const isDriver = preset?.kind === "driver";
   const needsRoleName = preset?.kind === "custom" && !savedRole;
   const effectiveRoleName = savedRole?.name ?? (needsRoleName ? roleName.trim() : preset?.label ?? "");
@@ -217,6 +388,20 @@ export function InviteFlow() {
     preset != null && !savedRole && !sameSet(preset.permissions, permissions);
 
   const selectedList = useMemo(() => [...permissions], [permissions]);
+
+  const isAdminRole = useMemo(() => {
+    const roleCandidate = (savedRole?.name || preset?.label || effectiveRoleName || roleName || "").toLowerCase().trim();
+    const kindCandidate = (preset?.kind || "").toLowerCase().trim();
+    const idCandidate = (savedRole?.id || "").toLowerCase().trim();
+    const userRoleCandidate = (userMode === "existing" && selectedUser?.role ? selectedUser.role : "").toLowerCase().trim();
+
+    return (
+      roleCandidate.includes("admin") ||
+      kindCandidate === "admin" ||
+      idCandidate === "admin" ||
+      userRoleCandidate.includes("admin")
+    );
+  }, [savedRole, preset, effectiveRoleName, roleName, userMode, selectedUser]);
 
   function choose(next: InvitationPreset, role?: PermissionTemplate) {
     setPreset(next);
@@ -227,33 +412,49 @@ export function InviteFlow() {
     setPermissions(new Set(isOwner ? base : clampToGrantable(base, myPermissions, orgType)));
     setRoleName(role?.name ?? "");
     setEngagementType(next.kind === "driver" ? "company_driver" : null);
-    setSaveAsRole(false);
-    setNewRoleName("");
+    setUserMode("new");
+    setSelectedMemberId("");
+    if (!handoff) {
+      setFirstName("");
+      setLastName("");
+      setOrgName("");
+      setRecipientEmail("");
+    }
+    setMemberSearch("");
+    setMemberRoleFilter("ALL");
     setSubmitted(false);
     setStage("details");
   }
 
-  const orgNameError = submitted && !orgName.trim() ? "Enter the organization's name." : null;
-  const firstNameError = submitted && !firstName.trim() ? "Enter their first name." : null;
-  const lastNameError = submitted && !lastName.trim() ? "Enter their last name." : null;
-  const emailError = submitted ? validateEmail(recipientEmail) : null;
+  const memberSelectError =
+    submitted && userMode === "existing" && !recipientEmail.trim()
+      ? "Please select an existing user from the list to continue."
+      : null;
+
+  const orgNameError = submitted && isDispatchOrg && !orgName.trim() ? "Enter the organization's name." : null;
+  const firstNameError =
+    submitted && userMode === "new" && !isDispatchOrg && !firstName.trim()
+      ? "Enter their first name."
+      : null;
+  const lastNameError =
+    submitted && userMode === "new" && !isDispatchOrg && !lastName.trim()
+      ? "Enter their last name."
+      : null;
+  const emailError = submitted && userMode === "new" ? validateEmail(recipientEmail) : null;
   const roleNameError =
     submitted && needsRoleName ? validateRoleName(roleName, roles.map((r) => r.name)) : null;
-  const newRoleNameError =
-    submitted && saveAsRole
-      ? validateRoleName(newRoleName, roles.map((r) => r.name))
-      : null;
   const permissionsError =
     submitted && permissions.size === 0 ? "Select at least one permission." : null;
 
   function continueToReview() {
     setSubmitted(true);
     const bad =
-      (isDispatchOrg ? !orgName.trim() : !firstName.trim() || !lastName.trim()) ||
-      (isDriver && !engagementType) ||
-      validateEmail(recipientEmail) ||
+      (userMode === "new" &&
+        ((isDispatchOrg ? !orgName.trim() : !firstName.trim() || !lastName.trim()) ||
+          validateEmail(recipientEmail))) ||
+      (userMode === "existing" && !recipientEmail.trim()) ||
+      (isDriver && userMode === "new" && !engagementType) ||
       (needsRoleName && validateRoleName(roleName, roles.map((r) => r.name))) ||
-      (saveAsRole && validateRoleName(newRoleName, roles.map((r) => r.name))) ||
       permissions.size === 0;
     if (bad) return;
     setConfirmed(false);
@@ -275,19 +476,23 @@ export function InviteFlow() {
     try {
       let roleIdToUse = "";
 
-      // Check if user selected custom role or checked "Save this as a custom role"
+      // Automatically create role internally if preset is custom or permissions were customized
       const shouldCreateRole =
-        (preset.kind === "custom" && !savedRole) || Boolean(saveAsRole && newRoleName.trim());
+        (preset.kind === "custom" && !savedRole) || (changedFromPreset && !savedRole);
 
       if (shouldCreateRole) {
         const roleToCreateName =
-          preset.kind === "custom" && !savedRole
-            ? roleName.trim()
-            : newRoleName.trim();
+          roleName.trim() ||
+          (preset.kind === "custom"
+            ? "Custom Role"
+            : `${preset.label} (Custom)`);
 
         const roleDraft = {
-          name: roleToCreateName || "Custom Role",
-          description: `Custom role created for ${recipientName.trim()}`,
+          name: roleToCreateName,
+          description:
+            userMode === "existing"
+              ? `Custom permissions for ${recipientName.trim() || recipientEmail.trim()}`
+              : `Custom role created for ${recipientName.trim() || recipientEmail.trim()}`,
           permissions: safePermissions,
         };
 
@@ -322,20 +527,31 @@ export function InviteFlow() {
         roleIdToUse = matched ? String(matched.id) : standardRoleId;
       }
 
-      const fName = isDispatchOrg
-        ? orgName.trim().split(/\s+/)[0] || orgName.trim()
-        : firstName.trim();
-      const lName = isDispatchOrg
-        ? orgName.trim().split(/\s+/).slice(1).join(" ") || "Admin"
-        : lastName.trim();
+      let invitePayload: any;
 
-      const invitePayload = {
-        email: recipientEmail.trim(),
-        firstName: fName,
-        lastName: lName,
-        roleId: roleIdToUse,
-        permissions: safePermissions,
-      };
+      if (userMode === "existing") {
+        const resolvedUserId = selectedUser?.userId || selectedUser?.id || selectedMemberId;
+        invitePayload = {
+          userId: resolvedUserId,
+          roleId: roleIdToUse,
+          permissions: safePermissions,
+        };
+      } else {
+        const fName = isDispatchOrg
+          ? orgName.trim().split(/\s+/)[0] || orgName.trim()
+          : firstName.trim();
+        const lName = isDispatchOrg
+          ? orgName.trim().split(/\s+/).slice(1).join(" ") || "Admin"
+          : lastName.trim();
+
+        invitePayload = {
+          email: recipientEmail.trim(),
+          firstName: fName,
+          lastName: lName,
+          roleId: roleIdToUse,
+          permissions: safePermissions,
+        };
+      }
 
       const inviteRes = await apiClient.post("/organizations/invitations", invitePayload);
       const inviteData = inviteRes.data?.data || inviteRes.data?.invitation || inviteRes.data;
@@ -350,7 +566,11 @@ export function InviteFlow() {
       setSentToken(token);
       setSending(false);
       setStage("sent");
-      toast.success(`Invitation sent to ${recipientEmail.trim()}`);
+      toast.success(
+        userMode === "existing"
+          ? `Permission update invitation sent to ${recipientEmail.trim()}`
+          : `Invitation sent to ${recipientEmail.trim()}`
+      );
 
       if (alsoCopy && token) {
         void copyLink(token);
@@ -425,150 +645,424 @@ export function InviteFlow() {
               onChange={() => setStage("type")}
             />
 
-            {isDispatchOrg ? (
-              <div className="rounded-md border border-st-info/35 bg-st-info-bg/50 px-3 py-2.5 text-[0.8125rem] leading-relaxed">
-                <p className="font-medium text-fg">This invites a whole company.</p>
-                <p className="mt-0.5 text-fg-muted">
-                  Their administrator accepts, then picks which of their people work your freight.
-                  Everything you grant applies to {organization.displayName} only — it gives them
-                  nothing with their other carrier clients.
-                </p>
-              </div>
-            ) : null}
+            {/* User Target Toggle: New User vs Existing User */}
+            <div className="space-y-1.5">
+              <label className="text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-muted">
+                User Type
+              </label>
+              <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-border bg-surface-sunken/60 p-1">
+                <button
+                  type="button"
+                  onClick={handleSwitchToNew}
+                  className={cn(
+                    "flex items-center justify-center gap-2 rounded-lg py-2.5 px-3 text-center transition-all",
+                    userMode === "new"
+                      ? "bg-surface text-primary shadow-xs border border-border/80 font-semibold"
+                      : "text-fg-muted hover:text-fg hover:bg-surface/40 font-medium"
+                  )}
+                >
+                  <UserPlus className="size-4 shrink-0" />
+                  <div className="text-left min-w-0">
+                    <span className="block text-[0.8125rem] leading-none">New User</span>
+                    <span className="block text-[0.6875rem] opacity-75 mt-0.5 leading-tight font-normal truncate">
+                      Custom permissions
+                    </span>
+                  </div>
+                </button>
 
-            {isDriver ? (
-              <fieldset>
-                <legend className="mb-1.5 text-[0.8125rem] font-medium text-fg">
-                  Engagement type
-                </legend>
-                <p className="mb-2 text-[0.75rem] leading-relaxed text-fg-subtle">
-                  You choose this, not the driver. It decides what paperwork they owe you.
-                </p>
-                <div className="space-y-2">
-                  {(["company_driver", "owner_operator"] as const).map((value) => (
-                    <label
-                      key={value}
-                      className={cn(
-                        "flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 transition-colors",
-                        engagementType === value
-                          ? "border-primary bg-primary/[0.06]"
-                          : "border-border bg-surface hover:border-border-strong",
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="engagement-type"
-                        value={value}
-                        checked={engagementType === value}
-                        onChange={() => setEngagementType(value)}
-                        className="mt-0.5 size-4 shrink-0 accent-primary"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-[0.8125rem] font-medium text-fg">
-                          {ENGAGEMENT_LABEL[value]}
-                        </span>
-                        <span className="mt-0.5 block text-[0.75rem] leading-relaxed text-fg-muted">
-                          {ENGAGEMENT_DESCRIPTION[value]}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {submitted && !engagementType ? (
-                  <p role="alert" className="mt-1.5 text-[0.75rem] text-st-danger">
-                    Choose whether this driver is a company driver or an owner-operator.
-                  </p>
+                <button
+                  type="button"
+                  onClick={handleSwitchToExisting}
+                  className={cn(
+                    "flex items-center justify-center gap-2 rounded-lg py-2.5 px-3 text-center transition-all",
+                    userMode === "existing"
+                      ? "bg-surface text-primary shadow-xs border border-border/80 font-semibold"
+                      : "text-fg-muted hover:text-fg hover:bg-surface/40 font-medium"
+                  )}
+                >
+                  <UserCheck className="size-4 shrink-0" />
+                  <div className="text-left min-w-0">
+                    <span className="block text-[0.8125rem] leading-none">Existing User</span>
+                    <span className="block text-[0.6875rem] opacity-75 mt-0.5 leading-tight font-normal truncate">
+                      Change permissions
+                    </span>
+                  </div>
+                </button>
+              </div>
+              <p className="text-[0.75rem] text-fg-muted">
+                {userMode === "new"
+                  ? "Send an invitation to a new person with custom permissions."
+                  : "Change or grant custom permissions for an existing user."}
+              </p>
+            </div>
+
+            {userMode === "existing" ? (
+              <div className="space-y-3.5">
+                {needsRoleName ? (
+                  <Field
+                    label="Role name"
+                    htmlFor="invite-role-name"
+                    hint={roleNameError ? undefined : "What this custom role is called."}
+                    error={roleNameError ?? undefined}
+                  >
+                    <Input
+                      id="invite-role-name"
+                      value={roleName}
+                      onChange={(e) => setRoleName(e.target.value)}
+                      maxLength={ROLE_NAME_MAX_LENGTH}
+                      placeholder="e.g. Senior Dispatcher / Weekend Lead"
+                      aria-invalid={roleNameError ? true : undefined}
+                      className={cn(roleNameError && "border-st-danger")}
+                    />
+                  </Field>
                 ) : null}
-              </fieldset>
-            ) : null}
 
-            {needsRoleName ? (
-              <Field
-                label="Role name"
-                htmlFor="invite-role-name"
-                hint={roleNameError ? undefined : "What this person's role is called."}
-                error={roleNameError ?? undefined}
-              >
-                <Input
-                  id="invite-role-name"
-                  value={roleName}
-                  onChange={(e) => setRoleName(e.target.value)}
-                  maxLength={ROLE_NAME_MAX_LENGTH}
-                  placeholder="Night dispatcher"
-                  aria-invalid={roleNameError ? true : undefined}
-                  className={cn(roleNameError && "border-st-danger")}
-                />
-              </Field>
-            ) : null}
+                {/* Existing User Searching & Filter Section */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[0.8125rem] font-semibold text-fg">
+                      Select Existing User
+                    </label>
+                    {selectedUser ? (
+                      <span className="text-[0.6875rem] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                        1 Selected
+                      </span>
+                    ) : (
+                      <span className="text-[0.6875rem] text-fg-muted">
+                        {teamMembers.length} team members
+                      </span>
+                    )}
+                  </div>
 
-            {isDispatchOrg ? (
-              <Field
-                label="Organization name"
-                htmlFor="invite-org-name"
-                error={orgNameError ?? undefined}
-              >
-                <Input
-                  id="invite-org-name"
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="Meridian Dispatch"
-                  maxLength={80}
-                  aria-invalid={orgNameError ? true : undefined}
-                  className={cn(orgNameError && "border-st-danger")}
-                />
-              </Field>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <Field
-                  label="First Name"
-                  htmlFor="invite-first-name"
-                  error={firstNameError ?? undefined}
-                >
-                  <Input
-                    id="invite-first-name"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="Enter your first name"
-                    maxLength={40}
-                    aria-invalid={firstNameError ? true : undefined}
-                    className={cn(firstNameError && "border-st-danger")}
-                  />
-                </Field>
+                  {/* Search Bar */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-fg-muted pointer-events-none" />
+                    <Input
+                      value={memberSearch}
+                      onChange={(e) => setMemberSearch(e.target.value)}
+                      placeholder="Search by name, email, or role…"
+                      className="pl-9 pr-8 h-9.5 text-[0.8125rem] bg-surface"
+                    />
+                    {memberSearch ? (
+                      <button
+                        type="button"
+                        onClick={() => setMemberSearch("")}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-fg-muted hover:text-fg rounded"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
 
-                <Field
-                  label="Last Name"
-                  htmlFor="invite-last-name"
-                  error={lastNameError ?? undefined}
-                >
-                  <Input
-                    id="invite-last-name"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Enter your last name"
-                    maxLength={40}
-                    aria-invalid={lastNameError ? true : undefined}
-                    className={cn(lastNameError && "border-st-danger")}
-                  />
-                </Field>
+                  {/* Filter Pills */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(["ALL", "Driver", "Dispatcher", "Admin"] as const).map((r) => {
+                      const count = roleCounts[r] || 0;
+                      const isActive = memberRoleFilter === r;
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setMemberRoleFilter(r)}
+                          className={cn(
+                            "px-2.5 py-1 text-[0.6875rem] rounded-md font-medium transition-colors border",
+                            isActive
+                              ? "bg-primary text-white border-primary shadow-xs font-semibold"
+                              : "bg-surface-sunken/70 text-fg-muted border-border hover:text-fg hover:bg-surface"
+                          )}
+                        >
+                          {r === "ALL" ? "All" : r} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Validation Error if none selected */}
+                {memberSelectError ? (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-st-danger/40 bg-st-danger-bg/50 px-3 py-2 text-[0.75rem] font-medium text-st-danger"
+                  >
+                    {memberSelectError}
+                  </div>
+                ) : null}
+
+                {/* Users Listing */}
+                <div className="rounded-xl border border-border bg-surface-sunken/40 overflow-hidden">
+                  {isLoadingMembers ? (
+                    <div className="p-4 space-y-2.5">
+                      <div className="h-12 rounded-lg bg-surface animate-pulse" />
+                      <div className="h-12 rounded-lg bg-surface animate-pulse" />
+                      <div className="h-12 rounded-lg bg-surface animate-pulse" />
+                    </div>
+                  ) : filteredMembers.length === 0 ? (
+                    <div className="p-6 text-center space-y-1.5">
+                      <Users className="size-7 text-fg-muted/40 mx-auto" />
+                      <p className="text-[0.8125rem] font-medium text-fg">No users found</p>
+                      <p className="text-[0.75rem] text-fg-muted">
+                        {memberSearch || memberRoleFilter !== "ALL"
+                          ? "Try adjusting or clearing your search filter."
+                          : "No existing members found in this organization."}
+                      </p>
+                      {memberSearch || memberRoleFilter !== "ALL" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMemberSearch("");
+                            setMemberRoleFilter("ALL");
+                          }}
+                          className="text-[0.75rem] font-medium text-primary hover:underline pt-1"
+                        >
+                          Reset filters
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="max-h-[19rem] overflow-y-auto divide-y divide-border/60 p-1.5 space-y-1">
+                      {filteredMembers.map((member) => {
+                        const isSelected =
+                          selectedMemberId === member.id || recipientEmail === member.email;
+                        const initials =
+                          member.name
+                            .split(" ")
+                            .filter(Boolean)
+                            .map((p) => p[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase() || "U";
+
+                        return (
+                          <div
+                            key={member.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleSelectMember(member)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                handleSelectMember(member);
+                              }
+                            }}
+                            className={cn(
+                              "flex items-center justify-between gap-3 p-2.5 rounded-lg cursor-pointer transition-all border",
+                              isSelected
+                                ? "bg-primary/10 border-primary shadow-xs ring-1 ring-primary/40"
+                                : "border-transparent bg-surface hover:border-border hover:bg-surface-elevated"
+                            )}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <div
+                                className={cn(
+                                  "size-9 rounded-full flex items-center justify-center text-[0.6875rem] font-bold shrink-0 border",
+                                  isSelected
+                                    ? "bg-primary text-white border-primary"
+                                    : "bg-surface-sunken text-primary border-border"
+                                )}
+                              >
+                                {initials}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-[0.8125rem] font-semibold text-fg truncate">
+                                    {member.name}
+                                  </p>
+                                  <span className="px-1.5 py-0.2 rounded text-[0.625rem] font-medium bg-surface-sunken text-fg-muted border border-border shrink-0">
+                                    {member.role}
+                                  </span>
+                                </div>
+                                <p className="text-[0.75rem] text-fg-muted truncate">
+                                  {member.email}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="shrink-0 flex items-center pl-1">
+                              {isSelected ? (
+                                <CheckCircle2 className="size-5 text-primary" />
+                              ) : (
+                                <div className="size-4.5 rounded-full border border-border" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Selected User Callout */}
+                {selectedUser ? (
+                  <div className="rounded-lg border border-primary/30 bg-primary/[0.06] p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex items-center gap-2.5">
+                      <CheckCircle2 className="size-4 shrink-0 text-primary" />
+                      <div className="min-w-0 text-[0.75rem]">
+                        <p className="font-semibold text-fg truncate">
+                          {selectedUser.name}{" "}
+                          <span className="font-normal text-fg-muted">({selectedUser.role})</span>
+                        </p>
+                        <p className="text-fg-muted truncate">{selectedUser.email}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDeselectMember}
+                      className="text-[0.75rem] font-medium text-fg-muted hover:text-fg underline shrink-0"
+                    >
+                      Deselect
+                    </button>
+                  </div>
+                ) : null}
               </div>
-            )}
+            ) : (
+              /* New User Form Fields */
+              <>
+                {isDispatchOrg ? (
+                  <div className="rounded-md border border-st-info/35 bg-st-info-bg/50 px-3 py-2.5 text-[0.8125rem] leading-relaxed">
+                    <p className="font-medium text-fg">This invites a whole company.</p>
+                    <p className="mt-0.5 text-fg-muted">
+                      Their administrator accepts, then picks which of their people work your freight.
+                      Everything you grant applies to {organization.displayName} only — it gives them
+                      nothing with their other carrier clients.
+                    </p>
+                  </div>
+                ) : null}
 
-            <Field
-              label={isDispatchOrg ? "Administrator's email" : "Email address"}
-              htmlFor="invite-email"
-              hint={emailError ? undefined : "The invitation link goes here."}
-              error={emailError ?? undefined}
-            >
-              <Input
-                id="invite-email"
-                type="email"
-                value={recipientEmail}
-                onChange={(e) => setRecipientEmail(e.target.value)}
-                placeholder="name@company.com"
-                aria-invalid={emailError ? true : undefined}
-                className={cn(emailError && "border-st-danger")}
-              />
-            </Field>
+                {isDriver ? (
+                  <fieldset>
+                    <legend className="mb-1.5 text-[0.8125rem] font-medium text-fg">
+                      Engagement type
+                    </legend>
+                    <p className="mb-2 text-[0.75rem] leading-relaxed text-fg-subtle">
+                      You choose this, not the driver. It decides what paperwork they owe you.
+                    </p>
+                    <div className="space-y-2">
+                      {(["company_driver", "owner_operator"] as const).map((value) => (
+                        <label
+                          key={value}
+                          className={cn(
+                            "flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 transition-colors",
+                            engagementType === value
+                              ? "border-primary bg-primary/[0.06]"
+                              : "border-border bg-surface hover:border-border-strong",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="engagement-type"
+                            value={value}
+                            checked={engagementType === value}
+                            onChange={() => setEngagementType(value)}
+                            className="mt-0.5 size-4 shrink-0 accent-primary"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-[0.8125rem] font-medium text-fg">
+                              {ENGAGEMENT_LABEL[value]}
+                            </span>
+                            <span className="mt-0.5 block text-[0.75rem] leading-relaxed text-fg-muted">
+                              {ENGAGEMENT_DESCRIPTION[value]}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {submitted && !engagementType ? (
+                      <p role="alert" className="mt-1.5 text-[0.75rem] text-st-danger">
+                        Choose whether this driver is a company driver or an owner-operator.
+                      </p>
+                    ) : null}
+                  </fieldset>
+                ) : null}
+
+                {needsRoleName ? (
+                  <Field
+                    label="Role name"
+                    htmlFor="invite-role-name"
+                    hint={roleNameError ? undefined : "What this person's role is called."}
+                    error={roleNameError ?? undefined}
+                  >
+                    <Input
+                      id="invite-role-name"
+                      value={roleName}
+                      onChange={(e) => setRoleName(e.target.value)}
+                      maxLength={ROLE_NAME_MAX_LENGTH}
+                      placeholder="Night dispatcher"
+                      aria-invalid={roleNameError ? true : undefined}
+                      className={cn(roleNameError && "border-st-danger")}
+                    />
+                  </Field>
+                ) : null}
+
+                {isDispatchOrg ? (
+                  <Field
+                    label="Organization name"
+                    htmlFor="invite-org-name"
+                    error={orgNameError ?? undefined}
+                  >
+                    <Input
+                      id="invite-org-name"
+                      value={orgName}
+                      onChange={(e) => setOrgName(e.target.value)}
+                      placeholder="Meridian Dispatch"
+                      maxLength={80}
+                      aria-invalid={orgNameError ? true : undefined}
+                      className={cn(orgNameError && "border-st-danger")}
+                    />
+                  </Field>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field
+                      label="First Name"
+                      htmlFor="invite-first-name"
+                      error={firstNameError ?? undefined}
+                    >
+                      <Input
+                        id="invite-first-name"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="Enter first name"
+                        maxLength={40}
+                        aria-invalid={firstNameError ? true : undefined}
+                        className={cn(firstNameError && "border-st-danger")}
+                      />
+                    </Field>
+
+                    <Field
+                      label="Last Name"
+                      htmlFor="invite-last-name"
+                      error={lastNameError ?? undefined}
+                    >
+                      <Input
+                        id="invite-last-name"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Enter last name"
+                        maxLength={40}
+                        aria-invalid={lastNameError ? true : undefined}
+                        className={cn(lastNameError && "border-st-danger")}
+                      />
+                    </Field>
+                  </div>
+                )}
+
+                <Field
+                  label={isDispatchOrg ? "Administrator's email" : "Email address"}
+                  htmlFor="invite-email"
+                  hint={emailError ? undefined : "The invitation link goes here."}
+                  error={emailError ?? undefined}
+                >
+                  <Input
+                    id="invite-email"
+                    type="email"
+                    value={recipientEmail}
+                    onChange={(e) => setRecipientEmail(e.target.value)}
+                    placeholder="name@company.com"
+                    aria-invalid={emailError ? true : undefined}
+                    className={cn(emailError && "border-st-danger")}
+                  />
+                </Field>
+              </>
+            )}
           </div>
 
           <div className="min-w-0 space-y-4">
@@ -583,7 +1077,7 @@ export function InviteFlow() {
               </p>
             </div>
 
-            <SensitiveAccessWarning permissions={selectedList} />
+            {!isAdminRole ? <SensitiveAccessWarning permissions={selectedList} /> : null}
 
             <ApiPermissionPicker
               selected={permissions}
@@ -597,50 +1091,9 @@ export function InviteFlow() {
               </p>
             ) : null}
 
-            {changedFromPreset ? (
-              <div className="rounded-lg border border-border bg-surface-sunken p-3.5">
-                <label className="flex cursor-pointer items-start gap-2.5">
-                  <input
-                    type="checkbox"
-                    checked={saveAsRole}
-                    onChange={(e) => setSaveAsRole(e.target.checked)}
-                    className="mt-0.5 size-4 shrink-0 accent-primary"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-[0.8125rem] font-medium text-fg">
-                      Save this as a custom role
-                    </span>
-                    <span className="mt-0.5 block text-[0.75rem] leading-relaxed text-fg-muted">
-                      You have changed the {preset.label} package for this invitation. Save it as a
-                      reusable role if you will want it again.
-                    </span>
-                  </span>
-                </label>
-                {saveAsRole ? (
-                  <div className="mt-3">
-                    <Field
-                      label="New role name"
-                      htmlFor="invite-save-role"
-                      error={newRoleNameError ?? undefined}
-                    >
-                      <Input
-                        id="invite-save-role"
-                        value={newRoleName}
-                        onChange={(e) => setNewRoleName(e.target.value)}
-                        maxLength={ROLE_NAME_MAX_LENGTH}
-                        placeholder="Weekend dispatcher"
-                        aria-invalid={newRoleNameError ? true : undefined}
-                        className={cn(newRoleNameError && "border-st-danger")}
-                      />
-                    </Field>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="primary" size="lg" onClick={continueToReview}>
-                Review invitation
+                {userMode === "existing" ? "Review permission change" : "Review invitation"}
               </Button>
               <Button variant="ghost" size="lg" onClick={() => setStage("type")}>
                 Back
@@ -654,10 +1107,17 @@ export function InviteFlow() {
         <div className="max-w-[42rem] space-y-4">
           <div className="overflow-hidden rounded-lg border border-border">
             <dl className="divide-y divide-border">
-              <ReviewRow label="Recipient" value={`${recipientName.trim()} · ${recipientEmail.trim()}`} />
+              <ReviewRow
+                label="Invitation type"
+                value={userMode === "existing" ? "Existing User (Permission Update)" : "New User (Custom Permissions)"}
+              />
+              <ReviewRow
+                label="Recipient"
+                value={`${(recipientName || recipientEmail).trim()} · ${recipientEmail.trim()}`}
+              />
               <ReviewRow
                 label={isDispatchOrg ? "Invitation type" : "Role"}
-                value={effectiveRoleName || preset.label}
+                value={effectiveRoleName || (changedFromPreset ? `${preset.label} (Custom)` : preset.label)}
               />
               {isDriver && engagementType ? (
                 <ReviewRow label="Engagement type" value={ENGAGEMENT_LABEL[engagementType]} />
@@ -669,9 +1129,6 @@ export function InviteFlow() {
                   value={`${organization.displayName} only. Not their other carrier clients.`}
                 />
               ) : null}
-              {saveAsRole && newRoleName.trim() ? (
-                <ReviewRow label="Also saving role" value={newRoleName.trim()} />
-              ) : null}
             </dl>
           </div>
 
@@ -682,7 +1139,7 @@ export function InviteFlow() {
             <PermissionSummary permissions={selectedList} />
           </div>
 
-          <SensitiveAccessWarning permissions={selectedList} />
+          {!isAdminRole ? <SensitiveAccessWarning permissions={selectedList} /> : null}
 
           <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5">
             <input
@@ -692,7 +1149,7 @@ export function InviteFlow() {
               className="mt-0.5 size-4 shrink-0 accent-primary"
             />
             <span className="text-[0.8125rem] leading-relaxed text-fg">
-              I have read the list above and I want {recipientName.trim() || "this recipient"} to
+              I have read the list above and I want {recipientName.trim() || recipientEmail.trim() || "this recipient"} to
               have this access.
             </span>
           </label>
@@ -716,7 +1173,11 @@ export function InviteFlow() {
               aria-busy={sending || undefined}
               onClick={() => commit()}
             >
-              {sending ? "Sending…" : "Send invitation"}
+              {sending
+                ? "Sending…"
+                : userMode === "existing"
+                  ? "Send permission update"
+                  : "Send invitation"}
             </Button>
             <Button variant="ghost" size="lg" onClick={() => setStage("details")}>
               Back
@@ -736,7 +1197,9 @@ export function InviteFlow() {
             <Check className="mt-px size-5 shrink-0 text-st-success" aria-hidden />
             <div className="min-w-0 text-[0.8125rem]">
               <p className="font-medium text-fg">
-                Invitation created for {recipientName.trim()}.
+                {userMode === "existing"
+                  ? `Permission update invitation created for ${(recipientName || recipientEmail).trim()}.`
+                  : `Invitation created for ${recipientName.trim()}.`}
               </p>
               <p className="mt-0.5 text-fg-muted">
                 An invitation email has been sent to {recipientEmail.trim()}. It is pending until they accept.
@@ -775,8 +1238,10 @@ export function InviteFlow() {
                 setOrgName("");
                 setRecipientEmail("");
                 setRoleName("");
-                setNewRoleName("");
-                setSaveAsRole(false);
+                setUserMode("new");
+                setSelectedMemberId("");
+                setMemberSearch("");
+                setMemberRoleFilter("ALL");
                 setPermissions(new Set());
                 setSentToken(null);
                 setSubmitted(false);

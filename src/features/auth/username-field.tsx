@@ -26,6 +26,7 @@ export function UsernameField({
   autoComplete = "username",
   placeholder = "e.g. jor_dan",
   showRules = true,
+  required = false,
   onAvailabilityChange,
 }: {
   id?: string;
@@ -35,6 +36,7 @@ export function UsernameField({
   autoComplete?: string;
   placeholder?: string;
   showRules?: boolean;
+  required?: boolean;
   onAvailabilityChange?: (availability: UsernameAvailability) => void;
 }) {
   const uid = useId();
@@ -111,6 +113,7 @@ export function UsernameField({
           maxLength={USERNAME_MAX_LENGTH}
           placeholder={placeholder}
           disabled={disabled}
+          required={required}
           aria-invalid={invalid || undefined}
           aria-describedby={`${statusId} ${rulesId}`}
           className={cn(

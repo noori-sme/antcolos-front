@@ -20,6 +20,11 @@ export function Providers({ children }: { children: ReactNode }) {
       toast.success(pendingToast);
       sessionStorage.removeItem("antcolos_pending_toast");
     }
+    const pendingErrorToast = sessionStorage.getItem("antcolos_pending_error_toast");
+    if (pendingErrorToast) {
+      toast.error(pendingErrorToast);
+      sessionStorage.removeItem("antcolos_pending_error_toast");
+    }
   }, [pathname]);
 
   return (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api/client";
+import { apiClient, logoutDueToPermissionsError } from "@/lib/api/client";
 import Cookies from "js-cookie";
 import { usePathname } from "next/navigation";
 import { SplashScreen } from "@/components/splash-screen";
@@ -113,6 +113,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const response = await apiClient.get('/users/me/permissions');
         const data = response.data?.data || response.data;
 
+        const isInvalid =
+          !data ||
+          data.error ||
+          (typeof data.statusCode === "number" && data.statusCode >= 400) ||
+          data.nextStep ||
+          data.user?.nextStep ||
+          data.scope === "onboarding" ||
+          data.user?.scope === "onboarding" ||
+          (!data.roleId && !data.permissions && !data.roleName);
+
+        if (isInvalid) {
+          logoutDueToPermissionsError();
+          return null;
+        }
+
         if (data) {
           if (data.roleId) {
             Cookies.set('antcolos_role_id', String(data.roleId), { path: '/', expires: 7 });
@@ -141,6 +156,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return data;
       } catch (err) {
         console.error('Failed to fetch user permissions:', err);
+        logoutDueToPermissionsError();
         return null;
       }
     },

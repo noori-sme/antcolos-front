@@ -23,6 +23,7 @@ export function PasswordField({
   invalid,
   describedBy,
   disabled,
+  required,
 }: {
   id: string;
   value: string;
@@ -33,6 +34,7 @@ export function PasswordField({
   invalid?: boolean;
   describedBy?: string;
   disabled?: boolean;
+  required?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -47,6 +49,7 @@ export function PasswordField({
         autoComplete={autoComplete}
         placeholder={placeholder}
         disabled={disabled}
+        required={required}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
         className={cn("pr-11", invalid && "border-st-danger focus-visible:border-st-danger")}
