@@ -43,7 +43,8 @@ Commit and push the task's own branch at the end of every phase (never `staging`
 an idle VM can be reclaimed with unpushed work.
 
 **Full-stack tasks** (backend and frontend together, in a session started above both repos):
-follow `../antcolos/docs/ai/fullstack.md`. There both repos are editable; the
+follow `../antcolos/docs/ai/fullstack.md`. In cloud sessions the backend clone is named after
+its repo (`sme-cmos`), so read `../antcolos` as that folder. There both repos are editable; the
 "backend is read-only" rule below applies to frontend-only sessions.
 
 The six rules you must never break:
