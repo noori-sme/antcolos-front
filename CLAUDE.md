@@ -33,6 +33,19 @@ Hook (`.claude/hooks/guard-edits.sh`): blocks edits to `.env*` (except `.env.exa
 `package-lock.json`, and to the backend repo `../antcolos`. If it blocks you, follow its
 message. Don't work around it.
 
+**If something doesn't load** (some cloud modes skip hooks, skills, agents, or path-scoped
+rules): run `bash .claude/hooks/bootstrap.sh` yourself, treat the hook rules above as rules,
+read the matching `.claude/rules/<area>.md` before editing that area, and for a missing skill
+or agent read `.claude/skills/<name>/SKILL.md` or `.claude/agents/<name>.md` and follow it.
+
+**Cloud sessions:** dependencies refresh via `bootstrap.sh` (SessionStart hook, or run it).
+Commit and push the task's own branch at the end of every phase (never `staging` or `main`):
+an idle VM can be reclaimed with unpushed work.
+
+**Full-stack tasks** (backend and frontend together, in a session started above both repos):
+follow `../antcolos/docs/ai/fullstack.md`. There both repos are editable; the
+"backend is read-only" rule below applies to frontend-only sessions.
+
 The six rules you must never break:
 1. **Components never call the network.** No `apiClient`/`fetch` in `src/app` or `src/features`
    screens. Every call goes through a service in `src/lib/api/` (contract → http adapter) and
@@ -82,6 +95,7 @@ When you're unsure between two tracks, take the larger one. Every track except X
   (`## Backend asks`) and tell the user. Don't mock around it silently.
 - Run targeted tests while you iterate. Run the full suite only in `/verify full`.
 - Commits follow Conventional Commits scoped by feature (`feat(fleet): …`, `fix(auth): …`).
-  Commit or push only when asked. Branch flow: feature branch → `staging` → `main`.
+  Locally, commit or push only when asked (cloud sessions: see above). Branch flow: feature
+  branch → `staging` → `main`.
 - The plan doc is the hand-off between sessions. Keep its status block current so a fresh
   session can resume after `/clear`.
