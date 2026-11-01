@@ -364,7 +364,7 @@ export function InvitationsScreen() {
       refetchRequests();
       queryClient.invalidateQueries({ queryKey: [...orgPrefix, "invitation-requests"] });
     }
-  }, [tab, queryClient]);
+  }, [tab, queryClient, orgPrefix]);
 
   function setTab(nextTab: Tab) {
     if (nextTab === tab) {

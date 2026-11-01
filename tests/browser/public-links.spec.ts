@@ -17,6 +17,17 @@ for (const path of PUBLIC_PAGES) {
   });
 }
 
+test("an expired session cookie does not bounce a public page to sign-in", async ({ page, context }) => {
+  // A former user's stale token: /auth/me would 401, and the interceptor
+  // sends anyone who loads the session to /sign-in.
+  await context.clearCookies();
+  await context.addCookies([
+    { name: "antcolos_token", value: "expired-token", domain: "localhost", path: "/" },
+  ]);
+  await page.goto("/track/demo-token", { waitUntil: "networkidle" });
+  expect(new URL(page.url()).pathname).toBe("/track/demo-token");
+});
+
 test("the profile preview image is served, not redirected to sign-in", async ({ request }) => {
   const res = await request.get("/profile/demo/opengraph-image", { maxRedirects: 0 });
   expect(res.status()).not.toBe(307);

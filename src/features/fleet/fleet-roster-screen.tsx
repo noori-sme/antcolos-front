@@ -101,7 +101,9 @@ export function FleetRosterScreen() {
     return () => clearTimeout(handler);
   }, [searchInput]);
 
-  const { data, isLoading, isError, error, refetch } = useTrucks({
+  // `isPending`, not `isLoading`: a disabled query (no organization yet) must
+  // read as loading, not as an empty fleet. Paging keeps the previous page.
+  const { data, isPending: isLoading, isError, error, refetch } = useTrucks({
     page,
     pageSize,
     sortBy: "createdAt",

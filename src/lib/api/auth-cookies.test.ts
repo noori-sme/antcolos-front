@@ -54,6 +54,11 @@ describe("writes", () => {
     expect(removed()).toEqual(["antcolos_user_role"]);
   });
 
+  it("an org account without a role clears the previous account's role", () => {
+    setAccountKind({ orgType: "CARRIER" });
+    expect(removed()).toContain("antcolos_org_role");
+  });
+
   it("clearPermissionCookies leaves the token alone", () => {
     clearPermissionCookies();
     expect(removed()).not.toContain("antcolos_token");

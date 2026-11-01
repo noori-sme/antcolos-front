@@ -65,6 +65,10 @@ export function SignInScreen() {
       return data;
     },
     onSuccess: async (data) => {
+      // A new sign-in starts from an empty cache: nothing the previous account
+      // loaded in this tab may be shown to this one. (Queries only; `clear()`
+      // would also drop this running mutation.)
+      queryClient.removeQueries();
       if (remember) {
         localStorage.setItem("antcolos_remember_email", email);
       } else {

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useActiveMembership } from "@/lib/session/hooks";
 import { orgKey } from "./keys";
 
@@ -14,5 +15,7 @@ import { orgKey } from "./keys";
  */
 export function useOrgKeyPrefix(): readonly ["org", string] {
   const { organization } = useActiveMembership();
-  return orgKey(organization?.id ?? "none");
+  const organizationId = organization?.id ?? "none";
+  // Stable across renders, so it can sit in effect dependency lists.
+  return useMemo(() => orgKey(organizationId), [organizationId]);
 }

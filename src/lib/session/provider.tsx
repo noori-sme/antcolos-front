@@ -80,8 +80,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
   const newcomer = scenario === "newcomer";
 
+  const pathname = usePathname();
+  // Public pages (tracking, shared, profiles) never load the session: a stale
+  // token would 401 on /auth/me and the interceptor would send the visitor
+  // to /sign-in.
+  const onPublicPage = isPublicPath(pathname);
+
   const { data: fetchedUser, isLoading } = useQuery({
     queryKey: ['currentUser'],
+    enabled: !onPublicPage,
     queryFn: async () => {
       const token = readCookie('antcolos_token');
       const nextStep = readCookie('antcolos_next_step');
@@ -108,6 +115,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const { data: userPermissionsData } = useQuery({
     queryKey: ['userPermissions'],
+    enabled: !onPublicPage,
     queryFn: async () => {
       const token = readCookie('antcolos_token');
       const nextStep = readCookie('antcolos_next_step');
@@ -147,8 +155,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60 * 1000,
   });
 
-  const pathname = usePathname();
-  const isAuthPage = isAuthPath(pathname) || isPublicPath(pathname);
+  const isAuthPage = isAuthPath(pathname) || onPublicPage;
   const isOnboardingPage = pathname.startsWith('/onboarding');
 
   useEffect(() => {

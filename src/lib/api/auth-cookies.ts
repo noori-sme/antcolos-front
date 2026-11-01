@@ -65,7 +65,9 @@ export function setAccountKind(
     remove(AUTH_COOKIE.orgRole);
   } else if (kind) {
     set(AUTH_COOKIE.orgType, kind.orgType);
+    // A missing role must not leave the previous account's role behind.
     if (kind.orgRole) set(AUTH_COOKIE.orgRole, kind.orgRole);
+    else remove(AUTH_COOKIE.orgRole);
     remove(AUTH_COOKIE.userRole);
   } else {
     remove(AUTH_COOKIE.userRole);

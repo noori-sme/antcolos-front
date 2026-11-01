@@ -100,7 +100,9 @@ function InfoRow({
 export function TruckProfileScreen({ truckId }: { truckId: string }) {
   const [copiedVin, setCopiedVin] = useState(false);
 
-  const { data: truck, isLoading, isError, error, refetch } = useTruck(truckId);
+  // `isPending`, not `isLoading`: while there is no organization yet the query
+  // is disabled, and that must read as loading, not as "not found".
+  const { data: truck, isPending: isLoading, isError, error, refetch } = useTruck(truckId);
 
   if (isLoading) {
     return (

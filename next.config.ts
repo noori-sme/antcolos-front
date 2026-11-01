@@ -18,8 +18,8 @@ if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_API_URL) {
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Nothing in the app is meant to be framed by another site.
-  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  // No page, public ones included, may be shown inside a frame.
+  { key: "X-Frame-Options", value: "DENY" },
   // The app uses the clipboard only; none of these.
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
 ];
