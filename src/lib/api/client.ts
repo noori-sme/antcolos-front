@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig, type AxiosInstance } from "axios";
+import { sessionTokenFrom } from "./session-token";
 
 // Access the API URL from environment variables, falling back to a default
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://antcolos-staging.up.railway.app/api/v1";
@@ -132,14 +133,9 @@ function setupInterceptors(client: AxiosInstance) {
           }
         }
 
-        // If accessToken is present in any response (or nested under data), update it
-        const token =
-          data.accessToken ||
-          data.access_token ||
-          data.token ||
-          data.data?.accessToken ||
-          data.data?.access_token ||
-          data.data?.token;
+        // Only session-issuing endpoints may replace the token. Other responses
+        // can carry a `token` that is not a session (e.g. a new invitation's).
+        const token = sessionTokenFrom(url, data);
 
         if (token) {
           Cookies.set('antcolos_token', token, { expires: 7, path: '/' }); // 7 days

@@ -26,6 +26,7 @@ import {
   rosterServerSnapshot, rosterSnapshot, subscribeRoster,
 } from "./membership-store";
 import { readSessionScenario, type SessionScenario } from "./scenarios";
+import { isAuthPath, isPublicPath } from "./route-access";
 
 export interface SessionContextValue {
   /** Permanent. Identical across every organization switch. */
@@ -164,15 +165,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   });
 
   const pathname = usePathname();
-  const isAuthPage = 
-    pathname === '/sign-in' || 
-    pathname === '/sign-up' || 
-    pathname.startsWith('/verify-email') ||
-    pathname.startsWith('/forgot-password') ||
-    pathname.startsWith('/invite') ||
-    pathname.startsWith('/invitation') ||
-    pathname.startsWith('/invitations') ||
-    pathname.startsWith('/referral');
+  const isAuthPage = isAuthPath(pathname) || isPublicPath(pathname);
   const isOnboardingPage = pathname.startsWith('/onboarding');
 
   useEffect(() => {

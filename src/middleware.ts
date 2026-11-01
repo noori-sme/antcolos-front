@@ -1,19 +1,18 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { isAuthPath, isPublicPath } from '@/lib/session/route-access'
 
 export function middleware(request: NextRequest) {
   const token = request.cookies.get('antcolos_token')?.value
   const nextStep = request.cookies.get('antcolos_next_step')?.value
   const pathname = request.nextUrl.pathname
-  const isAuthPage = 
-    pathname === '/sign-in' || 
-    pathname === '/sign-up' || 
-    pathname.startsWith('/verify-email') ||
-    pathname.startsWith('/forgot-password') ||
-    pathname.startsWith('/invite') ||
-    pathname.startsWith('/invitation') ||
-    pathname.startsWith('/invitations') ||
-    pathname.startsWith('/referral');
+  const isAuthPage = isAuthPath(pathname)
+
+  // Share, profile, and tracking pages (and their OG images) are for anyone,
+  // signed in, mid-onboarding, or not. Never redirect them.
+  if (isPublicPath(pathname)) {
+    return NextResponse.next()
+  }
 
   // 1. If no token, they must be unauthenticated.
   if (!token) {
