@@ -7,6 +7,11 @@ Multi-tenant TMS ("Fleet & Dispatch OS") UI. The NestJS backend lives at `../ant
 (its own `CLAUDE.md`, contracts in `../antcolos/docs/requirements/*-api-contract.md`,
 live OpenAPI at `<API_URL>/api/docs`).
 
+The backend is `noori-sme/antcolos` on GitHub. If `../antcolos` doesn't exist (a cloud session
+with only this repo), the contract isn't available. For Integrate or Feature work, stop and
+ask to restart the session with both repos. XS and Fix work that doesn't touch the API can
+continue.
+
 Most of the product still runs on in-memory mocks behind `src/lib/api/contracts/`. Auth,
 onboarding, access/invitations, roles, people, and fleet trucks already talk to the real API.
 Moving domain after domain from mock to HTTP is the main ongoing work.
