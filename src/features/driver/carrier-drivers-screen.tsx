@@ -21,6 +21,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
 import { daysUntil } from "./driver-rules";
+import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 export interface DriverTruck {
   assignmentId: string;
@@ -109,6 +110,7 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 export function CarrierDriversScreen() {
+  const orgPrefix = useOrgKeyPrefix();
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -125,7 +127,7 @@ export function CarrierDriversScreen() {
   }, [searchInput]);
 
   const { data, isLoading, isError, error, refetch } = useQuery<DriversResponse>({
-    queryKey: ["organizations", "drivers", { page, pageSize, q: debouncedSearch }],
+    queryKey: [...orgPrefix, "organizations", "drivers", { page, pageSize, q: debouncedSearch }],
     queryFn: async () => {
       const params: Record<string, any> = {
         page,

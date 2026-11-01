@@ -25,15 +25,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      # Lint and the unit/node suites are NOT green on staging yet (see
-      # docs/workflow/WORKFLOW.md §Baseline). They report without blocking until the
-      # baseline is cleared — then delete the `continue-on-error` lines.
+      # Lint is NOT green yet (see docs/workflow/WORKFLOW.md §Baseline), so it
+      # reports without blocking. Delete `continue-on-error` once it is clean.
       - run: npm run lint
         continue-on-error: true
+      # The unit and node suites are green and block merges.
       - run: npx vitest run
-        continue-on-error: true
       - run: npm run test:node
-        continue-on-error: true
       - run: npm run build
 
   browser:
