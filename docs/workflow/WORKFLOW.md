@@ -53,31 +53,22 @@ and `components/ui` always win over any skill's suggestion.
 
 ## Baseline
 
-Measured on `staging` @ `00f216a` (2026-11-01). The rule is **no new failures**. When you fix
-some, lower these numbers.
+Measured on `claude/clever-franklin-kgcmdd` (2026-11-01). The rule is **no new failures**. When
+you fix some, lower these numbers.
 
 | Check | Result |
 | --- | --- |
 | `npm run typecheck` | ✅ clean |
-| `npm run lint` | ❌ 65 errors, 87 warnings (44 `no-explicit-any`, 16 `react-hooks/set-state-in-effect`, 3 `no-unescaped-entities`, 1 `rules-of-hooks`, 1 `immutability`) |
-| `npx vitest run` | ❌ 28 failed / 2056 tests (8 files), about 6.5 min |
-| `npm run test:node` | ❌ 5 failed / 805 tests |
-| `npm run build` | ✅ passes (119 routes) |
-| `npx playwright test` | not measured yet |
+| `npm run lint` | ❌ 59 errors, 86 warnings (mostly `no-explicit-any` and `react-hooks/set-state-in-effect`). Non-blocking in CI until clean |
+| `npx vitest run` | ✅ 2110 / 2110. Blocks CI |
+| `npm run test:node` | ✅ 805 / 805. Blocks CI |
+| `npm run build` | ✅ passes |
+| `npx playwright test` | not fully measured. `landing-auth-boundary.spec.ts` fails 8/8, on staging too (cause not yet investigated). `public-links.spec.ts` passes |
 
-Baseline failures (failing count per file). The counts were the same across two runs, so these aren't flaky:
-- vitest: `src/lib/api/mock/referrals.test.ts` (8), `src/lib/api/mock/access-policy.test.ts` (5),
-  `src/lib/api/mock/access-interruption.test.ts` (1), `tests/responsibility/scenarios.test.ts` (10),
-  `tests/responsibility/attention.test.ts` (1), `tests/responsibility/home-attention.test.ts` (1),
-  `tests/fleet/fleet-service.test.ts` (1), `tests/eld/attribution.test.ts` (1)
-- node: "the fallback is prefilled with carrier, broker, MC, amount and opportunity" ·
-  "the posting keeps saying what the board said, for ever" · "a recorded reading says who typed
-  it and is never called a feed" · "signing a rate confirmation commits ONE immutable record
-  and finalizes the load once" · "the update policy › holds an update as a draft until a
-  dispatcher approves it"
-
-CI (`.github/workflows/ci.yml`) blocks on typecheck and build. Lint and tests run as
-report-only until this baseline is cleared, and then those `continue-on-error` lines get deleted.
+The 33 test failures that used to be listed here had one cause: `MOCK_USER` / `NEWCOMER_USER` in
+`src/lib/session/fixtures.ts` had their name and email blanked (to stop the header flashing a
+placeholder name), and the mock services read those as account data. The fixtures are restored,
+and the session provider blanks the identity in the UI instead until `/auth/me` answers.
 
 ## Deploy
 

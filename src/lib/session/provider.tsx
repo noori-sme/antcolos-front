@@ -160,7 +160,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const baseUser = newcomer ? NEWCOMER_USER : MOCK_USER;
   const user = useMemo(() => {
-    if (!fetchedUser) return baseUser;
+    // Until /auth/me answers, show no identity rather than the fixture's, so
+    // the header never flashes a placeholder name before the redirect.
+    if (!fetchedUser) return { ...baseUser, displayName: "", email: "", phone: "" };
     return {
       ...baseUser,
       id: fetchedUser.id,
