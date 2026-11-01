@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 export interface AdminAddress {
   addressLine1?: string;
@@ -114,8 +115,9 @@ function InfoRow({
 }
 
 export function AdminDetailScreen({ userId }: { userId: string }) {
+  const orgPrefix = useOrgKeyPrefix();
   const { data: admin, isLoading, isError, error, refetch } = useQuery<AdminDetail>({
-    queryKey: ["organizations", "admins", userId],
+    queryKey: [...orgPrefix, "organizations", "admins", userId],
     queryFn: async () => {
       const res = await apiClient.get(`/organizations/admins/${userId}`);
       return (res.data?.data || res.data) as AdminDetail;
