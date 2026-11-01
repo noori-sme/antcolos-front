@@ -10,11 +10,28 @@ if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_API_URL) {
   );
 }
 
+/**
+ * Baseline response headers for every route. Deliberately not here yet:
+ * a Content-Security-Policy (needs nonces for Next's inline scripts and a
+ * browser pass) and HSTS (its scope is a hosting/domain decision).
+ */
+const SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // Nothing in the app is meant to be framed by another site.
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  // The app uses the clipboard only; none of these.
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+];
+
 const nextConfig: NextConfig = {
   // The dev overlay badge sits on top of the mobile tab bar; off so the real
   // UI is what we review.
   devIndicators: false,
-  /* config options here */
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+  },
 };
 
 export default nextConfig;
