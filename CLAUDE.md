@@ -83,6 +83,8 @@ The six rules you must never break:
 | **Ship** | Open a PR, promote staging → main, deploy | `/ship` |
 
 When you're unsure between two tracks, take the larger one. Every track except XS includes the test step.
+Before starting work, state the track you picked and why, in one line (e.g. "Track: Integrate,
+because the trucks endpoints already exist"), whether or not a skill was named.
 
 ## Working habits
 
