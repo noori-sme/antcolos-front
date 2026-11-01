@@ -22,91 +22,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
-import { useQuery } from "@tanstack/react-query";
+import { useTrucks } from "./hooks";
 import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
 
-export interface TruckAssignment {
-  assignmentId: string;
-  userId: string;
-  name: string;
-  startAt?: string;
-  coverage?: string;
-}
-
-export interface TruckLegalOwner {
-  ownershipId?: string;
-  ownerType?: string;
-  ownerOrganizationId?: string | null;
-  ownerUserId?: string | null;
-  ownershipType?: string;
-  verificationStatus?: string;
-  startAt?: string;
-  endAt?: string | null;
-}
-
-export interface TruckOperating {
-  operatingId?: string;
-  organizationId?: string;
-  unitNumber?: string;
-  homeTerminalCity?: string;
-  homeTerminalState?: string;
-  notes?: string;
-  operationalStatus?: string;
-  verificationStatus?: string;
-  startAt?: string;
-  endAt?: string | null;
-}
-
-export interface TruckItem {
-  id: string;
-  vin: string;
-  licensePlate?: string;
-  licensePlateState?: string;
-  year?: number;
-  make?: string;
-  model?: string;
-  color?: string;
-  equipmentType?: string;
-  trailerLengthFt?: number;
-  trailerNumber?: string;
-  payloadLbs?: number;
-  gvwrLbs?: number;
-  registrationExpiresAt?: string;
-  insuranceExpiresAt?: string;
-  eldProvider?: string;
-  eldDeviceId?: string;
-  fuelType?: string;
-  axleCount?: number;
-  cabType?: string;
-  archivedAt?: string | null;
-  legalOwner?: TruckLegalOwner | null;
-  operating?: TruckOperating | null;
-  unitNumber?: string;
-  homeTerminalCity?: string;
-  homeTerminalState?: string;
-  notes?: string;
-  ownershipType?: string;
-  operationalStatus?: "AVAILABLE" | "UNAVAILABLE" | "MAINTENANCE" | string;
-  currentDriver?: TruckAssignment | null;
-  currentDispatchers?: TruckAssignment[];
-  createdByUserId?: string;
-  updatedByUserId?: string;
-  source?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface TrucksResponse {
-  data: TruckItem[];
-  meta?: {
-    page: number;
-    pageSize: number;
-    totalItems: number;
-    totalPages: number;
-  };
-}
+export type {
+  TruckAssignment, TruckLegalOwner, TruckOperating, FleetTruck as TruckItem,
+} from "@/types/fleet-truck";
 
 const STATUS_FILTERS = [
   { value: "all", label: "All" },
@@ -126,7 +48,8 @@ const EQUIPMENT_OPTIONS = [
   { value: "POWER_ONLY", label: "Power Only" },
   { value: "TANKER", label: "Tanker" },
   { value: "OTHER", label: "Other" },
-];
+] as const;
+type EquipmentFilter = (typeof EQUIPMENT_OPTIONS)[number]["value"];
 
 function formatEquipmentType(type?: string): string {
   if (!type) return "Data is not available";
@@ -165,7 +88,7 @@ export function FleetRosterScreen() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [equipmentFilter, setEquipmentFilter] = useState("all");
+  const [equipmentFilter, setEquipmentFilter] = useState<EquipmentFilter>("all");
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
@@ -178,36 +101,14 @@ export function FleetRosterScreen() {
     return () => clearTimeout(handler);
   }, [searchInput]);
 
-  const { data, isLoading, isError, error, refetch } = useQuery<TrucksResponse>({
-    queryKey: [
-      "trucks",
-      {
-        page,
-        pageSize,
-        q: debouncedSearch,
-        operationalStatus: statusFilter !== "all" ? statusFilter : undefined,
-        equipmentType: equipmentFilter !== "all" ? equipmentFilter : undefined,
-      },
-    ],
-    queryFn: async () => {
-      const params: Record<string, any> = {
-        page,
-        pageSize,
-        sortBy: "createdAt",
-        sortOrder: "desc",
-      };
-      if (debouncedSearch) {
-        params.q = debouncedSearch;
-      }
-      if (statusFilter !== "all") {
-        params.operationalStatus = statusFilter;
-      }
-      if (equipmentFilter !== "all") {
-        params.equipmentType = equipmentFilter;
-      }
-      const res = await apiClient.get("/trucks", { params });
-      return res.data;
-    },
+  const { data, isLoading, isError, error, refetch } = useTrucks({
+    page,
+    pageSize,
+    sortBy: "createdAt",
+    sortOrder: "desc",
+    q: debouncedSearch || undefined,
+    operationalStatus: statusFilter !== "all" ? statusFilter : undefined,
+    equipmentType: equipmentFilter !== "all" ? equipmentFilter : undefined,
   });
 
   const trucksList = data?.data || [];
@@ -255,7 +156,9 @@ export function FleetRosterScreen() {
             id="equipment-filter"
             value={equipmentFilter}
             onChange={(e) => {
-              setEquipmentFilter(e.target.value);
+              setEquipmentFilter(
+                EQUIPMENT_OPTIONS.find((o) => o.value === e.target.value)?.value ?? "all",
+              );
               setPage(1);
             }}
             className="h-control rounded-md border border-border bg-surface px-3 text-[0.8125rem] text-fg shadow-e1 hover:border-border-strong focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
@@ -311,7 +214,7 @@ export function FleetRosterScreen() {
         >
           <p className="font-semibold text-st-danger">Failed to load fleet trucks</p>
           <p className="mt-1 text-fg-muted">
-            {(error as any)?.message ||
+            {error?.message ||
               "An unexpected error occurred while contacting the server."}
           </p>
           <Button

@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -26,79 +25,12 @@ import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
+import { useTruck } from "./hooks";
 import { cn } from "@/lib/utils";
 
-export interface TruckAssignment {
-  assignmentId: string;
-  userId: string;
-  name: string;
-  startAt?: string;
-  coverage?: string;
-}
-
-export interface TruckLegalOwner {
-  ownershipId?: string;
-  ownerType?: string;
-  ownerOrganizationId?: string | null;
-  ownerUserId?: string | null;
-  ownershipType?: string;
-  verificationStatus?: string;
-  startAt?: string;
-  endAt?: string | null;
-}
-
-export interface TruckOperating {
-  operatingId?: string;
-  organizationId?: string;
-  unitNumber?: string;
-  homeTerminalCity?: string;
-  homeTerminalState?: string;
-  notes?: string;
-  operationalStatus?: string;
-  verificationStatus?: string;
-  startAt?: string;
-  endAt?: string | null;
-}
-
-export interface TruckDetail {
-  id: string;
-  vin: string;
-  licensePlate?: string;
-  licensePlateState?: string;
-  year?: number;
-  make?: string;
-  model?: string;
-  color?: string;
-  equipmentType?: string;
-  trailerLengthFt?: number;
-  trailerNumber?: string;
-  payloadLbs?: number;
-  gvwrLbs?: number;
-  registrationExpiresAt?: string;
-  insuranceExpiresAt?: string;
-  eldProvider?: string;
-  eldDeviceId?: string;
-  fuelType?: string;
-  axleCount?: number;
-  cabType?: string;
-  archivedAt?: string | null;
-  legalOwner?: TruckLegalOwner | null;
-  operating?: TruckOperating | null;
-  unitNumber?: string;
-  homeTerminalCity?: string;
-  homeTerminalState?: string;
-  notes?: string;
-  ownershipType?: string;
-  operationalStatus?: "AVAILABLE" | "UNAVAILABLE" | "MAINTENANCE" | string;
-  currentDriver?: TruckAssignment | null;
-  currentDispatchers?: TruckAssignment[];
-  createdByUserId?: string;
-  updatedByUserId?: string;
-  source?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
+export type {
+  TruckAssignment, TruckLegalOwner, TruckOperating, FleetTruck as TruckDetail,
+} from "@/types/fleet-truck";
 
 function formatDate(iso?: string): string {
   if (!iso) return "Data is not available";
@@ -168,14 +100,7 @@ function InfoRow({
 export function TruckProfileScreen({ truckId }: { truckId: string }) {
   const [copiedVin, setCopiedVin] = useState(false);
 
-  const { data: truck, isLoading, isError, error, refetch } = useQuery<TruckDetail>({
-    queryKey: ["trucks", truckId],
-    queryFn: async () => {
-      const res = await apiClient.get(`/trucks/${truckId}`);
-      return (res.data?.data || res.data) as TruckDetail;
-    },
-    enabled: Boolean(truckId),
-  });
+  const { data: truck, isLoading, isError, error, refetch } = useTruck(truckId);
 
   if (isLoading) {
     return (
@@ -210,7 +135,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
           icon={TruckIcon}
           title="Truck not found"
           description={
-            (error as any)?.message ||
+            error?.message ||
             "This truck does not exist or you do not have permission to view its records."
           }
           action={
