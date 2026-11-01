@@ -1,5 +1,7 @@
-import Cookies from "js-cookie";
 import { apiClient, logoutDueToPermissionsError } from "@/lib/api/client";
+import {
+  readCookie, setPermissionCookies, setSessionToken, setUserRoleFromRoleId,
+} from "@/lib/api/auth-cookies";
 import type { QueryClient } from "@tanstack/react-query";
 
 /**
@@ -11,12 +13,12 @@ export async function fetchAndStoreUserPermissions(
   queryClient?: QueryClient,
   tokenOverride?: string,
 ) {
-  const token = tokenOverride || Cookies.get("antcolos_token");
+  const token = tokenOverride || readCookie("antcolos_token");
   if (!token) return null;
 
   try {
     if (tokenOverride) {
-      Cookies.set("antcolos_token", tokenOverride, { path: "/", expires: 7 });
+      setSessionToken(tokenOverride);
     }
 
     const config = {
@@ -46,26 +48,8 @@ export async function fetchAndStoreUserPermissions(
       return null;
     }
 
-    if (data.roleId) {
-      Cookies.set("antcolos_role_id", String(data.roleId), { path: "/", expires: 7 });
-      Cookies.set("antcolos_user_role", String(data.roleId), { path: "/", expires: 7 });
-    }
-    if (data.roleName) {
-      Cookies.set("antcolos_role_name", String(data.roleName), { path: "/", expires: 7 });
-    }
-    if (data.permissions) {
-      const perms = Array.isArray(data.permissions)
-        ? JSON.stringify(data.permissions)
-        : String(data.permissions);
-      Cookies.set("antcolos_permissions", perms, { path: "/", expires: 7 });
-      Cookies.set("antcolos_user_permissions", perms, { path: "/", expires: 7 });
-    }
-    if (data.roleTemplate) {
-      const tmpl = Array.isArray(data.roleTemplate)
-        ? JSON.stringify(data.roleTemplate)
-        : String(data.roleTemplate);
-      Cookies.set("antcolos_role_template", tmpl, { path: "/", expires: 7 });
-    }
+    setPermissionCookies(data);
+    if (data.roleId) setUserRoleFromRoleId(String(data.roleId));
 
     if (queryClient) {
       queryClient.setQueryData(["userPermissions"], data);

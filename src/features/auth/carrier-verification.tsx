@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
-import Cookies from "js-cookie";
+import {
+  clearCarrierData, readCookie, setCarrierData,
+} from "@/lib/api/auth-cookies";
 import { AuthShell } from "./shell";
 import { BackLink, StepProgress, SubmitButton } from "./controls";
 import { CarrierRecord } from "./carrier-record";
@@ -64,7 +66,7 @@ export function CarrierVerification({
   const currentUser = queryClient.getQueryData<any>(["currentUser"]);
   const savedCarrierData = (() => {
     try {
-      const data = Cookies.get("antcolos_carrier_data");
+      const data = readCookie("antcolos_carrier_data");
       return data ? JSON.parse(data) : null;
     } catch {
       return null;
@@ -101,7 +103,7 @@ export function CarrierVerification({
   useEffect(() => {
     if (initialStage === "review" && !carrier) {
       try {
-        const savedData = Cookies.get("antcolos_carrier_data");
+        const savedData = readCookie("antcolos_carrier_data");
         if (savedData) {
           const parsed = JSON.parse(savedData);
           setOwnerName(parsed.legalName || "");
@@ -201,7 +203,7 @@ export function CarrierVerification({
                   dot: carrier.dot,
                   legalName: carrier.legalName,
                 });
-                Cookies.remove("antcolos_carrier_data");
+                clearCarrierData();
                 setIsVerified(true);
                 setStage("result");
               }}
@@ -364,7 +366,7 @@ function CarrierDetailsForm({
         email: returnedEmail
       };
       
-      Cookies.set("antcolos_carrier_data", JSON.stringify(payloadToSave), { expires: 1 });
+      setCarrierData(JSON.stringify(payloadToSave));
       
       onFound({
         legalName: ownerName,
@@ -561,7 +563,7 @@ function CarrierReview({
   const submitCarrierMutation = useMutation({
     mutationFn: async () => {
       // Use data from cookies as requested
-      const savedData = Cookies.get("antcolos_carrier_data");
+      const savedData = readCookie("antcolos_carrier_data");
       let payloadOwnerName = ownerName;
       let payloadMc = mc;
       let payloadDot = dot;
@@ -592,7 +594,7 @@ function CarrierReview({
         email: returnedEmail
       };
       
-      Cookies.set("antcolos_carrier_data", JSON.stringify(payloadToSave), { expires: 1 });
+      setCarrierData(JSON.stringify(payloadToSave));
       setCountdown(60);
       setSending(false);
       toast.success("Verification link sent again!");

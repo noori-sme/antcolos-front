@@ -2,9 +2,10 @@
 
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiClient, logoutDueToPermissionsError } from "@/lib/api/client";
-import Cookies from "js-cookie";
+import {
+  readCookie, setAccountKind, setPermissionCookies, setUserRoleFromRoleId,
+} from "@/lib/api/auth-cookies";
 import { usePathname } from "next/navigation";
-import { SplashScreen } from "@/components/splash-screen";
 import {
   createContext, useCallback, useEffect, useMemo, useState,
   useSyncExternalStore, type ReactNode,
@@ -42,6 +43,12 @@ export interface SessionContextValue {
   permissions: ReadonlySet<PermissionKey>;
   /** True when this membership is linked to a driver profile. */
   isDriverMembership: boolean;
+  /**
+   * An individual DRIVER account, which has no dashboard access yet (the shell
+   * is shown locked). Comes from the account type the backend returned at
+   * sign-in. The one place the UI interprets that value; screens read this.
+   */
+  isDriverAccount: boolean;
   density: DensityPreference;
   setDensity: (d: DensityPreference) => void;
   switchOrganization: (membershipId: string) => void;
@@ -52,6 +59,8 @@ export const SessionContext = createContext<SessionContextValue | null>(null);
 /** The fixture set never changes within a tab, so there is nothing to notify. */
 const subscribeNothing = () => () => {};
 const serverScenario = (): SessionScenario => "demo";
+const readDriverAccount = () => readCookie("antcolos_user_role") === "DRIVER";
+const serverDriverAccount = () => false;
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -74,28 +83,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { data: fetchedUser, isLoading } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      const token = Cookies.get('antcolos_token');
-      const nextStep = Cookies.get('antcolos_next_step');
+      const token = readCookie('antcolos_token');
+      const nextStep = readCookie('antcolos_next_step');
       if (!token || nextStep) return null;
       
-      const isOrgAdmin = Cookies.get('antcolos_org_type');
+      const isOrgAdmin = readCookie('antcolos_org_type');
       const endpoint = isOrgAdmin ? '/auth/me' : '/auth/individual/me';
       
       const response = await apiClient.get(endpoint);
       const data = response.data?.user || response.data;
       
       if (data?.individualRole) {
-        Cookies.set('antcolos_user_role', data.individualRole, { path: '/', expires: 7 });
-        Cookies.remove('antcolos_org_type', { path: '/' });
-        Cookies.remove('antcolos_org_role', { path: '/' });
+        setAccountKind({ individualRole: data.individualRole });
       } else if (data?.organizationType) {
-        Cookies.set('antcolos_org_type', data.organizationType, { path: '/', expires: 7 });
-        Cookies.set('antcolos_org_role', data.role, { path: '/', expires: 7 });
-        Cookies.remove('antcolos_user_role', { path: '/' });
+        setAccountKind({ orgType: data.organizationType, orgRole: data.role });
       } else {
-        Cookies.remove('antcolos_user_role', { path: '/' });
-        Cookies.remove('antcolos_org_type', { path: '/' });
-        Cookies.remove('antcolos_org_role', { path: '/' });
+        setAccountKind(null);
       }
       
       return data;
@@ -106,8 +109,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { data: userPermissionsData } = useQuery({
     queryKey: ['userPermissions'],
     queryFn: async () => {
-      const token = Cookies.get('antcolos_token');
-      const nextStep = Cookies.get('antcolos_next_step');
+      const token = readCookie('antcolos_token');
+      const nextStep = readCookie('antcolos_next_step');
       if (!token || nextStep) return null;
 
       try {
@@ -129,29 +132,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           return null;
         }
 
-        if (data) {
-          if (data.roleId) {
-            Cookies.set('antcolos_role_id', String(data.roleId), { path: '/', expires: 7 });
-            if (!Cookies.get('antcolos_user_role')) {
-              Cookies.set('antcolos_user_role', String(data.roleId), { path: '/', expires: 7 });
-            }
-          }
-          if (data.roleName) {
-            Cookies.set('antcolos_role_name', String(data.roleName), { path: '/', expires: 7 });
-          }
-          if (data.permissions) {
-            const perms = Array.isArray(data.permissions)
-              ? JSON.stringify(data.permissions)
-              : String(data.permissions);
-            Cookies.set('antcolos_permissions', perms, { path: '/', expires: 7 });
-            Cookies.set('antcolos_user_permissions', perms, { path: '/', expires: 7 });
-          }
-          if (data.roleTemplate) {
-            const tmpl = Array.isArray(data.roleTemplate)
-              ? JSON.stringify(data.roleTemplate)
-              : String(data.roleTemplate);
-            Cookies.set('antcolos_role_template', tmpl, { path: '/', expires: 7 });
-          }
+        setPermissionCookies(data);
+        if (data.roleId && !readCookie('antcolos_user_role')) {
+          setUserRoleFromRoleId(String(data.roleId));
         }
 
         return data;
@@ -169,7 +152,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const isOnboardingPage = pathname.startsWith('/onboarding');
 
   useEffect(() => {
-    const nextStep = Cookies.get('antcolos_next_step');
+    const nextStep = readCookie('antcolos_next_step');
     if (!isLoading && !fetchedUser && !isAuthPage && !isOnboardingPage && !nextStep) {
       window.location.href = '/sign-in';
     }
@@ -265,12 +248,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [organizations, activeMembership],
   );
 
+  // Read from the cookie on every render (cheap), so a sign-in in this tab is
+  // picked up on the next render. The server answers false, as before.
+  const isDriverAccount = useSyncExternalStore(
+    subscribeNothing,
+    readDriverAccount,
+    serverDriverAccount,
+  );
+
   const isDriverMembership = useMemo(() => {
     const roleId =
       userPermissionsData?.roleId ||
-      Cookies.get('antcolos_role_id') ||
-      Cookies.get('antcolos_user_role') ||
-      Cookies.get('antcolos_org_role');
+      readCookie('antcolos_role_id') ||
+      readCookie('antcolos_user_role') ||
+      readCookie('antcolos_org_role');
     if (roleId && String(roleId).toUpperCase() === 'DRIVER') {
       return true;
     }
@@ -285,7 +276,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ? userPermissionsData.permissions
         : [String(userPermissionsData.permissions)];
     } else {
-      const cookieVal = Cookies.get('antcolos_permissions') || Cookies.get('antcolos_user_permissions');
+      const cookieVal = readCookie('antcolos_permissions') || readCookie('antcolos_user_permissions');
       if (cookieVal) {
         try {
           const parsed = JSON.parse(cookieVal);
@@ -302,7 +293,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           ? userPermissionsData.roleTemplate
           : [String(userPermissionsData.roleTemplate)];
       } else {
-        const tmplCookie = Cookies.get('antcolos_role_template');
+        const tmplCookie = readCookie('antcolos_role_template');
         if (tmplCookie) {
           try {
             const parsed = JSON.parse(tmplCookie);
@@ -312,7 +303,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const token = Cookies.get('antcolos_token');
+    const token = readCookie('antcolos_token');
 
     // Authenticated user with real permissions
     if (token) {
@@ -360,11 +351,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       activeOrganization,
       permissions,
       isDriverMembership,
+      isDriverAccount,
       density,
       setDensity: setDensityState,
       switchOrganization,
     }),
-    [user, memberships, organizations, activeMembership, activeOrganization, permissions, isDriverMembership, density, switchOrganization],
+    [user, memberships, organizations, activeMembership, activeOrganization, permissions, isDriverMembership, isDriverAccount, density, switchOrganization],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

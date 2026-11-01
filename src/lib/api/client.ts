@@ -1,5 +1,8 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig, type AxiosInstance } from "axios";
 import { sessionTokenFrom } from "./session-token";
+import {
+  clearAllAuthCookies, clearNextStep, readCookie, setAccountKind, setNextStep, setSessionToken,
+} from "./auth-cookies";
 
 // Access the API URL from environment variables, falling back to a default
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://antcolos-staging.up.railway.app/api/v1";
@@ -29,7 +32,6 @@ export const fileApiClient = axios.create({
   },
 });
 
-import Cookies from "js-cookie";
 import { toast } from "sonner";
 
 /**
@@ -61,19 +63,8 @@ function formatErrorMessage(msg: string): string {
   return formatted.charAt(0).toUpperCase() + formatted.slice(1);
 }
 
-export const clearAllAuthCookies = () => {
-  Cookies.remove('antcolos_token', { path: '/' });
-  Cookies.remove('antcolos_next_step', { path: '/' });
-  Cookies.remove('antcolos_user_role', { path: '/' });
-  Cookies.remove('antcolos_org_type', { path: '/' });
-  Cookies.remove('antcolos_org_role', { path: '/' });
-  Cookies.remove('antcolos_role_id', { path: '/' });
-  Cookies.remove('antcolos_role_name', { path: '/' });
-  Cookies.remove('antcolos_permissions', { path: '/' });
-  Cookies.remove('antcolos_user_permissions', { path: '/' });
-  Cookies.remove('antcolos_role_template', { path: '/' });
-  Cookies.remove('antcolos_carrier_data', { path: '/' });
-};
+// Re-exported so existing imports keep working; the list lives in auth-cookies.ts.
+export { clearAllAuthCookies };
 
 export const logoutDueToPermissionsError = () => {
   clearAllAuthCookies();
@@ -95,7 +86,7 @@ function setupInterceptors(client: AxiosInstance) {
   client.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
       // Fetch token from cookies if available and Authorization header is not already provided
-      const token = Cookies.get('antcolos_token');
+      const token = readCookie('antcolos_token');
       if (token && config.headers && !config.headers.Authorization) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -138,7 +129,7 @@ function setupInterceptors(client: AxiosInstance) {
         const token = sessionTokenFrom(url, data);
 
         if (token) {
-          Cookies.set('antcolos_token', token, { expires: 7, path: '/' }); // 7 days
+          setSessionToken(token);
         }
 
         // Check if this is an auth or onboarding related endpoint
@@ -147,10 +138,10 @@ function setupInterceptors(client: AxiosInstance) {
         const nextStep = data.nextStep || data.user?.nextStep;
         
         if (nextStep) {
-          Cookies.set('antcolos_next_step', nextStep, { expires: 7, path: '/' });
+          setNextStep(nextStep);
         } else if (isAuthOrOnboarding && isMutation) {
           // Only remove nextStep if it's an auth/onboarding mutation call and nextStep is NOT provided (or is null)
-          Cookies.remove('antcolos_next_step', { path: '/' });
+          clearNextStep();
         }
         
         // If fully onboarded and the role is provided, save it
@@ -161,15 +152,9 @@ function setupInterceptors(client: AxiosInstance) {
 
         if (!nextStep) {
           if (individualRole) {
-            Cookies.set('antcolos_user_role', individualRole, { expires: 7, path: '/' });
-            Cookies.remove('antcolos_org_type', { path: '/' });
-            Cookies.remove('antcolos_org_role', { path: '/' });
+            setAccountKind({ individualRole });
           } else if (orgType) {
-            Cookies.set('antcolos_org_type', orgType, { expires: 7, path: '/' });
-            if (orgRole) {
-              Cookies.set('antcolos_org_role', orgRole, { expires: 7, path: '/' });
-            }
-            Cookies.remove('antcolos_user_role', { path: '/' });
+            setAccountKind({ orgType, orgRole });
           }
         }
       }
