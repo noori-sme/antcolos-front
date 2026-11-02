@@ -496,8 +496,9 @@ export function InvitationsScreen() {
           ) : (
             <ul className="space-y-2.5">
               {visible.map((invitation) => {
-                const normalizedStatus = (invitation.status || "pending").toLowerCase();
-                const style = getStatusStyle(invitation.status);
+                // An unknown status reads "Unknown", never "Pending".
+                const normalizedStatus = invitation.status ?? "unknown";
+                const style = getStatusStyle(normalizedStatus);
                 const open = expanded === invitation.id;
                 const isBusy = busyState?.id === invitation.id;
                 const isResending = isBusy && busyState?.action === "resend";

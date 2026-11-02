@@ -1,8 +1,8 @@
 # 01 — Access: invitations and roles through the service layer
 
 ```
-Status:   in-progress (approved 2026-11-02: full-stack session; acceptance screen stays as drift)
-Phase:    3 — done (hooks + screens); next: 4 browser spec
+Status:   implemented (approved 2026-11-02: full-stack session; acceptance screen stays as drift)
+Phase:    5 — done
 Branch:   claude/clever-franklin-kgcmdd
 Requirements: none yet (refactor of existing screens; behavior unchanged)
 Backend contract: ../antcolos/docs/requirements/invitations-api-contract.md (added on antcolos branch claude/clever-franklin-kgcmdd)
@@ -54,10 +54,12 @@ Everything here already talks to the real API, so there is no mock-to-http switc
 - [x] Replace inline `apiClient` + local DTO interfaces; keep output identical
 - [x] `invitation-requests`, `invitations-screen`, `roles-screen`, `invite-flow` (roles + invite), `api-permission-picker`
 - Left on `apiClient`: `acceptance-screen` (decided drift) and the invite flow's people roster (people domain)
-### Phase 4 — browser spec
-- [ ] Invitation list → revoke/resend; roles list → create/delete (the browser rule requires one for invitation changes)
-### Phase 5 — docs
-- [ ] `docs/architecture/ARCHITECTURE.md` §6: remove these screens from the drift list
+### Phase 4 — browser spec ✅
+- [x] `tests/browser/access-integration.live.spec.ts` (needs the full stack; skipped without
+  `LIVE_WEB_URL`): invitation listed → revoke; roles list; custom role → delete. 3/3 against the
+  local API. Approve was exercised once by hand (a request needs an emailed token to create).
+### Phase 5 — docs ✅
+- [x] `docs/architecture/ARCHITECTURE.md` §6 updated
 
 ## Invariant checklist
 - [ ] No `apiClient`/`fetch` outside `src/lib/api/http/**` and `src/lib/session/**` (for these screens)
@@ -94,6 +96,12 @@ Everything here already talks to the real API, so there is no mock-to-http switc
 - **"Copy link" after sending an invite uses the invitation id as the link token**
   (`invite-flow.tsx`): the API never returns the token (contract §Invitation), so that link
   cannot work. Not changed here (a UX decision); flagged to the user.
+
+- **The invite flow's "sent" screen shows a copyable invitation link built from the invitation
+  id.** The real token is only emailed, so the link cannot work. Needs a UX decision
+  (hide the panel, or say "the link was emailed").
+- After approve/reject, a request leaves `/invitation-requests` (it only lists
+  `PENDING_ADMIN_APPROVAL`), so the requests tab's "All" filter now equals "Pending".
 
 ## Risks / open points
 1. **Decided: leave `acceptance-screen.tsx` on `apiClient` as known drift.** **Public token routes and the `ctx` rule.** The data-layer rule says every service method

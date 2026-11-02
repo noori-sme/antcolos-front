@@ -29,7 +29,7 @@ export function toOrgInvitation(dto: Dto): OrgInvitation {
     firstName: str(dto.firstName) ?? "",
     lastName: str(dto.lastName) ?? "",
     roleId: str(dto.roleId) ?? "",
-    status: status ? STATUS[status] : undefined,
+    status: status && Object.hasOwn(STATUS, status) ? STATUS[status] : undefined,
     organizationId: str(dto.organizationId) ?? "",
     invitedByUserId: str(dto.invitedByUserId) ?? "",
     invitedUserId: nullableStr(dto.invitedUserId) ?? null,

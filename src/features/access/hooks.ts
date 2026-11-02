@@ -23,6 +23,12 @@ export const accessKeys = {
   catalog: (org: string) => [...orgKey(org), "access", "permission-catalog"] as const,
 };
 
+/**
+ * The org a key is scoped to. Without one the queries are disabled, but a
+ * manual refetch can still run, so even that key stays org-namespaced.
+ */
+const orgOf = (ctx: ServiceContext | null) => ctx?.organizationId ?? "none";
+
 /** Mutations need an organization; a missing one is a clear error, not a crash. */
 function requireCtx(ctx: ServiceContext | null): ServiceContext {
   if (!ctx) throw new Error("No organization is selected.");
@@ -39,7 +45,7 @@ const ALWAYS_FRESH = { staleTime: 0, refetchOnMount: "always" } as const;
 export function useOrgInvitations(query: OrgInvitationListQuery = {}) {
   const ctx = useServiceContext();
   return useQuery({
-    queryKey: ctx ? accessKeys.invitationList(ctx.organizationId, query) : ["access", "no-context"],
+    queryKey: accessKeys.invitationList(orgOf(ctx), query),
     queryFn: () => services.orgInvitations.list(ctx!, query),
     enabled: Boolean(ctx),
     ...ALWAYS_FRESH,
@@ -49,7 +55,7 @@ export function useOrgInvitations(query: OrgInvitationListQuery = {}) {
 export function useInvitationRequests() {
   const ctx = useServiceContext();
   return useQuery({
-    queryKey: ctx ? accessKeys.requests(ctx.organizationId) : ["access", "no-context"],
+    queryKey: accessKeys.requests(orgOf(ctx)),
     queryFn: () => services.orgInvitations.listRequests(ctx!, {}),
     enabled: Boolean(ctx),
     ...ALWAYS_FRESH,
@@ -59,7 +65,7 @@ export function useInvitationRequests() {
 export function useOrgRoles() {
   const ctx = useServiceContext();
   return useQuery({
-    queryKey: ctx ? accessKeys.roles(ctx.organizationId) : ["access", "no-context"],
+    queryKey: accessKeys.roles(orgOf(ctx)),
     queryFn: () => services.orgRoles.list(ctx!),
     enabled: Boolean(ctx),
   });
@@ -68,7 +74,7 @@ export function useOrgRoles() {
 export function usePermissionCatalog() {
   const ctx = useServiceContext();
   return useQuery({
-    queryKey: ctx ? accessKeys.catalog(ctx.organizationId) : ["access", "no-context"],
+    queryKey: accessKeys.catalog(orgOf(ctx)),
     queryFn: () => services.orgRoles.catalog(ctx!),
     enabled: Boolean(ctx),
     // The picker has always re-read the catalog when it opens, so a key
