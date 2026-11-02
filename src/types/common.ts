@@ -68,3 +68,9 @@ export interface PageRequest {
   limit?: number;
   cursor?: string;
 }
+
+/** The envelope every paginated NestJS list returns (`pageSize` max 100). */
+export interface Paginated<T> {
+  data: T[];
+  meta: { page: number; pageSize: number; totalItems: number; totalPages: number };
+}

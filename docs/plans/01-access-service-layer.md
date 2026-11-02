@@ -1,11 +1,11 @@
 # 01 — Access: invitations and roles through the service layer
 
 ```
-Status:   draft
-Phase:    0 — blocked: no invitations contract in ../antcolos (backend ask 1)
+Status:   in-progress (approved 2026-11-02: full-stack session; acceptance screen stays as drift)
+Phase:    1 — done (types, contracts, adapters + mapper tests)
 Branch:   claude/clever-franklin-kgcmdd
 Requirements: none yet (refactor of existing screens; behavior unchanged)
-Backend contract: ../antcolos/docs/requirements/invitations-api-contract.md (MISSING; draft in the appendix)
+Backend contract: ../antcolos/docs/requirements/invitations-api-contract.md (added on antcolos branch claude/clever-franklin-kgcmdd)
                   ../antcolos/docs/requirements/permissions-api-contract.md §1–2 (roles, catalog: exists)
 Updated:  2026-11-02
 ```
@@ -42,10 +42,11 @@ Everything here already talks to the real API, so there is no mock-to-http switc
 | `invitations-screen.tsx`, `invitation-requests.tsx`, `roles-screen.tsx`, `invite-flow.tsx` (roles + create), `api-permission-picker.tsx` | changed | read through hooks; no visual change |
 
 ## Phases
-### Phase 1 — types, contract, adapters
-- [ ] Mapper tests first, from the contract's example JSON (full object, nullable fields, unknown status)
-- [ ] `OrgInvitationsService`: list, create, resend, revoke, listRequests, approveRequest, rejectRequest
-- [ ] `OrgRolesService`: list, create, update, remove, catalog
+### Phase 1 — types, contract, adapters ✅
+- [x] Mapper tests first, from the contract's example JSON (full object, nullable fields, unknown status)
+- [x] `OrgInvitationsService`: list, create, resend, revoke, listRequests, approveRequest, rejectRequest
+- [x] `OrgRolesService`: list, create, update, remove, catalog
+- [x] `Paginated<T>` moved to `src/types/common.ts`; DTO helpers shared in `src/lib/api/http/dto.ts`
 ### Phase 2 — hooks and query keys
 - [ ] `accessKeys` under `orgKey`; mutations invalidate `[org, "access", "invitations"]` / `"roles"`
 - [ ] Fixes the existing gap: role create/update/delete never invalidated the roles query the invite flow reads
@@ -79,8 +80,17 @@ Everything here already talks to the real API, so there is no mock-to-http switc
    falls back to an existing cookie, so an invitee who wasn't signed in must sign in afterwards.
    Confirm that's intended (then the contract says so), or return a session.
 
+## Findings while integrating
+- **Approval requests never showed Approve / Reject.** `invitation-requests.tsx` and the
+  requests badge in `invitations-screen.tsx` treat a request as pending only when `status`
+  is `"PENDING"`, but requests come back as `PENDING_ADMIN_APPROVAL` (contract §5). Fixed in
+  phase 3 by comparing the mapped `awaiting_approval`.
+- **"Copy link" after sending an invite uses the invitation id as the link token**
+  (`invite-flow.tsx`): the API never returns the token (contract §Invitation), so that link
+  cannot work. Not changed here (a UX decision); flagged to the user.
+
 ## Risks / open points
-1. **Public token routes and the `ctx` rule.** The data-layer rule says every service method
+1. **Decided: leave `acceptance-screen.tsx` on `apiClient` as known drift.** **Public token routes and the `ctx` rule.** The data-layer rule says every service method
    takes `ctx` first, with profile reads as the only exception, and "don't add another". The
    preview/accept/reject routes are public and have no organization, and an invitee who isn't
    signed in may have no `ctx`. Options: (a) a second documented exception for the

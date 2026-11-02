@@ -1,5 +1,6 @@
 import type { AntcolosServices } from "../contracts";
 import { httpTrucksService } from "./trucks";
+import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
 
 /**
  * Real API adapter — Taqi's seam. Every method implements the SAME contract the
@@ -14,6 +15,8 @@ const notImplemented = (method: string) => (): never => {
 
 export const httpServices: AntcolosServices = {
   trucks: httpTrucksService,
+  orgInvitations: httpOrgInvitationsService,
+  orgRoles: httpOrgRolesService,
   needsYou: {
     list: notImplemented("needsYou.list"),
     get: notImplemented("needsYou.get"),
