@@ -28,13 +28,15 @@ import { invitationLink } from "./mock-access";
 import { services } from "@/lib/api";
 import { apiClient } from "@/lib/api/client";
 import { useServiceContext } from "@/lib/api/use-service-context";
+import type { CreateOrgInvitationInput } from "@/types/org-access";
+import { useCreateInvitation, useCreateRole, useOrgRoles } from "./hooks";
 import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
 import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
 import { cn } from "@/lib/utils";
 import { useScrollToTop } from "@/lib/utils/scroll";
 import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
@@ -133,29 +135,27 @@ export function InviteFlow() {
 
   const [stage, setStage] = useState<Stage>("type");
   useScrollToTop([stage]);
-  const queryClient = useQueryClient();
   const [preset, setPreset] = useState<InvitationPreset | null>(null);
   const [savedRole, setSavedRole] = useState<PermissionTemplate | null>(null);
 
-  const { data: roles = [], isLoading: isLoadingRoles } = useQuery<PermissionTemplate[]>({
-    queryKey: [...orgPrefix, "organizations", "roles"],
-    queryFn: async () => {
-      const res = await apiClient.get('/organizations/roles');
-      const rawData = res.data;
-      const apiRoles = rawData?.roles || rawData?.data || (Array.isArray(rawData) ? rawData : []);
-      return apiRoles.map((r: any) => ({
+  const { data: apiRoles, isLoading: isLoadingRoles } = useOrgRoles();
+  const roles = useMemo<PermissionTemplate[]>(
+    () =>
+      (apiRoles ?? []).map((r) => ({
         id: r.id,
         name: r.name,
         description: r.description || "",
-        permissions: (r.permissions || []).map(migrateKey),
+        permissions: r.permissions.map(migrateKey),
         version: 1,
         seeded: false,
         archived: false,
         createdAt: r.createdAt || new Date().toISOString(),
         updatedAt: r.updatedAt || new Date().toISOString(),
-      } as PermissionTemplate));
-    },
-  });
+      } as PermissionTemplate)),
+    [apiRoles],
+  );
+  const createRole = useCreateRole();
+  const createInvitation = useCreateInvitation();
 
   const [roleName, setRoleName] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -498,18 +498,14 @@ export function InviteFlow() {
           permissions: safePermissions,
         };
 
-        const roleRes = await apiClient.post("/organizations/roles", roleDraft);
-        const createdRoleData = roleRes.data?.role || roleRes.data?.data || roleRes.data;
-        const createdId = createdRoleData?.id || roleRes.data?.id || roleRes.data?.roleId;
+        // Refreshes the roles list on success, so the new role appears there.
+        const createdId = (await createRole.mutateAsync(roleDraft)).id;
 
         if (!createdId) {
           throw new Error("Role was created but no role ID was returned by the server.");
         }
 
         roleIdToUse = String(createdId);
-
-        // Invalidate roles query so new role appears in custom roles list
-        queryClient.invalidateQueries({ queryKey: [...orgPrefix, "organizations", "roles"] });
       } else if (savedRole) {
         roleIdToUse = String(savedRole.id);
       } else {
@@ -529,7 +525,7 @@ export function InviteFlow() {
         roleIdToUse = matched ? String(matched.id) : standardRoleId;
       }
 
-      let invitePayload: any;
+      let invitePayload: CreateOrgInvitationInput;
 
       if (userMode === "existing") {
         const resolvedUserId = selectedUser?.userId || selectedUser?.id || selectedMemberId;
@@ -555,15 +551,15 @@ export function InviteFlow() {
         };
       }
 
-      const inviteRes = await apiClient.post("/organizations/invitations", invitePayload);
-      const inviteData = inviteRes.data?.data || inviteRes.data?.invitation || inviteRes.data;
-      const token = inviteData?.token || inviteData?.code || inviteData?.id || null;
+      // Refreshes the invitation and request lists on success.
+      const created = await createInvitation.mutateAsync(invitePayload);
+      // The API never returns the link token (it is only emailed), so this is
+      // the invitation id, as it always was here. See plan 01 "Findings".
+      const token = created.id || null;
 
       if (referralId && ctx) {
-        void services.referrals.recordInvitation(ctx, referralId, inviteData?.id || "sent");
+        void services.referrals.recordInvitation(ctx, referralId, created.id || "sent");
       }
-
-      queryClient.invalidateQueries({ queryKey: [...orgPrefix, "organizations", "invitations"] });
 
       setSentToken(token);
       setSending(false);

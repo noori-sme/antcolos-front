@@ -2,7 +2,7 @@
 
 ```
 Status:   in-progress (approved 2026-11-02: full-stack session; acceptance screen stays as drift)
-Phase:    1 — done (types, contracts, adapters + mapper tests)
+Phase:    3 — done (hooks + screens); next: 4 browser spec
 Branch:   claude/clever-franklin-kgcmdd
 Requirements: none yet (refactor of existing screens; behavior unchanged)
 Backend contract: ../antcolos/docs/requirements/invitations-api-contract.md (added on antcolos branch claude/clever-franklin-kgcmdd)
@@ -47,11 +47,13 @@ Everything here already talks to the real API, so there is no mock-to-http switc
 - [x] `OrgInvitationsService`: list, create, resend, revoke, listRequests, approveRequest, rejectRequest
 - [x] `OrgRolesService`: list, create, update, remove, catalog
 - [x] `Paginated<T>` moved to `src/types/common.ts`; DTO helpers shared in `src/lib/api/http/dto.ts`
-### Phase 2 — hooks and query keys
-- [ ] `accessKeys` under `orgKey`; mutations invalidate `[org, "access", "invitations"]` / `"roles"`
-- [ ] Fixes the existing gap: role create/update/delete never invalidated the roles query the invite flow reads
-### Phase 3 — screens
-- [ ] Replace inline `apiClient` + local DTO interfaces; keep output identical
+### Phase 2 — hooks and query keys ✅
+- [x] `accessKeys` under `orgKey`; mutations invalidate `[org, "access", "invitations"]` / `"roles"`
+- [x] Fixes the existing gap: role create/update/delete never invalidated the roles query the invite flow reads
+### Phase 3 — screens ✅
+- [x] Replace inline `apiClient` + local DTO interfaces; keep output identical
+- [x] `invitation-requests`, `invitations-screen`, `roles-screen`, `invite-flow` (roles + invite), `api-permission-picker`
+- Left on `apiClient`: `acceptance-screen` (decided drift) and the invite flow's people roster (people domain)
 ### Phase 4 — browser spec
 - [ ] Invitation list → revoke/resend; roles list → create/delete (the browser rule requires one for invitation changes)
 ### Phase 5 — docs
@@ -85,6 +87,10 @@ Everything here already talks to the real API, so there is no mock-to-http switc
   requests badge in `invitations-screen.tsx` treat a request as pending only when `status`
   is `"PENDING"`, but requests come back as `PENDING_ADMIN_APPROVAL` (contract §5). Fixed in
   phase 3 by comparing the mapped `awaiting_approval`.
+- **Resend was offered on expired invitations**, which the backend refuses (409, contract §3).
+  Now shown for pending invitations only.
+- **The invitations list shows the first page only** (20 newest; the screen filters and counts
+  client-side). Unchanged here; paging it is a follow-up.
 - **"Copy link" after sending an invite uses the invitation id as the link token**
   (`invite-flow.tsx`): the API never returns the token (contract §Invitation), so that link
   cannot work. Not changed here (a UX decision); flagged to the user.
