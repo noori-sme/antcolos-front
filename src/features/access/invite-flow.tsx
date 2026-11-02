@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Check, CheckCircle2, Copy, Plus, Search, ShieldCheck, UserCheck, UserPlus, UserRound, Users, X } from "lucide-react";
+import { Building2, Check, CheckCircle2, Plus, Search, ShieldCheck, UserCheck, UserPlus, UserRound, Users, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,6 @@ import {
   SensitiveAccessWarning,
 } from "./permission-summary";
 import { invitationPresets, type InvitationPreset } from "./presets";
-import { invitationLink } from "./mock-access";
 import { services } from "@/lib/api";
 import { apiClient } from "@/lib/api/client";
 import { useServiceContext } from "@/lib/api/use-service-context";
@@ -342,9 +341,7 @@ export function InviteFlow() {
   const [submitted, setSubmitted] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
-  const [sentToken, setSentToken] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const orgType = organization?.type ?? "CARRIER";
   const presets = useMemo(() => invitationPresets(orgType), [orgType]);
@@ -463,7 +460,7 @@ export function InviteFlow() {
     setStage("review");
   }
 
-  async function commit(alsoCopy: boolean = false) {
+  async function commit() {
     if (!organization || !preset || sending || !confirmed) return;
     setSending(true);
     setRefusal(null);
@@ -551,17 +548,15 @@ export function InviteFlow() {
         };
       }
 
-      // Refreshes the invitation and request lists on success.
+      // Refreshes the invitation and request lists on success. The accept
+      // link is only emailed (the API never returns its token), so there is
+      // no link to show or copy here.
       const created = await createInvitation.mutateAsync(invitePayload);
-      // The API never returns the link token (it is only emailed), so this is
-      // the invitation id, as it always was here. See plan 01 "Findings".
-      const token = created.id || null;
 
       if (referralId && ctx) {
         void services.referrals.recordInvitation(ctx, referralId, created.id || "sent");
       }
 
-      setSentToken(token);
       setSending(false);
       setStage("sent");
       toast.success(
@@ -569,26 +564,11 @@ export function InviteFlow() {
           ? `Permission update invitation sent to ${recipientEmail.trim()}`
           : `Invitation sent to ${recipientEmail.trim()}`
       );
-
-      if (alsoCopy && token) {
-        void copyLink(token);
-      }
     } catch (err: any) {
       const displayMsg = getFriendlyErrorMessage(err);
       setRefusal(displayMsg);
       toast.error("Failed to send invitation", { description: displayMsg });
       setSending(false);
-    }
-  }
-
-  async function copyLink(token: string) {
-    try {
-      await navigator.clipboard.writeText(invitationLink(token));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      // Clipboard access can be refused; the link stays on screen to copy by hand.
-      setCopied(false);
     }
   }
 
@@ -1206,21 +1186,6 @@ export function InviteFlow() {
             </div>
           </div>
 
-          {sentToken ? (
-            <>
-              <Field label="Invitation link" htmlFor="invite-link" hint="Anyone with this link can accept the invitation.">
-                <div className="flex gap-2">
-                  <Input id="invite-link" readOnly value={invitationLink(sentToken)} className="font-mono text-[0.75rem]" />
-                  <Button variant="secondary" onClick={() => copyLink(sentToken)} className="shrink-0">
-                    {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-                    {copied ? "Copied" : "Copy"}
-                  </Button>
-                </div>
-              </Field>
-              <p aria-live="polite" className="sr-only">{copied ? "Link copied" : ""}</p>
-            </>
-          ) : null}
-
           <div className="flex flex-wrap gap-2">
             <Button variant="primary" onClick={() => router.push("/settings/invitations")}>
               Done
@@ -1241,7 +1206,6 @@ export function InviteFlow() {
                 setMemberSearch("");
                 setMemberRoleFilter("ALL");
                 setPermissions(new Set());
-                setSentToken(null);
                 setSubmitted(false);
                 setConfirmed(false);
               }}

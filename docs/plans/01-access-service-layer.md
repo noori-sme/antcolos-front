@@ -97,9 +97,9 @@ Everything here already talks to the real API, so there is no mock-to-http switc
   (`invite-flow.tsx`): the API never returns the token (contract §Invitation), so that link
   cannot work. Not changed here (a UX decision); flagged to the user.
 
-- **The invite flow's "sent" screen shows a copyable invitation link built from the invitation
-  id.** The real token is only emailed, so the link cannot work. Needs a UX decision
-  (hide the panel, or say "the link was emailed").
+- **The invite flow's "sent" screen showed a copyable invitation link built from the invitation
+  id.** The real token is only emailed, so the link could not work. Hidden (decided 2026-11-02);
+  the screen already says the invitation was emailed.
 - After approve/reject, a request leaves `/invitation-requests` (it only lists
   `PENDING_ADMIN_APPROVAL`), so the requests tab's "All" filter now equals "Pending".
 
