@@ -20,6 +20,7 @@ import { PermissionSummary } from "./permission-summary";
 import { cn } from "@/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Can } from "@/components/auth/can";
+import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 type Tab = "invitations" | "requests";
 
@@ -289,6 +290,7 @@ function formatRoleName(role?: string): string {
 
 /** Who has been invited, where it got to, and what to do about it. */
 export function InvitationsScreen() {
+  const orgPrefix = useOrgKeyPrefix();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const [tab, setTabState] = useState<Tab>(() =>
@@ -324,7 +326,7 @@ export function InvitationsScreen() {
     isFetching: isInvitationsFetching,
     refetch: refetchInvitations,
   } = useQuery({
-    queryKey: ["organizations", "invitations"],
+    queryKey: [...orgPrefix, "organizations", "invitations"],
     queryFn: async () => {
       const res = await apiClient.get("/organizations/invitations");
       return (res.data?.data || res.data || []) as Invitation[];
@@ -337,7 +339,7 @@ export function InvitationsScreen() {
     data: requests,
     refetch: refetchRequests,
   } = useQuery({
-    queryKey: ["invitation-requests"],
+    queryKey: [...orgPrefix, "invitation-requests"],
     queryFn: async () => {
       const res = await apiClient.get("/organizations/invitation-requests");
       return (res.data?.data || []) as InvitationRequest[];
@@ -357,21 +359,21 @@ export function InvitationsScreen() {
     }
     if (tab === "invitations") {
       refetchInvitations();
-      queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
+      queryClient.invalidateQueries({ queryKey: [...orgPrefix, "organizations", "invitations"] });
     } else if (tab === "requests") {
       refetchRequests();
-      queryClient.invalidateQueries({ queryKey: ["invitation-requests"] });
+      queryClient.invalidateQueries({ queryKey: [...orgPrefix, "invitation-requests"] });
     }
-  }, [tab, queryClient]);
+  }, [tab, queryClient, orgPrefix]);
 
   function setTab(nextTab: Tab) {
     if (nextTab === tab) {
       if (nextTab === "invitations") {
         refetchInvitations();
-        queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
+        queryClient.invalidateQueries({ queryKey: [...orgPrefix, "organizations", "invitations"] });
       } else {
         refetchRequests();
-        queryClient.invalidateQueries({ queryKey: ["invitation-requests"] });
+        queryClient.invalidateQueries({ queryKey: [...orgPrefix, "invitation-requests"] });
       }
       return;
     }
@@ -402,7 +404,7 @@ export function InvitationsScreen() {
           : "Invitation resent successfully."
       );
       if (action === "revoke") {
-        await queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
+        await queryClient.invalidateQueries({ queryKey: [...orgPrefix, "organizations", "invitations"] });
       }
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || `Failed to ${action} invitation.`;

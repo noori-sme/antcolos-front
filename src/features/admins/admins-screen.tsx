@@ -21,6 +21,7 @@ import { apiClient } from "@/lib/api/client";
 import { useQuery } from "@tanstack/react-query";
 import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
+import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 export interface Admin {
   userId: string;
@@ -102,6 +103,7 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 export function AdminsScreen() {
+  const orgPrefix = useOrgKeyPrefix();
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -118,7 +120,7 @@ export function AdminsScreen() {
   }, [searchInput]);
 
   const { data, isLoading, isError, error, refetch } = useQuery<AdminsResponse>({
-    queryKey: ["organizations", "admins", { page, pageSize, q: debouncedSearch }],
+    queryKey: [...orgPrefix, "organizations", "admins", { page, pageSize, q: debouncedSearch }],
     queryFn: async () => {
       const params: Record<string, any> = {
         page,

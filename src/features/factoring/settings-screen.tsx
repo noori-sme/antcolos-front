@@ -24,6 +24,7 @@ import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { relativeAge } from "@/lib/api/mock/factoring-registry";
 import { useCan } from "@/lib/session/hooks";
+import { orgKey } from "@/lib/query/keys";
 
 /**
  * Settings → Factoring.
@@ -52,7 +53,7 @@ export function FactoringSettingsScreen() {
    * is where reading it is a legitimate side effect.
    */
   const connectionQuery = useQuery({
-    queryKey: ["factoring", "connection", ctx?.organizationId ?? "none"],
+    queryKey: [...orgKey(ctx?.organizationId ?? "none"), "factoring", "connection"],
     queryFn: async () => {
       const connection = (await services.factoring.connection(ctx!, ctx!.organizationId)) ?? null;
       const quietForMs = connection?.lastResultAt
@@ -64,13 +65,13 @@ export function FactoringSettingsScreen() {
   });
 
   const policyQuery = useQuery({
-    queryKey: ["factoring", "policy", ctx?.organizationId ?? "none"],
+    queryKey: [...orgKey(ctx?.organizationId ?? "none"), "factoring", "policy"],
     queryFn: async () => services.factoring.policy(ctx!, ctx!.organizationId),
     enabled: Boolean(ctx),
   });
 
   const batchesQuery = useQuery({
-    queryKey: ["factoring", "batches", ctx?.organizationId ?? "none"],
+    queryKey: [...orgKey(ctx?.organizationId ?? "none"), "factoring", "batches"],
     queryFn: async () => services.factoring.importBatches(ctx!, ctx!.organizationId),
     enabled: Boolean(ctx),
   });

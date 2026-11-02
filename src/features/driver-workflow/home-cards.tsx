@@ -66,7 +66,11 @@ export function ProposalsWaitingCard() {
 }
 
 export function ActiveTripCard() {
-  const canExecute = useCan("trips:execute") || useCan("loads:view");
+  // Both hooks run on every render: `a() || b()` would skip the second one
+  // whenever the first is true and change the hook order.
+  const canExecuteTrips = useCan("trips:execute");
+  const canViewLoads = useCan("loads:view");
+  const canExecute = canExecuteTrips || canViewLoads;
   const trips = useTrips();
   const active = (trips.data ?? []).find((t) => t.status === "active");
 

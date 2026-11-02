@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 export interface DriverTruck {
   assignmentId: string;
@@ -126,10 +127,11 @@ export function CarrierDriverDetail({
   relationshipId?: string;
   userId?: string;
 }) {
+  const orgPrefix = useOrgKeyPrefix();
   const id = userId || relationshipId || "";
 
   const { data: driver, isLoading, isError, error, refetch } = useQuery<DriverDetail>({
-    queryKey: ["organizations", "drivers", id],
+    queryKey: [...orgPrefix, "organizations", "drivers", id],
     queryFn: async () => {
       const res = await apiClient.get(`/organizations/drivers/${id}`);
       return (res.data?.data || res.data) as DriverDetail;

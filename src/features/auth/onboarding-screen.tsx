@@ -14,7 +14,9 @@ import { DispatchCreation } from "./dispatch-creation";
 import { IndividualDispatcherSetup } from "./individual-dispatcher";
 import { DriverSelfOnboarding } from "@/features/driver/self-onboarding-screen";
 import { useStageFocus } from "./use-stage-focus";
-import Cookies from "js-cookie";
+import {
+  clearNextStep, readCookie,
+} from "@/lib/api/auth-cookies";
 
 type Stage = "role" | "carrier" | "verify-carrier" | "driver" | "dispatch-fork" | "create-org" | "individual";
 type Role = "carrier-owner" | "driver" | "dispatch" | "individual-dispatcher" | "dispatch-company";
@@ -76,7 +78,7 @@ export function OnboardingScreen() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
 
-  const nextStepCookie = typeof window !== "undefined" ? Cookies.get("antcolos_next_step") : null;
+  const nextStepCookie = typeof window !== "undefined" ? readCookie("antcolos_next_step") : null;
   const stepParam = searchParams?.get("step") as Stage;
 
   const initialStage: Stage =
@@ -94,7 +96,7 @@ export function OnboardingScreen() {
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
   useEffect(() => {
-    const nextCookie = Cookies.get("antcolos_next_step");
+    const nextCookie = readCookie("antcolos_next_step");
     const step = searchParams?.get("step") as Stage;
     if (step && step !== stage) {
       setStage(step);
@@ -151,14 +153,14 @@ export function OnboardingScreen() {
         return;
       }
       if (selectedRole === "individual-dispatcher") {
-        Cookies.remove("antcolos_next_step", { path: "/" });
+        clearNextStep();
         fetchAndStoreUserPermissions(queryClient);
         router.push("/home");
         return;
       }
 
       // Driver path: Skip additional onboarding and go straight to driver portal
-      Cookies.remove("antcolos_next_step", { path: "/" });
+      clearNextStep();
       fetchAndStoreUserPermissions(queryClient);
       router.push("/driver/home");
     },

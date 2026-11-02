@@ -8,6 +8,7 @@ import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 export interface InvitationRequest {
   id: string;
@@ -27,12 +28,13 @@ export interface InvitationRequest {
 }
 
 export function InvitationRequests() {
+  const orgPrefix = useOrgKeyPrefix();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"pending" | "all">("pending");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const { data: requests, isLoading, isFetching } = useQuery({
-    queryKey: ["invitation-requests"],
+    queryKey: [...orgPrefix, "invitation-requests"],
     queryFn: async () => {
       const res = await apiClient.get("/organizations/invitation-requests");
       return (res.data?.data || []) as InvitationRequest[];
@@ -51,12 +53,12 @@ export function InvitationRequests() {
         await apiClient.post(`/organizations/invitation-requests/${id}/reject`);
         toast.success("Request rejected.");
       }
-      queryClient.setQueryData(["invitation-requests"], (old: InvitationRequest[] | undefined) =>
+      queryClient.setQueryData([...orgPrefix, "invitation-requests"], (old: InvitationRequest[] | undefined) =>
         old?.map((req) =>
           req.id === id ? { ...req, status: action === "approve" ? "APPROVED" : "REJECTED" } : req
         ) || []
       );
-      queryClient.invalidateQueries({ queryKey: ["invitation-requests"] });
+      queryClient.invalidateQueries({ queryKey: [...orgPrefix, "invitation-requests"] });
     } catch (err: any) {
       toast.error(err?.message || `Failed to ${action} request.`);
     } finally {

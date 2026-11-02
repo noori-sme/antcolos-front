@@ -12,6 +12,11 @@ function useSessionContext(): SessionContextValue {
 }
 
 /** "Who am I" — the permanent identity. Never carries permissions. */
+/** An individual driver account: the shell is shown locked. */
+export function useIsDriverAccount(): boolean {
+  return useSessionContext().isDriverAccount;
+}
+
 export function useSession() {
   const { user, memberships, organizations, switchOrganization, density, setDensity } =
     useSessionContext();

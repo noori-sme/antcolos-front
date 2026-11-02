@@ -36,6 +36,7 @@ import { useScrollToTop } from "@/lib/utils/scroll";
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 // Helper function to map old permission keys to new ones with dot notation
 function migrateKey(p: string): string {
@@ -104,6 +105,7 @@ function sameSet(a: readonly (PermissionKey | string)[], b: ReadonlySet<string>)
  * and leaves "Driver" meaning what it meant before.
  */
 export function InviteFlow() {
+  const orgPrefix = useOrgKeyPrefix();
   const router = useRouter();
   /**
    * ★ THE REFERRAL HANDOFF ★
@@ -136,7 +138,7 @@ export function InviteFlow() {
   const [savedRole, setSavedRole] = useState<PermissionTemplate | null>(null);
 
   const { data: roles = [], isLoading: isLoadingRoles } = useQuery<PermissionTemplate[]>({
-    queryKey: ["organizations", "roles"],
+    queryKey: [...orgPrefix, "organizations", "roles"],
     queryFn: async () => {
       const res = await apiClient.get('/organizations/roles');
       const rawData = res.data;
@@ -170,7 +172,7 @@ export function InviteFlow() {
   const [memberRoleFilter, setMemberRoleFilter] = useState<"ALL" | "Driver" | "Dispatcher" | "Admin">("ALL");
 
   const { data: teamMembers = [], isLoading: isLoadingMembers } = useQuery({
-    queryKey: ["organizations", "team-roster"],
+    queryKey: [...orgPrefix, "organizations", "team-roster"],
     queryFn: async () => {
       try {
         const [driversRes, dispatchersRes, adminsRes] = await Promise.allSettled([
@@ -507,7 +509,7 @@ export function InviteFlow() {
         roleIdToUse = String(createdId);
 
         // Invalidate roles query so new role appears in custom roles list
-        queryClient.invalidateQueries({ queryKey: ["organizations", "roles"] });
+        queryClient.invalidateQueries({ queryKey: [...orgPrefix, "organizations", "roles"] });
       } else if (savedRole) {
         roleIdToUse = String(savedRole.id);
       } else {
@@ -561,7 +563,7 @@ export function InviteFlow() {
         void services.referrals.recordInvitation(ctx, referralId, inviteData?.id || "sent");
       }
 
-      queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
+      queryClient.invalidateQueries({ queryKey: [...orgPrefix, "organizations", "invitations"] });
 
       setSentToken(token);
       setSending(false);

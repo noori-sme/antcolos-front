@@ -22,6 +22,7 @@ import { apiClient } from "@/lib/api/client";
 import { useQuery } from "@tanstack/react-query";
 import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
+import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 export interface DispatcherAssignment {
   assignmentId: string;
@@ -111,6 +112,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function DispatchersScreen() {
+  const orgPrefix = useOrgKeyPrefix();
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -128,7 +130,7 @@ export function DispatchersScreen() {
 
   const { data, isLoading, isError, error, refetch } = useQuery<DispatchersResponse>({
     queryKey: [
-      "organizations",
+      ...orgPrefix, "organizations",
       "dispatchers",
       { page, pageSize, q: debouncedSearch },
     ],
