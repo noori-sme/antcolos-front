@@ -1,5 +1,6 @@
 import { apiClient } from "../client";
 import type { TrucksService } from "../contracts/trucks";
+import { type Dto, nullableStr, num, obj, oneOf, queryParams, str, toPage } from "./dto";
 import {
   TRUCK_CAB_TYPES, TRUCK_DISPATCHER_COVERAGES, TRUCK_EQUIPMENT_TYPES, TRUCK_FUEL_TYPES,
   TRUCK_OPERATIONAL_STATUSES, TRUCK_OWNER_TYPES, TRUCK_OWNERSHIP_TYPES,
@@ -7,23 +8,6 @@ import {
   type FleetTruck, type Paginated, type TruckAssignment, type TruckLegalOwner,
   type TruckListFilters, type TruckOperating,
 } from "@/types/fleet-truck";
-
-/** Raw JSON from the API. Every field is checked before it is trusted. */
-type Dto = Record<string, unknown>;
-
-const str = (v: unknown): string | undefined =>
-  typeof v === "string" && v.length > 0 ? v : undefined;
-const num = (v: unknown): number | undefined =>
-  typeof v === "number" && Number.isFinite(v) ? v : undefined;
-const nullableStr = (v: unknown): string | null | undefined =>
-  v === null ? null : str(v);
-const obj = (v: unknown): Dto | undefined =>
-  v && typeof v === "object" && !Array.isArray(v) ? (v as Dto) : undefined;
-
-/** An enum value the contract lists, or undefined. Never a cast. */
-function oneOf<T extends string>(allowed: readonly T[], v: unknown): T | undefined {
-  return typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : undefined;
-}
 
 export function toTruckAssignment(dto: Dto): TruckAssignment | undefined {
   const assignmentId = str(dto.assignmentId);
@@ -117,33 +101,12 @@ export function toTruck(dto: Dto): FleetTruck {
 }
 
 export function toTruckPage(body: unknown): Paginated<FleetTruck> {
-  const root = obj(body) ?? {};
-  const rows = Array.isArray(root.data) ? root.data : [];
-  const meta = obj(root.meta) ?? {};
-  const data = rows.map((r) => obj(r)).filter((r): r is Dto => Boolean(r)).map(toTruck);
-  return {
-    data,
-    meta: {
-      page: num(meta.page) ?? 1,
-      pageSize: num(meta.pageSize) ?? data.length,
-      totalItems: num(meta.totalItems) ?? data.length,
-      totalPages: num(meta.totalPages) ?? 1,
-    },
-  };
-}
-
-/** Drop unset filters so the API applies its own defaults. */
-function listParams(filters: TruckListFilters): Record<string, string | number | boolean> {
-  const params: Record<string, string | number | boolean> = {};
-  for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== "") params[key] = value;
-  }
-  return params;
+  return toPage(body, toTruck);
 }
 
 export const httpTrucksService: TrucksService = {
   async list(_ctx, filters) {
-    const res = await apiClient.get("/trucks", { params: listParams(filters) });
+    const res = await apiClient.get("/trucks", { params: queryParams({ ...filters }) });
     return toTruckPage(res.data);
   },
   async get(_ctx, truckId) {

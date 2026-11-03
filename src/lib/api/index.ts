@@ -2,6 +2,7 @@ import type { AntcolosServices } from "./contracts";
 import { API_MODE } from "./mode";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
+import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { mockAccessService } from "./mock/access";
 import { mockAgreementsService } from "./mock/agreements";
 import { mockAuditService } from "./mock/audit";
@@ -63,6 +64,10 @@ const mockServices: AntcolosServices = {
    * fall back to, so mock mode keeps using the real adapter.
    */
   trucks: httpTrucksService,
+  // http-only for the same reason: the access screens have always called
+  // the real invitations and roles API in both modes.
+  orgInvitations: httpOrgInvitationsService,
+  orgRoles: httpOrgRolesService,
 };
 
 export const services: AntcolosServices =

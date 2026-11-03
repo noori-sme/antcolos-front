@@ -122,8 +122,4 @@ export interface TruckListFilters {
   includeArchived?: boolean;
 }
 
-/** The list envelope every paginated backend endpoint returns. */
-export interface Paginated<T> {
-  data: T[];
-  meta: { page: number; pageSize: number; totalItems: number; totalPages: number };
-}
+export type { Paginated } from "./common";

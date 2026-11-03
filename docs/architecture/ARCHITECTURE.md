@@ -83,14 +83,17 @@ and cache entries can't cross organizations.
 
 ## 6. Known drift and tech debt (ordered by risk)
 
-1. **Screens call `apiClient` directly** (26 files across `features/{auth,access,admins,
-   dispatchers,driver,fleet}`). DTO interfaces are redeclared per screen (`TruckItem`,
-   `TruckDetail` live in both fleet screens), and the `httpServices` registry is all
-   `notImplemented`, so mock/http switching doesn't apply to these domains. Fix: `/integrate`.
-2. **Inline, non-org-namespaced query keys** (`["trucks", …]`, `["broker-draft", …]`). The cache
-   is cleared on org switch, so this is latent, not live, but it breaks the structural guarantee.
-3. **Role-cookie checks in UI**: `components/layout/locked-section.tsx` reads
-   `antcolos_user_role === "DRIVER"`. That's a role-name check, so move it to a permission or workspace kind.
+1. **Screens call `apiClient` directly** (18 files: `features/auth/*` (10), the people screens
+   `admins/*`, `dispatchers/*`, `driver/carrier-driver*` (6), `access/acceptance-screen`, and the
+   people roster in `access/invite-flow`). Fleet trucks, invitations, requests, roles and the
+   permission catalog now go through services (`trucks`, `orgInvitations`, `orgRoles`). Fix: `/integrate`
+   per domain; people is next. **Deliberate:** `access/acceptance-screen` stays on `apiClient`,
+   because its preview/accept/reject routes are public and have no `ctx` (plan 01, decided 2026-11-02).
+2. **Inline query keys not under `orgKey`** remain in mock domains (`["broker-draft", …]`,
+   `["opportunities", org, …]`, `mt-loop`), where the org id is present but not the prefix. The
+   cache is cleared on org switch, so this is latent.
+3. ~~Role-cookie checks in UI~~: done. `LockedSection` reads `session.isDriverAccount`; the session
+   provider is the one place that interprets the account type.
 4. **Token in a JS-readable cookie** (js-cookie). Any XSS can read it. Longer term, move it to an
    httpOnly cookie set by a Next route handler/BFF (a Feature track, which needs backend agreement).
    No refresh flow: a 401 is a hard logout.
@@ -103,7 +106,10 @@ and cache entries can't cross organizations.
    (1,539), `access/invite-flow` (1,405), `access/acceptance-screen` (1,233), and more over 800.
 8. **Test tooling**: three runners. `vitest.config.mts` is dead (`vitest.config.ts` wins), and
    new `tests/<dir>` folders must be registered in `vitest.config.ts`.
-9. **Baseline not green**: lint errors and failing tests on `staging`. See WORKFLOW.md §Baseline.
+9. **Lint baseline not green** (tests are). See WORKFLOW.md §Baseline.
+10. **Hydration mismatch in the sidebar** (`components/layout/nav-link.tsx`): the server renders
+    `/dispatch`, the client `/dispatch/loops`, because nav visibility comes from client-only
+    session state. Seen in the full-stack run on 2026-11-02; not yet traced.
 
 ## 7. Decisions
 
