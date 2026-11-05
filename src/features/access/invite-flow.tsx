@@ -25,19 +25,16 @@ import {
 } from "./permission-summary";
 import { invitationPresets, type InvitationPreset } from "./presets";
 import { services } from "@/lib/api";
-import { apiClient } from "@/lib/api/client";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import type { CreateOrgInvitationInput } from "@/types/org-access";
-import { useCreateInvitation, useCreateRole, useOrgRoles } from "./hooks";
+import { useCreateInvitation, useCreateRole, useOrgRoles, useTeamRoster } from "./hooks";
 import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
 import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
 import { cn } from "@/lib/utils";
 import { useScrollToTop } from "@/lib/utils/scroll";
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
 
 // Helper function to map old permission keys to new ones with dot notation
 function migrateKey(p: string): string {
@@ -106,7 +103,6 @@ function sameSet(a: readonly (PermissionKey | string)[], b: ReadonlySet<string>)
  * and leaves "Driver" meaning what it meant before.
  */
 export function InviteFlow() {
-  const orgPrefix = useOrgKeyPrefix();
   const router = useRouter();
   /**
    * ★ THE REFERRAL HANDOFF ★
@@ -170,97 +166,7 @@ export function InviteFlow() {
   const [memberSearch, setMemberSearch] = useState("");
   const [memberRoleFilter, setMemberRoleFilter] = useState<"ALL" | "Driver" | "Dispatcher" | "Admin">("ALL");
 
-  const { data: teamMembers = [], isLoading: isLoadingMembers } = useQuery({
-    queryKey: [...orgPrefix, "organizations", "team-roster"],
-    queryFn: async () => {
-      try {
-        const [driversRes, dispatchersRes, adminsRes] = await Promise.allSettled([
-          apiClient.get("/organizations/drivers", { params: { pageSize: 100 } }),
-          apiClient.get("/organizations/dispatchers", { params: { pageSize: 100 } }),
-          apiClient.get("/organizations/admins", { params: { pageSize: 100 } }),
-        ]);
-        const members: Array<{
-          id: string;
-          userId: string;
-          name: string;
-          email: string;
-          role: string;
-          status: string;
-          firstName?: string;
-          lastName?: string;
-        }> = [];
-        const seenEmails = new Set<string>();
-
-        if (driversRes.status === "fulfilled") {
-          const list = driversRes.value.data?.data || driversRes.value.data || [];
-          for (const d of Array.isArray(list) ? list : []) {
-            const email = d.email || d.user?.email;
-            if (email && !seenEmails.has(email.toLowerCase())) {
-              seenEmails.add(email.toLowerCase());
-              const uId = String(d.userId || d.user?.id || d.id || "");
-              members.push({
-                id: uId || email,
-                userId: uId,
-                name: [d.firstName, d.lastName].filter(Boolean).join(" ") || d.name || email,
-                email,
-                role: "Driver",
-                status: d.accountStatus || "ACTIVE",
-                firstName: d.firstName || "",
-                lastName: d.lastName || "",
-              });
-            }
-          }
-        }
-
-        if (dispatchersRes.status === "fulfilled") {
-          const list = dispatchersRes.value.data?.data || dispatchersRes.value.data || [];
-          for (const d of Array.isArray(list) ? list : []) {
-            const email = d.email || d.user?.email;
-            if (email && !seenEmails.has(email.toLowerCase())) {
-              seenEmails.add(email.toLowerCase());
-              const uId = String(d.userId || d.user?.id || d.id || "");
-              members.push({
-                id: uId || email,
-                userId: uId,
-                name: [d.firstName, d.lastName].filter(Boolean).join(" ") || d.name || email,
-                email,
-                role: "Dispatcher",
-                status: d.accountStatus || "ACTIVE",
-                firstName: d.firstName || "",
-                lastName: d.lastName || "",
-              });
-            }
-          }
-        }
-
-        if (adminsRes.status === "fulfilled") {
-          const list = adminsRes.value.data?.data || adminsRes.value.data || [];
-          for (const a of Array.isArray(list) ? list : []) {
-            const email = a.email || a.user?.email;
-            if (email && !seenEmails.has(email.toLowerCase())) {
-              seenEmails.add(email.toLowerCase());
-              const uId = String(a.userId || a.user?.id || a.id || "");
-              members.push({
-                id: uId || email,
-                userId: uId,
-                name: [a.firstName, a.lastName].filter(Boolean).join(" ") || a.name || email,
-                email,
-                role: "Admin",
-                status: a.accountStatus || "ACTIVE",
-                firstName: a.firstName || "",
-                lastName: a.lastName || "",
-              });
-            }
-          }
-        }
-
-        return members;
-      } catch {
-        return [];
-      }
-    },
-    enabled: userMode === "existing",
-  });
+  const { data: teamMembers, isLoading: isLoadingMembers } = useTeamRoster(userMode === "existing");
 
   const filteredMembers = useMemo(() => {
     let result = teamMembers;

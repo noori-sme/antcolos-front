@@ -16,45 +16,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
-import { useQuery } from "@tanstack/react-query";
 import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
 import { daysUntil } from "./driver-rules";
-import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
-
-export interface DriverTruck {
-  assignmentId: string;
-  truckId?: string;
-  unitNumber?: string;
-  startAt?: string;
-}
-
-export interface Driver {
-  userId: string;
-  membershipId: string;
-  firstName: string;
-  lastName: string;
-  name?: string;
-  username?: string;
-  email: string;
-  phone?: string;
-  roleId: string;
-  roleName: string;
-  joinedAt: string;
-  accountStatus: "ACTIVE" | "PENDING" | "SUSPENDED" | "INACTIVE" | string;
-  currentTruck?: DriverTruck | null;
-}
-
-export interface DriversResponse {
-  data: Driver[];
-  meta?: {
-    page: number;
-    pageSize: number;
-    totalItems: number;
-    totalPages: number;
-  };
-}
+import { useDrivers } from "./hooks";
 
 const STATUS_FILTERS = [
   { value: "all", label: "All" },
@@ -110,7 +75,6 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 export function CarrierDriversScreen() {
-  const orgPrefix = useOrgKeyPrefix();
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -126,22 +90,7 @@ export function CarrierDriversScreen() {
     return () => clearTimeout(handler);
   }, [searchInput]);
 
-  const { data, isLoading, isError, error, refetch } = useQuery<DriversResponse>({
-    queryKey: [...orgPrefix, "organizations", "drivers", { page, pageSize, q: debouncedSearch }],
-    queryFn: async () => {
-      const params: Record<string, any> = {
-        page,
-        pageSize,
-        sortBy: "createdAt",
-        sortOrder: "desc",
-      };
-      if (debouncedSearch) {
-        params.q = debouncedSearch;
-      }
-      const res = await apiClient.get("/organizations/drivers", { params });
-      return res.data;
-    },
-  });
+  const { data, isPending: isLoading, isError, error, refetch } = useDrivers({ page, pageSize, q: debouncedSearch || undefined });
 
   const driversList = data?.data || [];
   const meta = data?.meta;

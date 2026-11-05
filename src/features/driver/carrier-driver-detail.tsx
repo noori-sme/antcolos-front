@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -17,42 +16,8 @@ import {
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
-import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
-
-export interface DriverTruck {
-  assignmentId: string;
-  truckId?: string;
-  unitNumber?: string;
-  startAt?: string;
-}
-
-export interface DriverAddress {
-  addressLine1?: string;
-  addressLine2?: string;
-  postalCode?: string;
-  city?: string;
-  state?: string;
-  country?: string;
-}
-
-export interface DriverDetail {
-  userId: string;
-  membershipId: string;
-  firstName: string;
-  lastName: string;
-  name?: string;
-  username?: string;
-  email: string;
-  phone?: string;
-  roleId: string;
-  roleName: string;
-  joinedAt: string;
-  accountStatus: "ACTIVE" | "PENDING" | "SUSPENDED" | "INACTIVE" | string;
-  currentTruck?: DriverTruck | null;
-  address?: DriverAddress | null;
-}
+import { useDriver } from "./hooks";
 
 function formatDate(iso?: string): string {
   if (!iso) return "Data is not available";
@@ -127,17 +92,9 @@ export function CarrierDriverDetail({
   relationshipId?: string;
   userId?: string;
 }) {
-  const orgPrefix = useOrgKeyPrefix();
   const id = userId || relationshipId || "";
 
-  const { data: driver, isLoading, isError, error, refetch } = useQuery<DriverDetail>({
-    queryKey: [...orgPrefix, "organizations", "drivers", id],
-    queryFn: async () => {
-      const res = await apiClient.get(`/organizations/drivers/${id}`);
-      return (res.data?.data || res.data) as DriverDetail;
-    },
-    enabled: Boolean(id),
-  });
+  const { data: driver, isPending: isLoading, isError, error, refetch } = useDriver(id);
 
   if (isLoading) {
     return (

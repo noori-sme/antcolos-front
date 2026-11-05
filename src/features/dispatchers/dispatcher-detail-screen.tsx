@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -19,43 +18,8 @@ import {
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
-import { useOrgKeyPrefix } from "@/lib/query/use-org-key";
-
-export interface DispatcherAssignment {
-  assignmentId: string;
-  truckId?: string;
-  unitNumber?: string;
-  coverage?: string;
-  startAt?: string;
-}
-
-export interface DispatcherAddress {
-  addressLine1?: string;
-  addressLine2?: string;
-  postalCode?: string;
-  city?: string;
-  state?: string;
-  country?: string;
-}
-
-export interface DispatcherDetail {
-  userId: string;
-  membershipId: string;
-  firstName: string;
-  lastName: string;
-  name?: string;
-  username?: string;
-  email: string;
-  phone?: string;
-  roleId: string;
-  roleName: string;
-  joinedAt: string;
-  accountStatus: "ACTIVE" | "PENDING" | "SUSPENDED" | "INACTIVE" | string;
-  currentAssignments?: DispatcherAssignment[];
-  address?: DispatcherAddress;
-}
+import { useDispatcher } from "./hooks";
 
 function formatDate(iso?: string): string {
   if (!iso) return "—";
@@ -124,14 +88,7 @@ function InfoRow({
 }
 
 export function DispatcherDetailScreen({ userId }: { userId: string }) {
-  const orgPrefix = useOrgKeyPrefix();
-  const { data: dispatcher, isLoading, isError, error, refetch } = useQuery<DispatcherDetail>({
-    queryKey: [...orgPrefix, "organizations", "dispatchers", userId],
-    queryFn: async () => {
-      const res = await apiClient.get(`/organizations/dispatchers/${userId}`);
-      return (res.data?.data || res.data) as DispatcherDetail;
-    },
-  });
+  const { data: dispatcher, isPending: isLoading, isError, error, refetch } = useDispatcher(userId);
 
   if (isLoading) {
     return (
