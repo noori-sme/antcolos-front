@@ -3,7 +3,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { orgKey } from "@/lib/query/keys";
+import { orgKey, queryKeys } from "@/lib/query/keys";
+import { usePeopleList } from "@/lib/api/use-org-people";
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, ReplaceAssignmentInput,
   ReplaceOwnershipInput, TruckListFilters, TruckOperationalStatus, UpdateTruckInput,
@@ -13,7 +14,7 @@ import type { OrgPeopleFamily } from "@/types/org-people";
 /**
  * Truck registry keys, namespaced by organization like every other key. A
  * truck mutation invalidates `fleetKeys.all(org)` (list and detail), and an
- * assignment change also `peopleKeys.all(org)` (people lists show trucks).
+ * assignment change also `queryKeys.people(org)` (people lists show trucks).
  */
 export const fleetKeys = {
   all: (organizationId: string) => [...orgKey(organizationId), "trucks"] as const,
@@ -25,11 +26,6 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "lookup", vin] as const,
 };
 
-export const peopleKeys = {
-  all: (organizationId: string) => [...orgKey(organizationId), "people"] as const,
-  list: (organizationId: string, family: OrgPeopleFamily, q: string) =>
-    [...orgKey(organizationId), "people", family, q] as const,
-};
 
 export function useTrucks(filters: TruckListFilters) {
   const ctx = useServiceContext();
@@ -62,13 +58,7 @@ export function useTruckLookup(vin: string, enabled: boolean) {
 
 /** Assignee picker: one people list, searched by `q`. */
 export function useAssignablePeople(family: OrgPeopleFamily, q: string, enabled = true) {
-  const ctx = useServiceContext();
-  return useQuery({
-    queryKey: ctx ? peopleKeys.list(ctx.organizationId, family, q) : ["people", "no-context"],
-    queryFn: () => services.orgPeople.list(ctx!, family, { q: q || undefined, pageSize: 50 }),
-    enabled: Boolean(ctx) && enabled,
-    placeholderData: keepPreviousData,
-  });
+  return usePeopleList(family, { q: q || undefined, pageSize: 50 }, enabled);
 }
 
 /**
@@ -106,7 +96,7 @@ function useTruckMutation<TVars, TResult>(
         refetchType: options.leavesTruck ? "none" : "active",
       });
       if (options.invalidatesPeople) {
-        await queryClient.invalidateQueries({ queryKey: peopleKeys.all(ctx.organizationId) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.people(ctx.organizationId) });
       }
     },
   });

@@ -112,7 +112,7 @@ export function PeoplePicker({
         <ul className="max-h-60 divide-y divide-border overflow-y-auto rounded-md border border-border">
           {people.map(({ person, family }) => {
             const selected = value === person.userId;
-            const busy = disableBusyDrivers && Boolean(person.currentTruckUnitNumber);
+            const busy = disableBusyDrivers && Boolean(person.currentTruck?.unitNumber);
             return (
               <li key={person.userId}>
                 <button
@@ -129,10 +129,10 @@ export function PeoplePicker({
                     <span className="block truncate font-medium text-fg">{person.name}</span>
                     <span className="block truncate text-xs text-fg-muted">
                       {FAMILY_LABEL[family]}
-                      {person.currentTruckUnitNumber
+                      {person.currentTruck?.unitNumber
                         ? busy
-                          ? ` · already drives unit ${person.currentTruckUnitNumber}`
-                          : ` · drives unit ${person.currentTruckUnitNumber}`
+                          ? ` · already drives unit ${person.currentTruck?.unitNumber}`
+                          : ` · drives unit ${person.currentTruck?.unitNumber}`
                         : ""}
                       {person.email ? ` · ${person.email}` : ""}
                     </span>
