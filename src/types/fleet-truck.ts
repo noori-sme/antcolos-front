@@ -122,4 +122,122 @@ export interface TruckListFilters {
   includeArchived?: boolean;
 }
 
+export const TRUCK_ASSIGNMENT_TYPES = ["DRIVER", "DISPATCHER"] as const;
+export type TruckAssignmentType = (typeof TRUCK_ASSIGNMENT_TYPES)[number];
+
+export const TRUCK_ASSIGNMENT_STATUSES = ["ASSIGNED", "REMOVED", "REPLACED"] as const;
+export type TruckAssignmentStatus = (typeof TRUCK_ASSIGNMENT_STATUSES)[number];
+
+/** `GET /trucks/lookup?vin=` (contract §1b): physical identity only. */
+export interface TruckLookup {
+  id: string;
+  vin: string;
+  year?: number;
+  make?: string;
+  model?: string;
+  color?: string;
+  equipmentType?: TruckEquipmentType;
+  licensePlate?: string;
+  licensePlateState?: string;
+  /** This organization already has the truck on its fleet list. */
+  alreadyOnFleet: boolean;
+  /** Archived trucks cannot be attached. */
+  archived: boolean;
+  /** This organization's unit number, only when `alreadyOnFleet`. */
+  unitNumber?: string;
+}
+
+/** Assignment history row (contract §Assignment row). */
+export interface TruckAssignmentRow {
+  id: string;
+  truckId: string;
+  userId: string;
+  userName: string;
+  type?: TruckAssignmentType;
+  coverage?: TruckDispatcherCoverage;
+  status?: TruckAssignmentStatus;
+  startAt?: string;
+  endAt: string | null;
+  assignedByUserId?: string;
+  endedByUserId: string | null;
+  replacedByAssignmentId: string | null;
+  createdAt?: string;
+}
+
+/** Ownership history row (contract §12): the owner snapshot plus row ids. */
+export interface TruckOwnershipRow extends TruckLegalOwner {
+  id: string;
+  truckId?: string;
+  createdByUserId?: string;
+  endedByUserId: string | null;
+}
+
+/** Operating history row (contract §11): the operating snapshot plus row ids. */
+export interface TruckOperatingRow extends TruckOperating {
+  id: string;
+  truckId?: string;
+  createdByUserId?: string;
+  endedByUserId: string | null;
+}
+
+/** `POST /trucks` body (contract §1). The owner is always this organization (plan 02). */
+export interface CreateTruckInput {
+  vin: string;
+  unitNumber: string;
+  equipmentType: TruckEquipmentType;
+  licensePlate?: string;
+  licensePlateState?: string;
+  year?: number;
+  make?: string;
+  model?: string;
+  color?: string;
+  ownershipType?: TruckOwnershipType;
+  homeTerminalCity?: string;
+  homeTerminalState?: string;
+  registrationExpiresAt?: string;
+  insuranceExpiresAt?: string;
+  notes?: string;
+}
+
+/**
+ * `PATCH /trucks/:id` body (contract §4). Omitted = unchanged; `null` clears an
+ * optional field. Identity fields need the legal owner, operating fields this
+ * organization's operating row.
+ */
+export interface UpdateTruckInput {
+  licensePlate?: string | null;
+  licensePlateState?: string | null;
+  year?: number | null;
+  make?: string | null;
+  model?: string | null;
+  color?: string | null;
+  registrationExpiresAt?: string | null;
+  insuranceExpiresAt?: string | null;
+  eldProvider?: string | null;
+  eldDeviceId?: string | null;
+  unitNumber?: string;
+  homeTerminalCity?: string | null;
+  homeTerminalState?: string | null;
+  notes?: string | null;
+}
+
+/** `POST /trucks/:id/assignments` body (contract §8). */
+export interface AssignTruckInput {
+  userId: string;
+  type: TruckAssignmentType;
+  /** DISPATCHER only; the server defaults to PRIMARY. */
+  coverage?: TruckDispatcherCoverage;
+}
+
+/** `POST /trucks/:id/assignments/:assignmentId/replace` body (contract §9). */
+export interface ReplaceAssignmentInput {
+  userId: string;
+  coverage?: TruckDispatcherCoverage;
+}
+
+/** `POST /trucks/:id/ownership/:ownershipId/replace` body (contract §12). */
+export type ReplaceOwnershipInput =
+  | { ownerType: "USER"; ownerUserId: string; ownershipType?: TruckOwnershipType }
+  | { ownerType: "ORGANIZATION"; ownerOrganizationId: string; ownershipType?: TruckOwnershipType };
+
 export type { Paginated } from "./common";
