@@ -73,7 +73,7 @@ and cache entries can't cross organizations.
 | Invitations, acceptance, invitation requests | identity / `membership-api-contract` | **http** | legacy, in `features/access/*` |
 | Roles, permission catalog, me/permissions | identity / `permissions-api-contract` | **http** | legacy, in `features/access/roles-screen`, `lib/session` |
 | People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** | legacy, in `features/{admins,dispatchers,driver}` |
-| Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail) | legacy: `fleet-roster-screen`, `truck-profile-screen` |
+| Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
 | Profile | identity / `profile.md` | mock | contracts seam |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
 | Loads, dispatch, tracking, finance, fuel, ELD, compliance, insurance, maintenance, audit, contracts, directory, workforce, reports, factoring, referrals, needs-you | **not built in backend yet** | mock | contracts seam |
