@@ -2,7 +2,7 @@
 
 ```
 Status:   in progress (product owner: "keep going with F0.1"; defaults below, for review in the PR)
-Phase:    3 — truck profile actions (phases 1–2 done)
+Phase:    4 — add truck (phases 1–3 done)
 Branch:   claude/magical-mccarthy-pgmh3z
 Track:    Integrate (all endpoints exist in the backend)
 Backend contract: ../antcolos/docs/requirements/fleet-api-contract.md §1, §1b, §4–§12
