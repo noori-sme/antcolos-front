@@ -1,8 +1,8 @@
 # 02 — Fleet trucks: write actions on the real API (F0.1)
 
 ```
-Status:   in progress (product owner: "keep going with F0.1"; defaults below, for review in the PR)
-Phase:    5 — verify and review (phases 1–4 done)
+Status:   implemented (product owner: "keep going with F0.1"; defaults below, for review in the PR)
+Phase:    5 — done
 Branch:   claude/magical-mccarthy-pgmh3z
 Track:    Integrate (all endpoints exist in the backend)
 Backend contract: ../antcolos/docs/requirements/fleet-api-contract.md §1, §1b, §4–§12
@@ -44,9 +44,9 @@ Not wired: `POST …/ownership/:ownershipId/end` (the contract says it always re
 | A | **Replace the prototype "Add truck" wizard with a contract-shaped form** (`truck-create-screen.tsx`): VIN → lookup → attach (known VIN: unit number, home terminal, notes) or create (contract fields). The old wizard and its route usage go; `lib/api/mock/truck-registry.ts` stays for the other mock screens that use it. | The wizard's model (initial status, specs, evidence files, owner names, ownership claims) has no backend counterpart: the contract refuses `operationalStatus` on create, stores owners as ids, and has no claim route. Mapping it would silently drop half of what the user typed. |
 | B | **New owner on create is always this organization.** Owner-operator ownership is set later with "hand off ownership" to a member. | Keeps the create form short; the contract defaults `legalOwner` to the JWT org. |
 | C | **Ownership hand-off UI targets a member of this organization only.** Handing off to another carrier needs its organization id, and there is no organization search API: recorded under Backend asks. | Never ask a user to paste a UUID. |
-| D | **One `Idempotency-Key` per user intent**: created when the dialog/action starts, reused if the user retries the same submit, replaced after success. | data-layer rule. |
+| D | **One `Idempotency-Key` per request signature** (`lib/api/idempotency-key.ts`): an identical retry reuses the key; any change to route or body gets a new one. | The backend refuses (400) a key reused with a different request even after a failed attempt, so "one key per intent, renewed on success" broke every corrected retry (review, blocking). |
 | E | **Gating**: `trucks:create` (create/attach), `trucks:edit` (edit, status, assign, leave fleet, hand off), `trucks:delete` (archive), mapped from backend `truck.*`. Identity edits and archive/hand-off are shown only when this org is the current legal owner (`legalOwner.ownerOrganizationId === org`); the server still decides. | Never show an action enabled that the API will refuse for permission reasons. |
-| F | **Assignee picker**: drivers from `/organizations/drivers`; dispatchers from `/organizations/dispatchers` plus `/organizations/admins` (the contract allows ADMIN as dispatcher). A 403 from those lists shows "You can't see the member list" instead of the picker. | There is no frontend mapping for `membership.list_*` permissions to gate on in advance (see Findings). |
+| F | **Assignee picker**: drivers from `/organizations/drivers`; dispatchers from `/organizations/dispatchers` plus `/organizations/admins` (the contract allows ADMIN as dispatcher). A list that fails shows its own notice with a retry; the lists that loaded still show. Drivers already driving another unit are disabled. | There is no frontend mapping for `membership.list_*` permissions to gate on in advance (see Findings). |
 
 ## Phases
 
@@ -77,6 +77,28 @@ Not wired: `POST …/ownership/:ownershipId/end` (the contract says it always re
 
 - Frontend permission catalog has no mapping for `membership.list_drivers`,
   `membership.list_dispatchers`, `membership.list_admins` (decision F).
+
+## Known limits
+
+- **A truck owned by a member** (`ownerType: "USER"`, e.g. after a hand-off) offers no owner
+  actions to anyone: the owner check needs the caller's backend user id, and the session's ids are
+  fixtures in http mode (Findings). Nobody can hand it back from the UI yet.
+- **Identity edits need an operating row**: an organization that owns a truck but has left its
+  fleet can't edit identity from the UI (the contract allows it). Rare.
+
+## Review (frontend-reviewer, 2026-11-05)
+
+- Blocking, fixed: idempotency keys were renewed only on success, so a corrected submit after a
+  refusal reused the key with a different body and got 400. Keys now follow the request signature
+  (unit-tested), and a live test covers duplicate unit number → fix → create.
+- Should-fix, fixed: one failing people list blocked the whole picker; replacing a dispatcher
+  excluded the current user (coverage changes are allowed); the action gating and legal-owner
+  logic moved to `lib/fleet/truck-actions-policy.ts` with refused-path tests.
+- Should-fix, recorded: member-owned trucks (Known limits).
+- Nits, fixed: picker uses buttons with `aria-pressed` instead of a listbox without keyboard model;
+  skeleton loading states; busy drivers disabled; "first 50" hint; edit dialog no longer resets
+  on a background refetch and trims its baseline; attach sends the truck's own equipment type;
+  remove-from-fleet and archive mark the cache stale instead of refetching a truck that may 404.
 
 ## Backend asks
 

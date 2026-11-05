@@ -1,17 +1,20 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef } from "react";
+import { type IdempotencySlot, slotForRequest } from "./idempotency-key";
 
-const newKey = () => crypto.randomUUID();
+const mint = () => crypto.randomUUID();
 
 /**
- * One `Idempotency-Key` per user intent (data-layer rule). Read `key` when
- * submitting: a retry of the same submit reuses it, so the server replays the
- * first result instead of acting twice. Call `renew()` once the intent is done
- * (after success, or when the user starts a new action).
+ * `keyFor(request)` returns the `Idempotency-Key` for this exact request:
+ * the same key when the user retries the identical submit, a new one when
+ * anything in it changed (see `slotForRequest`). Pass the route and body.
  */
-export function useIdempotencyKey(): { key: string; renew: () => void } {
-  const [key, setKey] = useState(newKey);
-  const renew = useCallback(() => setKey(newKey()), []);
-  return { key, renew };
+export function useIdempotencyKey(): { keyFor: (request: unknown) => string } {
+  const slot = useRef<IdempotencySlot | null>(null);
+  const keyFor = useCallback((request: unknown) => {
+    slot.current = slotForRequest(slot.current, request, mint);
+    return slot.current.key;
+  }, []);
+  return { keyFor };
 }

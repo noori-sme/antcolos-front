@@ -2,7 +2,8 @@
 
 import { Check, Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ErrorState } from "@/components/data/states";
+import { LoadingSkeleton } from "@/components/data/states";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { OrgPeopleFamily, OrgPerson } from "@/types/org-people";
@@ -13,23 +14,32 @@ const FAMILY_LABEL: Record<OrgPeopleFamily, string> = {
   dispatchers: "Dispatcher",
   admins: "Admin",
 };
+const FAMILY_PLURAL: Record<OrgPeopleFamily, string> = {
+  drivers: "drivers",
+  dispatchers: "dispatchers",
+  admins: "admins",
+};
+const PAGE_SIZE = 50;
 
 /**
  * Pick one active member from up to three people lists (drivers,
- * dispatchers, admins). Search is debounced; the lists are requested only for
- * the families passed in.
+ * dispatchers, admins). Each list needs its own permission: a list that fails
+ * gets its own notice and the others still show. Search is debounced.
  */
 export function PeoplePicker({
   families,
   value,
   onChange,
   excludeUserIds = [],
+  disableBusyDrivers = false,
   labelId,
 }: {
   families: readonly OrgPeopleFamily[];
   value: string | null;
   onChange: (person: OrgPerson) => void;
   excludeUserIds?: readonly string[];
+  /** Drivers already driving another unit can't be assigned (contract §8). */
+  disableBusyDrivers?: boolean;
   labelId: string;
 }) {
   const [search, setSearch] = useState("");
@@ -48,8 +58,9 @@ export function PeoplePicker({
     { family: "admins" as const, query: admins },
   ].filter((r) => families.includes(r.family));
 
-  const failed = results.find((r) => r.query.isError);
+  const failed = results.filter((r) => r.query.isError);
   const loading = results.some((r) => r.query.isPending);
+  const truncated = results.some((r) => (r.query.data?.meta.totalItems ?? 0) > PAGE_SIZE);
   const seen = new Set<string>();
   const people = results.flatMap(({ family, query }) =>
     (query.data?.data ?? [])
@@ -73,33 +84,44 @@ export function PeoplePicker({
           className="pl-9"
         />
       </div>
-      {failed ? (
-        <ErrorState
-          title="You can't see the member list"
-          description={failed.query.error?.message ?? "Ask an admin to make this change."}
-          onRetry={() => failed.query.refetch()}
-        />
-      ) : loading && people.length === 0 ? (
-        <p className="py-3 text-[0.8125rem] text-fg-muted">Loading members…</p>
-      ) : people.length === 0 ? (
-        <p className="py-3 text-[0.8125rem] text-fg-muted">
-          {q ? `No members match “${q}”.` : "No eligible members in this organization yet."}
-        </p>
-      ) : (
-        <ul
-          role="listbox"
-          aria-labelledby={labelId}
-          className="max-h-60 divide-y divide-border overflow-y-auto rounded-md border border-border"
+
+      {failed.map(({ family, query }) => (
+        <div
+          key={family}
+          role="alert"
+          className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-sunken px-3 py-2 text-[0.8125rem]"
         >
+          <span className="text-fg-muted">
+            Couldn&apos;t load {FAMILY_PLURAL[family]}: {query.error?.message}
+          </span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => query.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ))}
+
+      {loading && people.length === 0 ? (
+        <LoadingSkeleton rows={2} />
+      ) : people.length === 0 ? (
+        failed.length === results.length ? null : (
+          <p className="py-3 text-[0.8125rem] text-fg-muted" aria-live="polite">
+            {q ? `No members match “${q}”.` : "No eligible members in this organization yet."}
+          </p>
+        )
+      ) : (
+        <ul className="max-h-60 divide-y divide-border overflow-y-auto rounded-md border border-border">
           {people.map(({ person, family }) => {
             const selected = value === person.userId;
+            const busy = disableBusyDrivers && Boolean(person.currentTruckUnitNumber);
             return (
-              <li key={person.userId} role="option" aria-selected={selected}>
+              <li key={person.userId}>
                 <button
                   type="button"
+                  aria-pressed={selected}
+                  disabled={busy}
                   onClick={() => onChange(person)}
                   className={cn(
-                    "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[0.8125rem] hover:bg-surface-sunken",
+                    "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[0.8125rem] hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent",
                     selected && "bg-primary/10",
                   )}
                 >
@@ -108,7 +130,9 @@ export function PeoplePicker({
                     <span className="block truncate text-xs text-fg-muted">
                       {FAMILY_LABEL[family]}
                       {person.currentTruckUnitNumber
-                        ? ` · drives unit ${person.currentTruckUnitNumber}`
+                        ? busy
+                          ? ` · already drives unit ${person.currentTruckUnitNumber}`
+                          : ` · drives unit ${person.currentTruckUnitNumber}`
                         : ""}
                       {person.email ? ` · ${person.email}` : ""}
                     </span>
@@ -119,6 +143,9 @@ export function PeoplePicker({
             );
           })}
         </ul>
+      )}
+      {truncated && (
+        <p className="text-xs text-fg-subtle">Showing the first {PAGE_SIZE}. Search to narrow it down.</p>
       )}
     </div>
   );

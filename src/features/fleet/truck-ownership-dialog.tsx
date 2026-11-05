@@ -32,7 +32,7 @@ export function TruckOwnershipDialog({
   const typeId = useId();
   const [userId, setUserId] = useState<string | null>(null);
   const [ownershipType, setOwnershipType] = useState<TruckOwnershipType>("OWNER_OPERATOR");
-  const { key, renew } = useIdempotencyKey();
+  const { keyFor } = useIdempotencyKey();
   const handoff = useReplaceOwnership(truck.id);
   const ownershipId = truck.legalOwner?.ownershipId;
 
@@ -82,13 +82,10 @@ export function TruckOwnershipDialog({
           disabled={!userId || !ownershipId}
           onSubmit={() => {
             if (!userId || !ownershipId) return;
+            const input = { ownerType: "USER" as const, ownerUserId: userId, ownershipType };
             handoff.mutate(
-              {
-                ownershipId,
-                input: { ownerType: "USER", ownerUserId: userId, ownershipType },
-                idempotencyKey: key,
-              },
-              { onSuccess: () => { renew(); close(); } },
+              { ownershipId, input, idempotencyKey: keyFor({ ownershipId, input }) },
+              { onSuccess: close },
             );
           }}
         />

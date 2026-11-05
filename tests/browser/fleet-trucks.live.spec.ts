@@ -73,7 +73,7 @@ test("add a truck, change its status, edit it, and manage its driver and dispatc
   // Assign the driver.
   await page.getByRole("button", { name: "Assign driver" }).click();
   const assign = page.getByRole("dialog", { name: "Assign a driver" });
-  await assign.getByRole("option", { name: new RegExp(DRIVER_NAME) }).click();
+  await assign.getByRole("button", { name: new RegExp(DRIVER_NAME) }).click();
   await assign.getByRole("button", { name: "Assign" }).click();
   await expect(assign).toBeHidden();
   await expect(page.getByRole("button", { name: `Actions for ${DRIVER_NAME}` })).toBeVisible();
@@ -81,7 +81,7 @@ test("add a truck, change its status, edit it, and manage its driver and dispatc
   // Add a dispatcher.
   await page.getByRole("button", { name: "Add dispatcher" }).click();
   const dispatch = page.getByRole("dialog", { name: "Assign a dispatcher" });
-  await dispatch.getByRole("option", { name: new RegExp(DISPATCHER_NAME) }).click();
+  await dispatch.getByRole("button", { name: new RegExp(DISPATCHER_NAME) }).click();
   await dispatch.getByRole("button", { name: "Assign" }).click();
   await expect(dispatch).toBeHidden();
   await expect(page.getByRole("button", { name: `Actions for ${DISPATCHER_NAME}` })).toBeVisible();
@@ -129,13 +129,13 @@ test("replace the dispatcher, hand ownership to a member, then remove the truck 
   // Add the dispatcher, then replace them with the admin (allowed as dispatcher).
   await page.getByRole("button", { name: "Add dispatcher" }).click();
   const add = page.getByRole("dialog", { name: "Assign a dispatcher" });
-  await add.getByRole("option", { name: new RegExp(DISPATCHER_NAME) }).click();
+  await add.getByRole("button", { name: new RegExp(DISPATCHER_NAME) }).click();
   await add.getByRole("button", { name: "Assign" }).click();
   await expect(add).toBeHidden();
   await page.getByRole("button", { name: `Actions for ${DISPATCHER_NAME}` }).click();
   await page.getByRole("menuitem", { name: "Replace" }).click();
   const replace = page.getByRole("dialog", { name: `Replace ${DISPATCHER_NAME}` });
-  await replace.getByRole("option", { name: /Alex Rivera/ }).click();
+  await replace.getByRole("button", { name: /Alex Rivera/ }).click();
   await replace.getByRole("button", { name: "Replace" }).click();
   await expect(replace).toBeHidden();
   await expect(page.getByRole("button", { name: "Actions for Alex Rivera" })).toBeVisible();
@@ -146,7 +146,7 @@ test("replace the dispatcher, hand ownership to a member, then remove the truck 
   await page.getByRole("button", { name: "More truck actions" }).click();
   await page.getByRole("menuitem", { name: "Hand off ownership…" }).click();
   const handoff = page.getByRole("dialog", { name: "Hand off ownership" });
-  await handoff.getByRole("option", { name: new RegExp(DRIVER_NAME) }).click();
+  await handoff.getByRole("button", { name: new RegExp(DRIVER_NAME) }).click();
   await handoff.getByRole("button", { name: "Hand off" }).click();
   await expect(handoff).toBeHidden();
   await page.getByRole("button", { name: "More truck actions" }).click();
@@ -158,4 +158,24 @@ test("replace the dispatcher, hand ownership to a member, then remove the truck 
   const leave = page.getByRole("dialog", { name: "Remove this truck from your fleet?" });
   await leave.getByRole("button", { name: "Remove from fleet" }).click();
   await page.waitForURL((u) => u.pathname === "/fleet/trucks");
+});
+
+test("a corrected submit after a server refusal goes through (fresh Idempotency-Key)", async ({ page }) => {
+  await signIn(page);
+  const stamp = String(Date.now()).slice(-6);
+  await createTruck(page, randomVin(), `K${stamp}`);
+
+  // Same unit number on another VIN: the server refuses (409).
+  await page.goto(`${WEB}/fleet/trucks/new`, { waitUntil: "networkidle" });
+  await page.getByLabel(/^VIN/).fill(randomVin());
+  await page.getByRole("button", { name: "Look up" }).click();
+  await page.getByLabel(/^Unit number/).fill(`K${stamp}`);
+  await page.getByRole("button", { name: "Create truck" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: /unit number already exists/i })).toBeVisible();
+
+  // Fix it and resubmit: a new key, so no "Idempotency-Key was reused" 400.
+  await page.getByLabel(/^Unit number/).fill(`K${stamp}b`);
+  await page.getByRole("button", { name: "Create truck" }).click();
+  await page.waitForURL(/\/fleet\/trucks\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name: `Unit K${stamp}b` })).toBeVisible();
 });

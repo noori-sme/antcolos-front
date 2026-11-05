@@ -77,7 +77,15 @@ export function useAssignablePeople(family: OrgPeopleFamily, q: string, enabled 
  */
 function useTruckMutation<TVars, TResult>(
   run: (ctx: NonNullable<ReturnType<typeof useServiceContext>>, vars: TVars) => Promise<TResult>,
-  options: { invalidatesPeople?: boolean; onTruck?: (result: TResult) => FleetTruck | null } = {},
+  options: {
+    invalidatesPeople?: boolean;
+    onTruck?: (result: TResult) => FleetTruck | null;
+    /**
+     * Mark the truck keys stale without refetching the open screen: for actions
+     * that leave the truck (remove from fleet, archive), whose detail may now 404.
+     */
+    leavesTruck?: boolean;
+  } = {},
 ) {
   const ctx = useServiceContext();
   const queryClient = useQueryClient();
@@ -93,7 +101,10 @@ function useTruckMutation<TVars, TResult>(
         // The contract returns the full truck: show it before the refetch lands.
         queryClient.setQueryData(fleetKeys.detail(ctx.organizationId, truck.id), truck);
       }
-      await queryClient.invalidateQueries({ queryKey: fleetKeys.all(ctx.organizationId) });
+      await queryClient.invalidateQueries({
+        queryKey: fleetKeys.all(ctx.organizationId),
+        refetchType: options.leavesTruck ? "none" : "active",
+      });
       if (options.invalidatesPeople) {
         await queryClient.invalidateQueries({ queryKey: peopleKeys.all(ctx.organizationId) });
       }
@@ -121,6 +132,7 @@ export function useUpdateTruck(truckId: string) {
 export function useArchiveTruck(truckId: string) {
   return useTruckMutation((ctx) => services.trucks.archive(ctx, truckId), {
     invalidatesPeople: true,
+    leavesTruck: true,
   });
 }
 
@@ -138,7 +150,7 @@ export function useEndOperating(truckId: string) {
   return useTruckMutation(
     (ctx, vars: { operatingId: string; idempotencyKey: string }) =>
       services.trucks.endOperating(ctx, truckId, vars.operatingId, vars.idempotencyKey),
-    { invalidatesPeople: true },
+    { invalidatesPeople: true, leavesTruck: true },
   );
 }
 

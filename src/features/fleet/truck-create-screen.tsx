@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { EmptyState, ErrorState } from "@/components/data/states";
+import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -104,7 +104,7 @@ export function TruckCreateScreen() {
   const [vinError, setVinError] = useState<string | null>(null);
   const lookup = useTruckLookup(vin ?? "", Boolean(vin));
   const create = useCreateTruck();
-  const { key, renew } = useIdempotencyKey();
+  const { keyFor } = useIdempotencyKey();
   const {
     register, handleSubmit, formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: EMPTY });
@@ -116,15 +116,20 @@ export function TruckCreateScreen() {
     const error = validateVin(vinInput);
     setVinError(error);
     if (error) return;
-    renew(); // a different VIN is a different intent
     create.reset();
     setVin(normalizeVin(vinInput));
   };
 
   const onSubmit = (values: FormValues) => {
     if (!vin) return;
+    // Attach still needs equipmentType (§1) but ignores it: send the truck's own.
+    const input = toInput(
+      vin,
+      { ...values, equipmentType: found?.equipmentType ?? values.equipmentType },
+      attach,
+    );
     create.mutate(
-      { input: toInput(vin, values, attach), idempotencyKey: key },
+      { input, idempotencyKey: keyFor(input) },
       { onSuccess: (truck) => router.push(`/fleet/trucks/${truck.id}`) },
     );
   };
@@ -171,7 +176,7 @@ export function TruckCreateScreen() {
         </Button>
       </form>
 
-      {vin && lookup.isPending && <p className="text-[0.8125rem] text-fg-muted">Looking up {vin}…</p>}
+      {vin && lookup.isPending && <LoadingSkeleton rows={2} />}
       {vin && lookup.isError && (
         <ErrorState description={lookup.error.message} onRetry={() => lookup.refetch()} />
       )}

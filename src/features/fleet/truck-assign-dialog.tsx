@@ -27,7 +27,7 @@ export function TruckAssignDialog({
   type: TruckAssignmentType;
   /** The current assignment being replaced; omit to assign. */
   replacing?: TruckAssignment;
-  /** Users already current in this role on this truck (not offered again). */
+  /** Users not to offer (the current driver: the same user is always refused). */
   currentUserIds: readonly string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,7 +38,7 @@ export function TruckAssignDialog({
   const [coverage, setCoverage] = useState<TruckDispatcherCoverage>(
     replacing?.coverage ?? "PRIMARY",
   );
-  const { key, renew } = useIdempotencyKey();
+  const { keyFor } = useIdempotencyKey();
   const assign = useAssignTruck(truckId);
   const replace = useReplaceAssignment(truckId);
   const mutation = replacing ? replace : assign;
@@ -54,24 +54,20 @@ export function TruckAssignDialog({
 
   const submit = () => {
     if (!userId) return;
-    const done = { onSuccess: () => { renew(); close(); } };
+    const done = { onSuccess: close };
     if (replacing) {
+      const input = isDispatcher ? { userId, coverage } : { userId };
       replace.mutate(
         {
           assignmentId: replacing.assignmentId,
-          input: isDispatcher ? { userId, coverage } : { userId },
-          idempotencyKey: key,
+          input,
+          idempotencyKey: keyFor({ replace: replacing.assignmentId, input }),
         },
         done,
       );
     } else {
-      assign.mutate(
-        {
-          input: isDispatcher ? { userId, type, coverage } : { userId, type },
-          idempotencyKey: key,
-        },
-        done,
-      );
+      const input = isDispatcher ? { userId, type, coverage } : { userId, type };
+      assign.mutate({ input, idempotencyKey: keyFor({ assign: truckId, input }) }, done);
     }
   };
 
@@ -98,6 +94,7 @@ export function TruckAssignDialog({
               value={userId}
               onChange={(person) => setUserId(person.userId)}
               excludeUserIds={currentUserIds}
+              disableBusyDrivers={!isDispatcher}
             />
           </div>
           {isDispatcher && (

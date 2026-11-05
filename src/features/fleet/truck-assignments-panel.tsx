@@ -33,7 +33,7 @@ type Dialog =
  */
 export function TruckAssignmentsPanel({ truck }: { truck: FleetTruck }) {
   const [dialog, setDialog] = useState<Dialog>(null);
-  const { key, renew } = useIdempotencyKey();
+  const { keyFor } = useIdempotencyKey();
   const remove = useRemoveAssignment(truck.id);
   const driver = truck.currentDriver ?? null;
   const dispatchers = truck.currentDispatchers ?? [];
@@ -58,10 +58,7 @@ export function TruckAssignmentsPanel({ truck }: { truck: FleetTruck }) {
               Replace
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() => {
-                renew(); // a new remove is a new intent: never reuse another one's key
-                setDialog({ kind: "remove", type, assignment });
-              }}
+              onSelect={() => setDialog({ kind: "remove", type, assignment })}
             >
               Remove
             </DropdownMenuItem>
@@ -144,13 +141,9 @@ export function TruckAssignmentsPanel({ truck }: { truck: FleetTruck }) {
           truckId={truck.id}
           type={dialog.type}
           replacing={dialog.kind === "replace" ? dialog.assignment : undefined}
-          currentUserIds={
-            dialog.type === "DRIVER"
-              ? driver ? [driver.userId] : []
-              : dialog.kind === "replace"
-                ? [dialog.assignment.userId]
-                : []
-          }
+          // A dispatcher may change coverage (§9 refuses only same user + same
+          // coverage), so only the current driver is left out.
+          currentUserIds={dialog.type === "DRIVER" && driver ? [driver.userId] : []}
           open
           onOpenChange={(open) => !open && setDialog(null)}
         />
@@ -165,9 +158,10 @@ export function TruckAssignmentsPanel({ truck }: { truck: FleetTruck }) {
         error={remove.error}
         onConfirm={() => {
           if (dialog?.kind !== "remove") return;
+          const assignmentId = dialog.assignment.assignmentId;
           remove.mutate(
-            { assignmentId: dialog.assignment.assignmentId, idempotencyKey: key },
-            { onSuccess: () => { renew(); closeRemove(); } },
+            { assignmentId, idempotencyKey: keyFor({ remove: assignmentId }) },
+            { onSuccess: closeRemove },
           );
         }}
       />

@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -51,7 +51,7 @@ const IDENTITY_FIELDS = [
 
 function initialValues(truck: FleetTruck): FormValues {
   const op = truck.operating;
-  return {
+  const values: FormValues = {
     unitNumber: op?.unitNumber ?? truck.unitNumber ?? "",
     homeTerminalCity: op?.homeTerminalCity ?? truck.homeTerminalCity ?? "",
     homeTerminalState: op?.homeTerminalState ?? truck.homeTerminalState ?? "",
@@ -67,6 +67,9 @@ function initialValues(truck: FleetTruck): FormValues {
     eldProvider: truck.eldProvider ?? "",
     eldDeviceId: truck.eldDeviceId ?? "",
   };
+  return Object.fromEntries(
+    Object.entries(values).map(([k, v]) => [k, v.trim()]),
+  ) as FormValues;
 }
 
 export function TruckEditDialog({
@@ -83,10 +86,13 @@ export function TruckEditDialog({
 }) {
   const id = useId();
   const update = useUpdateTruck(truck.id);
-  const defaults = initialValues(truck);
+  // Captured when the dialog opens: a background refetch must not reset what
+  // the user is typing. Trimmed like the schema output, so untouched fields
+  // never show up as changes.
+  const [defaults] = useState(() => initialValues(truck));
   const {
     register, handleSubmit, reset, formState: { errors },
-  } = useForm<FormValues>({ resolver: zodResolver(schema), values: defaults });
+  } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: defaults });
   const editable = isLegalOwner ? [...OPERATING_FIELDS, ...IDENTITY_FIELDS] : OPERATING_FIELDS;
 
   const close = () => {

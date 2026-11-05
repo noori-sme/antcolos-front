@@ -13,6 +13,7 @@ import {
 import { useIdempotencyKey } from "@/lib/api/use-idempotency-key";
 import { usePermissions } from "@/lib/session/hooks";
 import { can } from "@/lib/permissions";
+import { isOwnedByThisOrganization, truckActionsFor } from "@/lib/fleet/truck-actions-policy";
 import type { FleetTruck, TruckOperationalStatus } from "@/types/fleet-truck";
 import { useArchiveTruck, useEndOperating, useSetTruckStatus } from "./hooks";
 import { TruckConfirmDialog } from "./truck-dialog-parts";
@@ -37,40 +38,29 @@ export function TruckActions({ truck }: { truck: FleetTruck }) {
   const router = useRouter();
   const permissions = usePermissions();
   const [open, setOpen] = useState<Open>(null);
-  const statusKey = useIdempotencyKey();
-  const leaveKey = useIdempotencyKey();
+  const { keyFor } = useIdempotencyKey();
   const setStatus = useSetTruckStatus(truck.id);
   const leave = useEndOperating(truck.id);
   const archive = useArchiveTruck(truck.id);
 
-  if (truck.archivedAt) return null;
   const operatingId = truck.operating?.operatingId;
   const status = truck.operating?.operationalStatus ?? truck.operationalStatus;
-  // `operating` is always this organization's own row (contract §Operating
-  // snapshot), so its organizationId is the real backend id. The session's
-  // organization id is not: in http mode it still comes from fixtures (plan 02,
-  // Findings), so never compare against it.
-  const ourOrganizationId = truck.operating?.organizationId;
-  const isLegalOwner =
-    truck.legalOwner?.ownerType === "ORGANIZATION" &&
-    Boolean(ourOrganizationId) &&
-    truck.legalOwner.ownerOrganizationId === ourOrganizationId;
-  const canEdit = can(permissions, "trucks:edit");
-  const canArchive = isLegalOwner && can(permissions, "trucks:delete");
-  if (!canEdit && !canArchive) return null;
+  const isLegalOwner = isOwnedByThisOrganization(truck);
+  const actions = truckActionsFor(truck, {
+    edit: can(permissions, "trucks:edit"),
+    delete: can(permissions, "trucks:delete"),
+  });
+  if (!Object.values(actions).some((v) => v === true)) return null;
 
   const changeStatus = (next: TruckOperationalStatus) =>
     setStatus.mutate(
-      { status: next, idempotencyKey: statusKey.key },
-      {
-        onSuccess: () => statusKey.renew(),
-        onError: (error) => toast.error(error.message),
-      },
+      { status: next, idempotencyKey: keyFor({ status: next }) },
+      { onError: (error) => toast.error(error.message) },
     );
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {operatingId && (
+      {actions.status && (
         <Can permission="trucks:edit">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -91,7 +81,7 @@ export function TruckActions({ truck }: { truck: FleetTruck }) {
           </DropdownMenu>
         </Can>
       )}
-      {operatingId && (
+      {actions.edit && (
         <Can permission="trucks:edit">
           <Button variant="secondary" onClick={() => setOpen("edit")}>
             <Pencil className="mr-1.5 size-4" aria-hidden />
@@ -106,24 +96,26 @@ export function TruckActions({ truck }: { truck: FleetTruck }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {isLegalOwner && canEdit && (
+          {actions.handOff && (
             <DropdownMenuItem onSelect={() => setOpen("ownership")}>
               Hand off ownership…
             </DropdownMenuItem>
           )}
-          {operatingId && canEdit && (
-            <DropdownMenuItem onSelect={() => { leaveKey.renew(); setOpen("leave"); }}>
+          {actions.leave && (
+            <DropdownMenuItem onSelect={() => setOpen("leave")}>
               Remove from our fleet…
             </DropdownMenuItem>
           )}
-          {canArchive && (
+          {actions.archive && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => setOpen("archive")}
-                disabled={status === "AVAILABLE"}
+                disabled={Boolean(actions.archiveBlockedReason)}
               >
-                {status === "AVAILABLE" ? "Archive (mark unavailable first)" : "Archive truck…"}
+                {actions.archiveBlockedReason
+                  ? `Archive (${actions.archiveBlockedReason.toLowerCase()})`
+                  : "Archive truck…"}
               </DropdownMenuItem>
             </>
           )}
@@ -152,7 +144,7 @@ export function TruckActions({ truck }: { truck: FleetTruck }) {
         onConfirm={() =>
           operatingId &&
           leave.mutate(
-            { operatingId, idempotencyKey: leaveKey.key },
+            { operatingId, idempotencyKey: keyFor({ leave: operatingId }) },
             { onSuccess: () => router.push("/fleet/trucks") },
           )
         }
