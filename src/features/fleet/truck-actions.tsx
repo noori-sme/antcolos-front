@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useIdempotencyKey } from "@/lib/api/use-idempotency-key";
-import { useServiceContext } from "@/lib/api/use-service-context";
 import { usePermissions } from "@/lib/session/hooks";
 import { can } from "@/lib/permissions";
 import type { FleetTruck, TruckOperationalStatus } from "@/types/fleet-truck";
@@ -36,7 +35,6 @@ type Open = "edit" | "ownership" | "leave" | "archive" | null;
  */
 export function TruckActions({ truck }: { truck: FleetTruck }) {
   const router = useRouter();
-  const ctx = useServiceContext();
   const permissions = usePermissions();
   const [open, setOpen] = useState<Open>(null);
   const statusKey = useIdempotencyKey();
@@ -48,10 +46,15 @@ export function TruckActions({ truck }: { truck: FleetTruck }) {
   if (truck.archivedAt) return null;
   const operatingId = truck.operating?.operatingId;
   const status = truck.operating?.operationalStatus ?? truck.operationalStatus;
+  // `operating` is always this organization's own row (contract §Operating
+  // snapshot), so its organizationId is the real backend id. The session's
+  // organization id is not: in http mode it still comes from fixtures (plan 02,
+  // Findings), so never compare against it.
+  const ourOrganizationId = truck.operating?.organizationId;
   const isLegalOwner =
     truck.legalOwner?.ownerType === "ORGANIZATION" &&
-    Boolean(ctx) &&
-    truck.legalOwner.ownerOrganizationId === ctx?.organizationId;
+    Boolean(ourOrganizationId) &&
+    truck.legalOwner.ownerOrganizationId === ourOrganizationId;
   const canEdit = can(permissions, "trucks:edit");
   const canArchive = isLegalOwner && can(permissions, "trucks:delete");
   if (!canEdit && !canArchive) return null;

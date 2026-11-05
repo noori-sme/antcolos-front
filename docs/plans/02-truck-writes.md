@@ -67,6 +67,14 @@ Not wired: `POST …/ownership/:ownershipId/end` (the contract says it always re
 
 ## Findings (contract / frontend)
 
+- **Session organization id is a fixture id in http mode.** `useServiceContext().organizationId`
+  comes from the session's fixture roster (`lib/session/membership-store.ts`), not from the
+  backend, so it never equals a real organization id. Found in the live browser run: the legal-owner
+  check compared against it and hid hand-off and archive. The truck screens now compare against
+  `truck.operating.organizationId` (always this org's own row). Cache keys still use the fixture id,
+  which is consistent per session. Fixing the session to carry backend ids is a separate change
+  (auth/session: Feature track).
+
 - Frontend permission catalog has no mapping for `membership.list_drivers`,
   `membership.list_dispatchers`, `membership.list_admins` (decision F).
 
