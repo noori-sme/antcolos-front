@@ -30,6 +30,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // dispatcher's job rather than something they are lent for an afternoon.
       "tracking:view", "tracking:share", "tracking:update:send",
       "drivers:view", "trucks:view", "trailers:view",
+      // Mirrors the backend DISPATCHER default: the drivers list, not the others.
+      "members:list_drivers",
       "customers:view", "customers:create", "customers:private:manage", "customers:resolve",
       "documents:view", "documents:upload", "compliance:view",
       // Operational fuel only. No cost, and deliberately no IFTA: tax access

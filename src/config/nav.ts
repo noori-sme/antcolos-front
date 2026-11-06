@@ -60,9 +60,9 @@ export const PRODUCT_NAV: NavSection[] = [
       // nav entry and the guard must agree, and seeing a device is pointless
       // without being allowed to know which truck it is on.
       { label: "ELD & Telematics", href: "/eld", icon: Satellite, requires: ["eld:view", "trucks:view"] },
-      { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["drivers:view"] },
-      { label: "Dispatchers", href: "/people/dispatchers", icon: Users, requires: ["members:view"] },
-      { label: "Admins", href: "/people/admins", icon: ShieldCheck, requires: ["members:view"] },
+      { label: "Drivers", href: "/people/drivers", icon: UsersRound, requires: ["members:list_drivers"] },
+      { label: "Dispatchers", href: "/people/dispatchers", icon: Users, requires: ["members:list_dispatchers"] },
+      { label: "Admins", href: "/people/admins", icon: ShieldCheck, requires: ["members:list_admins"] },
       // The working relationship, which is not the driver record and not the
       // member list. Gated on its own key: somebody who may see who drives here
       // is not thereby somebody who may see on what basis they are employed.

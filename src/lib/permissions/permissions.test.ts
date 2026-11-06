@@ -3,6 +3,7 @@ import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import type { PermissionKey } from "@/types";
 import { can, canAll, canAny } from "./can";
+import { normalizePermissionKey } from "./catalog";
 import {
   NEVER_GRANTABLE, PERMISSION_CATALOG, PERMISSION_GROUP_LABELS,
   PERMISSION_GROUP_ORDER, availablePermissionKeys, permissionMeta,
@@ -172,5 +173,53 @@ describe("frozen extension-owned screens (plan 04)", () => {
   it("keep their permission gates for deep links", () => {
     expect(requiredPermissionsForPath("/dispatch/opportunities")).toEqual(["loads:view", "trucks:view"]);
     expect(requiredPermissionsForPath("/settings/learning")).toEqual(["organization:manage"]);
+  });
+});
+
+describe("people list keys match the backend (plan 06)", () => {
+  it("maps each backend list permission to its own key", () => {
+    expect(normalizePermissionKey("membership.list_drivers")).toBe("members:list_drivers");
+    expect(normalizePermissionKey("membership.list_dispatchers")).toBe("members:list_dispatchers");
+    expect(normalizePermissionKey("membership.list_admins")).toBe("members:list_admins");
+    // Holding one list never implies another, nor the drivers record key.
+    expect(normalizePermissionKey("membership.list")).toBe("members:view");
+    expect(can(new Set<PermissionKey>(["members:list_drivers"]), "drivers:view")).toBe(false);
+  });
+
+  it("gates each people page on its own list key", () => {
+    expect(requiredPermissionsForPath("/people/drivers")).toEqual(["members:list_drivers"]);
+    expect(requiredPermissionsForPath("/people/drivers/u1")).toEqual(["members:list_drivers"]);
+    expect(requiredPermissionsForPath("/people/dispatchers")).toEqual(["members:list_dispatchers"]);
+    expect(requiredPermissionsForPath("/people/admins")).toEqual(["members:list_admins"]);
+  });
+
+  it("gives the Dispatcher template the drivers list only, like the backend default", () => {
+    const dispatcher = SEED_TEMPLATES.find((t) => t.name === "Dispatcher")!;
+    expect(dispatcher.permissions).toContain("members:list_drivers");
+    expect(dispatcher.permissions).not.toContain("members:list_dispatchers");
+    expect(dispatcher.permissions).not.toContain("members:list_admins");
+  });
+});
+
+describe("people pages refuse callers without the list key (plan 06)", () => {
+  const pagePermits = (held: readonly PermissionKey[], path: string) =>
+    canAll(new Set(held), requiredPermissionsForPath(path));
+
+  it("a Dispatcher opens Drivers but not Dispatchers or Admins", () => {
+    const dispatcher = SEED_TEMPLATES.find((t) => t.name === "Dispatcher")!.permissions;
+    expect(pagePermits(dispatcher, "/people/drivers")).toBe(true);
+    expect(pagePermits(dispatcher, "/people/dispatchers")).toBe(false);
+    expect(pagePermits(dispatcher, "/people/admins")).toBe(false);
+  });
+
+  it("members:view or drivers:view alone no longer opens the people lists", () => {
+    for (const path of ["/people/drivers", "/people/dispatchers", "/people/admins"]) {
+      expect(pagePermits(["members:view", "drivers:view"], path)).toBe(false);
+    }
+  });
+
+  it("every list key is in the catalog, so the Owner holds it", () => {
+    const keys = PERMISSION_CATALOG.map((p) => p.key);
+    expect(keys).toEqual(expect.arrayContaining(["members:list_drivers", "members:list_dispatchers", "members:list_admins"]));
   });
 });

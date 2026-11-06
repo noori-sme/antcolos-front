@@ -35,7 +35,7 @@ were not added.
 
 ## Findings (not fixed here)
 
-- **The Drivers page refuses a carrier admin in http mode (pre-existing).** `/people/drivers`
+- **Resolved by plan 06 (F0.5).** **The Drivers page refused a carrier admin in http mode (pre-existing).** `/people/drivers`
   and its nav item gate on `drivers:view`, and no backend permission maps to it (the backend
   grants `membership.list_drivers`). Found in the live run. A global alias
   (`membership.list_drivers` → `drivers:view`) was tried and reverted after review: the
