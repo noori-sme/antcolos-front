@@ -72,7 +72,7 @@ and cache entries can't cross organizations.
 | Auth, signup, onboarding, carrier verification | identity, integrations(fmcsa) / `signup-api-contract`, `carrier-onboarding` | **http** | legacy: direct `apiClient` in `features/auth/*` |
 | Invitations, acceptance, invitation requests | identity / `membership-api-contract` | **http** | legacy, in `features/access/*` |
 | Roles, permission catalog, me/permissions | identity / `permissions-api-contract` | **http** | legacy, in `features/access/roles-screen`, `lib/session` |
-| People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** | legacy, in `features/{admins,dispatchers,driver}` |
+| People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** (list, detail) | service seam (`orgPeople`), F0.2 |
 | Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
 | Profile | identity / `profile.md` | mock | contracts seam |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
@@ -83,11 +83,10 @@ and cache entries can't cross organizations.
 
 ## 6. Known drift and tech debt (ordered by risk)
 
-1. **Screens call `apiClient` directly** (18 files: `features/auth/*` (10), the people screens
-   `admins/*`, `dispatchers/*`, `driver/carrier-driver*` (6), `access/acceptance-screen`, and the
-   people roster in `access/invite-flow`). Fleet trucks, invitations, requests, roles and the
-   permission catalog now go through services (`trucks`, `orgInvitations`, `orgRoles`). Fix: `/integrate`
-   per domain; people is next. **Deliberate:** `access/acceptance-screen` stays on `apiClient`,
+1. **Screens call `apiClient` directly** (11 files: `features/auth/*` (10) and
+   `access/acceptance-screen`). Fleet trucks, people, invitations, requests, roles and the
+   permission catalog go through services (`trucks`, `orgPeople`, `orgInvitations`, `orgRoles`).
+   Fix: `/integrate` per domain; auth is next (F0.4). **Deliberate:** `access/acceptance-screen` stays on `apiClient`,
    because its preview/accept/reject routes are public and have no `ctx` (plan 01, decided 2026-11-02).
 2. **Inline query keys not under `orgKey`** remain in mock domains (`["broker-draft", …]`,
    `["opportunities", org, …]`, `mt-loop`), where the org id is present but not the prefix. The

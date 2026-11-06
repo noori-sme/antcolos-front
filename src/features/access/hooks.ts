@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePeopleList } from "@/lib/api/use-org-people";
 import { toTeamRoster } from "@/lib/people/team-roster";
@@ -175,12 +176,17 @@ export function useTeamRoster(enabled: boolean) {
   const drivers = usePeopleList("drivers", query, enabled);
   const dispatchers = usePeopleList("dispatchers", query, enabled);
   const admins = usePeopleList("admins", query, enabled);
+  const data = useMemo(
+    () =>
+      toTeamRoster({
+        drivers: drivers.data?.data,
+        dispatchers: dispatchers.data?.data,
+        admins: admins.data?.data,
+      }),
+    [drivers.data, dispatchers.data, admins.data],
+  );
   return {
-    data: toTeamRoster({
-      drivers: drivers.data?.data,
-      dispatchers: dispatchers.data?.data,
-      admins: admins.data?.data,
-    }),
+    data,
     isLoading: drivers.isLoading || dispatchers.isLoading || admins.isLoading,
   };
 }

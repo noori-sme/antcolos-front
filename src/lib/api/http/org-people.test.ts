@@ -93,7 +93,8 @@ describe("toOrgPerson (users contract §2–§4)", () => {
   });
 
   it("maps the admin overrides flag", () => {
-    const { currentTruck: _t, ...admin } = CONTRACT_DRIVER;
+    const admin: Record<string, unknown> = { ...CONTRACT_DRIVER };
+    delete admin.currentTruck;
     expect(
       toOrgPerson({ ...admin, roleId: "ADMIN", hasPermissionOverrides: true })
         .hasPermissionOverrides,
