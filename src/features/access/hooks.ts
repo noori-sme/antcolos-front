@@ -173,9 +173,12 @@ export function useDeleteRole() {
  */
 export function useTeamRoster(enabled: boolean) {
   const query = { pageSize: 100 };
-  const drivers = usePeopleList("drivers", query, enabled);
-  const dispatchers = usePeopleList("dispatchers", query, enabled);
-  const admins = usePeopleList("admins", query, enabled);
+  // No retry: a list the caller may not read (403 is typical for dispatchers
+  // or admins) should just contribute nobody, as it did before.
+  const noRetry = { retry: false };
+  const drivers = usePeopleList("drivers", query, enabled, noRetry);
+  const dispatchers = usePeopleList("dispatchers", query, enabled, noRetry);
+  const admins = usePeopleList("admins", query, enabled, noRetry);
   const data = useMemo(
     () =>
       toTeamRoster({

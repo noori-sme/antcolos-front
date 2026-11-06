@@ -314,9 +314,6 @@ const BY_KEY = new Map<PermissionKey, PermissionMeta>(
 export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   // Members & Roles
   "membership.list": "members:view",
-  // The drivers list (users contract §2) is its own backend permission; the
-  // Drivers page and nav gate on drivers:view.
-  "membership.list_drivers": "drivers:view",
   "membership.view": "members:view",
   "membership.edit": "members:edit",
   "membership.suspend": "members:suspend",

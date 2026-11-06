@@ -94,7 +94,9 @@ export function CarrierDriverDetail({
 }) {
   const id = userId || relationshipId || "";
 
-  const { data: driver, isPending: isLoading, isError, error, refetch } = useDriver(id);
+  const { data: driver, isPending, isError, error, refetch } = useDriver(id);
+  // With no id the query never runs: show not-found, not an endless skeleton.
+  const isLoading = isPending && Boolean(id);
 
   if (isLoading) {
     return (
