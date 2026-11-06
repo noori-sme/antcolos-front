@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck, Bell, Briefcase, Building2, CalendarClock, ClipboardList, Container, FileBadge,
   FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
-  Inbox, Landmark, Layers, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
+  Inbox, Landmark, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
   Share2,
   ReceiptText, Route, Satellite, ScrollText, Settings2, Shield, ShieldCheck,
   TriangleAlert, Truck, UserCircle, UserPlus, Users, UsersRound, Wrench,
@@ -48,7 +48,6 @@ export const PRODUCT_NAV: NavSection[] = [
       // oversight is a place somebody goes rather than a pile on their Home.
       { label: "MT Loop", href: "/dispatch/loops", icon: RefreshCw, requires: ["loads:view", "trucks:view"] },
       { label: "Tracking", href: "/dispatch/tracking", icon: Radar, requires: ["tracking:view", "loads:view"] },
-      { label: "Opportunities", href: "/dispatch/opportunities", icon: Layers, requires: ["loads:view", "trucks:view"] },
       { label: "Loads", href: "/loads", icon: Package, requires: ["loads:view"], primaryMobile: true },
     ],
   },
@@ -172,11 +171,6 @@ export const SETTINGS_NAV: NavSection[] = [
       // load — the factoring answer lives on the Load Search result and the
       // Opportunity, which is where the decision is actually made.
       { label: "Factoring", href: "/settings/factoring", icon: Landmark, requires: ["factoring:view"] },
-      // What the ranking learns from, and what it never touches. Not a setting —
-      // there is nothing on the page to change — but it belongs here rather than
-      // beside the ranking sliders, because it is an account of what happens to
-      // the workspace's data rather than a dispatcher's preference about sorting.
-      { label: "Learning and your data", href: "/settings/learning", icon: Share2, requires: ["organization:manage"] },
       { label: "Audit", href: "/settings/audit", icon: ScrollText, requires: ["audit:view"] },
     ],
   },

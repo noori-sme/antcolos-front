@@ -8,6 +8,7 @@ import {
   PERMISSION_GROUP_ORDER, availablePermissionKeys, permissionMeta,
 } from "./catalog";
 import { effectivePermissions } from "./effective";
+import { ALL_NAV_SECTIONS } from "@/config/nav";
 import { requiredPermissionsForPath } from "./route-manifest";
 import { SEED_TEMPLATES } from "./templates";
 
@@ -157,5 +158,19 @@ describe("the route manifest", () => {
     expect(requiredPermissionsForPath("/fuel/ifta/ifta_org_a_2026Q2")).toEqual(["ifta:view"]);
     expect(requiredPermissionsForPath("/fuel/transactions/fuel_0001")).toEqual(["fuel:view"]);
     expect(requiredPermissionsForPath("/loads/ld_1")).toEqual(["loads:view"]);
+  });
+});
+
+describe("frozen extension-owned screens (plan 04)", () => {
+  const navHrefs = ALL_NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.href));
+
+  it("are not in the navigation", () => {
+    expect(navHrefs).not.toContain("/dispatch/opportunities");
+    expect(navHrefs).not.toContain("/settings/learning");
+  });
+
+  it("keep their permission gates for deep links", () => {
+    expect(requiredPermissionsForPath("/dispatch/opportunities")).toEqual(["loads:view", "trucks:view"]);
+    expect(requiredPermissionsForPath("/settings/learning")).toEqual(["organization:manage"]);
   });
 });
