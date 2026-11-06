@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { CarrierProfile } from "@/types/auth";
 import { toAuthResult, toCarrierProfile } from "./auth-api";
 
 // From ../antcolos/docs/requirements/carrier-onboarding.md (carrier-onboarding response).
@@ -56,7 +57,7 @@ describe("toCarrierProfile", () => {
       phone: "2147776005",
       email: null,
       active: true,
-      address: { street: "350 N SAINT PAUL ST", city: "DALLAS", state: "TX", zip: "75201", country: "US" } as never,
+      address: { street: "350 N SAINT PAUL ST", city: "DALLAS", state: "TX", zip: "75201", country: "US" } as unknown as CarrierProfile["address"],
       mailingAddress: { street: null, city: null, state: null, zip: null },
       sources: { identity: "qcmobile" },
     });

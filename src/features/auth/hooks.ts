@@ -36,8 +36,9 @@ export const useCarrierOnboarding = (o?: Options<AuthResult, CarrierOnboardingIn
   useMutation({ ...o, mutationFn: authApi.carrierOnboarding });
 
 /**
- * Public FMCSA data, not tenant data: keyed under the "public" namespace.
- * (Sign-in clears every query, so nothing carries over between accounts.)
+ * Public FMCSA data, deliberately outside any tenant: keyed under the
+ * "public" pseudo-org (real org ids are UUIDs). Sign-in clears every query.
+ * The lookup takes one of MC or DOT; MC wins.
  */
 export function useCarrierLookup(mc: string, dot: string) {
   return useQuery({

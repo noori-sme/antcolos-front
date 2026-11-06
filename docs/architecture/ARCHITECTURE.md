@@ -69,7 +69,7 @@ and cache entries can't cross organizations.
 
 | Domain | Backend module / contract | Frontend today | Pattern |
 | --- | --- | --- | --- |
-| Auth, signup, onboarding, carrier verification | identity, integrations(fmcsa) / `signup-api-contract`, `carrier-onboarding` | **http** | legacy: direct `apiClient` in `features/auth/*` |
+| Auth, signup, onboarding, carrier verification | identity, integrations(fmcsa) / `signup-api-contract`, `carrier-onboarding` | **http** | `lib/session/auth-api.ts` (pre-tenant, no ctx) + `features/auth/hooks.ts` |
 | Invitations, acceptance, invitation requests | identity / `membership-api-contract` | **http** | legacy, in `features/access/*` |
 | Roles, permission catalog, me/permissions | identity / `permissions-api-contract` | **http** | legacy, in `features/access/roles-screen`, `lib/session` |
 | People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** (list, detail) | service seam (`orgPeople`), F0.2 |
@@ -83,10 +83,10 @@ and cache entries can't cross organizations.
 
 ## 6. Known drift and tech debt (ordered by risk)
 
-1. **Screens call `apiClient` directly** (11 files: `features/auth/*` (10) and
-   `access/acceptance-screen`). Fleet trucks, people, invitations, requests, roles and the
-   permission catalog go through services (`trucks`, `orgPeople`, `orgInvitations`, `orgRoles`).
-   Fix: `/integrate` per domain; auth is next (F0.4). **Deliberate:** `access/acceptance-screen` stays on `apiClient`,
+1. **Screens call `apiClient` directly**: only `access/acceptance-screen` is left. Fleet trucks,
+   people, invitations, requests, roles and the permission catalog go through services
+   (`trucks`, `orgPeople`, `orgInvitations`, `orgRoles`); sign-in, sign-up and onboarding go
+   through `lib/session/auth-api.ts` + `features/auth/hooks.ts` (plan 05, F0.4). **Deliberate:** `access/acceptance-screen` stays on `apiClient`,
    because its preview/accept/reject routes are public and have no `ctx` (plan 01, decided 2026-11-02).
 2. **Inline query keys not under `orgKey`** remain in mock domains (`["broker-draft", …]`,
    `["opportunities", org, …]`, `mt-loop`), where the org id is present but not the prefix. The

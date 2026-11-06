@@ -89,7 +89,7 @@ export interface CompanyDetailsInput {
   };
 }
 
-/** Exactly one of `mcNumber` / `dotNumber`. */
+/** At least one of `mcNumber` / `dotNumber`; both when they name the same carrier. */
 export interface CarrierOnboardingInput {
   legalOwnerName: string;
   mcNumber?: string;

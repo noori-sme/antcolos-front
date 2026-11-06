@@ -29,6 +29,7 @@ import {
   MC_MAX_DIGITS,
   ORG_CODE_TTL_SECONDS,
   maskEmail,
+  carrierOnboardingInput,
   normalizeDotNumber,
   normalizeMcNumber,
   validateCarrierIdentifiers,
@@ -527,7 +528,7 @@ function CarrierReview({
     }
   }, [countdown]);
 
-  const { data: lookupData, isLoading } = useCarrierLookup(mc, dot);
+  const { data: lookupData, isLoading } = useCarrierLookup(normalizeMcNumber(mc), normalizeDotNumber(dot));
 
   const displayCarrier = {
     ...carrier,
@@ -637,15 +638,6 @@ function CarrierReview({
       </div>
     </div>
   );
-}
-
-/** Body for `POST /auth/carrier-onboarding`: identifiers are strings (MC may carry its prefix). */
-function carrierOnboardingInput(legalOwnerName: string, mc: string, dot: string): CarrierOnboardingInput {
-  return {
-    legalOwnerName,
-    mcNumber: mc.trim() || undefined,
-    dotNumber: mc.trim() ? undefined : dot.trim() || undefined,
-  };
 }
 
 function verificationEmail(user: AuthUser): string | null {
