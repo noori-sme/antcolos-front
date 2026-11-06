@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import { MailCheck, RefreshCcw, Clock, ArrowLeft } from "lucide-react";
 
-import { useMutation } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api/client";
+import { useResendVerification } from "../hooks";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -19,11 +18,7 @@ export function UnverifiedEmailModal({
 }) {
   const [cooldown, setCooldown] = useState(0);
 
-  const resendMutation = useMutation({
-    mutationFn: async (targetEmail: string) => {
-      const { data } = await apiClient.post("/auth/resend-verification", { email: targetEmail });
-      return data;
-    },
+  const resendMutation = useResendVerification({
     onSuccess: () => {
       toast.success("Verification link sent! Check your inbox.");
       setCooldown(30);

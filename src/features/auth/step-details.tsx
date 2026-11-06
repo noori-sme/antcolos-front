@@ -4,8 +4,7 @@ import { useId, useState } from "react";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useMutation } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api/client";
+import { useSignup } from "./hooks";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { SubmitButton } from "./controls";
@@ -38,11 +37,7 @@ export function StepDetails({
   const [submitted, setSubmitted] = useState(false);
   const [confirmBlurred, setConfirmBlurred] = useState(false);
 
-  const signUpMutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const { data } = await apiClient.post("/auth/signup", payload);
-      return data;
-    },
+  const signUpMutation = useSignup({
     onSuccess: (_, variables) => {
       onEmailChange(variables.email);
       onSent();
@@ -93,7 +88,7 @@ export function StepDetails({
       firstName,
       lastName,
       email: normalizedEmail,
-      phone: phone ? Number(phone.replace(/^\+?91/, "")) : undefined,
+      phone: phone ? phone.replace(/^\+?91/, "") : undefined,
       password,
       confirmPassword: confirm,
     });

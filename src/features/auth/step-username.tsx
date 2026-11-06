@@ -4,9 +4,8 @@ import { Check, LoaderCircle, X } from "lucide-react";
 import { useId, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { apiClient } from "@/lib/api/client";
+import { useCheckUsername, useChooseUsername } from "./hooks";
 import { BackLink, SubmitButton } from "./controls";
 import { USERNAME_MAX_LENGTH, USERNAME_RULES_TEXT, validateUsername } from "./rules";
 import { cn } from "@/lib/utils";
@@ -50,11 +49,7 @@ export function StepUsername({
   const shapeError = value.length > 0 ? validateUsername(value) : null;
   const eligible = value.length > 0 && !shapeError;
 
-  const checkUsernameMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const { data } = await apiClient.get<{ available: boolean }>(`/auth/username-available?username=${name}`);
-      return data.available;
-    },
+  const checkUsernameMutation = useCheckUsername({
     onSuccess: (isAvailable, name) => {
       setAnswer({
         name,
@@ -78,11 +73,7 @@ export function StepUsername({
     }
   });
 
-  const setUsernameMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const { data } = await apiClient.post("/auth/username", { username: name });
-      return data;
-    },
+  const setUsernameMutation = useChooseUsername({
     onSuccess: () => {
       toast.success("Username set successfully!");
       onChosen();
