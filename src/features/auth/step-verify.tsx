@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { MailCheck, RefreshCcw, Clock } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api/client";
+import { useResendVerification } from "./hooks";
 import { toast } from "sonner";
 import { BackLink } from "./controls";
 import { Button } from "@/components/ui/button";
@@ -19,11 +18,7 @@ export function StepVerify({
 }) {
   const [cooldown, setCooldown] = useState(0);
 
-  const resendMutation = useMutation({
-    mutationFn: async () => {
-      const { data } = await apiClient.post("/auth/resend-verification", { email });
-      return data;
-    },
+  const resendMutation = useResendVerification({
     onSuccess: () => {
       setCooldown(30);
     },
@@ -42,7 +37,7 @@ export function StepVerify({
 
   function handleResend() {
     if (cooldown > 0) return;
-    resendMutation.mutate();
+    resendMutation.mutate(email);
   }
 
   const resending = resendMutation.isPending;

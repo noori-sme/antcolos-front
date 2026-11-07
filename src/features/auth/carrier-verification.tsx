@@ -5,10 +5,13 @@ import { useId, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { apiClient } from "@/lib/api/client";
-import Cookies from "js-cookie";
+import type { AuthUser, CarrierOnboardingInput } from "@/types/auth";
+import { useCarrierLookup, useCarrierOnboarding } from "./hooks";
+import {
+  clearCarrierData, readCookie, setCarrierData,
+} from "@/lib/api/auth-cookies";
 import { AuthShell } from "./shell";
 import { BackLink, StepProgress, SubmitButton } from "./controls";
 import { CarrierRecord } from "./carrier-record";
@@ -26,6 +29,7 @@ import {
   MC_MAX_DIGITS,
   ORG_CODE_TTL_SECONDS,
   maskEmail,
+  carrierOnboardingInput,
   normalizeDotNumber,
   normalizeMcNumber,
   validateCarrierIdentifiers,
@@ -64,7 +68,7 @@ export function CarrierVerification({
   const currentUser = queryClient.getQueryData<any>(["currentUser"]);
   const savedCarrierData = (() => {
     try {
-      const data = Cookies.get("antcolos_carrier_data");
+      const data = readCookie("antcolos_carrier_data");
       return data ? JSON.parse(data) : null;
     } catch {
       return null;
@@ -101,7 +105,7 @@ export function CarrierVerification({
   useEffect(() => {
     if (initialStage === "review" && !carrier) {
       try {
-        const savedData = Cookies.get("antcolos_carrier_data");
+        const savedData = readCookie("antcolos_carrier_data");
         if (savedData) {
           const parsed = JSON.parse(savedData);
           setOwnerName(parsed.legalName || "");
@@ -201,7 +205,7 @@ export function CarrierVerification({
                   dot: carrier.dot,
                   legalName: carrier.legalName,
                 });
-                Cookies.remove("antcolos_carrier_data");
+                clearCarrierData();
                 setIsVerified(true);
                 setStage("result");
               }}
@@ -345,17 +349,9 @@ function CarrierDetailsForm({
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<CarrierLookupResult | null>(null);
 
-  const submitCarrierMutation = useMutation({
-    mutationFn: async () => {
-      const { data } = await apiClient.post("/auth/carrier-onboarding", {
-        legalOwnerName: ownerName,
-        mcNumber: mc ? Number(mc) : undefined,
-        dotNumber: dot ? Number(dot) : undefined
-      });
-      return data;
-    },
-    onSuccess: (data: any) => {
-      const returnedEmail = data?.user?.carrierVerification?.email || "your registered FMCSA email";
+  const submitCarrierMutation = useCarrierOnboarding({
+    onSuccess: (data) => {
+      const returnedEmail = verificationEmail(data.user) || "your registered FMCSA email";
       
       const payloadToSave = {
         legalName: ownerName,
@@ -364,7 +360,7 @@ function CarrierDetailsForm({
         email: returnedEmail
       };
       
-      Cookies.set("antcolos_carrier_data", JSON.stringify(payloadToSave), { expires: 1 });
+      setCarrierData(JSON.stringify(payloadToSave));
       
       onFound({
         legalName: ownerName,
@@ -376,7 +372,7 @@ function CarrierDetailsForm({
         email: returnedEmail
       });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       const msg = getFriendlyErrorMessage(error);
       toast.error(msg);
     }
@@ -400,7 +396,7 @@ function CarrierDetailsForm({
       return;
     }
 
-    submitCarrierMutation.mutate();
+    submitCarrierMutation.mutate(carrierOnboardingInput(ownerName, mc, dot));
   }
 
   return (
@@ -532,18 +528,7 @@ function CarrierReview({
     }
   }, [countdown]);
 
-  const { data: lookupData, isLoading } = useQuery({
-    queryKey: ["carrierLookup", mc, dot],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (mc) params.append("mc", mc);
-      else if (dot) params.append("dot", dot);
-      
-      const { data } = await apiClient.get(`/carriers/lookup?${params.toString()}`);
-      return data;
-    },
-    enabled: !!(mc || dot)
-  });
+  const { data: lookupData, isLoading } = useCarrierLookup(normalizeMcNumber(mc), normalizeDotNumber(dot));
 
   const displayCarrier = {
     ...carrier,
@@ -558,32 +543,28 @@ function CarrierReview({
     dbaName: lookupData?.dbaName || undefined
   };
 
-  const submitCarrierMutation = useMutation({
-    mutationFn: async () => {
-      // Use data from cookies as requested
-      const savedData = Cookies.get("antcolos_carrier_data");
-      let payloadOwnerName = ownerName;
-      let payloadMc = mc;
-      let payloadDot = dot;
+  // Resend uses what the first submit saved, falling back to this screen's values.
+  const resendInput = (): CarrierOnboardingInput => {
+    const savedData = readCookie("antcolos_carrier_data");
+    let payloadOwnerName = ownerName;
+    let payloadMc = mc;
+    let payloadDot = dot;
 
-      if (savedData) {
-        try {
-          const parsed = JSON.parse(savedData);
-          payloadOwnerName = parsed.legalName || ownerName;
-          payloadMc = parsed.mc || mc;
-          payloadDot = parsed.dot || dot;
-        } catch (e) {}
-      }
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        payloadOwnerName = parsed.legalName || ownerName;
+        payloadMc = parsed.mc || mc;
+        payloadDot = parsed.dot || dot;
+      } catch (e) {}
+    }
 
-      const { data } = await apiClient.post("/auth/carrier-onboarding", {
-        legalOwnerName: payloadOwnerName,
-        mcNumber: payloadMc ? Number(payloadMc) : undefined,
-        dotNumber: payloadDot ? Number(payloadDot) : undefined
-      });
-      return data;
-    },
-    onSuccess: (data: any) => {
-      const returnedEmail = data?.user?.carrierVerification?.email || "your registered FMCSA email";
+    return carrierOnboardingInput(payloadOwnerName, payloadMc, payloadDot);
+  };
+
+  const submitCarrierMutation = useCarrierOnboarding({
+    onSuccess: (data) => {
+      const returnedEmail = verificationEmail(data.user) || "your registered FMCSA email";
       
       const payloadToSave = {
         legalName: ownerName,
@@ -592,12 +573,12 @@ function CarrierReview({
         email: returnedEmail
       };
       
-      Cookies.set("antcolos_carrier_data", JSON.stringify(payloadToSave), { expires: 1 });
+      setCarrierData(JSON.stringify(payloadToSave));
       setCountdown(60);
       setSending(false);
       toast.success("Verification link sent again!");
     },
-    onError: (error: any) => {
+    onError: (error) => {
       const msg = getFriendlyErrorMessage(error);
       toast.error(msg);
       setSending(false);
@@ -607,7 +588,7 @@ function CarrierReview({
   async function handleSend() {
     if (sending || countdown > 0) return;
     setSending(true);
-    submitCarrierMutation.mutate();
+    submitCarrierMutation.mutate(resendInput());
   }
 
   return (
@@ -657,4 +638,8 @@ function CarrierReview({
       </div>
     </div>
   );
+}
+
+function verificationEmail(user: AuthUser): string | null {
+  return user.scope === "onboarding" ? user.carrierVerification?.email ?? null : null;
 }

@@ -11,14 +11,13 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
-import { InvitationRequests, type InvitationRequest } from "./invitation-requests";
+import { InvitationRequests } from "./invitation-requests";
 import { EmptyState } from "@/components/data/states";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiClient } from "@/lib/api/client";
-import type { Invitation, InvitationStatus } from "@/types";
+import type { OrgInvitationListItem, OrgInvitationStatus } from "@/types/org-access";
+import { useOrgInvitations, useInvitationRequests, useResendInvitation, useRevokeInvitation } from "./hooks";
 import { PermissionSummary } from "./permission-summary";
 import { cn } from "@/lib/utils";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Can } from "@/components/auth/can";
 
 type Tab = "invitations" | "requests";
@@ -79,6 +78,8 @@ const STATUS_STYLE: Record<string, { label: string; className: string }> = {
   declined: { label: "Declined", className: "bg-st-warning-bg text-st-warning" },
   canceled: { label: "Canceled", className: "bg-st-danger-bg text-st-danger" },
   cancelled: { label: "Cancelled", className: "bg-st-danger-bg text-st-danger" },
+  awaiting_approval: { label: "Awaiting approval", className: "bg-st-info-bg text-st-info" },
+  rejected_by_admin: { label: "Rejected", className: "bg-st-danger-bg text-st-danger" },
 };
 
 function getStatusStyle(rawStatus?: string): { label: string; className: string } {
@@ -94,7 +95,7 @@ function getStatusStyle(rawStatus?: string): { label: string; className: string 
   };
 }
 
-const FILTERS: Array<{ value: InvitationStatus | "all"; label: string }> = [
+const FILTERS: Array<{ value: OrgInvitationStatus | "all"; label: string }> = [
   { value: "all", label: "All" },
   { value: "pending", label: "Pending" },
   { value: "accepted", label: "Accepted" },
@@ -248,6 +249,8 @@ function RevokedStatusBadge({
   );
 }
 
+type Invitation = OrgInvitationListItem;
+
 function getRecipientName(invitation: Invitation): string {
   const parts = [invitation.firstName, invitation.lastName]
     .filter(Boolean)
@@ -260,11 +263,7 @@ function getRecipientName(invitation: Invitation): string {
       .join(" ");
   }
 
-  if (invitation.recipientName?.trim()) {
-    return invitation.recipientName.trim();
-  }
-
-  return invitation.email || invitation.recipientEmail || "Unnamed Invitation";
+  return invitation.email || "Unnamed Invitation";
 }
 
 function formatRoleName(role?: string): string {
@@ -289,7 +288,6 @@ function formatRoleName(role?: string): string {
 
 /** Who has been invited, where it got to, and what to do about it. */
 export function InvitationsScreen() {
-  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const [tab, setTabState] = useState<Tab>(() =>
     searchParams.get("tab") === "requests" ? "requests" : "invitations"
@@ -313,38 +311,24 @@ export function InvitationsScreen() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  const [filter, setFilter] = useState<InvitationStatus | "all">("all");
+  const [filter, setFilter] = useState<OrgInvitationStatus | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busyState, setBusyState] = useState<{ id: string; action: "revoke" | "resend" } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const {
-    data: invitations,
+    data: invitationPage,
     isLoading: isInvitationsLoading,
     isFetching: isInvitationsFetching,
     refetch: refetchInvitations,
-  } = useQuery({
-    queryKey: ["organizations", "invitations"],
-    queryFn: async () => {
-      const res = await apiClient.get("/organizations/invitations");
-      return (res.data?.data || res.data || []) as Invitation[];
-    },
-    staleTime: 0,
-    refetchOnMount: "always",
-  });
+  } = useOrgInvitations();
+  const invitations = invitationPage?.data;
 
-  const {
-    data: requests,
-    refetch: refetchRequests,
-  } = useQuery({
-    queryKey: ["invitation-requests"],
-    queryFn: async () => {
-      const res = await apiClient.get("/organizations/invitation-requests");
-      return (res.data?.data || []) as InvitationRequest[];
-    },
-    staleTime: 0,
-    refetchOnMount: "always",
-  });
+  const { data: requestPage, refetch: refetchRequests } = useInvitationRequests();
+  const requests = requestPage?.data;
+
+  const resend = useResendInvitation();
+  const revoke = useRevokeInvitation();
 
   const showLoading = isInvitationsLoading || isInvitationsFetching;
 
@@ -357,21 +341,17 @@ export function InvitationsScreen() {
     }
     if (tab === "invitations") {
       refetchInvitations();
-      queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
     } else if (tab === "requests") {
       refetchRequests();
-      queryClient.invalidateQueries({ queryKey: ["invitation-requests"] });
     }
-  }, [tab, queryClient]);
+  }, [tab, refetchInvitations, refetchRequests]);
 
   function setTab(nextTab: Tab) {
     if (nextTab === tab) {
       if (nextTab === "invitations") {
         refetchInvitations();
-        queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
       } else {
         refetchRequests();
-        queryClient.invalidateQueries({ queryKey: ["invitation-requests"] });
       }
       return;
     }
@@ -388,24 +368,22 @@ export function InvitationsScreen() {
   }
 
   const pendingRequestsCount = (requests || []).filter(
-    (r) => r.status?.toUpperCase() === "PENDING"
+    (r) => r.status === "awaiting_approval"
   ).length;
 
   async function act(id: string, action: "revoke" | "resend") {
     setBusyState({ id, action });
     setActionError(null);
     try {
-      await apiClient.post(`/organizations/invitations/${id}/${action}`);
+      // Both mutations refetch the invitation list on success.
+      await (action === "revoke" ? revoke : resend).mutateAsync(id);
       toast.success(
         action === "revoke"
           ? "Invitation revoked successfully."
           : "Invitation resent successfully."
       );
-      if (action === "revoke") {
-        await queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
-      }
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || `Failed to ${action} invitation.`;
+    } catch (error: unknown) {
+      const msg = error instanceof Error && error.message ? error.message : `Failed to ${action} invitation.`;
       setActionError(msg);
       toast.error(msg);
     } finally {
@@ -518,19 +496,21 @@ export function InvitationsScreen() {
           ) : (
             <ul className="space-y-2.5">
               {visible.map((invitation) => {
-                const normalizedStatus = (invitation.status || "pending").toLowerCase();
-                const style = getStatusStyle(invitation.status);
+                // An unknown status reads "Unknown", never "Pending".
+                const normalizedStatus = invitation.status ?? "unknown";
+                const style = getStatusStyle(normalizedStatus);
                 const open = expanded === invitation.id;
                 const isBusy = busyState?.id === invitation.id;
                 const isResending = isBusy && busyState?.action === "resend";
                 const isRevoking = isBusy && busyState?.action === "revoke";
                 const panelId = `inv-perms-${invitation.id}`;
                 const canRevoke = normalizedStatus === "pending";
-                const canResend = normalizedStatus === "pending" || normalizedStatus === "expired";
+                // Contract §3: only pending invitations can be resent (409 otherwise).
+                const canResend = normalizedStatus === "pending";
 
                 const displayName = getRecipientName(invitation);
-                const email = invitation.email || invitation.recipientEmail;
-                const roleDisplay = invitation.roleName || formatRoleName(invitation.roleId);
+                const email = invitation.email;
+                const roleDisplay = formatRoleName(invitation.roleId);
 
                 return (
                   <li
@@ -567,9 +547,6 @@ export function InvitationsScreen() {
                         ) : null}
                         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.75rem] text-fg-subtle">
                           <span className="font-medium text-fg-muted">{roleDisplay}</span>
-                          {invitation.scopedToCarrierName ? (
-                            <span>· scoped to {invitation.scopedToCarrierName} only</span>
-                          ) : null}
                           {invitation.createdAt ? (
                             <span>· sent {formatDate(invitation.createdAt)}</span>
                           ) : null}

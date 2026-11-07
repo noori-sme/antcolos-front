@@ -17,36 +17,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
-import { useQuery } from "@tanstack/react-query";
 import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
-
-export interface Admin {
-  userId: string;
-  membershipId: string;
-  firstName: string;
-  lastName: string;
-  name?: string;
-  username?: string;
-  email: string;
-  phone?: string;
-  roleId: string;
-  roleName: string;
-  joinedAt: string;
-  accountStatus: "ACTIVE" | "PENDING" | "SUSPENDED" | "INACTIVE" | string;
-  hasPermissionOverrides?: boolean;
-}
-
-export interface AdminsResponse {
-  data: Admin[];
-  meta?: {
-    page: number;
-    pageSize: number;
-    totalItems: number;
-    totalPages: number;
-  };
-}
+import { useAdmins } from "./hooks";
 
 const STATUS_FILTERS = [
   { value: "all", label: "All" },
@@ -117,22 +90,7 @@ export function AdminsScreen() {
     return () => clearTimeout(handler);
   }, [searchInput]);
 
-  const { data, isLoading, isError, error, refetch } = useQuery<AdminsResponse>({
-    queryKey: ["organizations", "admins", { page, pageSize, q: debouncedSearch }],
-    queryFn: async () => {
-      const params: Record<string, any> = {
-        page,
-        pageSize,
-        sortBy: "createdAt",
-        sortOrder: "desc",
-      };
-      if (debouncedSearch) {
-        params.q = debouncedSearch;
-      }
-      const res = await apiClient.get("/organizations/admins", { params });
-      return res.data;
-    },
-  });
+  const { data, isPending: isLoading, isError, error, refetch } = useAdmins({ page, pageSize, q: debouncedSearch || undefined });
 
   const adminsList = data?.data || [];
   const meta = data?.meta;

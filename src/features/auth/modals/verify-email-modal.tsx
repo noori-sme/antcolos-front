@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useVerifyEmail } from "../hooks";
 import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
 import Cookies from "js-cookie";
 import { Button } from "@/components/ui/button";
@@ -30,16 +30,12 @@ export function VerifyEmailModal({
     }
   }, [token, activeToken]);
 
-  const verifyMutation = useMutation({
-    mutationFn: async (tokenToVerify: string) => {
-      const { data } = await apiClient.post("/auth/verify-email", { token: tokenToVerify });
-      return data;
-    },
-    onSuccess: (data) => {
-      if (data.user?.emailVerified) {
-        if (data.user?.nextStep === "choose-username") {
+  const verifyMutation = useVerifyEmail({
+    onSuccess: ({ user, nextStep }) => {
+      if (user.scope === "onboarding" && user.emailVerified) {
+        if (nextStep === "choose-username") {
           toast.success("Email verified successfully! 🎉 Now let's pick a unique username.");
-        } else if (data.user?.nextStep) {
+        } else if (nextStep) {
           toast.success("Email verified successfully! 🎉 Let's continue setting up your account.");
         } else {
           toast.success("Email verified successfully! 🎉 Welcome back to Antcolos.");
@@ -71,40 +67,36 @@ export function VerifyEmailModal({
 
   const handleSuccessAction = () => {
     const user = verifyMutation.data?.user;
+    const nextStep = verifyMutation.data?.nextStep ?? null;
     
     setActiveToken(null);
     onClose();
 
-    if (user?.nextStep === "choose-username") {
+    if (nextStep === "choose-username") {
       sessionStorage.setItem("antcolos_signup_step", "username");
-      sessionStorage.setItem("antcolos_signup_email", user.email);
+      sessionStorage.setItem("antcolos_signup_email", user?.email ?? "");
       sessionStorage.setItem("antcolos_signup_from_login", "true");
       router.push("/sign-up");
       return;
     }
     
-    if (user?.nextStep === "carrier-onboarding") {
+    if (nextStep === "carrier-onboarding") {
       router.push("/onboarding?step=carrier");
       return;
     }
     
-    if (user?.nextStep === "select-role") {
+    if (nextStep === "select-role") {
       router.push("/onboarding?step=role");
       return;
     }
 
-    if (user?.nextStep === "verify-carrier") {
+    if (nextStep === "verify-carrier") {
       router.push("/onboarding?step=verify-carrier");
       return;
     }
 
-    if (!user?.nextStep) {
-      const token =
-        verifyMutation.data?.accessToken ||
-        verifyMutation.data?.access_token ||
-        verifyMutation.data?.token ||
-        verifyMutation.data?.data?.accessToken ||
-        Cookies.get("antcolos_token");
+    if (!nextStep) {
+      const token = verifyMutation.data?.accessToken || Cookies.get("antcolos_token");
       if (token) {
         fetchAndStoreUserPermissions(queryClient, token);
       }

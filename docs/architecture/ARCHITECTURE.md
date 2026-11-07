@@ -69,11 +69,11 @@ and cache entries can't cross organizations.
 
 | Domain | Backend module / contract | Frontend today | Pattern |
 | --- | --- | --- | --- |
-| Auth, signup, onboarding, carrier verification | identity, integrations(fmcsa) / `signup-api-contract`, `carrier-onboarding` | **http** | legacy: direct `apiClient` in `features/auth/*` |
+| Auth, signup, onboarding, carrier verification | identity, integrations(fmcsa) / `signup-api-contract`, `carrier-onboarding` | **http** | `lib/session/auth-api.ts` (pre-tenant, no ctx) + `features/auth/hooks.ts` |
 | Invitations, acceptance, invitation requests | identity / `membership-api-contract` | **http** | legacy, in `features/access/*` |
 | Roles, permission catalog, me/permissions | identity / `permissions-api-contract` | **http** | legacy, in `features/access/roles-screen`, `lib/session` |
-| People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** | legacy, in `features/{admins,dispatchers,driver}` |
-| Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail) | legacy: `fleet-roster-screen`, `truck-profile-screen` |
+| People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** (list, detail) | service seam (`orgPeople`), F0.2 |
+| Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
 | Profile | identity / `profile.md` | mock | contracts seam |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
 | Loads, dispatch, tracking, finance, fuel, ELD, compliance, insurance, maintenance, audit, contracts, directory, workforce, reports, factoring, referrals, needs-you | **not built in backend yet** | mock | contracts seam |
@@ -83,14 +83,16 @@ and cache entries can't cross organizations.
 
 ## 6. Known drift and tech debt (ordered by risk)
 
-1. **Screens call `apiClient` directly** (26 files across `features/{auth,access,admins,
-   dispatchers,driver,fleet}`). DTO interfaces are redeclared per screen (`TruckItem`,
-   `TruckDetail` live in both fleet screens), and the `httpServices` registry is all
-   `notImplemented`, so mock/http switching doesn't apply to these domains. Fix: `/integrate`.
-2. **Inline, non-org-namespaced query keys** (`["trucks", …]`, `["broker-draft", …]`). The cache
-   is cleared on org switch, so this is latent, not live, but it breaks the structural guarantee.
-3. **Role-cookie checks in UI**: `components/layout/locked-section.tsx` reads
-   `antcolos_user_role === "DRIVER"`. That's a role-name check, so move it to a permission or workspace kind.
+1. **Screens call `apiClient` directly**: only `access/acceptance-screen` is left. Fleet trucks,
+   people, invitations, requests, roles and the permission catalog go through services
+   (`trucks`, `orgPeople`, `orgInvitations`, `orgRoles`); sign-in, sign-up and onboarding go
+   through `lib/session/auth-api.ts` + `features/auth/hooks.ts` (plan 05, F0.4). **Deliberate:** `access/acceptance-screen` stays on `apiClient`,
+   because its preview/accept/reject routes are public and have no `ctx` (plan 01, decided 2026-11-02).
+2. **Inline query keys not under `orgKey`** remain in mock domains (`["broker-draft", …]`,
+   `["opportunities", org, …]`, `mt-loop`), where the org id is present but not the prefix. The
+   cache is cleared on org switch, so this is latent.
+3. ~~Role-cookie checks in UI~~: done. `LockedSection` reads `session.isDriverAccount`; the session
+   provider is the one place that interprets the account type.
 4. **Token in a JS-readable cookie** (js-cookie). Any XSS can read it. Longer term, move it to an
    httpOnly cookie set by a Next route handler/BFF (a Feature track, which needs backend agreement).
    No refresh flow: a 401 is a hard logout.
@@ -103,7 +105,10 @@ and cache entries can't cross organizations.
    (1,539), `access/invite-flow` (1,405), `access/acceptance-screen` (1,233), and more over 800.
 8. **Test tooling**: three runners. `vitest.config.mts` is dead (`vitest.config.ts` wins), and
    new `tests/<dir>` folders must be registered in `vitest.config.ts`.
-9. **Baseline not green**: lint errors and failing tests on `staging`. See WORKFLOW.md §Baseline.
+9. **Lint baseline not green** (tests are). See WORKFLOW.md §Baseline.
+10. **Hydration mismatch in the sidebar** (`components/layout/nav-link.tsx`): the server renders
+    `/dispatch`, the client `/dispatch/loops`, because nav visibility comes from client-only
+    session state. Seen in the full-stack run on 2026-11-02; not yet traced.
 
 ## 7. Decisions
 

@@ -3,6 +3,7 @@ import type {
   NeedsYouFilters, RiskCaseFilters, RiskSignalFilters, SettlementFilters,
   SettlementSort,
 } from "@/types";
+import type { OrgPeopleFamily, OrgPeopleQuery } from "@/types/org-people";
 
 /**
  * Every query key is namespaced by organization. Org A's data can never be
@@ -20,6 +21,12 @@ export const queryKeys = {
     [...orgKey(organizationId), "needs-you", membershipId, "count"] as const,
   members: (organizationId: string) =>
     [...orgKey(organizationId), "members"] as const,
+  /** Real people lists (drivers / dispatchers / admins). Shared by people, access and fleet. */
+  people: (organizationId: string) => [...orgKey(organizationId), "people"] as const,
+  peopleList: (organizationId: string, family: OrgPeopleFamily, query: OrgPeopleQuery) =>
+    [...orgKey(organizationId), "people", family, "list", query] as const,
+  person: (organizationId: string, family: OrgPeopleFamily, userId: string) =>
+    [...orgKey(organizationId), "people", family, "detail", userId] as const,
   responsibilityBoard: (organizationId: string, membershipId: string) =>
     [...orgKey(organizationId), "responsibility", "board", membershipId] as const,
   responsibilityAttention: (organizationId: string, membershipId: string) =>

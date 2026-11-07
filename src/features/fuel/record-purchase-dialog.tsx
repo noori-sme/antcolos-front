@@ -15,6 +15,7 @@ import { parseCents, parseGallons, parseMiles, parsePriceMills } from "@/lib/fue
 import { qualifyForIfta } from "@/lib/fuel/ifta";
 import type { FuelType } from "@/types";
 import { useFuelAction } from "./hooks";
+import { orgKey } from "@/lib/query/keys";
 
 const SELECT =
   "h-control w-full rounded-md border border-border bg-surface px-3 text-[0.875rem] text-fg shadow-e1 hover:border-border-strong focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35";
@@ -36,7 +37,7 @@ export function RecordPurchaseDialog({ onClose }: { onClose: () => void }) {
   const action = useFuelAction();
 
   const { data: fleet } = useQuery({
-    queryKey: ["fuel", "record", "fleet", truckCtx?.organizationId],
+    queryKey: [...orgKey(truckCtx?.organizationId ?? "none"), "fuel", "record", "fleet"],
     queryFn: () => listFleet(truckCtx!),
     enabled: Boolean(truckCtx),
   });

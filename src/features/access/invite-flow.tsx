@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Check, CheckCircle2, Copy, Plus, Search, ShieldCheck, UserCheck, UserPlus, UserRound, Users, X } from "lucide-react";
+import { Building2, Check, CheckCircle2, Plus, Search, ShieldCheck, UserCheck, UserPlus, UserRound, Users, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -24,17 +24,16 @@ import {
   SensitiveAccessWarning,
 } from "./permission-summary";
 import { invitationPresets, type InvitationPreset } from "./presets";
-import { invitationLink } from "./mock-access";
 import { services } from "@/lib/api";
-import { apiClient } from "@/lib/api/client";
 import { useServiceContext } from "@/lib/api/use-service-context";
+import type { CreateOrgInvitationInput } from "@/types/org-access";
+import { useCreateInvitation, useCreateRole, useOrgRoles, useTeamRoster } from "./hooks";
 import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
 import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
 import { cn } from "@/lib/utils";
 import { useScrollToTop } from "@/lib/utils/scroll";
 import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 // Helper function to map old permission keys to new ones with dot notation
@@ -131,29 +130,27 @@ export function InviteFlow() {
 
   const [stage, setStage] = useState<Stage>("type");
   useScrollToTop([stage]);
-  const queryClient = useQueryClient();
   const [preset, setPreset] = useState<InvitationPreset | null>(null);
   const [savedRole, setSavedRole] = useState<PermissionTemplate | null>(null);
 
-  const { data: roles = [], isLoading: isLoadingRoles } = useQuery<PermissionTemplate[]>({
-    queryKey: ["organizations", "roles"],
-    queryFn: async () => {
-      const res = await apiClient.get('/organizations/roles');
-      const rawData = res.data;
-      const apiRoles = rawData?.roles || rawData?.data || (Array.isArray(rawData) ? rawData : []);
-      return apiRoles.map((r: any) => ({
+  const { data: apiRoles, isLoading: isLoadingRoles } = useOrgRoles();
+  const roles = useMemo<PermissionTemplate[]>(
+    () =>
+      (apiRoles ?? []).map((r) => ({
         id: r.id,
         name: r.name,
         description: r.description || "",
-        permissions: (r.permissions || []).map(migrateKey),
+        permissions: r.permissions.map(migrateKey),
         version: 1,
         seeded: false,
         archived: false,
         createdAt: r.createdAt || new Date().toISOString(),
         updatedAt: r.updatedAt || new Date().toISOString(),
-      } as PermissionTemplate));
-    },
-  });
+      } as PermissionTemplate)),
+    [apiRoles],
+  );
+  const createRole = useCreateRole();
+  const createInvitation = useCreateInvitation();
 
   const [roleName, setRoleName] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -169,97 +166,7 @@ export function InviteFlow() {
   const [memberSearch, setMemberSearch] = useState("");
   const [memberRoleFilter, setMemberRoleFilter] = useState<"ALL" | "Driver" | "Dispatcher" | "Admin">("ALL");
 
-  const { data: teamMembers = [], isLoading: isLoadingMembers } = useQuery({
-    queryKey: ["organizations", "team-roster"],
-    queryFn: async () => {
-      try {
-        const [driversRes, dispatchersRes, adminsRes] = await Promise.allSettled([
-          apiClient.get("/organizations/drivers", { params: { pageSize: 100 } }),
-          apiClient.get("/organizations/dispatchers", { params: { pageSize: 100 } }),
-          apiClient.get("/organizations/admins", { params: { pageSize: 100 } }),
-        ]);
-        const members: Array<{
-          id: string;
-          userId: string;
-          name: string;
-          email: string;
-          role: string;
-          status: string;
-          firstName?: string;
-          lastName?: string;
-        }> = [];
-        const seenEmails = new Set<string>();
-
-        if (driversRes.status === "fulfilled") {
-          const list = driversRes.value.data?.data || driversRes.value.data || [];
-          for (const d of Array.isArray(list) ? list : []) {
-            const email = d.email || d.user?.email;
-            if (email && !seenEmails.has(email.toLowerCase())) {
-              seenEmails.add(email.toLowerCase());
-              const uId = String(d.userId || d.user?.id || d.id || "");
-              members.push({
-                id: uId || email,
-                userId: uId,
-                name: [d.firstName, d.lastName].filter(Boolean).join(" ") || d.name || email,
-                email,
-                role: "Driver",
-                status: d.accountStatus || "ACTIVE",
-                firstName: d.firstName || "",
-                lastName: d.lastName || "",
-              });
-            }
-          }
-        }
-
-        if (dispatchersRes.status === "fulfilled") {
-          const list = dispatchersRes.value.data?.data || dispatchersRes.value.data || [];
-          for (const d of Array.isArray(list) ? list : []) {
-            const email = d.email || d.user?.email;
-            if (email && !seenEmails.has(email.toLowerCase())) {
-              seenEmails.add(email.toLowerCase());
-              const uId = String(d.userId || d.user?.id || d.id || "");
-              members.push({
-                id: uId || email,
-                userId: uId,
-                name: [d.firstName, d.lastName].filter(Boolean).join(" ") || d.name || email,
-                email,
-                role: "Dispatcher",
-                status: d.accountStatus || "ACTIVE",
-                firstName: d.firstName || "",
-                lastName: d.lastName || "",
-              });
-            }
-          }
-        }
-
-        if (adminsRes.status === "fulfilled") {
-          const list = adminsRes.value.data?.data || adminsRes.value.data || [];
-          for (const a of Array.isArray(list) ? list : []) {
-            const email = a.email || a.user?.email;
-            if (email && !seenEmails.has(email.toLowerCase())) {
-              seenEmails.add(email.toLowerCase());
-              const uId = String(a.userId || a.user?.id || a.id || "");
-              members.push({
-                id: uId || email,
-                userId: uId,
-                name: [a.firstName, a.lastName].filter(Boolean).join(" ") || a.name || email,
-                email,
-                role: "Admin",
-                status: a.accountStatus || "ACTIVE",
-                firstName: a.firstName || "",
-                lastName: a.lastName || "",
-              });
-            }
-          }
-        }
-
-        return members;
-      } catch {
-        return [];
-      }
-    },
-    enabled: userMode === "existing",
-  });
+  const { data: teamMembers, isLoading: isLoadingMembers } = useTeamRoster(userMode === "existing");
 
   const filteredMembers = useMemo(() => {
     let result = teamMembers;
@@ -340,9 +247,7 @@ export function InviteFlow() {
   const [submitted, setSubmitted] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
-  const [sentToken, setSentToken] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const orgType = organization?.type ?? "CARRIER";
   const presets = useMemo(() => invitationPresets(orgType), [orgType]);
@@ -461,7 +366,7 @@ export function InviteFlow() {
     setStage("review");
   }
 
-  async function commit(alsoCopy: boolean = false) {
+  async function commit() {
     if (!organization || !preset || sending || !confirmed) return;
     setSending(true);
     setRefusal(null);
@@ -496,18 +401,14 @@ export function InviteFlow() {
           permissions: safePermissions,
         };
 
-        const roleRes = await apiClient.post("/organizations/roles", roleDraft);
-        const createdRoleData = roleRes.data?.role || roleRes.data?.data || roleRes.data;
-        const createdId = createdRoleData?.id || roleRes.data?.id || roleRes.data?.roleId;
+        // Refreshes the roles list on success, so the new role appears there.
+        const createdId = (await createRole.mutateAsync(roleDraft)).id;
 
         if (!createdId) {
           throw new Error("Role was created but no role ID was returned by the server.");
         }
 
         roleIdToUse = String(createdId);
-
-        // Invalidate roles query so new role appears in custom roles list
-        queryClient.invalidateQueries({ queryKey: ["organizations", "roles"] });
       } else if (savedRole) {
         roleIdToUse = String(savedRole.id);
       } else {
@@ -527,7 +428,7 @@ export function InviteFlow() {
         roleIdToUse = matched ? String(matched.id) : standardRoleId;
       }
 
-      let invitePayload: any;
+      let invitePayload: CreateOrgInvitationInput;
 
       if (userMode === "existing") {
         const resolvedUserId = selectedUser?.userId || selectedUser?.id || selectedMemberId;
@@ -553,17 +454,15 @@ export function InviteFlow() {
         };
       }
 
-      const inviteRes = await apiClient.post("/organizations/invitations", invitePayload);
-      const inviteData = inviteRes.data?.data || inviteRes.data?.invitation || inviteRes.data;
-      const token = inviteData?.token || inviteData?.code || inviteData?.id || null;
+      // Refreshes the invitation and request lists on success. The accept
+      // link is only emailed (the API never returns its token), so there is
+      // no link to show or copy here.
+      const created = await createInvitation.mutateAsync(invitePayload);
 
       if (referralId && ctx) {
-        void services.referrals.recordInvitation(ctx, referralId, inviteData?.id || "sent");
+        void services.referrals.recordInvitation(ctx, referralId, created.id || "sent");
       }
 
-      queryClient.invalidateQueries({ queryKey: ["organizations", "invitations"] });
-
-      setSentToken(token);
       setSending(false);
       setStage("sent");
       toast.success(
@@ -571,26 +470,11 @@ export function InviteFlow() {
           ? `Permission update invitation sent to ${recipientEmail.trim()}`
           : `Invitation sent to ${recipientEmail.trim()}`
       );
-
-      if (alsoCopy && token) {
-        void copyLink(token);
-      }
     } catch (err: any) {
       const displayMsg = getFriendlyErrorMessage(err);
       setRefusal(displayMsg);
       toast.error("Failed to send invitation", { description: displayMsg });
       setSending(false);
-    }
-  }
-
-  async function copyLink(token: string) {
-    try {
-      await navigator.clipboard.writeText(invitationLink(token));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      // Clipboard access can be refused; the link stays on screen to copy by hand.
-      setCopied(false);
     }
   }
 
@@ -1208,21 +1092,6 @@ export function InviteFlow() {
             </div>
           </div>
 
-          {sentToken ? (
-            <>
-              <Field label="Invitation link" htmlFor="invite-link" hint="Anyone with this link can accept the invitation.">
-                <div className="flex gap-2">
-                  <Input id="invite-link" readOnly value={invitationLink(sentToken)} className="font-mono text-[0.75rem]" />
-                  <Button variant="secondary" onClick={() => copyLink(sentToken)} className="shrink-0">
-                    {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-                    {copied ? "Copied" : "Copy"}
-                  </Button>
-                </div>
-              </Field>
-              <p aria-live="polite" className="sr-only">{copied ? "Link copied" : ""}</p>
-            </>
-          ) : null}
-
           <div className="flex flex-wrap gap-2">
             <Button variant="primary" onClick={() => router.push("/settings/invitations")}>
               Done
@@ -1243,7 +1112,6 @@ export function InviteFlow() {
                 setMemberSearch("");
                 setMemberRoleFilter("ALL");
                 setPermissions(new Set());
-                setSentToken(null);
                 setSubmitted(false);
                 setConfirmed(false);
               }}

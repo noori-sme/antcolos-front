@@ -3,8 +3,9 @@
 import { Building2, Headset, Plus, Truck, UserRound } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useId } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import type { AccountType } from "@/types/auth";
+import { useSelectRole } from "./hooks";
 import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
 import { toast } from "sonner";
 import { AuthShell } from "./shell";
@@ -14,10 +15,20 @@ import { DispatchCreation } from "./dispatch-creation";
 import { IndividualDispatcherSetup } from "./individual-dispatcher";
 import { DriverSelfOnboarding } from "@/features/driver/self-onboarding-screen";
 import { useStageFocus } from "./use-stage-focus";
-import Cookies from "js-cookie";
+import {
+  clearNextStep, readCookie,
+} from "@/lib/api/auth-cookies";
 
 type Stage = "role" | "carrier" | "verify-carrier" | "driver" | "dispatch-fork" | "create-org" | "individual";
 type Role = "carrier-owner" | "driver" | "dispatch" | "individual-dispatcher" | "dispatch-company";
+/** "dispatch" is a fork, not an account type: it never reaches select-role. */
+type AccountRole = Exclude<Role, "dispatch">;
+const ACCOUNT_TYPE: Record<AccountRole, AccountType> = {
+  "carrier-owner": "CARRIER",
+  driver: "DRIVER",
+  "individual-dispatcher": "DISPATCHER",
+  "dispatch-company": "DISPATCHING_COMPANY",
+};
 
 function MultipleHeadsetsIcon(props: React.ComponentProps<"svg">) {
   const maskId = useId();
@@ -76,7 +87,7 @@ export function OnboardingScreen() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
 
-  const nextStepCookie = typeof window !== "undefined" ? Cookies.get("antcolos_next_step") : null;
+  const nextStepCookie = typeof window !== "undefined" ? readCookie("antcolos_next_step") : null;
   const stepParam = searchParams?.get("step") as Stage;
 
   const initialStage: Stage =
@@ -94,7 +105,7 @@ export function OnboardingScreen() {
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
   useEffect(() => {
-    const nextCookie = Cookies.get("antcolos_next_step");
+    const nextCookie = readCookie("antcolos_next_step");
     const step = searchParams?.get("step") as Stage;
     if (step && step !== stage) {
       setStage(step);
@@ -119,18 +130,8 @@ export function OnboardingScreen() {
     router.push("/home");
   };
 
-  const selectRoleMutation = useMutation({
-    mutationFn: async (selectedRole: Role) => {
-      let accountType = "";
-      if (selectedRole === "carrier-owner") accountType = "CARRIER";
-      if (selectedRole === "driver") accountType = "DRIVER";
-      if (selectedRole === "individual-dispatcher") accountType = "DISPATCHER";
-      if (selectedRole === "dispatch-company") accountType = "DISPATCHING_COMPANY";
-
-      const { data } = await apiClient.post("/auth/select-role", { accountType });
-      return data;
-    },
-    onSuccess: (data, selectedRole) => {
+  const selectRoleMutation = useSelectRole((selectedRole: AccountRole) => ACCOUNT_TYPE[selectedRole], {
+    onSuccess: (_data, selectedRole) => {
       const friendlyMessages: Record<Role, string> = {
         "carrier-owner": "Role selected! Let's set up your carrier details.",
         "dispatch-company": "Role selected! Let's create your dispatch organization.",
@@ -139,7 +140,7 @@ export function OnboardingScreen() {
         "dispatch": "Role selected! Choose how you dispatch.",
       };
 
-      const message = data?.message || friendlyMessages[selectedRole] || "Role selected successfully!";
+      const message = friendlyMessages[selectedRole] || "Role selected successfully!";
       toast.success(message);
 
       if (selectedRole === "carrier-owner") {
@@ -151,14 +152,14 @@ export function OnboardingScreen() {
         return;
       }
       if (selectedRole === "individual-dispatcher") {
-        Cookies.remove("antcolos_next_step", { path: "/" });
+        clearNextStep();
         fetchAndStoreUserPermissions(queryClient);
         router.push("/home");
         return;
       }
 
       // Driver path: Skip additional onboarding and go straight to driver portal
-      Cookies.remove("antcolos_next_step", { path: "/" });
+      clearNextStep();
       fetchAndStoreUserPermissions(queryClient);
       router.push("/driver/home");
     },

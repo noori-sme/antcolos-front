@@ -16,7 +16,9 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
-import Cookies from "js-cookie";
+import {
+  clearInvitationToken, clearNextStep, clearPermissionCookies, readCookie, setInvitationToken, setSessionToken,
+} from "@/lib/api/auth-cookies";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -83,7 +85,7 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
   const [token, setToken] = useState<string>(() => {
     if (propToken) return propToken;
     if (typeof window !== "undefined") {
-      return Cookies.get("antcolos_invitation_token") || "";
+      return readCookie("antcolos_invitation_token") || "";
     }
     return "";
   });
@@ -97,9 +99,9 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
 
   // Strip /accept/[token] from URL and persist token in cookie
   useEffect(() => {
-    const activeToken = propToken || token || Cookies.get("antcolos_invitation_token");
+    const activeToken = propToken || token || readCookie("antcolos_invitation_token");
     if (activeToken) {
-      Cookies.set("antcolos_invitation_token", activeToken, { expires: 7, path: "/" });
+      setInvitationToken(activeToken);
       if (activeToken !== token) {
         setToken(activeToken);
       }
@@ -230,18 +232,13 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
         data.token ||
         data.data?.accessToken ||
         data.data?.token ||
-        Cookies.get("antcolos_token");
+        readCookie("antcolos_token");
 
       if (receivedToken) {
-        Cookies.set("antcolos_token", receivedToken, { expires: 7, path: "/" });
-        Cookies.remove("antcolos_invitation_token", { path: "/" });
-        Cookies.remove("antcolos_next_step", { path: "/" });
-        Cookies.remove("antcolos_role_id", { path: "/" });
-        Cookies.remove("antcolos_user_role", { path: "/" });
-        Cookies.remove("antcolos_role_name", { path: "/" });
-        Cookies.remove("antcolos_permissions", { path: "/" });
-        Cookies.remove("antcolos_user_permissions", { path: "/" });
-        Cookies.remove("antcolos_role_template", { path: "/" });
+        setSessionToken(receivedToken);
+        clearInvitationToken();
+        clearNextStep();
+        clearPermissionCookies();
 
         const permData = await fetchAndStoreUserPermissions(queryClient, receivedToken);
         toast.success(data.message || `Welcome to ${apiInvitation?.organizationName || "Antcolos"}!`);
@@ -250,11 +247,11 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
           permData?.roleId ||
           data?.roleId ||
           apiInvitation?.roleId ||
-          Cookies.get("antcolos_role_id");
+          readCookie("antcolos_role_id");
         const isDriver = String(role || "").toUpperCase() === "DRIVER";
         router.push(isDriver ? "/driver/home" : "/home");
       } else {
-        Cookies.remove("antcolos_invitation_token", { path: "/" });
+        clearInvitationToken();
         toast.success(data.message || "Account created! Please sign in to continue.");
         router.push("/sign-in");
       }
@@ -281,20 +278,20 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
     try {
       const res = await apiClient.post(`/invitations/accept/${encodeURIComponent(token)}`, {});
       const data = res.data || {};
-      const activeToken = Cookies.get("antcolos_token") || data.accessToken || "";
+      const activeToken = readCookie("antcolos_token") || data.accessToken || "";
       if (activeToken) {
-        Cookies.remove("antcolos_invitation_token", { path: "/" });
+        clearInvitationToken();
         const permData = await fetchAndStoreUserPermissions(queryClient, activeToken);
         const role =
           permData?.roleId ||
           data?.roleId ||
           apiInvitation?.roleId ||
-          Cookies.get("antcolos_role_id");
+          readCookie("antcolos_role_id");
         const isDriver = String(role || "").toUpperCase() === "DRIVER";
         toast.success(data.message || `Welcome to ${apiInvitation?.organizationName || "Antcolos"}!`);
         router.push(isDriver ? "/driver/home" : "/home");
       } else {
-        Cookies.remove("antcolos_invitation_token", { path: "/" });
+        clearInvitationToken();
         toast.success("Invitation accepted! Please sign in.");
         router.push("/sign-in");
       }
@@ -320,7 +317,7 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
 
     try {
       await apiClient.post(`/invitations/reject/${encodeURIComponent(token)}`, {});
-      Cookies.remove("antcolos_invitation_token", { path: "/" });
+      clearInvitationToken();
       setIsRejected(true);
       toast.success("Invitation declined.");
     } catch (err: any) {
@@ -432,7 +429,7 @@ export function InvitationAcceptanceScreen({ token: propToken }: { token?: strin
       password.trim() &&
       confirmPassword.trim()
     );
-    const isAuthenticated = Boolean(user?.id || Cookies.get("antcolos_token"));
+    const isAuthenticated = Boolean(user?.id || readCookie("antcolos_token"));
 
     return (
       <AuthShell

@@ -2,10 +2,9 @@
 
 import { ChevronRight, Loader2, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
+import { usePermissionCatalog } from "./hooks";
 import {
   migrateKey,
   normalizePermissionKey,
@@ -69,41 +68,33 @@ export function ApiPermissionPicker({
   grantable,
   className,
 }: ApiPermissionPickerProps) {
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["permissions", "catalog"],
-    queryFn: async () => {
-      const res = await apiClient.get("/permissions/catalog");
-      return res.data;
-    },
-    refetchOnMount: "always",
-    staleTime: 0,
-    gcTime: 0,
-  });
+  const { data, isLoading, isFetching } = usePermissionCatalog();
 
   const { catalog, groupLabels, groupOrder } = useMemo(() => {
     const metas: ApiPermissionMeta[] = [];
     const labels: Record<string, string> = {};
     const order: string[] = [];
 
-    const modules = data?.modules || data?.data?.modules || (Array.isArray(data) ? data : []);
-    modules.forEach((m: any) => {
-      const moduleKey = m.module || m.id || m.name;
-      const moduleLabel = m.label || m.name || moduleKey;
+    // The catalog carries keys and labels only (permissions-api-contract §1);
+    // descriptions and the sensitive/financial flags come from the local meta.
+    (data?.modules ?? []).forEach((m) => {
+      const moduleKey = m.module;
+      const moduleLabel = m.label || moduleKey;
       labels[moduleKey] = moduleLabel;
       order.push(moduleKey);
 
-      m.resources?.forEach((r: any) => {
-        r.actions?.forEach((a: any) => {
+      m.resources.forEach((r) => {
+        r.actions.forEach((a) => {
           const key = `${r.resource}.${a.action}`;
           const fallback = safePermissionMeta(key);
           metas.push({
             key,
             label: a.label || fallback.label,
-            description: a.description || fallback.description || "",
+            description: fallback.description || "",
             group: moduleKey,
             groupLabel: moduleLabel,
-            sensitive: Boolean(a.sensitive ?? fallback.sensitive),
-            financial: Boolean(a.financial ?? fallback.financial),
+            sensitive: Boolean(fallback.sensitive),
+            financial: Boolean(fallback.financial),
           });
         });
       });

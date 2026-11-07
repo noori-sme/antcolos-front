@@ -18,9 +18,11 @@ import type {
 
 export const MOCK_USER: User = {
   id: "usr_sam",
-  displayName: "",
-  email: "",
-  phone: "",
+  // The mock backend reads these (account lookup, audit "who"), so they stay
+  // real. The session provider hides them in the UI until /auth/me answers.
+  displayName: "Sam Murtaza",
+  email: "sam@antcolos.com",
+  phone: "+1 (312) 555-0148",
   locale: "en-US",
   timeZone: "America/Los_Angeles",
   preferences: {
@@ -41,8 +43,8 @@ export const MOCK_USER: User = {
  */
 export const NEWCOMER_USER: User = {
   id: "usr_newcomer",
-  displayName: "",
-  email: "",
+  displayName: "Alex Rivera",
+  email: "alex.rivera@example.com",
   locale: "en-US",
   timeZone: "America/Chicago",
   preferences: {

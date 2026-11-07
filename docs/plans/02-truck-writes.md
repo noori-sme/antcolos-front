@@ -1,0 +1,110 @@
+# 02 — Fleet trucks: write actions on the real API (F0.1)
+
+```
+Status:   implemented (product owner: "keep going with F0.1"; defaults below, for review in the PR)
+Phase:    5 — done
+Branch:   claude/magical-mccarthy-pgmh3z
+Track:    Integrate (all endpoints exist in the backend)
+Backend contract: ../antcolos/docs/requirements/fleet-api-contract.md §1, §1b, §4–§12
+                  ../antcolos/docs/requirements/users-api-contract.md §2–§4 (assignee picker)
+Milestone: F0.1 in ../antcolos/docs/product/milestones.md
+Updated:  2026-11-05
+```
+
+## Summary
+
+Today the fleet screens read trucks from the real API (list, detail) but cannot change
+anything: the truck profile has no actions, and "Add truck" is a prototype wizard that writes to
+the in-memory `truck-registry` mock even in http mode. This plan wires every truck write the
+backend has, through the `trucks` service, org-namespaced hooks, and small feature components.
+
+## Endpoint → contract method → hook
+
+| Endpoint | `TrucksService` method | Hook | UI |
+| --- | --- | --- | --- |
+| `GET /trucks/lookup?vin=` | `lookupByVin` | `useTruckLookup` | Add truck: VIN step |
+| `POST /trucks` (idempotent) | `create` | `useCreateTruck` | Add truck: create or attach |
+| `PATCH /trucks/:id` | `update` | `useUpdateTruck` | Profile: edit sheet |
+| `DELETE /trucks/:id` | `archive` | `useArchiveTruck` | Profile: archive (confirm) |
+| `POST /trucks/:id/{available,unavailable,maintenance}` (idempotent) | `setStatus` | `useSetTruckStatus` | Profile: status menu |
+| `POST /trucks/:id/operating-carriers/:operatingId/end` (idempotent) | `endOperating` | `useEndOperating` | Profile: remove from our fleet (confirm) |
+| `POST /trucks/:id/ownership/:ownershipId/replace` (idempotent) | `replaceOwnership` | `useReplaceOwnership` | Profile: hand off ownership to a member |
+| `POST /trucks/:id/assignments` (idempotent) | `assign` | `useAssignTruck` | Profile: assign driver / dispatcher |
+| `POST /trucks/:id/assignments/:assignmentId/replace` (idempotent) | `replaceAssignment` | `useReplaceAssignment` | Profile: replace |
+| `POST /trucks/:id/assignments/:assignmentId/remove` (idempotent) | `removeAssignment` | `useRemoveAssignment` | Profile: remove (confirm) |
+| `GET /organizations/{drivers,dispatchers,admins}` | `OrgPeopleService.list` (new, http-only) | `useAssignablePeople` | Assignee picker |
+
+Not wired: `POST …/ownership/:ownershipId/end` (the contract says it always returns 409
+`OWNERSHIP_REPLACEMENT_REQUIRED`), and the three history lists (read-only, not part of F0.1).
+
+## Decisions (defaults)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| A | **Replace the prototype "Add truck" wizard with a contract-shaped form** (`truck-create-screen.tsx`): VIN → lookup → attach (known VIN: unit number, home terminal, notes) or create (contract fields). The old wizard and its route usage go; `lib/api/mock/truck-registry.ts` stays for the other mock screens that use it. | The wizard's model (initial status, specs, evidence files, owner names, ownership claims) has no backend counterpart: the contract refuses `operationalStatus` on create, stores owners as ids, and has no claim route. Mapping it would silently drop half of what the user typed. |
+| B | **New owner on create is always this organization.** Owner-operator ownership is set later with "hand off ownership" to a member. | Keeps the create form short; the contract defaults `legalOwner` to the JWT org. |
+| C | **Ownership hand-off UI targets a member of this organization only.** Handing off to another carrier needs its organization id, and there is no organization search API: recorded under Backend asks. | Never ask a user to paste a UUID. |
+| D | **One `Idempotency-Key` per request signature** (`lib/api/idempotency-key.ts`): an identical retry reuses the key; any change to route or body gets a new one. | The backend refuses (400) a key reused with a different request even after a failed attempt, so "one key per intent, renewed on success" broke every corrected retry (review, blocking). |
+| E | **Gating**: `trucks:create` (create/attach), `trucks:edit` (edit, status, assign, leave fleet, hand off), `trucks:delete` (archive), mapped from backend `truck.*`. Identity edits and archive/hand-off are shown only when this org is the current legal owner (`legalOwner.ownerOrganizationId === org`); the server still decides. | Never show an action enabled that the API will refuse for permission reasons. |
+| F | **Assignee picker**: drivers from `/organizations/drivers`; dispatchers from `/organizations/dispatchers` plus `/organizations/admins` (the contract allows ADMIN as dispatcher). A list that fails shows its own notice with a retry; the lists that loaded still show. Drivers already driving another unit are disabled. | There is no frontend mapping for `membership.list_*` permissions to gate on in advance (see Findings). |
+
+## Phases
+
+1. **Data layer** — types (`TruckLookup`, `TruckAssignmentRow`, `TruckOwnershipRow`,
+   `TruckOperatingRow`, inputs), `TrucksService` methods, http adapter with `toTruckLookup`,
+   `toTruckAssignmentRow`, `toTruckOwnershipRow`, `toTruckOperatingRow` + tests from the contract
+   examples; `OrgPeopleService` (list) http adapter + mapper test. → verify: vitest on the adapter
+   tests, typecheck.
+2. **Hooks** — `features/fleet/hooks.ts` mutations with idempotency keys and narrow invalidation
+   (`fleetKeys.detail` + `fleetKeys.all`), `useTruckLookup`, `useAssignablePeople`. → verify:
+   typecheck, lint.
+3. **Truck profile actions** — `truck-actions.tsx` (status, edit, leave fleet, archive, hand off),
+   `truck-assignments-panel.tsx` (assign / replace / remove), `truck-edit-sheet.tsx`; the profile
+   screen only composes them. → verify: lint, typecheck, browser against the local backend.
+4. **Add truck** — `truck-create-screen.tsx` + route switch; remove the orphaned wizard. → verify:
+   browser against the local backend, existing browser specs still pass in mock mode.
+5. **Verify and review** — `/verify`, `frontend-reviewer`, browser run of every action.
+
+## Findings (contract / frontend)
+
+- **Session organization id is a fixture id in http mode.** `useServiceContext().organizationId`
+  comes from the session's fixture roster (`lib/session/membership-store.ts`), not from the
+  backend, so it never equals a real organization id. Found in the live browser run: the legal-owner
+  check compared against it and hid hand-off and archive. The truck screens now compare against
+  `truck.operating.organizationId` (always this org's own row). Cache keys still use the fixture id,
+  which is consistent per session. Fixing the session to carry backend ids is a separate change
+  (auth/session: Feature track).
+
+- Frontend permission catalog has no mapping for `membership.list_drivers`,
+  `membership.list_dispatchers`, `membership.list_admins` (decision F).
+
+## Known limits
+
+- **A truck owned by a member** (`ownerType: "USER"`, e.g. after a hand-off) offers no owner
+  actions to anyone: the owner check needs the caller's backend user id, and the session's ids are
+  fixtures in http mode (Findings). Nobody can hand it back from the UI yet.
+- **Identity edits need an operating row**: an organization that owns a truck but has left its
+  fleet can't edit identity from the UI (the contract allows it). Rare.
+
+## Review (frontend-reviewer, 2026-11-05)
+
+- Blocking, fixed: idempotency keys were renewed only on success, so a corrected submit after a
+  refusal reused the key with a different body and got 400. Keys now follow the request signature
+  (unit-tested), and a live test covers duplicate unit number → fix → create.
+- Should-fix, fixed: one failing people list blocked the whole picker; replacing a dispatcher
+  excluded the current user (coverage changes are allowed); the action gating and legal-owner
+  logic moved to `lib/fleet/truck-actions-policy.ts` with refused-path tests.
+- Should-fix, recorded: member-owned trucks (Known limits).
+- Nits, fixed: picker uses buttons with `aria-pressed` instead of a listbox without keyboard model;
+  skeleton loading states; busy drivers disabled; "first 50" hint; edit dialog no longer resets
+  on a background refetch and trims its baseline; attach sends the truck's own equipment type;
+  remove-from-fleet and archive mark the cache stale instead of refetching a truck that may 404.
+
+## Backend asks
+
+- An organization search (by handle, MC or DOT) so ownership can be handed off to another carrier
+  without typing an id (decision C).
+
+## Frontend impact on the backend
+
+None: every call follows the existing contract.

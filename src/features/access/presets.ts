@@ -63,6 +63,8 @@ const DISPATCHER: InvitationPreset = {
     "dispatch:view", "loads:assign",
     "tracking:view", "tracking:share", "tracking:update:send",
     "drivers:view", "trucks:view", "trailers:view",
+    // Same as the Dispatcher template and the backend default (plan 06).
+    "members:list_drivers",
     "customers:view", "documents:view", "documents:upload", "compliance:view",
   ],
 };

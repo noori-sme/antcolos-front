@@ -22,7 +22,8 @@ import {
   validateRoleName,
 } from "@/lib/permissions";
 import { services } from "@/lib/api";
-import { apiClient } from "@/lib/api/client";
+import type { OrgRole } from "@/types/org-access";
+import { useCreateRole, useDeleteRole, useOrgRoles, useUpdateRole } from "./hooks";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { useServiceContext } from "@/lib/api/use-service-context";
@@ -91,13 +92,31 @@ function migrateKey(p: string) {
  * Owner sits at the top and cannot be touched: it is the lockout guard, not a
  * role, so there is deliberately no edit, archive or delete on it.
  */
+/** An API role in the shape this screen's rows and editor already use. */
+function toTemplateSummary(r: OrgRole): TemplateSummary {
+  return {
+    template: {
+      id: r.id,
+      name: r.name,
+      description: r.description || "",
+      permissions: r.permissions.map(migrateKey) as PermissionKey[],
+      version: 1, // API currently does not provide version
+      seeded: false, // Wait for backend to provide a flag if some roles shouldn't be deletable
+      archived: false,
+      createdAt: r.createdAt || new Date().toISOString(),
+      updatedAt: r.updatedAt || new Date().toISOString(),
+    },
+    memberCount: 0, // Need future API support for actual member count
+    behindCount: 0,
+  } as TemplateSummary;
+}
+
 export function RolesScreen() {
   const { organization } = useActiveMembership();
   const myPermissions = usePermissions();
   const ctx = useServiceContext();
 
   const [tab, setTab] = useState<Tab>("roles");
-  const [summaries, setSummaries] = useState<TemplateSummary[] | null>(null);
   const [view, setView] = useState<View>({ mode: "list" });
   const [busyState, setBusyState] = useState<{ id: string; action: string } | null>(null);
 
@@ -110,43 +129,16 @@ export function RolesScreen() {
    * the numbers in another — and a local patch would be a second, slowly wrong
    * copy of exactly the thing this screen is supposed to be honest about.
    */
-  const [tick, setTick] = useState(0);
-  const refresh = useCallback(() => setTick((t) => t + 1), []);
+  const { data: roles, isError: rolesFailed, refetch: refetchRoles } = useOrgRoles();
+  const createRole = useCreateRole();
+  const deleteRole = useDeleteRole();
+  // null while loading; a failed read shows the empty list, as before.
+  const summaries = useMemo<TemplateSummary[] | null>(
+    () => (roles ? roles.map(toTemplateSummary) : rolesFailed ? [] : null),
+    [roles, rolesFailed],
+  );
+  const refresh = useCallback(() => { void refetchRoles(); }, [refetchRoles]);
   useEffect(() => subscribeRoster(refresh), [refresh]);
-  
-  useEffect(() => {
-    if (!ctx) return;
-    let cancelled = false;
-    
-    // Fetch from actual API instead of the mock services.access.templates
-    apiClient.get('/organizations/roles').then((res) => {
-      if (cancelled) return;
-      const roles = res.data?.roles || [];
-      const mappedSummaries: TemplateSummary[] = roles.map((r: any) => {
-        return {
-          template: {
-            id: r.id,
-            name: r.name,
-            description: r.description || "",
-            permissions: (r.permissions || []).map(migrateKey),
-            version: 1, // API currently does not provide version
-            seeded: false, // Wait for backend to provide a flag if some roles shouldn't be deletable
-            archived: false,
-            createdAt: r.createdAt || new Date().toISOString(),
-            updatedAt: r.updatedAt || new Date().toISOString(),
-          },
-          memberCount: 0, // Need future API support for actual member count
-          behindCount: 0,
-        };
-      });
-      setSummaries(mappedSummaries);
-    }).catch(() => {
-      if (!cancelled) setSummaries([]);
-    });
-
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx?.organizationId, ctx?.membershipId, tick]);
 
   const grantable = useMemo(
     () => new Set(grantablePermissionKeys(myPermissions, orgType)),
@@ -292,7 +284,7 @@ export function RolesScreen() {
                           description: summary.template.description,
                           permissions: summary.template.permissions
                         };
-                        await apiClient.post('/organizations/roles', draft);
+                        await createRole.mutateAsync(draft);
                         toast.success(`Duplicated "${summary.template.name}".`);
                       } catch (err: any) {
                         toast.error("That role was not duplicated.", { description: getFriendlyErrorMessage(err) });
@@ -308,7 +300,7 @@ export function RolesScreen() {
                   onDelete={() =>
                     act(summary.template.id, "delete", async () => {
                       try {
-                        await apiClient.delete(`/organizations/roles/${summary.template.id}`);
+                        await deleteRole.mutateAsync(summary.template.id);
                         toast.success(`Role "${summary.template.name}" deleted.`);
                       } catch (err: any) {
                         toast.error(err.message || "That role was not deleted.");
@@ -346,7 +338,7 @@ export function RolesScreen() {
                     onDelete={() =>
                       act(summary.template.id, "delete", async () => {
                         try {
-                          await apiClient.delete(`/organizations/roles/${summary.template.id}`);
+                          await deleteRole.mutateAsync(summary.template.id);
                           toast.success(`Role "${summary.template.name}" deleted.`);
                         } catch (err: any) {
                           toast.error(err.message || "That role was not deleted.");
@@ -531,6 +523,8 @@ function TemplateEditor({
   onSaved: (saved: PermissionTemplate, wasEdit: boolean, backendMsg?: string) => void;
 }) {
   const ctx = useServiceContext();
+  const createRole = useCreateRole();
+  const updateRole = useUpdateRole();
   const [name, setName] = useState(template?.name ?? "");
   const [description, setDescription] = useState(template?.description ?? "");
   const [permissions, setPermissions] = useState<Set<string>>(
@@ -557,12 +551,12 @@ function TemplateEditor({
     
     try {
       if (template) {
-        const res = await apiClient.patch(`/organizations/roles/${template.id}`, { ...draft, syncMembers: false });
-        onSaved({ ...template, name, description, permissions: selected as PermissionKey[] }, true, res.data?.message);
+        await updateRole.mutateAsync({ roleId: template.id, input: { ...draft, syncMembers: false } });
+        onSaved({ ...template, name, description, permissions: selected as PermissionKey[] }, true);
       } else {
-        const res = await apiClient.post('/organizations/roles', draft);
+        const created = await createRole.mutateAsync(draft);
         onSaved({
-          id: res.data?.id || "new",
+          id: created.id || "new",
           organizationId: ctx.organizationId,
           name,
           description,
@@ -572,7 +566,7 @@ function TemplateEditor({
           archived: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        }, false, res.data?.message);
+        }, false);
       }
     } catch (err: any) {
       toast.error("That role was not saved.", { description: getFriendlyErrorMessage(err) });
