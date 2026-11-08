@@ -4,7 +4,7 @@
  */
 
 /** Pages under `src/app/(public)`: reached without signing in, by anyone. */
-const PUBLIC_PREFIXES = ["/profile/", "/shared/", "/track/"] as const;
+const PUBLIC_PREFIXES = ["/profile/", "/shared/", "/track/", "/carriers/"] as const;
 
 /** Pages under `src/app/(auth)`: for people who are not signed in yet. */
 const AUTH_PREFIXES = [

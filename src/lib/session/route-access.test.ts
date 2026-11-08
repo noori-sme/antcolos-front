@@ -9,6 +9,7 @@ describe("isPublicPath", () => {
     "/profile/jane/a/first-load",
     "/shared/abc123",
     "/track/abc123",
+    "/carriers/lookup",
   ])("lets %s through without a session", (path) => {
     expect(isPublicPath(path)).toBe(true);
   });
