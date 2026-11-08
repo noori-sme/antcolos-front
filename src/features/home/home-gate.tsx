@@ -8,7 +8,9 @@ import { driverProfileSync } from "@/features/driver/mock-driver";
 import { useActiveMembership } from "@/lib/session/hooks";
 import { DispatchWorkspaceScreen } from "@/features/workspace/dispatch-workspace-screen";
 import { useWorkspace } from "@/features/workspace/use-workspace";
+import { API_MODE } from "@/lib/api/mode";
 import { HomeScreen } from "./home-screen";
+import { LiveHomeScreen } from "./live-home-screen";
 
 /**
  * Home is not one dashboard — it is whichever dashboard belongs to the place
@@ -26,7 +28,9 @@ import { HomeScreen } from "./home-screen";
  * Somebody with neither a membership nor a driver profile has not finished
  * setting up, so they go back to onboarding rather than to an empty dashboard.
  */
-export function HomeGate() {
+export const HomeGate = API_MODE === "http" ? LiveHomeScreen : MockHomeGate;
+
+function MockHomeGate() {
   const { isDriverMembership, membership } = useActiveMembership();
   const workspace = useWorkspace();
   const router = useRouter();

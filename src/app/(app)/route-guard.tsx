@@ -2,9 +2,10 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
+import { isRouteAvailable, requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
 import { useCanAll } from "@/lib/session/hooks";
 import { Forbidden } from "./forbidden";
+import { NotAvailable } from "./not-available";
 
 /**
  * Route-level gate. The route manifest is derived from the nav config, so a
@@ -26,6 +27,7 @@ export function RouteGuard({ children }: { children: ReactNode }) {
     return null;
   }
 
+  if (!isRouteAvailable(pathname)) return <NotAvailable />;
   if (!allowed) return <Forbidden required={required} />;
   return <>{children}</>;
 }

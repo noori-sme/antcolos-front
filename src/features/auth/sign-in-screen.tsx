@@ -148,16 +148,9 @@ export function SignInScreen() {
 
       sessionStorage.setItem("antcolos_pending_toast", "Successfully signed in.");
 
-      const roleId =
-        permData?.roleId ||
-        (user.scope === "individual" ? user.individualRole : undefined) ||
-        readCookie("antcolos_role_id") ||
-        readCookie("antcolos_user_role");
-
-      const isDriver = String(roleId || "").toUpperCase() === "DRIVER";
-      const targetPath = invitationReturn ?? (isDriver ? "/driver/home" : "/home");
-
-      router.push(targetPath);
+      // Always /home: the Home gate reads the session and sends a driver
+      // membership on to the driver portal, so no role name is compared here.
+      router.push(invitationReturn ?? "/home");
     },
     onError: (error) => {
       const msg = error.message || "";

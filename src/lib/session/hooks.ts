@@ -23,6 +23,12 @@ export function useSession() {
   return { user, memberships, organizations, switchOrganization, density, setDensity };
 }
 
+/** http mode only (plan 08): whether loading the organization failed, and a retry. */
+export function useRosterStatus() {
+  const { rosterFailed = false, retryRoster } = useSessionContext();
+  return { rosterFailed, retryRoster };
+}
+
 /** "What may I do here" — the organization-scoped membership. */
 export function useActiveMembership() {
   const { activeMembership, activeOrganization, isDriverMembership } =

@@ -8,6 +8,7 @@ import type {
   DecideInput, EscalateInput, SnoozeInput,
 } from "@/lib/api/contracts/needs-you";
 import { useServiceContext } from "@/lib/api/use-service-context";
+import { isRouteAvailable } from "@/lib/permissions/route-manifest";
 import { queryKeys } from "@/lib/query/keys";
 import type { NeedsYouFilters, NeedsYouItem } from "@/types";
 
@@ -40,7 +41,8 @@ export function useNeedsYouCount() {
       const views = await services.responsibility.attention(ctx!);
       return views.myNeedsYou.filter((a) => a.work.kind === "needs_you").length;
     },
-    enabled: Boolean(ctx),
+    // Needs You has no backend yet: in http mode the count is never fetched (plan 08).
+    enabled: Boolean(ctx) && isRouteAvailable("/needs-you"),
   });
 }
 
