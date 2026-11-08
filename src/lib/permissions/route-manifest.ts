@@ -1,5 +1,19 @@
+import { HTTP_LIVE_ROUTES } from "@/config/live-routes";
 import { ALL_NAV_SECTIONS } from "@/config/nav";
+import { API_MODE } from "@/lib/api/mode";
 import type { PermissionKey } from "@/types";
+
+/**
+ * Whether a route works in this API mode (plan 08). Mock mode reaches every
+ * route; http mode only the ones in `HTTP_LIVE_ROUTES`.
+ */
+export function isRouteAvailable(
+  pathname: string,
+  mode: "http" | "mock" = API_MODE,
+): boolean {
+  if (mode !== "http") return true;
+  return HTTP_LIVE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
 
 /**
  * path -> required permissions. Derived from the nav config so a route and its

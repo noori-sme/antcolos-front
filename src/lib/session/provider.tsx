@@ -27,7 +27,14 @@ import {
   rosterServerSnapshot, rosterSnapshot, subscribeRoster,
 } from "./membership-store";
 import { readSessionScenario, type SessionScenario } from "./scenarios";
+import { API_MODE } from "@/lib/api/mode";
+import { orgKey } from "@/lib/query/keys";
+import { authApi } from "./auth-api";
+import { toSessionRoster } from "./http-roster";
+import type { SessionRoster } from "./membership-store";
 import { isAuthPath, isPublicPath } from "./route-access";
+
+const EMPTY_ROSTER: SessionRoster = { memberships: [], organizations: [] };
 
 export interface SessionContextValue {
   /** Permanent. Identical across every organization switch. */
@@ -52,6 +59,13 @@ export interface SessionContextValue {
   density: DensityPreference;
   setDensity: (d: DensityPreference) => void;
   switchOrganization: (membershipId: string) => void;
+  /**
+   * http mode only (plan 08): the organization could not be loaded from
+   * `/users/me/memberships`, so there is no active membership. Screens show an
+   * error with `retryRoster` rather than waiting forever.
+   */
+  rosterFailed?: boolean;
+  retryRoster?: () => void;
 }
 
 export const SessionContext = createContext<SessionContextValue | null>(null);
@@ -192,7 +206,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
    */
   const getRoster = useCallback(() => rosterSnapshot(scenario), [scenario]);
   const getServerRoster = useCallback(() => rosterServerSnapshot(scenario), [scenario]);
-  const roster = useSyncExternalStore(subscribeRoster, getRoster, getServerRoster);
+  const fixtureRoster = useSyncExternalStore(subscribeRoster, getRoster, getServerRoster);
+
+  // http mode (plan 08): the real organization from the API, not the fixtures.
+  // Only the organization the tenant JWT is scoped to is included (see
+  // `toSessionRoster`). Until it answers, the roster is empty rather than a
+  // placeholder workspace.
+  const tenantOrgId: string | undefined = fetchedUser?.organizationId ?? undefined;
+  const {
+    data: httpRoster,
+    isError: rosterFailed,
+    refetch: refetchRoster,
+  } = useQuery({
+    queryKey: [...orgKey(tenantOrgId ?? "none"), "session", "roster"],
+    enabled: API_MODE === "http" && Boolean(tenantOrgId),
+    queryFn: async () =>
+      toSessionRoster(await authApi.myMemberships(), {
+        userId: fetchedUser.id,
+        organizationId: tenantOrgId,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const roster = API_MODE === "http" ? (httpRoster ?? EMPTY_ROSTER) : fixtureRoster;
   const memberships = roster.memberships;
   const organizations = roster.organizations;
   // Restored from storage after hydration; falls back to the default membership.
@@ -364,8 +400,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       density,
       setDensity: setDensityState,
       switchOrganization,
+      rosterFailed,
+      retryRoster: () => void refetchRoster(),
     }),
-    [user, memberships, organizations, activeMembership, activeOrganization, permissions, isDriverMembership, isDriverAccount, density, switchOrganization],
+    [user, memberships, organizations, activeMembership, activeOrganization, permissions, isDriverMembership, isDriverAccount, density, switchOrganization, rosterFailed, refetchRoster],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -1,7 +1,7 @@
 # Antcolos frontend architecture
 
 Status: living document. Update §5 when a domain moves from mock to http, and §6 when debt is
-paid or found. Last reviewed: 2026-11-01.
+paid or found. Last reviewed: 2026-11-08.
 
 ## 1. System context
 
@@ -70,13 +70,18 @@ and cache entries can't cross organizations.
 | Domain | Backend module / contract | Frontend today | Pattern |
 | --- | --- | --- | --- |
 | Auth, signup, onboarding, carrier verification | identity, integrations(fmcsa) / `signup-api-contract`, `carrier-onboarding` | **http** | `lib/session/auth-api.ts` (pre-tenant, no ctx) + `features/auth/hooks.ts` |
-| Invitations, acceptance, invitation requests | identity / `membership-api-contract` | **http** | legacy, in `features/access/*` |
-| Roles, permission catalog, me/permissions | identity / `permissions-api-contract` | **http** | legacy, in `features/access/roles-screen`, `lib/session` |
+| Invitations, acceptance, invitation requests | identity / `membership-api-contract` | **http** | service seam (`orgInvitations`), plan 01. The acceptance screen is legacy on purpose |
+| Roles, permission catalog, me/permissions | identity / `permissions-api-contract` | **http** | service seam (`orgRoles`), plan 01; me/permissions in `lib/session` |
+| Session roster (organization name, active membership) | identity / `membership-api-contract` (`GET /users/me/memberships`) | **http** in http mode, fixtures in mock mode | `lib/session/http-roster.ts`, plan 08 |
 | People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** (list, detail) | service seam (`orgPeople`), F0.2 |
 | Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
 | Profile | identity / `profile.md` | mock | contracts seam |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
 | Loads, dispatch, tracking, finance, fuel, ELD, compliance, insurance, maintenance, audit, contracts, directory, workforce, reports, factoring, referrals, needs-you | **not built in backend yet** | mock | contracts seam |
+
+In http mode only the routes in `src/config/live-routes.ts` are reachable (plan 08). Everything
+else is hidden from the nav and shows "not available yet". Add a route there in the same change
+that moves its screens to an http adapter.
 
 "Legacy" means it works against the real API but breaks invariant 1/2 (see §6). Migrate it with
 `/integrate <domain>` when you next touch the screen. Don't do big-bang rewrites.
@@ -108,7 +113,14 @@ and cache entries can't cross organizations.
 9. **Lint baseline not green** (tests are). See WORKFLOW.md §Baseline.
 10. **Hydration mismatch in the sidebar** (`components/layout/nav-link.tsx`): the server renders
     `/dispatch`, the client `/dispatch/loops`, because nav visibility comes from client-only
-    session state. Seen in the full-stack run on 2026-11-02; not yet traced.
+    session state. Seen in the full-stack run on 2026-11-02; not yet traced. React error #418 is
+    logged on every (app) page in a production build.
+11. **Individual accounts can't sign in** (found 2026-11-08, on production too). Sign-in always calls
+    `/users/me/permissions`, which is tenant-only, so an individual dispatcher or driver gets a 403
+    and is logged out. A Fix-track task.
+12. **One organization per session** (plan 08). In http mode the roster holds only the JWT's
+    organization. Switching needs a backend endpoint that issues a token for another membership
+    (backend ask).
 
 ## 7. Decisions
 
