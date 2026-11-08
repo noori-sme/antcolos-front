@@ -20,7 +20,9 @@ export const useSignup = (o?: Options<{ message: string }, SignupInput>) =>
   useMutation({ ...o, mutationFn: authApi.signup });
 export const useVerifyEmail = (o?: Options<AuthResult, string>) =>
   useMutation({ ...o, mutationFn: authApi.verifyEmail });
-export const useResendVerification = (o?: Options<{ message: string }, string>) =>
+export const useVerifyCarrier = (o?: Options<AuthResult, string>) =>
+  useMutation({ ...o, mutationFn: authApi.verifyCarrier });
+export const useResendVerification =(o?: Options<{ message: string }, string>) =>
   useMutation({ ...o, mutationFn: authApi.resendVerification });
 export const useCheckUsername = (o?: Options<boolean, string>) =>
   useMutation({ ...o, mutationFn: authApi.usernameAvailable });

@@ -30,6 +30,11 @@ export function middleware(request: NextRequest) {
 
   // 2. We HAVE a token. Handle onboarding steps.
   if (nextStep) {
+    // The carrier verification link arrives mid-onboarding (nextStep is
+    // "verify-carrier"). Redirecting it would drop its ?token=.
+    if (pathname === '/verify-carrier') {
+      return NextResponse.next()
+    }
     if (nextStep === "choose-username" && pathname !== "/sign-up") {
       return NextResponse.redirect(new URL('/sign-up', request.url))
     }
