@@ -4,61 +4,38 @@ import { useEffect, useState } from "react";
 import { Check, X, Inbox } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { OrgInvitationListItem, OrgInvitationStatus } from "@/types/org-access";
+import { useDecideInvitationRequest, useInvitationRequests } from "./hooks";
 
-export interface InvitationRequest {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  roleId: string;
-  status: string;
-  organizationId: string;
-  invitedByUserId: string;
-  invitedUserId: string;
-  expiresAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  acceptedAt: string | null;
-  acceptedUserId: string | null;
-}
+/** A member's request to invite someone, as the identity API lists it. */
+export type InvitationRequest = OrgInvitationListItem;
+
+/** How a request's status reads on this screen. */
+const REQUEST_STATUS_LABEL: Partial<Record<OrgInvitationStatus, string>> = {
+  awaiting_approval: "Awaiting approval",
+  pending: "Approved",
+  accepted: "Accepted",
+  rejected_by_admin: "Rejected",
+};
 
 export function InvitationRequests() {
-  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"pending" | "all">("pending");
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const { data: requests, isLoading, isFetching } = useQuery({
-    queryKey: ["invitation-requests"],
-    queryFn: async () => {
-      const res = await apiClient.get("/organizations/invitation-requests");
-      return (res.data?.data || []) as InvitationRequest[];
-    },
-    staleTime: 0,
-    refetchOnMount: "always",
-  });
+  const { data: page, isLoading, isFetching } = useInvitationRequests();
+  const requests = page?.data;
+  const decide = useDecideInvitationRequest();
 
   async function handleAction(id: string, action: "approve" | "reject") {
     setBusyId(id);
     try {
-      if (action === "approve") {
-        await apiClient.post(`/organizations/invitation-requests/${id}/approve`);
-        toast.success("Request approved.");
-      } else {
-        await apiClient.post(`/organizations/invitation-requests/${id}/reject`);
-        toast.success("Request rejected.");
-      }
-      queryClient.setQueryData(["invitation-requests"], (old: InvitationRequest[] | undefined) =>
-        old?.map((req) =>
-          req.id === id ? { ...req, status: action === "approve" ? "APPROVED" : "REJECTED" } : req
-        ) || []
-      );
-      queryClient.invalidateQueries({ queryKey: ["invitation-requests"] });
-    } catch (err: any) {
-      toast.error(err?.message || `Failed to ${action} request.`);
+      // The list refetches on success; a handled request leaves it.
+      await decide.mutateAsync({ requestId: id, decision: action });
+      toast.success(action === "approve" ? "Request approved." : "Request rejected.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error && err.message ? err.message : `Failed to ${action} request.`);
     } finally {
       setBusyId(null);
     }
@@ -69,9 +46,7 @@ export function InvitationRequests() {
   }
 
   const allRequests = requests || [];
-  const pendingRequests = allRequests.filter(
-    (r) => r.status?.toUpperCase() === "PENDING"
-  );
+  const pendingRequests = allRequests.filter((r) => r.status === "awaiting_approval");
   const displayed = filter === "pending" ? pendingRequests : allRequests;
 
   return (
@@ -126,8 +101,8 @@ export function InvitationRequests() {
       ) : (
         <ul className="space-y-2.5">
           {displayed.map((req) => {
-            const isPending = req.status?.toUpperCase() === "PENDING";
-            const isApproved = req.status?.toUpperCase() === "APPROVED" || req.status?.toUpperCase() === "ACCEPTED";
+            const isPending = req.status === "awaiting_approval";
+            const isApproved = req.status === "pending" || req.status === "accepted";
             const busy = busyId === req.id;
 
             return (
@@ -149,7 +124,7 @@ export function InvitationRequests() {
                           !isPending && !isApproved && "bg-st-danger-bg text-st-danger"
                         )}
                       >
-                        {req.status}
+                        {(req.status && REQUEST_STATUS_LABEL[req.status]) ?? "Unknown"}
                       </span>
                     </div>
                     <p className="mt-0.5 truncate text-[0.8125rem] text-fg-muted">

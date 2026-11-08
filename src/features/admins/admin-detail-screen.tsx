@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -18,34 +17,8 @@ import {
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
-
-export interface AdminAddress {
-  addressLine1?: string;
-  addressLine2?: string;
-  postalCode?: string;
-  city?: string;
-  state?: string;
-  country?: string;
-}
-
-export interface AdminDetail {
-  userId: string;
-  membershipId: string;
-  firstName: string;
-  lastName: string;
-  name?: string;
-  username?: string;
-  email: string;
-  phone?: string;
-  roleId: string;
-  roleName: string;
-  joinedAt: string;
-  accountStatus: "ACTIVE" | "PENDING" | "SUSPENDED" | "INACTIVE" | string;
-  hasPermissionOverrides?: boolean;
-  address?: AdminAddress | null;
-}
+import { useAdmin } from "./hooks";
 
 function formatDate(iso?: string): string {
   if (!iso) return "Data is not available";
@@ -114,14 +87,7 @@ function InfoRow({
 }
 
 export function AdminDetailScreen({ userId }: { userId: string }) {
-  const { data: admin, isLoading, isError, error, refetch } = useQuery<AdminDetail>({
-    queryKey: ["organizations", "admins", userId],
-    queryFn: async () => {
-      const res = await apiClient.get(`/organizations/admins/${userId}`);
-      return (res.data?.data || res.data) as AdminDetail;
-    },
-    enabled: Boolean(userId),
-  });
+  const { data: admin, isPending: isLoading, isError, error, refetch } = useAdmin(userId);
 
   if (isLoading) {
     return (

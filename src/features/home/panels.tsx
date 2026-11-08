@@ -249,12 +249,13 @@ export function UnassignedLoadsPanel({ loads }: { loads: Load[] }) {
   );
 }
 
-export function DriverAttentionPanel({ drivers }: { drivers: Driver[] }) {
+/** `linkToList` only when the viewer may open Drivers (`members:list_drivers`, plan 06). */
+export function DriverAttentionPanel({ drivers, linkToList }: { drivers: Driver[]; linkToList: boolean }) {
   return (
     <PanelShell
       title="Drivers to check"
       description="Missing paperwork or no Telegram connection."
-      href="/people/drivers"
+      href={linkToList ? "/people/drivers" : undefined}
       empty={drivers.length === 0}
     >
       {drivers.length === 0 ? (

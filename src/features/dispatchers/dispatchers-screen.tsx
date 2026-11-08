@@ -18,44 +18,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
-import { useQuery } from "@tanstack/react-query";
 import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
-
-export interface DispatcherAssignment {
-  assignmentId: string;
-  truckId?: string;
-  unitNumber?: string;
-  coverage?: string;
-  startAt?: string;
-}
-
-export interface Dispatcher {
-  userId: string;
-  membershipId: string;
-  firstName: string;
-  lastName: string;
-  name?: string;
-  username?: string;
-  email: string;
-  phone?: string;
-  roleId: string;
-  roleName: string;
-  joinedAt: string;
-  accountStatus: "ACTIVE" | "PENDING" | "SUSPENDED" | "INACTIVE" | string;
-  currentAssignments?: DispatcherAssignment[];
-}
-
-export interface DispatchersResponse {
-  data: Dispatcher[];
-  meta?: {
-    page: number;
-    pageSize: number;
-    totalItems: number;
-    totalPages: number;
-  };
-}
+import { useDispatchers } from "./hooks";
 
 const STATUS_FILTERS = [
   { value: "all", label: "All" },
@@ -126,26 +91,7 @@ export function DispatchersScreen() {
     return () => clearTimeout(handler);
   }, [searchInput]);
 
-  const { data, isLoading, isError, error, refetch } = useQuery<DispatchersResponse>({
-    queryKey: [
-      "organizations",
-      "dispatchers",
-      { page, pageSize, q: debouncedSearch },
-    ],
-    queryFn: async () => {
-      const params: Record<string, any> = {
-        page,
-        pageSize,
-        sortBy: "createdAt",
-        sortOrder: "desc",
-      };
-      if (debouncedSearch) {
-        params.q = debouncedSearch;
-      }
-      const res = await apiClient.get("/organizations/dispatchers", { params });
-      return res.data;
-    },
-  });
+  const { data, isPending: isLoading, isError, error, refetch } = useDispatchers({ page, pageSize, q: debouncedSearch || undefined });
 
   const dispatchersList = data?.data || [];
   const meta = data?.meta;

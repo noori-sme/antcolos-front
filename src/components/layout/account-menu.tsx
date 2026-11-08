@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Cookies from "js-cookie";
+import {
+  clearAllAuthCookies,
+} from "@/lib/api/auth-cookies";
 import { toast } from "sonner";
 import { LogOut, Settings2 } from "lucide-react";
 import Link from "next/link";
@@ -30,16 +32,7 @@ export function AccountMenu() {
   const items = ACCOUNT_NAV.flatMap((s) => s.items);
 
   const handleSignOut = () => {
-    Cookies.remove("antcolos_token", { path: "/" });
-    Cookies.remove("antcolos_next_step", { path: "/" });
-    Cookies.remove("antcolos_user_role", { path: "/" });
-    Cookies.remove("antcolos_org_type", { path: "/" });
-    Cookies.remove("antcolos_org_role", { path: "/" });
-    Cookies.remove("antcolos_role_id", { path: "/" });
-    Cookies.remove("antcolos_role_name", { path: "/" });
-    Cookies.remove("antcolos_permissions", { path: "/" });
-    Cookies.remove("antcolos_user_permissions", { path: "/" });
-    Cookies.remove("antcolos_role_template", { path: "/" });
+    clearAllAuthCookies();
     
     queryClient.clear();
     sessionStorage.removeItem("antcolos_signup_step");

@@ -4,9 +4,8 @@ import { Check, LoaderCircle, X } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { apiClient } from "@/lib/api/client";
+import { useCheckUsername } from "./hooks";
 import { USERNAME_MAX_LENGTH, USERNAME_RULES_TEXT, validateUsername } from "./rules";
 import { cn } from "@/lib/utils";
 
@@ -50,13 +49,7 @@ export function UsernameField({
   const shapeError = cleanValue.length > 0 ? validateUsername(cleanValue) : null;
   const eligible = cleanValue.length > 0 && !shapeError;
 
-  const checkUsernameMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const { data } = await apiClient.get<{ available: boolean }>(
-        `/auth/username-available?username=${encodeURIComponent(name)}`
-      );
-      return data.available;
-    },
+  const checkUsernameMutation = useCheckUsername({
     onSuccess: (isAvailable, name) => {
       setAnswer({
         name,
@@ -64,12 +57,8 @@ export function UsernameField({
         suggestions: [],
       });
     },
-    onError: (error: any) => {
-      const msg =
-        error?.response?.data?.message ||
-        error?.message ||
-        "Failed to check username availability.";
-      toast.error(msg);
+    onError: (error) => {
+      toast.error(error.message || "Failed to check username availability.");
     },
   });
 

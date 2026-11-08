@@ -1,19 +1,12 @@
 "use client";
 
 import { Lock } from "lucide-react";
-import Cookies from "js-cookie";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useIsDriverAccount } from "@/lib/session/hooks";
 import { cn } from "@/lib/utils";
 
 export function LockedSection({ children, className, message, hideIcon }: { children: React.ReactNode, className?: string, message?: string, hideIcon?: boolean }) {
-  const [isDriver, setIsDriver] = useState(false);
-
-  useEffect(() => {
-    const role = Cookies.get("antcolos_user_role");
-    if (role === "DRIVER") {
-      setIsDriver(true);
-    }
-  }, []);
+  const isDriver = useIsDriverAccount();
 
   if (!isDriver) {
     return <>{children}</>;
@@ -55,12 +48,9 @@ export function LockedSection({ children, className, message, hideIcon }: { chil
 }
 
 export function useIsDriver() {
-  const [isDriver, setIsDriver] = useState(false);
+  const isDriver = useIsDriverAccount();
   useEffect(() => {
-    const isLocked = Cookies.get("antcolos_user_role") === "DRIVER";
-    setIsDriver(isLocked);
-    
-    if (isLocked) {
+    if (isDriver) {
       document.body.classList.add("overflow-hidden");
     } else {
       document.body.classList.remove("overflow-hidden");
@@ -69,6 +59,6 @@ export function useIsDriver() {
     return () => {
       document.body.classList.remove("overflow-hidden");
     };
-  }, []);
+  }, [isDriver]);
   return isDriver;
 }

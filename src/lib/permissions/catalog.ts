@@ -208,6 +208,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
 
   // ---- Organization members ----------------------------------------------
   { key: "members:view", label: "View members", description: "See everyone who belongs to this organization.", group: "members" },
+  // The three people lists, one key each, exactly as the backend enforces them
+  // (`membership.list_drivers` / `_dispatchers` / `_admins`, plan 06).
+  { key: "members:list_drivers", label: "See the drivers list", description: "Open Drivers: active members who hold the Driver role, with the truck each one drives.", group: "members" },
+  { key: "members:list_dispatchers", label: "See the dispatchers list", description: "Open Dispatchers: active members who hold the Dispatcher role, with the trucks they cover.", group: "members" },
+  { key: "members:list_admins", label: "See the admins list", description: "Open Admins: active members who hold the Admin role.", group: "members" },
   { key: "members:edit", label: "Edit members", description: "Change someone's job title and which role they hold.", group: "members", sensitive: true, prerequisites: ["members:view"], scopeNote: "Cannot remove the last owner, and cannot raise somebody above the editor's own access." },
   { key: "members:suspend", label: "Suspend members", description: "Cut off someone's access without deleting their history.", group: "members", sensitive: true, prerequisites: ["members:view"] },
   { key: "permissions:manage", label: "Manage roles and permissions", description: "Create roles and decide what everyone is allowed to do. Anyone with this can widen their own team's access.", group: "members", sensitive: true, prerequisites: ["members:view"], scopeNote: "Never widens the holder: they can only ever hand out permissions they already hold themselves." },
@@ -314,6 +319,9 @@ const BY_KEY = new Map<PermissionKey, PermissionMeta>(
 export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   // Members & Roles
   "membership.list": "members:view",
+  "membership.list_drivers": "members:list_drivers",
+  "membership.list_dispatchers": "members:list_dispatchers",
+  "membership.list_admins": "members:list_admins",
   "membership.view": "members:view",
   "membership.edit": "members:edit",
   "membership.suspend": "members:suspend",

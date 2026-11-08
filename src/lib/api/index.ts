@@ -1,6 +1,9 @@
 import type { AntcolosServices } from "./contracts";
 import { API_MODE } from "./mode";
 import { httpServices } from "./http";
+import { httpTrucksService } from "./http/trucks";
+import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
+import { httpOrgPeopleService } from "./http/org-people";
 import { mockAccessService } from "./mock/access";
 import { mockAgreementsService } from "./mock/agreements";
 import { mockAuditService } from "./mock/audit";
@@ -56,6 +59,18 @@ const mockServices: AntcolosServices = {
   referrals: mockReferralsService,
   profile: mockProfileService,
   factoring: mockFactoringService,
+  /**
+   * http-only: the trucks screens have always called the real API, in both
+   * modes (sign-in is real in both modes too). There is no truck mock to
+   * fall back to, so mock mode keeps using the real adapter.
+   */
+  trucks: httpTrucksService,
+  // http-only for the same reason: the access screens have always called
+  // the real invitations and roles API in both modes.
+  orgInvitations: httpOrgInvitationsService,
+  orgRoles: httpOrgRolesService,
+  // http-only: the people screens have always called the real API.
+  orgPeople: httpOrgPeopleService,
 };
 
 export const services: AntcolosServices =

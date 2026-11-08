@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -18,87 +17,20 @@ import {
   ShieldAlert,
   ShieldCheck,
   Truck as TruckIcon,
-  User,
-  Users,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
-import { apiClient } from "@/lib/api/client";
+import { useTruck } from "./hooks";
+import { TruckActions } from "./truck-actions";
+import { TruckAssignmentsPanel } from "./truck-assignments-panel";
 import { cn } from "@/lib/utils";
 
-export interface TruckAssignment {
-  assignmentId: string;
-  userId: string;
-  name: string;
-  startAt?: string;
-  coverage?: string;
-}
-
-export interface TruckLegalOwner {
-  ownershipId?: string;
-  ownerType?: string;
-  ownerOrganizationId?: string | null;
-  ownerUserId?: string | null;
-  ownershipType?: string;
-  verificationStatus?: string;
-  startAt?: string;
-  endAt?: string | null;
-}
-
-export interface TruckOperating {
-  operatingId?: string;
-  organizationId?: string;
-  unitNumber?: string;
-  homeTerminalCity?: string;
-  homeTerminalState?: string;
-  notes?: string;
-  operationalStatus?: string;
-  verificationStatus?: string;
-  startAt?: string;
-  endAt?: string | null;
-}
-
-export interface TruckDetail {
-  id: string;
-  vin: string;
-  licensePlate?: string;
-  licensePlateState?: string;
-  year?: number;
-  make?: string;
-  model?: string;
-  color?: string;
-  equipmentType?: string;
-  trailerLengthFt?: number;
-  trailerNumber?: string;
-  payloadLbs?: number;
-  gvwrLbs?: number;
-  registrationExpiresAt?: string;
-  insuranceExpiresAt?: string;
-  eldProvider?: string;
-  eldDeviceId?: string;
-  fuelType?: string;
-  axleCount?: number;
-  cabType?: string;
-  archivedAt?: string | null;
-  legalOwner?: TruckLegalOwner | null;
-  operating?: TruckOperating | null;
-  unitNumber?: string;
-  homeTerminalCity?: string;
-  homeTerminalState?: string;
-  notes?: string;
-  ownershipType?: string;
-  operationalStatus?: "AVAILABLE" | "UNAVAILABLE" | "MAINTENANCE" | string;
-  currentDriver?: TruckAssignment | null;
-  currentDispatchers?: TruckAssignment[];
-  createdByUserId?: string;
-  updatedByUserId?: string;
-  source?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
+export type {
+  TruckAssignment, TruckLegalOwner, TruckOperating, FleetTruck as TruckDetail,
+} from "@/types/fleet-truck";
 
 function formatDate(iso?: string): string {
   if (!iso) return "Data is not available";
@@ -168,14 +100,9 @@ function InfoRow({
 export function TruckProfileScreen({ truckId }: { truckId: string }) {
   const [copiedVin, setCopiedVin] = useState(false);
 
-  const { data: truck, isLoading, isError, error, refetch } = useQuery<TruckDetail>({
-    queryKey: ["trucks", truckId],
-    queryFn: async () => {
-      const res = await apiClient.get(`/trucks/${truckId}`);
-      return (res.data?.data || res.data) as TruckDetail;
-    },
-    enabled: Boolean(truckId),
-  });
+  // `isPending`, not `isLoading`: while there is no organization yet the query
+  // is disabled, and that must read as loading, not as "not found".
+  const { data: truck, isPending: isLoading, isError, error, refetch } = useTruck(truckId);
 
   if (isLoading) {
     return (
@@ -210,7 +137,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
           icon={TruckIcon}
           title="Truck not found"
           description={
-            (error as any)?.message ||
+            error?.message ||
             "This truck does not exist or you do not have permission to view its records."
           }
           action={
@@ -232,8 +159,6 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
     .filter(Boolean)
     .join(" ");
 
-  const driver = truck.currentDriver;
-  const dispatchers = truck.currentDispatchers || [];
   const legalOwner = truck.legalOwner;
   const operating = truck.operating;
 
@@ -263,6 +188,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
       <PageHeader
         title={`Unit ${unit}`}
         description={`${vehicleDesc || "Truck"} · ${truck.equipmentType || "Equipment"} · ${truck.ownershipType || "Company"}`}
+        actions={<TruckActions truck={truck} />}
       />
 
       {/* Status Badges Row */}
@@ -394,89 +320,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
         {/* Right Column: Assignments, Operation & Ownership */}
         <div className="space-y-6">
           {/* Driver & Dispatcher Assignments */}
-          <section className="rounded-lg border border-border bg-surface p-5 shadow-e1">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <User className="size-4 text-primary" aria-hidden />
-                <h2 className="text-[0.9375rem] font-semibold text-fg">
-                  Driver & Dispatcher Assignments
-                </h2>
-              </div>
-            </div>
-
-            <div className="pt-3 space-y-4">
-              {/* Driver Assignment */}
-              <div>
-                <h3 className="text-[0.8125rem] font-medium text-fg-muted mb-2">
-                  Assigned Driver
-                </h3>
-                {driver ? (
-                  <div className="rounded-md border border-border bg-surface-elevated p-3 text-[0.8125rem]">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-fg">{driver.name}</span>
-                      {driver.coverage && (
-                        <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-primary border border-primary/20">
-                          {driver.coverage}
-                        </span>
-                      )}
-                    </div>
-                    {driver.startAt && (
-                      <p className="mt-1 text-xs text-fg-muted">
-                        Assigned since {formatDate(driver.startAt)}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="py-4 text-center rounded-md border border-dashed border-border text-[0.8125rem]">
-                    <User className="mx-auto mb-1.5 size-5 text-fg-subtle opacity-40" />
-                    <p className="font-medium text-fg">Data is not available</p>
-                    <p className="mt-0.5 text-xs text-fg-subtle">
-                      No active driver assigned to this unit.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Dispatchers Assignment */}
-              <div>
-                <h3 className="text-[0.8125rem] font-medium text-fg-muted mb-2">
-                  Assigned Dispatchers
-                </h3>
-                {dispatchers.length > 0 ? (
-                  <ul className="space-y-2">
-                    {dispatchers.map((disp) => (
-                      <li
-                        key={disp.assignmentId}
-                        className="rounded-md border border-border bg-surface-elevated p-3 text-[0.8125rem]"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-fg">{disp.name}</span>
-                          {disp.coverage && (
-                            <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium text-fg-muted border border-border">
-                              {disp.coverage}
-                            </span>
-                          )}
-                        </div>
-                        {disp.startAt && (
-                          <p className="mt-1 text-xs text-fg-muted">
-                            Assigned since {formatDate(disp.startAt)}
-                          </p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="py-4 text-center rounded-md border border-dashed border-border text-[0.8125rem]">
-                    <Users className="mx-auto mb-1.5 size-5 text-fg-subtle opacity-40" />
-                    <p className="font-medium text-fg">Data is not available</p>
-                    <p className="mt-0.5 text-xs text-fg-subtle">
-                      No dispatchers assigned to this unit.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
+          <TruckAssignmentsPanel truck={truck} />
 
           {/* Operational & Terminal Information */}
           <section className="rounded-lg border border-border bg-surface p-5 shadow-e1">

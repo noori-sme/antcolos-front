@@ -14,10 +14,12 @@ import { UnverifiedEmailModal } from "./modals/unverified-email-modal";
 import { VerifyEmailModal } from "./modals/verify-email-modal";
 import { normalizeEmail, validateEmail } from "./rules";
 import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useLogin } from "./hooks";
 import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
-import Cookies from "js-cookie";
+import {
+  clearNextStep, clearPermissionCookies, readCookie, setCarrierData, setNextStep, setSessionToken,
+} from "@/lib/api/auth-cookies";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -57,33 +59,22 @@ export function SignInScreen() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
-  const signInMutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const { data } = await apiClient.post("/auth/login", payload);
-      return data;
-    },
+  const signInMutation = useLogin({
     onSuccess: async (data) => {
+      // A new sign-in starts from an empty cache: nothing the previous account
+      // loaded in this tab may be shown to this one. (Queries only; `clear()`
+      // would also drop this running mutation.)
+      queryClient.removeQueries();
       if (remember) {
         localStorage.setItem("antcolos_remember_email", email);
       } else {
         localStorage.removeItem("antcolos_remember_email");
       }
 
-      const user = data.user || data.data?.user || (data.data?.id ? data.data : data);
-      const nextStep = user?.nextStep || data.nextStep || data.data?.nextStep;
-
-      // Extract access token robustly from response or cookies
-      const token =
-        data.accessToken ||
-        data.access_token ||
-        data.token ||
-        data.data?.accessToken ||
-        data.data?.access_token ||
-        data.data?.token ||
-        Cookies.get("antcolos_token");
+      const { user, nextStep, accessToken: token } = data;
 
       if (token) {
-        Cookies.set("antcolos_token", token, { expires: 7, path: "/" });
+        setSessionToken(token);
       }
 
       if (user) {
@@ -91,25 +82,21 @@ export function SignInScreen() {
       }
 
       if (nextStep) {
-        Cookies.set("antcolos_next_step", nextStep, { expires: 7, path: "/" });
+        setNextStep(nextStep);
 
-        if (user?.carrierVerification) {
-          const existingData = Cookies.get("antcolos_carrier_data");
+        if (user.scope === "onboarding" && user.carrierVerification) {
+          const existingData = readCookie("antcolos_carrier_data");
           let parsed: any = {};
           try {
             if (existingData) parsed = JSON.parse(existingData);
           } catch (e) {}
-          Cookies.set(
-            "antcolos_carrier_data",
-            JSON.stringify({
+          setCarrierData(JSON.stringify({
               legalName: parsed.legalName || user.name || "Your Carrier",
               mc: parsed.mc || "",
               dot: parsed.dot || "",
               ...parsed,
               email: user.carrierVerification.email || parsed.email,
-            }),
-            { expires: 1, path: "/" }
-          );
+            }));
         }
 
         if (nextStep === "choose-username") {
@@ -145,15 +132,10 @@ export function SignInScreen() {
       }
 
       // Remove any onboarding next_step cookie because user is fully onboarded
-      Cookies.remove("antcolos_next_step", { path: "/" });
+      clearNextStep();
 
       // Clear previous user's permission cookies to ensure no stale permissions persist
-      Cookies.remove("antcolos_role_id", { path: "/" });
-      Cookies.remove("antcolos_user_role", { path: "/" });
-      Cookies.remove("antcolos_role_name", { path: "/" });
-      Cookies.remove("antcolos_permissions", { path: "/" });
-      Cookies.remove("antcolos_user_permissions", { path: "/" });
-      Cookies.remove("antcolos_role_template", { path: "/" });
+      clearPermissionCookies();
 
       // Fully authenticated (no nextStep). Update current user cache.
       queryClient.setQueryData(["currentUser"], user);
@@ -164,14 +146,13 @@ export function SignInScreen() {
         return;
       }
 
-      sessionStorage.setItem("antcolos_pending_toast", data.message || "Successfully signed in.");
+      sessionStorage.setItem("antcolos_pending_toast", "Successfully signed in.");
 
       const roleId =
         permData?.roleId ||
-        user?.roleId ||
-        user?.individualRole ||
-        Cookies.get("antcolos_role_id") ||
-        Cookies.get("antcolos_user_role");
+        (user.scope === "individual" ? user.individualRole : undefined) ||
+        readCookie("antcolos_role_id") ||
+        readCookie("antcolos_user_role");
 
       const isDriver = String(roleId || "").toUpperCase() === "DRIVER";
       const targetPath = invitationReturn ?? (isDriver ? "/driver/home" : "/home");

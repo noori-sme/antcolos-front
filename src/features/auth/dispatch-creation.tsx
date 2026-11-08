@@ -22,7 +22,7 @@ import {
 } from "./rules";
 import { useStageFocus } from "./use-stage-focus";
 import { cn } from "@/lib/utils";
-import { apiClient } from "@/lib/api/client";
+import { useCompanyDetails } from "./hooks";
 import { toast } from "sonner";
 
 type Stage = "details" | "address" | "done";
@@ -47,6 +47,7 @@ export function DispatchCreation({
   onEnterWorkspace: () => void;
   onBack: () => void;
 }) {
+  const companyDetails = useCompanyDetails();
   const [stage, setStage] = useState<Stage>("details");
   const headingRef = useStageFocus<HTMLHeadingElement>(stage);
 
@@ -127,7 +128,7 @@ export function DispatchCreation({
           onBack={() => setStage("details")}
           onComplete={async () => {
             try {
-              await apiClient.post("/auth/company-details", {
+              await companyDetails.mutateAsync({
                 companyName: orgName.trim(),
                 handle: handle.trim(),
                 legalOwnerName: ownerName.trim(),

@@ -16,6 +16,9 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   "/dispatch/trucks": ["loads:view", "trucks:view"],
   "/dispatch/rate-confirmations": ["loads:view"],
   "/dispatch/opportunities": ["loads:view", "trucks:view"],
+  // Frozen (plan 04): load search and ranking moved to the dispatcher
+  // extension, so this page has no nav entry any more. Keep its gate.
+  "/settings/learning": ["organization:manage"],
   // Tracking sits under /dispatch but needs a different thing from the board:
   // watching freight run is not the same power as putting a driver on a load,
   // so it is gated on its own key rather than inheriting `loads:assign`.

@@ -7,6 +7,9 @@ export type * from "./fuel";
 export type * from "./reports";
 export type * from "./compliance";
 export type * from "./fleet";
+export type * from "./trucks";
+export type * from "./org-people";
+export type * from "./org-access";
 export type * from "./settlements";
 export type * from "./driver-workflow";
 export type * from "./invoices";
@@ -42,6 +45,9 @@ import type { DirectoryService } from "./directory";
 import type { FactoringService } from "./factoring";
 import type { FuelService, IftaService } from "./fuel";
 import type { FleetService } from "./fleet";
+import type { TrucksService } from "./trucks";
+import type { OrgPeopleService } from "./org-people";
+import type { OrgInvitationsService, OrgRolesService } from "./org-access";
 import type { EldService } from "./eld";
 import type { DriverWorkflowService } from "./driver-workflow";
 import type { InvoicesService } from "./invoices";
@@ -70,6 +76,14 @@ export interface AntcolosServices {
   compliance: ComplianceService;
   /** The shared operational layer over trucks, trailers, drivers and leases. */
   fleet: FleetService;
+  /** The real truck registry (NestJS `/trucks`). http-only: see `src/lib/api/index.ts`. */
+  trucks: TrucksService;
+  /** Real organization invitations (NestJS). http-only: see `src/lib/api/index.ts`. */
+  orgInvitations: OrgInvitationsService;
+  /** Real roles and permission catalog (NestJS). http-only. */
+  orgRoles: OrgRolesService;
+  /** Real organization people lists (NestJS). http-only. */
+  orgPeople: OrgPeopleService;
   /**
    * ELD & Telematics: devices, connections, bindings and the normalized event
    * stream underneath the fleet. It publishes typed signals to the modules
