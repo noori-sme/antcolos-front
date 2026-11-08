@@ -22,7 +22,6 @@ import {
 import { HiddenFinancialTile, StatTile } from "./stat-tile";
 import { greeting } from "./greeting";
 
-
 /**
  * Home is not one universal dashboard. It is composed from what the active
  * membership may actually do — no role name is ever checked. Needs You leads,

@@ -61,6 +61,23 @@ test("a mock-only deep link says it isn't available yet", async ({ page }) => {
   await expect(page.getByText(/HTTP adapter not implemented/)).toHaveCount(0);
 });
 
+test("if the organization can't be loaded, home says so and retries", async ({ page }) => {
+  let fail = true;
+  await page.route("**/users/me/memberships", (route) =>
+    fail
+      ? route.fulfill({ status: 500, contentType: "application/json", body: '{"statusCode":500}' })
+      : route.continue(),
+  );
+  await signIn(page, "carrier@antcolos.dev");
+  const error = page.getByText("We couldn't load your organization");
+  await expect(error).toBeVisible({ timeout: 30_000 });
+
+  fail = false;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("main").getByText(/Acme Haulage · Admin/)).toBeVisible();
+  await expect(error).toHaveCount(0);
+});
+
 test("a live area still loads real data", async ({ page }) => {
   await signIn(page, "carrier@antcolos.dev");
   const trucks = page.waitForResponse((r) => new URL(r.url()).pathname.endsWith("/trucks") && r.request().method() === "GET");

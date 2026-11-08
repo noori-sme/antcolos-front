@@ -32,9 +32,9 @@ import { orgKey } from "@/lib/query/keys";
 import { authApi } from "./auth-api";
 import { toSessionRoster } from "./http-roster";
 import type { SessionRoster } from "./membership-store";
+import { isAuthPath, isPublicPath } from "./route-access";
 
 const EMPTY_ROSTER: SessionRoster = { memberships: [], organizations: [] };
-import { isAuthPath, isPublicPath } from "./route-access";
 
 export interface SessionContextValue {
   /** Permanent. Identical across every organization switch. */
@@ -59,6 +59,13 @@ export interface SessionContextValue {
   density: DensityPreference;
   setDensity: (d: DensityPreference) => void;
   switchOrganization: (membershipId: string) => void;
+  /**
+   * http mode only (plan 08): the organization could not be loaded from
+   * `/users/me/memberships`, so there is no active membership. Screens show an
+   * error with `retryRoster` rather than waiting forever.
+   */
+  rosterFailed?: boolean;
+  retryRoster?: () => void;
 }
 
 export const SessionContext = createContext<SessionContextValue | null>(null);
@@ -206,7 +213,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // `toSessionRoster`). Until it answers, the roster is empty rather than a
   // placeholder workspace.
   const tenantOrgId: string | undefined = fetchedUser?.organizationId ?? undefined;
-  const { data: httpRoster } = useQuery({
+  const {
+    data: httpRoster,
+    isError: rosterFailed,
+    refetch: refetchRoster,
+  } = useQuery({
     queryKey: [...orgKey(tenantOrgId ?? "none"), "session", "roster"],
     enabled: API_MODE === "http" && Boolean(tenantOrgId),
     queryFn: async () =>
@@ -389,8 +400,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       density,
       setDensity: setDensityState,
       switchOrganization,
+      rosterFailed,
+      retryRoster: () => void refetchRoster(),
     }),
-    [user, memberships, organizations, activeMembership, activeOrganization, permissions, isDriverMembership, isDriverAccount, density, switchOrganization],
+    [user, memberships, organizations, activeMembership, activeOrganization, permissions, isDriverMembership, isDriverAccount, density, switchOrganization, rosterFailed, refetchRoster],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

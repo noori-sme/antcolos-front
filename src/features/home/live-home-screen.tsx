@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { EmptyState } from "@/components/data/states";
+import { EmptyState, ErrorState } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import { useVisibleNav } from "@/components/layout/use-visible-nav";
-import { useActiveMembership, useSession } from "@/lib/session/hooks";
+import { useActiveMembership, useRosterStatus, useSession } from "@/lib/session/hooks";
 import { greeting } from "./greeting";
 
 /**
@@ -16,6 +16,7 @@ import { greeting } from "./greeting";
  */
 export function LiveHomeScreen() {
   const { user } = useSession();
+  const { rosterFailed, retryRoster } = useRosterStatus();
   const { organization, membership } = useActiveMembership();
   const { main, settings } = useVisibleNav();
 
@@ -32,7 +33,13 @@ export function LiveHomeScreen() {
   return (
     <div className="space-y-section">
       <PageHeader title={title} description={subtitle} />
-      {destinations.length === 0 ? (
+      {rosterFailed ? (
+        <ErrorState
+          title="We couldn't load your organization"
+          description="Your live areas need it. Check your connection and try again."
+          onRetry={retryRoster}
+        />
+      ) : destinations.length === 0 ? (
         <EmptyState
           title="Nothing to open here yet"
           description="Your role doesn't include any of the areas that are connected to live data so far."
