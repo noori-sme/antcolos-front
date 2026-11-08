@@ -9,6 +9,7 @@ const PUBLIC_PREFIXES = ["/profile/", "/shared/", "/track/"] as const;
 /** Pages under `src/app/(auth)`: for people who are not signed in yet. */
 const AUTH_PREFIXES = [
   "/verify-email",
+  "/verify-carrier",
   "/forgot-password",
   "/invite",
   "/invitation",

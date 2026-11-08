@@ -48,6 +48,8 @@ async function postAuth(path: string, body: unknown): Promise<AuthResult> {
 export const authApi = {
   login: (input: LoginInput) => postAuth("/auth/login", input),
   verifyEmail: (token: string) => postAuth("/auth/verify-email", { token }),
+  /** Public. The token from the FMCSA email link; answers with a tenant session. */
+  verifyCarrier: (token: string) => postAuth("/auth/verify-carrier", { token }),
   chooseUsername: (username: string) => postAuth("/auth/username", { username }),
   selectRole: (accountType: AccountType) => postAuth("/auth/select-role", { accountType }),
   companyDetails: (input: CompanyDetailsInput) => postAuth("/auth/company-details", input),

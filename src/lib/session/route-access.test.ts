@@ -26,6 +26,7 @@ describe("isAuthPath", () => {
     "/sign-in",
     "/sign-up",
     "/verify-email",
+    "/verify-carrier",
     "/forgot-password",
     "/invite/tok",
     "/invitation/tok",

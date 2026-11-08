@@ -9,6 +9,7 @@ describe("issuesSessionToken", () => {
     "/auth/select-role",
     "/auth/carrier-onboarding",
     "/auth/company-details",
+    "/auth/verify-carrier",
     "/invitations/accept/abc",
     "https://api.example.com/api/v1/auth/login?x=1",
   ])("lets %s set the session", (url) => {
