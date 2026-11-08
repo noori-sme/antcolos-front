@@ -6,6 +6,7 @@ import {
   type NavItem, type NavSection,
 } from "@/config/nav";
 import { canAll } from "@/lib/permissions/can";
+import { isRouteAvailable } from "@/lib/permissions/route-manifest";
 import { driverProfileSync } from "@/features/driver/mock-driver";
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
 
@@ -33,6 +34,7 @@ export function useVisibleNav() {
           ...section,
           items: section.items.filter(
             (item) =>
+              isRouteAvailable(item.href) &&
               (!item.driverOnly || driverPortal) &&
               canAll(permissions, item.requires),
           ),

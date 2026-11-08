@@ -20,12 +20,8 @@ import {
   UnassignedLoadsPanel,
 } from "./panels";
 import { HiddenFinancialTile, StatTile } from "./stat-tile";
+import { greeting } from "./greeting";
 
-function greeting(hour: number) {
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
-}
 
 /**
  * Home is not one universal dashboard. It is composed from what the active
