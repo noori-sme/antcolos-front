@@ -3,6 +3,7 @@ import type {
   AccountType, AuthResult, AuthUser, CarrierOnboardingInput, CarrierProfile,
   CompanyDetailsInput, LoginInput, SignupInput,
 } from "@/types/auth";
+import type { MyMembershipDto } from "./http-roster";
 
 /**
  * Sign-in, sign-up and onboarding calls (plan 05, F0.4).
@@ -72,6 +73,12 @@ export const authApi = {
       params: { username },
     });
     return data.available;
+  },
+
+  /** Every membership of the signed-in user, with organization names (plan 08). */
+  async myMemberships(): Promise<MyMembershipDto[]> {
+    const { data } = await apiClient.get<MyMembershipDto[]>("/users/me/memberships");
+    return data;
   },
 
   /** Public FMCSA lookup by MC or DOT (one of them). */

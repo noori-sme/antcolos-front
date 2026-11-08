@@ -1,7 +1,7 @@
 # 08 — http mode without broken screens: real session, unbuilt areas handled
 
-Status:   draft (awaiting product-owner approval)
-Phase:    0 / 4
+Status:   implemented (approved 2026-11-08: "go with option 2 now, then option 3"; unbuilt areas hidden)
+Phase:    4 / 4
 Updated:  2026-11-08
 Track:    Feature (session/identity change, nav gating, service registry)
 
@@ -64,9 +64,34 @@ http mode is safe to run in production:
 - Flip Vercel `NEXT_PUBLIC_API_MODE` back to `http` and redeploy. Run a live check with a seeded
   carrier admin, a dispatcher and a driver.
 
-## Decision needed
+## Implementation notes
 
-**Unbuilt areas in http mode: hide them, or show them disabled?**
+- Availability is a route list (`src/config/live-routes.ts`) rather than a `domain` tag on each
+  nav item. One list covers nav items, child routes and the top bar, and a test checks that every
+  entry exists in the nav.
+- Live routes in http mode were found by visiting every (app) route against the staging API:
+  - `/home` (new live home), `/fleet/trucks`
+  - `/people/{drivers,dispatchers,admins}`
+  - `/settings/invitations`, `/settings/permissions`
+
+  Hidden as mock-only:
+  - `/settings/users` (`access.roster`) and `/account/referrals` (`referrals.myReferrals`)
+  - `/account/profile` (the profile backend exists but isn't wired yet)
+  - the `/account/*` placeholders, and every load, finance, document and driver-portal route
+- The top-bar Needs You inbox is hidden in http mode, and its count query is disabled. It called
+  the mock-only `responsibility.attention` on every page.
+- Sign-in always goes to `/home`. The Home gate reads the session and sends drivers to their
+  portal, so `sign-in-screen.tsx` no longer compares role names.
+
+## Findings (outside this plan)
+
+- **Individual accounts can't sign in** (production too). Sign-in calls `/users/me/permissions`,
+  which is tenant-only, so the seeded individual dispatcher and driver get a 403 and are logged
+  out. Needs a Fix-track task (ARCHITECTURE.md §6 item 11).
+
+## Decision (taken)
+
+**Unbuilt areas in http mode: hide them, or show them disabled?** Answer: **hide** (2026-11-08).
 - **(a) Hide** (recommended). The nav shows only what works, and a deep link gets the "not
   available yet" page.
 - **(b) Show disabled, with a "Coming soon" tag.** The roadmap stays visible, but the nav gets

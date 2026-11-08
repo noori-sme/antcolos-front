@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Logo } from "@/components/brand/logo";
 import { useNeedsYouCount } from "@/features/needs-you/hooks";
+import { isRouteAvailable } from "@/lib/permissions/route-manifest";
 import { useActiveMembership, useSession } from "@/lib/session/hooks";
 import { AccountMenu } from "./account-menu";
 import { MobileNavDrawer } from "./mobile-nav";
@@ -80,7 +81,7 @@ export function Topbar() {
           <SidebarModeMenu className="hidden lg:inline-flex" />
           <DensityToggle className="hidden sm:inline-flex" />
           <ThemeToggle />
-          <NeedsYouButton />
+          {isRouteAvailable("/needs-you") ? <NeedsYouButton /> : null}
           <Button variant="ghost" size="icon" aria-label="Notifications" className="hidden sm:inline-flex">
             <Bell aria-hidden />
           </Button>
