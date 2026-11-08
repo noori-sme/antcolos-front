@@ -3,6 +3,7 @@ import { API_MODE } from "./mode";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
+import { httpOrgPeopleService } from "./http/org-people";
 import { mockAccessService } from "./mock/access";
 import { mockAgreementsService } from "./mock/agreements";
 import { mockAuditService } from "./mock/audit";
@@ -68,6 +69,8 @@ const mockServices: AntcolosServices = {
   // the real invitations and roles API in both modes.
   orgInvitations: httpOrgInvitationsService,
   orgRoles: httpOrgRolesService,
+  // http-only: the people screens have always called the real API.
+  orgPeople: httpOrgPeopleService,
 };
 
 export const services: AntcolosServices =

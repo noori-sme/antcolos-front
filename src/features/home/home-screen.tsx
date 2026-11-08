@@ -46,6 +46,7 @@ export function HomeScreen() {
   const canSeeEquipment = useCan("trucks:view");
   const canSeeTrailers = useCan("trailers:view");
   const canSeeDrivers = useCan("drivers:view");
+  const canOpenDriversList = useCan("members:list_drivers");
   const canSeeLoads = useCan("loads:view");
   const canSeeRevenue = useCan("revenue:view");
   const canAssign = useCan("loads:assign");
@@ -223,7 +224,7 @@ export function HomeScreen() {
             description="Booked and planned, ordered by pickup time."
           />
         ) : null}
-        {canSeeDrivers ? <DriverAttentionPanel drivers={s.driversNeedingAttention} /> : null}
+        {canSeeDrivers ? <DriverAttentionPanel drivers={s.driversNeedingAttention} linkToList={canOpenDriversList} /> : null}
       </div>
 
       {s.counts.documentsMissing > 0 ? (

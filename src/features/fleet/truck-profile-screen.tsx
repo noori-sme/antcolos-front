@@ -17,8 +17,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Truck as TruckIcon,
-  User,
-  Users,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
@@ -26,6 +24,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { useTruck } from "./hooks";
+import { TruckActions } from "./truck-actions";
+import { TruckAssignmentsPanel } from "./truck-assignments-panel";
 import { cn } from "@/lib/utils";
 
 export type {
@@ -159,8 +159,6 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
     .filter(Boolean)
     .join(" ");
 
-  const driver = truck.currentDriver;
-  const dispatchers = truck.currentDispatchers || [];
   const legalOwner = truck.legalOwner;
   const operating = truck.operating;
 
@@ -190,6 +188,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
       <PageHeader
         title={`Unit ${unit}`}
         description={`${vehicleDesc || "Truck"} · ${truck.equipmentType || "Equipment"} · ${truck.ownershipType || "Company"}`}
+        actions={<TruckActions truck={truck} />}
       />
 
       {/* Status Badges Row */}
@@ -321,89 +320,7 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
         {/* Right Column: Assignments, Operation & Ownership */}
         <div className="space-y-6">
           {/* Driver & Dispatcher Assignments */}
-          <section className="rounded-lg border border-border bg-surface p-5 shadow-e1">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <User className="size-4 text-primary" aria-hidden />
-                <h2 className="text-[0.9375rem] font-semibold text-fg">
-                  Driver & Dispatcher Assignments
-                </h2>
-              </div>
-            </div>
-
-            <div className="pt-3 space-y-4">
-              {/* Driver Assignment */}
-              <div>
-                <h3 className="text-[0.8125rem] font-medium text-fg-muted mb-2">
-                  Assigned Driver
-                </h3>
-                {driver ? (
-                  <div className="rounded-md border border-border bg-surface-elevated p-3 text-[0.8125rem]">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-fg">{driver.name}</span>
-                      {driver.coverage && (
-                        <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-primary border border-primary/20">
-                          {driver.coverage}
-                        </span>
-                      )}
-                    </div>
-                    {driver.startAt && (
-                      <p className="mt-1 text-xs text-fg-muted">
-                        Assigned since {formatDate(driver.startAt)}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="py-4 text-center rounded-md border border-dashed border-border text-[0.8125rem]">
-                    <User className="mx-auto mb-1.5 size-5 text-fg-subtle opacity-40" />
-                    <p className="font-medium text-fg">Data is not available</p>
-                    <p className="mt-0.5 text-xs text-fg-subtle">
-                      No active driver assigned to this unit.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Dispatchers Assignment */}
-              <div>
-                <h3 className="text-[0.8125rem] font-medium text-fg-muted mb-2">
-                  Assigned Dispatchers
-                </h3>
-                {dispatchers.length > 0 ? (
-                  <ul className="space-y-2">
-                    {dispatchers.map((disp) => (
-                      <li
-                        key={disp.assignmentId}
-                        className="rounded-md border border-border bg-surface-elevated p-3 text-[0.8125rem]"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-fg">{disp.name}</span>
-                          {disp.coverage && (
-                            <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[0.6875rem] font-medium text-fg-muted border border-border">
-                              {disp.coverage}
-                            </span>
-                          )}
-                        </div>
-                        {disp.startAt && (
-                          <p className="mt-1 text-xs text-fg-muted">
-                            Assigned since {formatDate(disp.startAt)}
-                          </p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="py-4 text-center rounded-md border border-dashed border-border text-[0.8125rem]">
-                    <Users className="mx-auto mb-1.5 size-5 text-fg-subtle opacity-40" />
-                    <p className="font-medium text-fg">Data is not available</p>
-                    <p className="mt-0.5 text-xs text-fg-subtle">
-                      No dispatchers assigned to this unit.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
+          <TruckAssignmentsPanel truck={truck} />
 
           {/* Operational & Terminal Information */}
           <section className="rounded-lg border border-border bg-surface p-5 shadow-e1">

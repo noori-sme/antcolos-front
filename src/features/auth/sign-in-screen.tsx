@@ -14,8 +14,8 @@ import { UnverifiedEmailModal } from "./modals/unverified-email-modal";
 import { VerifyEmailModal } from "./modals/verify-email-modal";
 import { normalizeEmail, validateEmail } from "./rules";
 import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useLogin } from "./hooks";
 import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
 import {
   clearNextStep, clearPermissionCookies, readCookie, setCarrierData, setNextStep, setSessionToken,
@@ -59,11 +59,7 @@ export function SignInScreen() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
-  const signInMutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const { data } = await apiClient.post("/auth/login", payload);
-      return data;
-    },
+  const signInMutation = useLogin({
     onSuccess: async (data) => {
       // A new sign-in starts from an empty cache: nothing the previous account
       // loaded in this tab may be shown to this one. (Queries only; `clear()`
@@ -75,18 +71,7 @@ export function SignInScreen() {
         localStorage.removeItem("antcolos_remember_email");
       }
 
-      const user = data.user || data.data?.user || (data.data?.id ? data.data : data);
-      const nextStep = user?.nextStep || data.nextStep || data.data?.nextStep;
-
-      // Extract access token robustly from response or cookies
-      const token =
-        data.accessToken ||
-        data.access_token ||
-        data.token ||
-        data.data?.accessToken ||
-        data.data?.access_token ||
-        data.data?.token ||
-        readCookie("antcolos_token");
+      const { user, nextStep, accessToken: token } = data;
 
       if (token) {
         setSessionToken(token);
@@ -99,7 +84,7 @@ export function SignInScreen() {
       if (nextStep) {
         setNextStep(nextStep);
 
-        if (user?.carrierVerification) {
+        if (user.scope === "onboarding" && user.carrierVerification) {
           const existingData = readCookie("antcolos_carrier_data");
           let parsed: any = {};
           try {
@@ -161,12 +146,11 @@ export function SignInScreen() {
         return;
       }
 
-      sessionStorage.setItem("antcolos_pending_toast", data.message || "Successfully signed in.");
+      sessionStorage.setItem("antcolos_pending_toast", "Successfully signed in.");
 
       const roleId =
         permData?.roleId ||
-        user?.roleId ||
-        user?.individualRole ||
+        (user.scope === "individual" ? user.individualRole : undefined) ||
         readCookie("antcolos_role_id") ||
         readCookie("antcolos_user_role");
 

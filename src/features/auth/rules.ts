@@ -183,6 +183,22 @@ export function normalizeDotNumber(raw: string): string {
   return raw.trim().replace(/^(usdot|dot)[\s\-–—:]*/i, "").replace(/\D/g, "");
 }
 
+/**
+ * Body for `POST /auth/carrier-onboarding`: digit-only strings (the contract's
+ * `^(?:MC)?\d+$` / `^\d+$`). Both may be sent when both are known.
+ */
+export function carrierOnboardingInput(
+  legalOwnerName: string,
+  mc: string,
+  dot: string,
+): { legalOwnerName: string; mcNumber?: string; dotNumber?: string } {
+  return {
+    legalOwnerName,
+    mcNumber: normalizeMcNumber(mc) || undefined,
+    dotNumber: normalizeDotNumber(dot) || undefined,
+  };
+}
+
 /** Returns a problem with the shape, or null. Empty is allowed — see below. */
 export function validateMcNumber(raw: string): string | null {
   const value = raw.trim();

@@ -1,6 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePeopleList } from "@/lib/api/use-org-people";
+import { toTeamRoster } from "@/lib/people/team-roster";
 import { services } from "@/lib/api";
 import type { ServiceContext } from "@/lib/api/contracts/context";
 import { useServiceContext } from "@/lib/api/use-service-context";
@@ -161,4 +164,32 @@ export function useDeleteRole() {
     mutationFn: (roleId: string) => services.orgRoles.remove(requireCtx(ctx), roleId),
     onSuccess: () => invalidate(accessKeys.roles),
   });
+}
+
+/**
+ * Existing members for the invite flow's "existing user" picker: drivers,
+ * dispatchers and admins (up to 100 each), merged. A list the caller may not
+ * read just contributes nobody, as before.
+ */
+export function useTeamRoster(enabled: boolean) {
+  const query = { pageSize: 100 };
+  // No retry: a list the caller may not read (403 is typical for dispatchers
+  // or admins) should just contribute nobody, as it did before.
+  const noRetry = { retry: false };
+  const drivers = usePeopleList("drivers", query, enabled, noRetry);
+  const dispatchers = usePeopleList("dispatchers", query, enabled, noRetry);
+  const admins = usePeopleList("admins", query, enabled, noRetry);
+  const data = useMemo(
+    () =>
+      toTeamRoster({
+        drivers: drivers.data?.data,
+        dispatchers: dispatchers.data?.data,
+        admins: admins.data?.data,
+      }),
+    [drivers.data, dispatchers.data, admins.data],
+  );
+  return {
+    data,
+    isLoading: drivers.isLoading || dispatchers.isLoading || admins.isLoading,
+  };
 }
