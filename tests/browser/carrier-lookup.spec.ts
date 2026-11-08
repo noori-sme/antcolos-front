@@ -84,6 +84,51 @@ test.describe("answers FMCSA can give", () => {
   }
 });
 
+test("only lookup_not_configured reads as 'not set up'; a bare 500 can be retried", async ({ page }) => {
+  let body: unknown = { statusCode: 500, error: "lookup_not_configured" };
+  let status = 500;
+  await page.route(
+    (url) => url.pathname.endsWith("/api/v1/carriers/lookup"),
+    (route) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) }),
+  );
+  await page.goto("/carriers/lookup?mc=1515");
+  await expect(page.getByRole("alert").filter({ hasText: "Lookup is unavailable" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+
+  body = { statusCode: 500, error: "Internal Server Error" };
+  await page.goto("/carriers/lookup?mc=2020");
+  await expect(page.getByRole("alert").filter({ hasText: "FMCSA isn't answering" })).toBeVisible();
+
+  // Retry recovers once FMCSA answers again.
+  status = 200;
+  body = GREYHOUND;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("heading", { name: "GREYHOUND LINES INC" })).toBeVisible();
+});
+
+test("a visitor with a stale session cookie stays on the page", async ({ page, baseURL }) => {
+  await page.context().addCookies([
+    { name: "antcolos_token", value: "expired-jwt", url: baseURL! },
+  ]);
+  await stubLookup(page, 200, GREYHOUND);
+  await page.goto("/carriers/lookup?dot=44110");
+  await expect(page.getByRole("heading", { name: "GREYHOUND LINES INC" })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/carriers/lookup");
+});
+
+test("Back restores the earlier search in the form, not just the result", async ({ page }) => {
+  await stubLookup(page, 200, GREYHOUND);
+  await page.goto("/carriers/lookup?mc=1515");
+  await page.getByRole("button", { name: "DOT number" }).click();
+  await page.getByLabel("DOT number").fill("44110");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.waitForURL(/dot=44110/);
+
+  await page.goBack();
+  await page.waitForURL(/mc=1515/);
+  await expect(page.getByLabel("MC number")).toHaveValue("1515");
+});
+
 test("an invalid number is caught before any request", async ({ page }) => {
   const queries = await stubLookup(page, 200, GREYHOUND);
   await page.goto("/carriers/lookup");

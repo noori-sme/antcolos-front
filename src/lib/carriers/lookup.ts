@@ -21,13 +21,27 @@ export function parseCarrierIdentifier(kind: "mc" | "dot", raw: string): Carrier
   return DOT_PATTERN.test(value) ? { kind: "dot", value } : null;
 }
 
-/** What went wrong, from the HTTP status (and the error code where it matters). */
-export function carrierLookupErrorKind(status: number | undefined): CarrierLookupErrorKind {
+/**
+ * What went wrong, from the HTTP status and, for a 500, the error code: only
+ * `lookup_not_configured` means "not set up"; any other 5xx is "unavailable".
+ */
+export function carrierLookupErrorKind(
+  status: number | undefined,
+  errorCode?: unknown,
+): CarrierLookupErrorKind {
   if (status === 400) return "invalid_identifier";
   if (status === 404) return "not_found";
   if (status === 429) return "rate_limited";
-  if (status === 500) return "not_configured";
+  if (status === 500 && errorCode === "lookup_not_configured") return "not_configured";
   return "unavailable";
+}
+
+/** A 200 body that really is a carrier (not a proxy or portal page). */
+export function isCarrierLookupDto(data: unknown): data is CarrierLookupDto {
+  return (
+    typeof data === "object" && data !== null &&
+    typeof (data as { dotNumber?: unknown }).dotNumber === "string"
+  );
 }
 
 export class CarrierLookupError extends Error {
@@ -52,7 +66,7 @@ export interface CarrierLookupDto {
   active: boolean;
   address: AddressDto;
   mailingAddress: AddressDto;
-  sources?: { census?: string };
+  sources?: { identity?: string; email?: string; mailingAddress?: string; census?: "unavailable" };
 }
 
 const blankToNull = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);

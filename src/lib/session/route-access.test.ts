@@ -14,7 +14,7 @@ describe("isPublicPath", () => {
     expect(isPublicPath(path)).toBe(true);
   });
 
-  it.each(["/home", "/fleet/trucks", "/profiles", "/tracking", "/sign-in", "/"])(
+  it.each(["/home", "/fleet/trucks", "/profiles", "/tracking", "/sign-in", "/", "/carriers", "/carriers/abc"])(
     "does not treat %s as public",
     (path) => {
       expect(isPublicPath(path)).toBe(false);

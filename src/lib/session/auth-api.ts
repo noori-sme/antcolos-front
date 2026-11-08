@@ -5,7 +5,7 @@ import type {
 } from "@/types/auth";
 import type { MyMembershipDto } from "./http-roster";
 import {
-  CarrierLookupError, carrierLookupErrorKind, toCarrierLookupResult, type CarrierLookupDto,
+  CarrierLookupError, carrierLookupErrorKind, isCarrierLookupDto, toCarrierLookupResult,
 } from "@/lib/carriers/lookup";
 import type { CarrierIdentifier, CarrierLookupResult } from "@/types/carrier-lookup";
 
@@ -103,8 +103,12 @@ export const authApi = {
     } catch {
       throw new CarrierLookupError("unavailable"); // network error, no response
     }
-    if (status === 200) return toCarrierLookupResult(data as CarrierLookupDto);
-    throw new CarrierLookupError(carrierLookupErrorKind(status));
+    if (status === 200) {
+      if (!isCarrierLookupDto(data)) throw new CarrierLookupError("unavailable");
+      return toCarrierLookupResult(data);
+    }
+    const errorCode = typeof data === "object" && data !== null ? (data as { error?: unknown }).error : undefined;
+    throw new CarrierLookupError(carrierLookupErrorKind(status, errorCode));
   },
 
   /** Public FMCSA lookup by MC or DOT (one of them). */

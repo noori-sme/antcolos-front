@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Loader2, Search } from "lucide-react";
+import { Loader2, RefreshCw, Search } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,12 @@ function identifierFromUrl(params: URLSearchParams | null): CarrierIdentifier | 
  */
 export function CarrierLookupScreen() {
   const params = useSearchParams();
+  // Re-mount the form when the URL changes (Back/Forward), so the toggle and
+  // the input always match the result shown.
+  return <CarrierLookup key={params?.toString() ?? ""} params={params} />;
+}
+
+function CarrierLookup({ params }: { params: URLSearchParams | null }) {
   const router = useRouter();
   const current = identifierFromUrl(params);
 
@@ -63,6 +69,7 @@ export function CarrierLookupScreen() {
   };
 
   const errorKind = lookup.error instanceof CarrierLookupError ? lookup.error.kind : "unavailable";
+  const canRetry = errorKind === "unavailable" || errorKind === "rate_limited";
 
   return (
     <div className="w-full max-w-[40rem] space-y-6">
@@ -125,6 +132,12 @@ export function CarrierLookupScreen() {
         <div role="alert" className="rounded-lg border border-st-danger/30 bg-st-danger-bg/50 px-4 py-3.5">
           <p className="text-[0.9375rem] font-semibold text-fg">{ERROR_COPY[errorKind].title}</p>
           <p className="mt-1 text-[0.8125rem] text-fg-muted">{ERROR_COPY[errorKind].body}</p>
+          {canRetry ? (
+            <Button variant="secondary" size="sm" className="mt-3" onClick={() => void lookup.refetch()} disabled={lookup.isFetching}>
+              <RefreshCw aria-hidden />
+              Try again
+            </Button>
+          ) : null}
         </div>
       ) : lookup.data ? (
         <CarrierCard carrier={lookup.data} />

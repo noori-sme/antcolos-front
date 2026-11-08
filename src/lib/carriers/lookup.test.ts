@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  carrierLookupErrorKind, formatAddress, formatPhone, parseCarrierIdentifier,
+  carrierLookupErrorKind, formatAddress, formatPhone, isCarrierLookupDto, parseCarrierIdentifier,
   toCarrierLookupResult, type CarrierLookupDto,
 } from "./lookup";
 
@@ -15,13 +15,13 @@ const FULL: CarrierLookupDto = {
   active: true,
   address: { street: "350 N SAINT PAUL ST", city: "DALLAS", state: "TX", zip: "75201", country: "US" },
   mailingAddress: { street: null, city: null, state: null, zip: null },
-  sources: { identity: "qcmobile", email: "company-census", mailingAddress: "company-census" } as CarrierLookupDto["sources"],
+  sources: { identity: "qcmobile", email: "company-census", mailingAddress: "company-census" },
 };
 
 const PARTIAL: CarrierLookupDto = {
   ...FULL,
   dbaName: null,
-  sources: { identity: "qcmobile", email: "company-census", mailingAddress: "company-census", census: "unavailable" } as CarrierLookupDto["sources"],
+  sources: { identity: "qcmobile", email: "company-census", mailingAddress: "company-census", census: "unavailable" },
 };
 
 describe("parseCarrierIdentifier (contract §8.1)", () => {
@@ -83,11 +83,25 @@ describe("carrierLookupErrorKind", () => {
     [400, "invalid_identifier"],
     [404, "not_found"],
     [429, "rate_limited"],
-    [500, "not_configured"],
     [502, "unavailable"],
     [undefined, "unavailable"],
   ] as const)("%s → %s", (status, kind) => {
     expect(carrierLookupErrorKind(status)).toBe(kind);
+  });
+
+  it("calls a 500 'not configured' only for lookup_not_configured", () => {
+    expect(carrierLookupErrorKind(500, "lookup_not_configured")).toBe("not_configured");
+    expect(carrierLookupErrorKind(500, "Internal Server Error")).toBe("unavailable");
+    expect(carrierLookupErrorKind(500)).toBe("unavailable");
+  });
+});
+
+describe("isCarrierLookupDto", () => {
+  it("accepts a carrier and refuses anything else a 200 might carry", () => {
+    expect(isCarrierLookupDto(FULL)).toBe(true);
+    expect(isCarrierLookupDto("<html>portal</html>")).toBe(false);
+    expect(isCarrierLookupDto(null)).toBe(false);
+    expect(isCarrierLookupDto({ legalName: "X" })).toBe(false);
   });
 });
 

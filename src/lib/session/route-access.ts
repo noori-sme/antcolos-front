@@ -4,7 +4,9 @@
  */
 
 /** Pages under `src/app/(public)`: reached without signing in, by anyone. */
-const PUBLIC_PREFIXES = ["/profile/", "/shared/", "/track/", "/carriers/"] as const;
+// `/carriers/lookup` exactly, not all of `/carriers/`: an org-scoped carrier page
+// under (app) must never become public by accident.
+const PUBLIC_PREFIXES = ["/profile/", "/shared/", "/track/", "/carriers/lookup"] as const;
 
 /** Pages under `src/app/(auth)`: for people who are not signed in yet. */
 const AUTH_PREFIXES = [
