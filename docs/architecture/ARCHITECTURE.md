@@ -72,6 +72,7 @@ and cache entries can't cross organizations.
 | Auth, signup, onboarding, carrier verification | identity, integrations(fmcsa) / `signup-api-contract`, `carrier-onboarding` | **http** | `lib/session/auth-api.ts` (pre-tenant, no ctx) + `features/auth/hooks.ts` |
 | Invitations, acceptance, invitation requests | identity / `membership-api-contract` | **http** | service seam (`orgInvitations`), plan 01. The acceptance screen is legacy on purpose |
 | Roles, permission catalog, me/permissions | identity / `permissions-api-contract` | **http** | service seam (`orgRoles`), plan 01; me/permissions in `lib/session` |
+| Public carrier lookup page (`/carriers/lookup`) | integrations(fmcsa) / `carrier-lookup.md` | **http** in both modes (public, no session) | `authApi.lookupCarrierPublic` + `lib/carriers/lookup.ts`, plan 09 |
 | Session roster (organization name, active membership) | identity / `membership-api-contract` (`GET /users/me/memberships`) | **http** in http mode, fixtures in mock mode | `lib/session/http-roster.ts`, plan 08 |
 | People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** (list, detail) | service seam (`orgPeople`), F0.2 |
 | Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |

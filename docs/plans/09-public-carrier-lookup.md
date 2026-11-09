@@ -1,7 +1,7 @@
 # 09 — Public carrier lookup page
 
-Status:   approved (product owner, 2026-11-08: "make the carrier lookup page public too")
-Phase:    1 / 3
+Status:   implemented (product owner, 2026-11-08: "make the carrier lookup page public too")
+Phase:    3 / 3
 Updated:  2026-11-08
 Track:    Feature (new public route)
 
@@ -39,7 +39,7 @@ Errors:
   `CarrierProfile`, which is left untouched.
 - `authApi.lookupCarrierPublic` (`lib/session/auth-api.ts`, pre-tenant like the existing lookup)
   with mapper `toCarrierLookupResult`, unit-tested from the contract's full and partial examples.
-- `useCarrierLookupPublic` in `features/carrier-lookup/hooks.ts`. The key goes under
+- `usePublicCarrierLookup` in `features/carrier-lookup/hooks.ts`. The key goes under
   `orgKey("public")`, like the onboarding lookup.
 - Client-side validation mirrors §8.1, so the page never sends what the server refuses with a 400.
 
@@ -83,3 +83,13 @@ Errors:
 
 None. If `FMCSA_WEB_KEY` is missing on an environment, the page shows the 500 state; it is set
 on Railway staging.
+
+## Implementation notes
+
+- **Typed errors.** `authApi.lookupCarrierPublic` reads the HTTP status itself (`validateStatus`),
+  because the shared client interceptor turns errors into a message-only `Error`. It throws
+  `CarrierLookupError(kind)`. Only `unavailable` (network or 502) is retried.
+- **Rules.** Identifier rules, the mapper and the formatting live in `src/lib/carriers/lookup.ts`,
+  with unit tests.
+- **Checked live.** On 2026-11-08, staging `GET /carriers/lookup?dot=44110` returned 200 with
+  live QCMobile and census data.
