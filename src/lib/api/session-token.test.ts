@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { issuesSessionToken, sessionTokenFrom } from "./session-token";
+import { hasOrganizationPermissions, issuesSessionToken, sessionTokenFrom, sessionTokenScope } from "./session-token";
 
 describe("issuesSessionToken", () => {
   it.each([
@@ -49,5 +49,30 @@ describe("sessionTokenFrom", () => {
     expect(sessionTokenFrom("/auth/login", { token: "" })).toBeUndefined();
     expect(sessionTokenFrom("/auth/login", { token: 42 })).toBeUndefined();
     expect(sessionTokenFrom("/auth/login", null)).toBeUndefined();
+  });
+});
+
+describe("sessionTokenScope / hasOrganizationPermissions", () => {
+  const jwt = (claims: Record<string, unknown>) =>
+    `${Buffer.from('{"alg":"HS256"}').toString("base64url")}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.sig`;
+
+  it("reads the scope claim", () => {
+    expect(sessionTokenScope(jwt({ scope: "individual" }))).toBe("individual");
+    expect(sessionTokenScope(jwt({ scope: "tenant", organizationId: "o1" }))).toBe("tenant");
+  });
+
+  it("is undefined for a missing, malformed or scope-less token", () => {
+    expect(sessionTokenScope(undefined)).toBeUndefined();
+    expect(sessionTokenScope("not-a-jwt")).toBeUndefined();
+    expect(sessionTokenScope("a.%%%.c")).toBeUndefined();
+    expect(sessionTokenScope(jwt({ sub: "u1" }))).toBeUndefined();
+  });
+
+  it("only tenant (or unreadable) tokens have organization permissions", () => {
+    expect(hasOrganizationPermissions(jwt({ scope: "tenant" }))).toBe(true);
+    expect(hasOrganizationPermissions("legacy")).toBe(true);
+    for (const scope of ["individual", "onboarding", "platform"]) {
+      expect(hasOrganizationPermissions(jwt({ scope }))).toBe(false);
+    }
   });
 });
