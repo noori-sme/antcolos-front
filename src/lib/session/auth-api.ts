@@ -4,6 +4,10 @@ import type {
   CompanyDetailsInput, LoginInput, SignupInput,
 } from "@/types/auth";
 import type { MyMembershipDto } from "./http-roster";
+import {
+  CarrierLookupError, carrierLookupErrorKind, isCarrierLookupDto, toCarrierLookupResult,
+} from "@/lib/carriers/lookup";
+import type { CarrierIdentifier, CarrierLookupResult } from "@/types/carrier-lookup";
 
 /**
  * Sign-in, sign-up and onboarding calls (plan 05, F0.4).
@@ -79,6 +83,32 @@ export const authApi = {
   async myMemberships(): Promise<MyMembershipDto[]> {
     const { data } = await apiClient.get<MyMembershipDto[]>("/users/me/memberships");
     return data;
+  },
+
+  /**
+   * The public carrier lookup page (plan 09). Reads the status itself (the
+   * client interceptor would reduce an error to its message) and throws a
+   * typed `CarrierLookupError`, so the page can tell 404, 429 and 5xx apart.
+   */
+  async lookupCarrierPublic(id: CarrierIdentifier): Promise<CarrierLookupResult> {
+    let status: number | undefined;
+    let data: unknown;
+    try {
+      const res = await apiClient.get("/carriers/lookup", {
+        params: { [id.kind]: id.value },
+        validateStatus: () => true,
+      });
+      status = res.status;
+      data = res.data;
+    } catch {
+      throw new CarrierLookupError("unavailable"); // network error, no response
+    }
+    if (status === 200) {
+      if (!isCarrierLookupDto(data)) throw new CarrierLookupError("unavailable");
+      return toCarrierLookupResult(data);
+    }
+    const errorCode = typeof data === "object" && data !== null ? (data as { error?: unknown }).error : undefined;
+    throw new CarrierLookupError(carrierLookupErrorKind(status, errorCode));
   },
 
   /** Public FMCSA lookup by MC or DOT (one of them). */
