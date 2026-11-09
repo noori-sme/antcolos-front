@@ -31,6 +31,8 @@ import { API_MODE } from "@/lib/api/mode";
 import { orgKey } from "@/lib/query/keys";
 import { authApi } from "./auth-api";
 import { toSessionRoster } from "./http-roster";
+import { hasOrganizationPermissions } from "@/lib/api/session-token";
+import { applyNoOrgSession } from "./permissions-sync";
 import type { SessionRoster } from "./membership-store";
 import { isAuthPath, isPublicPath } from "./route-access";
 
@@ -134,6 +136,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const token = readCookie('antcolos_token');
       const nextStep = readCookie('antcolos_next_step');
       if (!token || nextStep) return null;
+      // Tenant-only endpoint: an individual session has no organization
+      // permissions, and its 403 must not log the person out.
+      if (!hasOrganizationPermissions(token)) return applyNoOrgSession(token);
 
       try {
         const response = await apiClient.get('/users/me/permissions');
