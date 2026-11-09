@@ -334,8 +334,18 @@ describe("8. carrier-specific experience stays private to that carrier", () => {
     // The shared record learned nothing. There is no field on it that could
     // hold this, which is the point.
     const shared = allParties().find((p) => p.partyId === apex.partyId)!;
+    // Walk the record's keys and numeric values. A substring check on the JSON
+    // ("74") also matched random UUIDs and timestamps, so it failed at random.
+    const keys: string[] = [];
+    const numbers: number[] = [];
+    JSON.stringify(shared, (key, value) => {
+      keys.push(key);
+      if (typeof value === "number") numbers.push(value);
+      return value;
+    });
+    expect(keys.filter((k) => /factor|payment|daystopay|dispute/i.test(k))).toEqual([]);
+    expect(numbers).not.toContain(74);
     expect(JSON.stringify(shared)).not.toContain("factor");
-    expect(JSON.stringify(shared)).not.toContain("74");
 
     // Northline sees its own figures.
     const own = await getPartyProfile(northline, apex.partyId);
