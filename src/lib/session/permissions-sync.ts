@@ -3,6 +3,10 @@ import {
   readCookie, setPermissionCookies, setSessionToken, setUserRoleFromRoleId,
 } from "@/lib/api/auth-cookies";
 import type { QueryClient } from "@tanstack/react-query";
+import { hasOrganizationPermissions } from "@/lib/api/session-token";
+
+/** What a session without an organization holds: no organization permissions. */
+export const NO_ORG_PERMISSIONS = { permissions: [] as string[] };
 
 /**
  * Calls GET /users/me/permissions, stores relevant details (roleId, roleName,
@@ -15,6 +19,15 @@ export async function fetchAndStoreUserPermissions(
 ) {
   const token = tokenOverride || readCookie("antcolos_token");
   if (!token) return null;
+
+  // Individual, onboarding and platform sessions have no organization
+  // permissions: the endpoint answers 403 for them by contract, which is not
+  // a broken session. Answer "no permissions" instead of logging out.
+  if (!hasOrganizationPermissions(token)) {
+    if (tokenOverride) setSessionToken(tokenOverride);
+    queryClient?.setQueryData(["userPermissions"], NO_ORG_PERMISSIONS);
+    return NO_ORG_PERMISSIONS;
+  }
 
   try {
     if (tokenOverride) {

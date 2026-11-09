@@ -85,3 +85,21 @@ test("a live area still loads real data", async ({ page }) => {
   expect((await trucks).status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Trucks" })).toBeVisible();
 });
+
+// Individual accounts have no organization, so no /users/me/permissions (tenant-only by
+// contract). Signing in used to call it, get a 403 and log the person straight out.
+for (const email of ["dispatcher@antcolos.dev", "driver@antcolos.dev"]) {
+  test(`an individual account (${email}) signs in and stays signed in`, async ({ page }) => {
+    const permissionCalls: string[] = [];
+    page.on("request", (r) => {
+      if (new URL(r.url()).pathname.endsWith("/users/me/permissions")) permissionCalls.push(r.url());
+    });
+    await signIn(page, email);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(2000);
+    expect(new URL(page.url()).pathname).not.toBe("/sign-in");
+    expect(permissionCalls).toEqual([]);
+    const cookies = await page.context().cookies();
+    expect(cookies.find((c) => c.name === "antcolos_token")).toBeTruthy();
+  });
+}

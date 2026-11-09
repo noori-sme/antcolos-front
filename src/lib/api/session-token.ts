@@ -50,3 +50,30 @@ export function sessionTokenFrom(url: string, data: unknown): string | undefined
   }
   return undefined;
 }
+
+/**
+ * The `scope` claim of a session JWT ("tenant", "individual", "onboarding",
+ * "platform"), or undefined when it can't be read. Read only to decide which
+ * endpoints apply to this session; the backend still verifies the token.
+ */
+export function sessionTokenScope(token: string | undefined | null): string | undefined {
+  const payload = token?.split(".")[1];
+  if (!payload) return undefined;
+  try {
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const json = JSON.parse(atob(base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=")));
+    return typeof json?.scope === "string" ? json.scope : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `/users/me/permissions` is tenant-only (permissions-api-contract.md): a
+ * token whose scope is known and is not "tenant" has no organization
+ * permissions to fetch. An unreadable scope keeps the old behaviour.
+ */
+export function hasOrganizationPermissions(token: string | undefined | null): boolean {
+  const scope = sessionTokenScope(token);
+  return scope === undefined || scope === "tenant";
+}
