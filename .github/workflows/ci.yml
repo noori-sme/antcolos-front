@@ -11,6 +11,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  branch-name:
+    name: Branch name
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Branch follows <type>/<scope>-<slug> (CONTRIBUTING.md → Branches)
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          pattern='^(feat|fix|docs|chore|refactor|perf|test|build|ci|style|revert)/[a-z0-9]+(-[a-z0-9]+)+$'
+          if [[ "$BRANCH" =~ $pattern ]] && (( ${#BRANCH} <= 60 )); then
+            echo "ok: $BRANCH"; exit 0
+          fi
+          # Release PRs (staging → main) and dependency bots.
+          if [[ "$BRANCH" == "staging" || "$BRANCH" == dependabot/* ]]; then echo "ok: $BRANCH"; exit 0; fi
+          echo "::error::Branch '$BRANCH' does not follow <type>/<scope>-<slug>, e.g. feat/loads-ratecon-review or fix/auth-individual-sign-in. Rename it (git branch -m <new-name>, push it, reopen the PR from it). See CONTRIBUTING.md → Branches."
+          exit 1
+
   verify:
     name: Typecheck, lint, tests, build
     runs-on: ubuntu-latest

@@ -83,4 +83,5 @@ Env var matrix (all are build-time, because they're `NEXT_PUBLIC_*`):
 | `NEXT_PUBLIC_API_URL` | staging or `http://localhost:3000/api/v1` | `https://antcolos-staging.up.railway.app/api/v1` | TODO |
 | `NEXT_PUBLIC_SITE_ORIGIN` | `http://localhost:3000` | TODO | TODO |
 
-Branches: `staging` → staging deploy, `main` → production deploy.
+Branches: `staging` → staging deploy, `main` → production deploy. Work happens on
+`<type>/<scope>-<slug>` branches cut from `staging`; see `CONTRIBUTING.md` → Branches.

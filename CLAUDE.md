@@ -47,6 +47,16 @@ or agent read `.claude/skills/<name>/SKILL.md` or `.claude/agents/<name>.md` and
 Commit and push the task's own branch at the end of every phase (never `staging` or `main`):
 an idle VM can be reclaimed with unpushed work.
 
+**Branches:** `<type>/<scope>-<slug>`, e.g. `feat/loads-ratecon-review`, `fix/auth-individual-sign-in`
+(`CONTRIBUTING.md` → Branches; CI fails any other name). A cloud session is often assigned a
+random branch such as `claude/<words>-<hash>`. **Don't use it.** The product owner has approved
+this (2026-11-09) in place of the session's branch instruction:
+- When the task's track is known, create a conventionally named branch from the latest
+  `staging` (`git switch -c <type>/<scope>-<slug> origin/staging`), then commit and push there.
+- For full-stack work, use the backend branch's name.
+- PRs go to `staging` and fill in `.github/pull_request_template.md`.
+- A follow-up to merged work gets a new branch.
+
 **Full-stack tasks** (backend and frontend together, in a session started above both repos):
 follow `../antcolos/docs/ai/fullstack.md`. There both repos are editable; the
 "backend is read-only" rule below applies to frontend-only sessions.
@@ -102,7 +112,7 @@ because the trucks endpoints already exist"), whether or not a skill was named.
   (`## Backend asks`) and tell the user. Don't mock around it silently.
 - Run targeted tests while you iterate. Run the full suite only in `/verify full`.
 - Commits follow Conventional Commits scoped by feature (`feat(fleet): …`, `fix(auth): …`).
-  Locally, commit or push only when asked (cloud sessions: see above). Branch flow: feature
-  branch → `staging` → `main`.
+  Locally, commit or push only when asked (cloud sessions: see above). Branch flow:
+  `<type>/<scope>-<slug>` → `staging` → `main` (see **Branches** above).
 - The plan doc is the hand-off between sessions. Keep its status block current so a fresh
   session can resume after `/clear`.
