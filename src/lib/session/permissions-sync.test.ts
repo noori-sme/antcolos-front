@@ -6,8 +6,12 @@ vi.mock("@/lib/api/client", () => ({
   apiClient: { get: (...args: unknown[]) => get(...args) },
   logoutDueToPermissionsError: () => logoutDueToPermissionsError(),
 }));
+const clearPermissionCookies = vi.fn();
+const setAccountKind = vi.fn();
 vi.mock("@/lib/api/auth-cookies", () => ({
+  clearPermissionCookies: () => clearPermissionCookies(),
   readCookie: () => undefined,
+  setAccountKind: (k: unknown) => setAccountKind(k),
   setPermissionCookies: vi.fn(),
   setSessionToken: vi.fn(),
   setUserRoleFromRoleId: vi.fn(),
@@ -25,6 +29,21 @@ describe("fetchAndStoreUserPermissions", () => {
   beforeEach(() => {
     get.mockReset();
     logoutDueToPermissionsError.mockReset();
+    clearPermissionCookies.mockReset();
+    setAccountKind.mockReset();
+  });
+
+  it("drops a previous session's permission cookies and keeps the individual driver marked", async () => {
+    await fetchAndStoreUserPermissions(undefined, jwt({ scope: "individual", individualRole: "DRIVER" }));
+    expect(clearPermissionCookies).toHaveBeenCalled();
+    // Sign-in clears the role cookie; without this the driver would not reach the driver portal.
+    expect(setAccountKind).toHaveBeenCalledWith({ individualRole: "DRIVER" });
+  });
+
+  it("returns a fresh result each time, so one caller can't change another's", async () => {
+    const a = await fetchAndStoreUserPermissions(undefined, jwt({ scope: "individual" }));
+    const b = await fetchAndStoreUserPermissions(undefined, jwt({ scope: "individual" }));
+    expect(a).not.toBe(b);
   });
 
   // permissions-api-contract.md "Get my permissions": individual, platform and

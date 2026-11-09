@@ -32,7 +32,7 @@ import { orgKey } from "@/lib/query/keys";
 import { authApi } from "./auth-api";
 import { toSessionRoster } from "./http-roster";
 import { hasOrganizationPermissions } from "@/lib/api/session-token";
-import { NO_ORG_PERMISSIONS } from "./permissions-sync";
+import { applyNoOrgSession } from "./permissions-sync";
 import type { SessionRoster } from "./membership-store";
 import { isAuthPath, isPublicPath } from "./route-access";
 
@@ -138,7 +138,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!token || nextStep) return null;
       // Tenant-only endpoint: an individual session has no organization
       // permissions, and its 403 must not log the person out.
-      if (!hasOrganizationPermissions(token)) return NO_ORG_PERMISSIONS;
+      if (!hasOrganizationPermissions(token)) return applyNoOrgSession(token);
 
       try {
         const response = await apiClient.get('/users/me/permissions');

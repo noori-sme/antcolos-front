@@ -57,12 +57,21 @@ export function sessionTokenFrom(url: string, data: unknown): string | undefined
  * endpoints apply to this session; the backend still verifies the token.
  */
 export function sessionTokenScope(token: string | undefined | null): string | undefined {
+  return stringClaim(token, "scope");
+}
+
+/** The `individualRole` claim of an individual-scope JWT ("DRIVER", "DISPATCHER"). */
+export function sessionTokenIndividualRole(token: string | undefined | null): string | undefined {
+  return stringClaim(token, "individualRole");
+}
+
+function stringClaim(token: string | undefined | null, claim: string): string | undefined {
   const payload = token?.split(".")[1];
   if (!payload) return undefined;
   try {
     const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
     const json = JSON.parse(atob(base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=")));
-    return typeof json?.scope === "string" ? json.scope : undefined;
+    return typeof json?.[claim] === "string" ? json[claim] : undefined;
   } catch {
     return undefined;
   }
