@@ -18,11 +18,13 @@ import { SidebarModeMenu } from "./sidebar-mode-menu";
 import { DensityToggle, ThemeToggle } from "./theme-density-controls";
 import { LockedSection, useIsDriver } from "./locked-section";
 
-function NeedsYouButton() {
+function NeedsYouButton({ demo = false }: { demo?: boolean }) {
   const { data } = useNeedsYouCount();
+  // In demo areas (plan 10) the count is the demo company's, so say so.
+  const label = `Needs You${data ? `, ${data} open` : ""}${demo ? " (demo data)" : ""}`;
   return (
     <Button asChild variant="ghost" size="icon" className="relative">
-      <Link href="/needs-you" aria-label={`Needs You${data ? `, ${data} open` : ""}`}>
+      <Link href="/needs-you" aria-label={label} title={label}>
         <Inbox aria-hidden />
         {data ? (
           <span className="tnum absolute -top-0.5 -right-0.5 inline-flex min-w-[1.05rem] items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] font-semibold text-primary-fg ring-2 ring-surface">
@@ -84,7 +86,7 @@ export function Topbar() {
           <ThemeToggle />
           {isDemoRoute("/needs-you") ? (
             <DemoSessionProvider>
-              <NeedsYouButton />
+              <NeedsYouButton demo />
             </DemoSessionProvider>
           ) : isRouteAvailable("/needs-you") ? (
             <NeedsYouButton />

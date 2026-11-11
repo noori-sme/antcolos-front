@@ -126,3 +126,10 @@ to their portal.
 - **Real drivers** keep going to the driver portal from Home. Driver portal pages are demo pages
   and show the Northline demo driver only when the Northline owner could see them in mock mode.
 - Mock mode and http mode with the flag off are unchanged; the existing suites cover them.
+- **Top-bar Needs You** counts the demo company's items on every page, live pages included. Its
+  label and tooltip say "(demo data)"; the page it opens carries the banner.
+- **A real driver deep-linking to a demo page** (e.g. `/loads`) sees it as the demo owner. Intended:
+  it is sample data, and the backend enforces real permissions. Only Home redirects drivers.
+- **Never reuse a live hook on a demo page** (`usePeopleList`, trucks hooks): it would show live
+  data under the banner with a demo-org cache key. When a demo page needs a live domain, the
+  route moves to `live-routes.ts` instead.
