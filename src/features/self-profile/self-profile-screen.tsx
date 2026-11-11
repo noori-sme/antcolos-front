@@ -140,7 +140,9 @@ function PictureControls({ profile }: { profile: SelfProfile }) {
             confirmLabel="Remove"
             destructive
             onConfirm={async () => {
-              await remove.mutateAsync();
+              // Close either way; a failure shows under the picture, where
+              // the open dialog would otherwise hide it.
+              await remove.mutateAsync().catch(() => undefined);
             }}
             trigger={
               <Button variant="ghost" size="sm" disabled={pending} aria-label="Remove picture">
