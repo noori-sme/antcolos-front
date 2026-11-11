@@ -10,7 +10,8 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  *
  * Needs the seeded backend (`prisma db seed`): the carrier admin invites the
  * seeded individual dispatcher through the API, who accepts, and the test then
- * removes them in the UI. Skipped unless LIVE_WEB_URL and LIVE_API_URL are set.
+ * removes them in the UI. It signs in many times, so run the backend with
+ * THROTTLE_ENABLED=false. Skipped unless LIVE_WEB_URL and LIVE_API_URL are set.
  */
 const WEB = process.env.LIVE_WEB_URL;
 const API = process.env.LIVE_API_URL;
@@ -78,6 +79,30 @@ test("lists members and removes one", async ({ page, request }) => {
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByRole("list", { name: "Members" }).getByText(ADMIN)).toBeVisible();
   await expect(page.getByText(MEMBER)).toHaveCount(0);
+});
+
+test("says so when the member was already removed elsewhere", async ({ page, request }) => {
+  await addMember(request);
+  await signIn(page);
+  await page.goto(`${WEB}/settings/users`, { waitUntil: "networkidle" });
+  const row = page.getByRole("list", { name: "Members" }).getByRole("listitem").filter({ hasText: MEMBER });
+  await expect(row).toBeVisible();
+
+  // Someone else removes them while this page is open.
+  const admin = await token(request, ADMIN);
+  const members = await (await request.get(`${API}/organizations/members`, {
+    headers: { Authorization: `Bearer ${admin}` },
+  })).json();
+  const target = members.data.find((m: { email: string }) => m.email === MEMBER);
+  await request.delete(`${API}/organizations/members/${target.userId}`, {
+    headers: { Authorization: `Bearer ${admin}` },
+  });
+
+  await row.getByRole("button", { name: /^Remove/ }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(/not found/i);
+  await expect(page.getByRole("list", { name: "Members" }).getByText(MEMBER)).toHaveCount(0);
 });
 
 test("has no sideways scroll on a phone", async ({ page }) => {
