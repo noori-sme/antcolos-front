@@ -4,7 +4,7 @@
 Status:   implemented (approved 2026-11-11 with the recommendations: hide public-profile
           actions in http mode; real picture in the top bar)
 Phase:    4 / 4 — done
-Branch:   feat/profile-self-live (to create on approval)
+Branch:   feat/profile-self-live
 Requirements: ../antcolos/docs/requirements/profile.md (self profile, shipped backend plan 12)
 Backend contract: ../antcolos/docs/requirements/profile.md §4–5, users-api-contract.md §5
 Updated:  2026-11-11
