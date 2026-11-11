@@ -1,9 +1,9 @@
 # 11 — Account → Profile on the real API
 
 ```
-Status:   in-progress (approved 2026-11-11 with the recommendations: hide public-profile
+Status:   implemented (approved 2026-11-11 with the recommendations: hide public-profile
           actions in http mode; real picture in the top bar)
-Phase:    1 / 4 — done
+Phase:    4 / 4 — done
 Branch:   feat/profile-self-live (to create on approval)
 Requirements: ../antcolos/docs/requirements/profile.md (self profile, shipped backend plan 12)
 Backend contract: ../antcolos/docs/requirements/profile.md §4–5, users-api-contract.md §5
@@ -84,3 +84,21 @@ Works for individual and tenant tokens (`@AuthenticatedUserScoped()`), no organi
 ## Risks
 - The picture endpoint needs the bearer token, so `<img src>` can't point at it; the adapter
   fetches a blob and makes an object URL (revoked on change).
+
+## Verification (2026-11-11)
+- vitest 2253/2253 and node 805/805 before the review fixes; after them the changed areas
+  (`src/lib/profile`, `src/lib/api`, `src/lib/permissions`) 1168/1168. Typecheck clean. Lint 41
+  errors (baseline 59), none in the new files.
+- `npm run build` (http mode) passes.
+- `self-profile.live.spec.ts` 6/6 (desktop + mobile) against a local backend seeded with
+  `prisma db seed`: edit + clear headline/about me, upload + remove a picture, top-bar picture,
+  no sideways scroll at 360 px.
+- `frontend-reviewer`: fixed a committed `dump.rdb` (removed, now in `.gitignore`), object URLs
+  that StrictMode could revoke under a mounted image (now one URL per picture blob), a skeleton
+  that never ended without an organization (`isLoading`), and a looser-than-backend phone check.
+
+## Implementation notes
+- In http mode the page renders `SelfProfileScreen`, so the public-profile actions ("View public
+  profile", "Share", visibility) don't appear. Nothing was removed from mock mode.
+- The picture is fetched as a blob (the endpoint needs the bearer token) and shown through one
+  object URL per stored version, shared by the page and the top bar.
