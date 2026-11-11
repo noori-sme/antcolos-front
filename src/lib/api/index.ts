@@ -5,6 +5,7 @@ import { httpTrucksService } from "./http/trucks";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
 import { httpSelfProfileService } from "./http/self-profile";
+import { httpOrgMembersService } from "./http/org-members";
 import { mockAccessService } from "./mock/access";
 import { mockAgreementsService } from "./mock/agreements";
 import { mockAuditService } from "./mock/audit";
@@ -75,6 +76,8 @@ const mockServices: AntcolosServices = {
   // http-only: mock mode keeps the public-profile screen (plan 11), so the
   // self profile is only read for real. Nothing to fall back to.
   selfProfile: httpSelfProfileService,
+  // http-only (plan 12): mock mode keeps the fixture People screen.
+  orgMembers: httpOrgMembersService,
 };
 
 export const services: AntcolosServices =

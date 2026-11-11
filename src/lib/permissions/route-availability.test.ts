@@ -23,6 +23,7 @@ describe("isRouteAvailable (plan 08)", () => {
     "/settings/invitations/new",
     "/settings/permissions",
     "/account/profile",
+    "/settings/users",
   ])("reaches %s in http mode", (path) => {
     expect(isRouteAvailable(path, "http")).toBe(true);
   });
@@ -37,7 +38,7 @@ describe("isRouteAvailable (plan 08)", () => {
     "/fleet/trailers",
     "/documents",
     "/finance/settlements",
-    "/settings/users",
+    "/settings/organization",
     "/account/referrals",
     "/driver/home",
     // a shared prefix is not a match
