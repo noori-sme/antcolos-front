@@ -1,8 +1,8 @@
 # 10 — Demo areas: bring back the unbuilt areas with labelled demo data
 
 ```
-Status:   draft (awaiting approval)
-Phase:    0 — plan written
+Status:   implemented (approved 2026-11-11; demo areas on in production too)
+Phase:    3 / 3 — done
 Branch:   feat/shell-demo-areas
 Requirements: this plan (no separate requirements doc: no new screens, only a mode switch)
 Backend contract: none (no new calls; live areas keep their existing contracts)
@@ -14,7 +14,7 @@ Track:    Feature (nav gating, session/permissions, service registry)
 
 Plan 08 hid every area without a backend when `NEXT_PUBLIC_API_MODE=http`, so a real sign-in
 sees only Home, Trucks, People, Invitations and Roles. With a new flag
-`NEXT_PUBLIC_DEMO_AREAS=on`, those hidden areas come back in the menu and run on the existing
+`NEXT_PUBLIC_DEMO_AREAS`, those hidden areas come back in the menu and run on the existing
 in-memory mocks, using the Northline demo company's data and permissions. Every demo page shows
 a "Demo data" banner. The live areas, the shell (top bar, organization name, role) and sign-in
 stay on the real API. With the flag off, the app behaves exactly as it does today.
@@ -49,7 +49,7 @@ No new endpoints. Live areas are unchanged:
 
 | File | New/changed | Why |
 | --- | --- | --- |
-| `src/lib/api/mode.ts` | changed | `DEMO_AREAS` flag: `http` mode and `NEXT_PUBLIC_DEMO_AREAS=on` |
+| `src/lib/api/mode.ts` | changed | `DEMO_AREAS` flag: `http` mode and `NEXT_PUBLIC_DEMO_AREAS` |
 | `src/lib/api/index.ts` | changed | http + demo → mock adapters for non-live services (the registry `mockServices` already uses http for the four live ones) |
 | `src/lib/integrations/index.ts` | changed | http + demo → mock integration ports |
 | `src/lib/permissions/route-manifest.ts` | changed | `isDemoRoute(path)`. `isRouteAvailable` is true for demo routes |
@@ -99,12 +99,20 @@ No new endpoints. Live areas are unchanged:
 - [ ] Mobile 360 px checked (banner).
 - [ ] Tests at the right tier.
 
-## Decision needed
+## Decision (taken)
 
-**Should demo areas be on in production?** Recommendation: **staging and preview only**.
-The flag defaults to off, so production stays as it is today until someone sets
-`NEXT_PUBLIC_DEMO_AREAS=on` in that Vercel environment (no code change). It's a build-time
-value, so changing it needs a redeploy.
+**Demo areas on in production?** Yes (2026-11-11): Vercel deploys `main` to production, and the
+owner wants the full product visible there. So the flag is **on by default** in http mode, and
+`NEXT_PUBLIC_DEMO_AREAS=off` turns it off (build-time: needs a redeploy). Home is a live route;
+`HomeGate` picks the demo dashboard itself after the real driver check, so real drivers still go
+to their portal.
+
+## Verification (2026-11-11)
+- vitest 2258/2258, node 805/805, typecheck clean, lint 41 errors (baseline 59, none new).
+- `npm run build` in http mode passes.
+- `demo-areas.live.spec.ts` 6/6 (desktop + mobile) against a local backend seeded with
+  `prisma db seed` (`carrier@antcolos.dev`).
+- `http-shell.live.spec.ts` (plan 08) now needs a build with `NEXT_PUBLIC_DEMO_AREAS=off`.
 
 ## Backend asks
 - None new. (Still open from plan 08: switch organization.)

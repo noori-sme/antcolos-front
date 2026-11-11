@@ -32,7 +32,7 @@ async function signIn(page: Page) {
 
 const banner = (page: Page) => page.getByRole("note", { name: "Demo data" });
 
-test("home is the full demo dashboard, inside the real shell", async ({ page }) => {
+test("home is the full demo dashboard, inside the real shell", async ({ page, isMobile }) => {
   const adapterErrors: string[] = [];
   page.on("console", (m) => {
     if (/HTTP adapter not implemented|has no real adapter yet/.test(m.text())) {
@@ -43,7 +43,11 @@ test("home is the full demo dashboard, inside the real shell", async ({ page }) 
 
   await expect(banner(page)).toBeVisible();
   // The shell (outside the demo session) still shows the real organization.
-  await expect(page.getByRole("banner").getByText(ORG).first()).toBeVisible();
+  // A phone's top bar keeps the name in the DOM but hides it for space.
+  const shellOrg = page.getByRole("banner").getByText(ORG).first();
+  if (isMobile) await expect(shellOrg).toBeAttached();
+  else await expect(shellOrg).toBeVisible();
+  await expect(page.getByText("Northline Freight", { exact: true })).toHaveCount(0);
   await page.waitForLoadState("networkidle");
   expect(adapterErrors).toEqual([]);
 });
