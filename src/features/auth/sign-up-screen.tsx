@@ -11,6 +11,7 @@ import { StepUsername } from "./step-username";
 import { CODE_LENGTH } from "./rules";
 import { useStageFocus } from "./use-stage-focus";
 import { useInvitationReturnPath } from "@/features/access/use-invitation-return";
+import { clearAbandonedOnboarding } from "@/lib/api/auth-cookies";
 
 const STEPS = ["details", "verify", "username"] as const;
 type Step = (typeof STEPS)[number];
@@ -37,6 +38,7 @@ export function SignUpScreen() {
 
   useEffect(() => {
     setMounted(true);
+    clearAbandonedOnboarding("choose-username");
     const savedStep = sessionStorage.getItem("antcolos_signup_step") as Step | null;
     const savedEmail = sessionStorage.getItem("antcolos_signup_email");
     const isFromLogin = sessionStorage.getItem("antcolos_signup_from_login") === "true";

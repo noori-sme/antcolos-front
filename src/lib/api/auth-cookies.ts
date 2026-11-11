@@ -135,6 +135,17 @@ export function clearInvitationToken() {
   remove(AUTH_COOKIE.invitationToken);
 }
 
+/**
+ * Opening sign-in or sign-up abandons an unfinished onboarding session, e.g.
+ * one whose carrier link was opened on another device. Signing in again gets
+ * the current next step from the backend. `keepStep` is the step that lives on
+ * the calling screen itself (sign-up's username step).
+ */
+export function clearAbandonedOnboarding(keepStep?: string) {
+  const step = readCookie(AUTH_COOKIE.nextStep);
+  if (step && step !== keepStep) clearAllAuthCookies();
+}
+
 /** Sign-out: every session cookie except a pending invitation. */
 export function clearAllAuthCookies() {
   for (const name of Object.values(AUTH_COOKIE)) {
