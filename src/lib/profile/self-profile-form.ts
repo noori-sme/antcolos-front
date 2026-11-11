@@ -3,6 +3,9 @@ import {
   AVATAR_MAX_BYTES, AVATAR_MIME_TYPES, type SelfProfile, type SelfProfilePatch,
 } from "@/types/self-profile";
 
+/** NANP: area code and exchange start with 2–9; optional +1 and separators. */
+const US_PHONE = /^(\+?1[\s.-]?)?\(?[2-9]\d{2}\)?[\s.-]?[2-9]\d{2}[\s.-]?\d{4}$/;
+
 /**
  * The self-profile edit form (plan 11), mirroring `PATCH /users/me`
  * (profile.md FR-EDIT-01, users-api-contract.md §5): names required when sent,
@@ -15,7 +18,7 @@ export const selfProfileFormSchema = z.object({
   phone: z
     .string()
     .trim()
-    .refine((v) => v === "" || /^\+?1?\D*\d{3}\D*\d{3}\D*\d{4}$/.test(v), "Enter a US phone number"),
+    .refine((v) => v === "" || US_PHONE.test(v), "Enter a US phone number"),
   headline: z
     .string()
     .trim()

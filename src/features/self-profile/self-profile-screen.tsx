@@ -20,9 +20,11 @@ import {
  * share card) has no backend yet and stays in mock mode.
  */
 export function SelfProfileScreen() {
-  const { data: profile, isPending, error, refetch } = useSelfProfile();
+  // `isLoading`, not `isPending`: a disabled query (no organization yet)
+  // would otherwise show the skeleton forever instead of the error below.
+  const { data: profile, isLoading, error, refetch } = useSelfProfile();
 
-  if (isPending) return <LoadingSkeleton rows={3} />;
+  if (isLoading) return <LoadingSkeleton rows={3} />;
   if (error || !profile) {
     return (
       <ErrorState

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { orgKey } from "@/lib/query/keys";
 import { API_MODE } from "./mode";
 import { services } from "./index";
@@ -37,10 +37,27 @@ export function useSelfProfile() {
 }
 
 /**
+ * One object URL per picture blob, shared by every component showing it (the
+ * top bar and the profile screen) and never revoked by an unmount, so a
+ * remount (StrictMode included) can't be handed a dead URL. The previous
+ * version's URL is revoked when a new picture arrives: at most one live URL.
+ */
+const urlByBlob = new WeakMap<Blob, string>();
+let currentUrl: { blob: Blob; url: string } | null = null;
+function objectUrlFor(blob: Blob): string {
+  const known = urlByBlob.get(blob);
+  if (known) return known;
+  const url = URL.createObjectURL(blob);
+  urlByBlob.set(blob, url);
+  if (currentUrl) URL.revokeObjectURL(currentUrl.url);
+  currentUrl = { blob, url };
+  return url;
+}
+
+/**
  * An object URL for the profile picture, or undefined. The picture endpoint
  * needs the bearer token, so it can't be an `<img src>`: the bytes are fetched
- * once per stored version (`avatar.updatedAt`) and the URL is revoked when it
- * changes or the component unmounts.
+ * once per stored version (`avatar.updatedAt`).
  */
 export function useSelfAvatarUrl(): string | undefined {
   const ctx = useServiceContext();
@@ -54,9 +71,6 @@ export function useSelfAvatarUrl(): string | undefined {
     enabled: Boolean(ctx) && Boolean(version),
     staleTime: Infinity,
   });
-  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : undefined), [blob]);
-  useEffect(() => () => {
-    if (url) URL.revokeObjectURL(url);
-  }, [url]);
+  const url = useMemo(() => (blob ? objectUrlFor(blob) : undefined), [blob]);
   return profile?.avatar ? url : undefined;
 }
