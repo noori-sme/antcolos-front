@@ -3,7 +3,8 @@
 ```
 Status:   implemented (approved 2026-11-11; per-member permission overrides are a follow-up)
 Phase:    4 / 4 — done
-Branch:   feat/access-members-live (to create on approval)
+Branch:   feat/access-members-on-profile (stacked on feat/profile-self-live; merge plan 11 first).
+          The first push, feat/access-members-live, is superseded and can be deleted.
 Requirements: ../antcolos/docs/requirements/membership.md
 Backend contract: ../antcolos/docs/requirements/membership-api-contract.md §2
 Updated:  2026-11-11
