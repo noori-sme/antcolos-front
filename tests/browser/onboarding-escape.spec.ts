@@ -70,3 +70,18 @@ test("the carrier step links back to sign-in for a link opened elsewhere", async
   await expect.poll(() => cookie(page, "antcolos_next_step")).toBeUndefined();
   await expect(page.getByLabel(/email/i).first()).toBeVisible();
 });
+
+test("signing in from the username step doesn't bounce a later sign-up, and keeps an invitation", async ({ page, baseURL }) => {
+  await startOnboarding(page, baseURL!, "choose-username");
+  await page.context().addCookies([{ name: "antcolos_invitation_token", value: "invite-123", url: baseURL! }]);
+  await page.goto("/sign-up");
+  await page.evaluate(() => sessionStorage.setItem("antcolos_signup_step", "username"));
+
+  await page.goto("/sign-in");
+  await expect.poll(() => cookie(page, "antcolos_token")).toBeUndefined();
+  expect(await cookie(page, "antcolos_invitation_token")).toBe("invite-123");
+
+  await page.goto("/sign-up");
+  await expect(page.getByLabel(/email/i).first()).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/sign-up");
+});

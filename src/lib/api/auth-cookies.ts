@@ -143,7 +143,13 @@ export function clearInvitationToken() {
  */
 export function clearAbandonedOnboarding(keepStep?: string) {
   const step = readCookie(AUTH_COOKIE.nextStep);
-  if (step && step !== keepStep) clearAllAuthCookies();
+  if (!step || step === keepStep) return;
+  clearAllAuthCookies();
+  // Sign-up's saved progress belongs to the session just dropped; left behind,
+  // a saved username step with no token bounces /sign-up back to /sign-in.
+  for (const key of ["antcolos_signup_step", "antcolos_signup_email", "antcolos_signup_from_login"]) {
+    sessionStorage.removeItem(key);
+  }
 }
 
 /** Sign-out: every session cookie except a pending invitation. */

@@ -69,7 +69,7 @@ export function middleware(request: NextRequest) {
     }
     
     // Prevent access to any protected routes (like /home) if there is an active nextStep.
-    const isAllowedRoute = pathname.startsWith('/onboarding') || pathname.startsWith('/sign-up') || pathname.startsWith('/sign-in') || pathname.startsWith('/verify-email');
+    const isAllowedRoute = pathname.startsWith('/onboarding') || pathname.startsWith('/verify-email');
     if (!isAllowedRoute) {
       return NextResponse.redirect(new URL('/onboarding', request.url))
     }
