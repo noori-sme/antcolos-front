@@ -149,9 +149,9 @@ function PictureControls({ profile }: { profile: SelfProfile }) {
         ) : null}
       </div>
       {failure ? (
-        <p role="alert" className="max-w-[14rem] text-[0.75rem] text-st-danger">{failure}</p>
+        <p role="alert" className="max-w-[9rem] text-[0.75rem] text-st-danger">{failure}</p>
       ) : (
-        <p className="text-[0.75rem] text-fg-subtle">JPEG, PNG or WebP, up to 5 MB.</p>
+        <p className="max-w-[9rem] text-[0.75rem] text-fg-subtle">JPEG, PNG or WebP, up to 5 MB.</p>
       )}
     </div>
   );
