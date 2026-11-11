@@ -4,6 +4,7 @@ import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
+import { httpOrgMembersService } from "./http/org-members";
 import { mockAccessService } from "./mock/access";
 import { mockAgreementsService } from "./mock/agreements";
 import { mockAuditService } from "./mock/audit";
@@ -71,6 +72,8 @@ const mockServices: AntcolosServices = {
   orgRoles: httpOrgRolesService,
   // http-only: the people screens have always called the real API.
   orgPeople: httpOrgPeopleService,
+  // http-only (plan 12): mock mode keeps the fixture People screen.
+  orgMembers: httpOrgMembersService,
 };
 
 export const services: AntcolosServices =

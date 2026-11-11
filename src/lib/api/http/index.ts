@@ -2,6 +2,7 @@ import type { AntcolosServices } from "../contracts";
 import { httpTrucksService } from "./trucks";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
 import { httpOrgPeopleService } from "./org-people";
+import { httpOrgMembersService } from "./org-members";
 
 /**
  * Real API adapter — Taqi's seam. Every method implements the SAME contract the
@@ -19,6 +20,7 @@ export const httpServices: AntcolosServices = {
   orgInvitations: httpOrgInvitationsService,
   orgRoles: httpOrgRolesService,
   orgPeople: httpOrgPeopleService,
+  orgMembers: httpOrgMembersService,
   needsYou: {
     list: notImplemented("needsYou.list"),
     get: notImplemented("needsYou.get"),

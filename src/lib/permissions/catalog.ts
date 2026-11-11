@@ -325,6 +325,9 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "membership.view": "members:view",
   "membership.edit": "members:edit",
   "membership.suspend": "members:suspend",
+  // Ending someone's membership (plan 12). The UI's "cut off someone's
+  // access" key, which the People screen already gates removal on.
+  "membership.remove": "members:suspend",
   "member.read": "members:view",
   "members.read": "members:view",
   "member.view": "members:view",

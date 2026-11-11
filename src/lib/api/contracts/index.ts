@@ -47,6 +47,7 @@ import type { FuelService, IftaService } from "./fuel";
 import type { FleetService } from "./fleet";
 import type { TrucksService } from "./trucks";
 import type { OrgPeopleService } from "./org-people";
+import type { OrgMembersService } from "./org-members";
 import type { OrgInvitationsService, OrgRolesService } from "./org-access";
 import type { EldService } from "./eld";
 import type { DriverWorkflowService } from "./driver-workflow";
@@ -84,6 +85,8 @@ export interface AntcolosServices {
   orgRoles: OrgRolesService;
   /** Real organization people lists (NestJS). http-only. */
   orgPeople: OrgPeopleService;
+  /** Real organization member roster (NestJS `/organizations/members`). http-only. */
+  orgMembers: OrgMembersService;
   /**
    * ELD & Telematics: devices, connections, bindings and the normalized event
    * stream underneath the fleet. It publishes typed signals to the modules
