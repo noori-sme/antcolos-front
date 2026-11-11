@@ -1,8 +1,8 @@
 # 12 — Settings → People (organization members) on the real API
 
 ```
-Status:   in-progress (approved 2026-11-11; per-member permission overrides are a follow-up)
-Phase:    3 / 4 — done (adapter, hooks, screen); browser spec next
+Status:   implemented (approved 2026-11-11; per-member permission overrides are a follow-up)
+Phase:    4 / 4 — done
 Branch:   feat/access-members-live (to create on approval)
 Requirements: ../antcolos/docs/requirements/membership.md
 Backend contract: ../antcolos/docs/requirements/membership-api-contract.md §2
@@ -68,3 +68,18 @@ use the family APIs; this is the mixed roster.
 The backend has no referral endpoints or model (`grep -ri referral src` finds nothing). Account →
 Referrals and Fleet & people → Referrals stay demo areas. Next step: `/requirements` for referrals,
 then a backend Feature (model, invite-a-driver link, inbox, `referrals.review` permission).
+
+## Verification (2026-11-11)
+- vitest 2247/2247, node 805/805, typecheck clean. Lint: see the PR (baseline 59 errors).
+- `npm run build` (http mode) passes.
+- `members.live.spec.ts` 6/6 (desktop + mobile) against a local seeded backend run with
+  `THROTTLE_ENABLED=false`: list, own row has no remove, remove a member, "already removed
+  elsewhere" (404) shows the reason, no sideways scroll at 360 px.
+- `frontend-reviewer`: fixed a failed remove leaving the confirm dialog open with the reason
+  hidden behind it (the dialog now closes and the alert shows), and a list stranded past its last
+  page after removing the only row on it. Relabelled `members:suspend` to "Remove members" in the
+  catalog, since it now gates removal.
+
+## Follow-ups
+- Per-member permission overrides (`GET`/`PUT /organizations/members/:membershipId/permissions`).
+- Backend asks above (leave an organization; optional removal reason).

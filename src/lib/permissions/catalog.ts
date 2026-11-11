@@ -214,7 +214,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "members:list_dispatchers", label: "See the dispatchers list", description: "Open Dispatchers: active members who hold the Dispatcher role, with the trucks they cover.", group: "members" },
   { key: "members:list_admins", label: "See the admins list", description: "Open Admins: active members who hold the Admin role.", group: "members" },
   { key: "members:edit", label: "Edit members", description: "Change someone's job title and which role they hold.", group: "members", sensitive: true, prerequisites: ["members:view"], scopeNote: "Cannot remove the last owner, and cannot raise somebody above the editor's own access." },
-  { key: "members:suspend", label: "Suspend members", description: "Cut off someone's access without deleting their history.", group: "members", sensitive: true, prerequisites: ["members:view"] },
+  { key: "members:suspend", label: "Remove members", description: "End someone's access to this organization. Their history stays.", group: "members", sensitive: true, prerequisites: ["members:view"] },
   { key: "permissions:manage", label: "Manage roles and permissions", description: "Create roles and decide what everyone is allowed to do. Anyone with this can widen their own team's access.", group: "members", sensitive: true, prerequisites: ["members:view"], scopeNote: "Never widens the holder: they can only ever hand out permissions they already hold themselves." },
 
   // ---- Invitations -------------------------------------------------------

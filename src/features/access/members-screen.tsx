@@ -29,6 +29,22 @@ export function MembersScreen() {
   const remove = useRemoveOrgMember();
   const meta = data?.meta;
 
+  /*
+   * The dialog closes either way: on a refusal (404 already removed, 409 the
+   * last admin) the reason shows in the alert above the list, which the open
+   * dialog would otherwise hide. Removing the last row of a later page steps
+   * back a page, so the list never lands past its end.
+   */
+  const removeMember = async (userId: string) => {
+    const lastOnPage = page > 1 && data?.data.length === 1;
+    try {
+      await remove.mutateAsync(userId);
+      if (lastOnPage) setPage((p) => Math.max(1, p - 1));
+    } catch {
+      // Shown from `remove.error`.
+    }
+  };
+
   return (
     <div className="space-y-section">
       <PageHeader
@@ -48,7 +64,7 @@ export function MembersScreen() {
           description={error.message}
           onRetry={() => void refetch()}
         />
-      ) : !data || data.data.length === 0 ? (
+      ) : !data || data.meta.totalItems === 0 ? (
         <EmptyState
           title="Nobody here yet"
           description="People show up here once they accept an invitation."
@@ -69,7 +85,7 @@ export function MembersScreen() {
                 member={member}
                 isSelf={member.userId === ctx?.actor.userId}
                 removing={remove.isPending && remove.variables === member.userId}
-                onRemove={() => remove.mutateAsync(member.userId).then(() => undefined)}
+                onRemove={() => removeMember(member.userId)}
               />
             ))}
           </ul>

@@ -75,6 +75,7 @@ and cache entries can't cross organizations.
 | Public carrier lookup page (`/carriers/lookup`) | integrations(fmcsa) / `carrier-lookup.md` | **http** in both modes (public, no session) | `authApi.lookupCarrierPublic` + `lib/carriers/lookup.ts`, plan 09 |
 | Session roster (organization name, active membership) | identity / `membership-api-contract` (`GET /users/me/memberships`) | **http** in http mode, fixtures in mock mode | `lib/session/http-roster.ts`, plan 08 |
 | People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** (list, detail) | service seam (`orgPeople`), F0.2 |
+| Settings → People (member roster, remove a member) | identity / `membership-api-contract` §2 | **http** in http mode; mock mode keeps the fixture screen | service seam (`orgMembers`), plan 12. Per-member permission overrides and "leave" not wired yet |
 | Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
 | Profile | identity / `profile.md` | mock | contracts seam |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
