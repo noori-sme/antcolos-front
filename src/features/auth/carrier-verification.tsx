@@ -12,7 +12,7 @@ import { useCarrierLookup, useCarrierOnboarding } from "./hooks";
 import {
   clearCarrierData, readCookie, setCarrierData,
 } from "@/lib/api/auth-cookies";
-import { AuthShell } from "./shell";
+import { AuthShell, AuthSwitchLink } from "./shell";
 import { BackLink, StepProgress, SubmitButton } from "./controls";
 import { CarrierRecord } from "./carrier-record";
 import { FormAlert } from "./form-alert";
@@ -276,6 +276,16 @@ export function CarrierVerification({
             </>
           )}
         </div>
+      ) : null}
+
+      {stage !== "result" ? (
+        <p className="mt-6 text-center text-[0.8125rem] text-fg-muted">
+          <AuthSwitchLink
+            prompt="Opened the link on another device?"
+            href="/sign-in"
+            label="Sign in again"
+          />
+        </p>
       ) : null}
     </AuthShell>
   );
