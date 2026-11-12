@@ -1,18 +1,37 @@
 import { HTTP_LIVE_ROUTES } from "@/config/live-routes";
 import { ALL_NAV_SECTIONS } from "@/config/nav";
-import { API_MODE } from "@/lib/api/mode";
+import { API_MODE, DEMO_AREAS } from "@/lib/api/mode";
 import type { PermissionKey } from "@/types";
+
+function isLiveRoute(pathname: string): boolean {
+  return HTTP_LIVE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
 
 /**
  * Whether a route works in this API mode (plan 08). Mock mode reaches every
- * route; http mode only the ones in `HTTP_LIVE_ROUTES`.
+ * route; http mode the ones in `HTTP_LIVE_ROUTES`, plus every other route as a
+ * demo route while demo areas are on (plan 10).
  */
 export function isRouteAvailable(
   pathname: string,
   mode: "http" | "mock" = API_MODE,
+  demo: boolean = DEMO_AREAS,
 ): boolean {
   if (mode !== "http") return true;
-  return HTTP_LIVE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  return demo || isLiveRoute(pathname);
+}
+
+/**
+ * A route that runs on the Northline demo data inside the real shell (plan 10):
+ * http mode, demo areas on, and no backend for it yet. The route guard wraps
+ * it in the demo session and shows the "Demo data" banner.
+ */
+export function isDemoRoute(
+  pathname: string,
+  mode: "http" | "mock" = API_MODE,
+  demo: boolean = DEMO_AREAS,
+): boolean {
+  return mode === "http" && demo && !isLiveRoute(pathname);
 }
 
 /**

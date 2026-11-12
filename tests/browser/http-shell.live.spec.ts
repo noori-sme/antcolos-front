@@ -7,16 +7,19 @@ import { expect, test, type Page } from "@playwright/test";
  *
  * Needs a build with NEXT_PUBLIC_API_MODE=http talking to the seeded API:
  *
- *   NEXT_PUBLIC_API_MODE=http npm run build && npx next start -p 3000
- *   LIVE_WEB_URL=http://localhost:3000 npx playwright test \
+ *   NEXT_PUBLIC_API_MODE=http NEXT_PUBLIC_DEMO_AREAS=off npm run build && npx next start -p 3000
+ *   LIVE_WEB_URL=http://localhost:3000 LIVE_DEMO_AREAS=off npx playwright test \
  *     tests/browser/http-shell.live.spec.ts --project=desktop
  *
  * Skipped unless LIVE_WEB_URL is set, so CI (mock mode, no backend) never runs it.
+ * Demo areas (plan 10) are on by default and bring the hidden areas back, so
+ * this spec needs a build with them off; `demo-areas.live.spec.ts` covers "on".
  */
 const WEB = process.env.LIVE_WEB_URL;
 const PASSWORD = process.env.SEED_DEMO_PASSWORD ?? "Welcome@123";
 
 test.skip(!WEB, "needs the full stack (set LIVE_WEB_URL); see the header comment");
+test.skip(process.env.LIVE_DEMO_AREAS !== "off", "needs a build with demo areas off (plan 10)");
 
 async function signIn(page: Page, email: string) {
   await page.goto(`${WEB}/sign-in`, { waitUntil: "networkidle" });

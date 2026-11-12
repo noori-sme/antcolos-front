@@ -6,7 +6,8 @@ import {
   type NavItem, type NavSection,
 } from "@/config/nav";
 import { canAll } from "@/lib/permissions/can";
-import { isRouteAvailable } from "@/lib/permissions/route-manifest";
+import { isDemoRoute, isRouteAvailable } from "@/lib/permissions/route-manifest";
+import { demoPermissions } from "@/lib/session/demo-session";
 import { driverProfileSync } from "@/features/driver/mock-driver";
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
 
@@ -36,7 +37,8 @@ export function useVisibleNav() {
             (item) =>
               isRouteAvailable(item.href) &&
               (!item.driverOnly || driverPortal) &&
-              canAll(permissions, item.requires),
+              // A demo item (plan 10) is gated on the demo company's owner.
+              canAll(isDemoRoute(item.href) ? demoPermissions() : permissions, item.requires),
           ),
         }))
         .filter((section) => section.items.length > 0);
