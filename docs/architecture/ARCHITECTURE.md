@@ -75,14 +75,20 @@ and cache entries can't cross organizations.
 | Public carrier lookup page (`/carriers/lookup`) | integrations(fmcsa) / `carrier-lookup.md` | **http** in both modes (public, no session) | `authApi.lookupCarrierPublic` + `lib/carriers/lookup.ts`, plan 09 |
 | Session roster (organization name, active membership) | identity / `membership-api-contract` (`GET /users/me/memberships`) | **http** in http mode, fixtures in mock mode | `lib/session/http-roster.ts`, plan 08 |
 | People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** (list, detail) | service seam (`orgPeople`), F0.2 |
+| Settings → People (member roster, remove a member) | identity / `membership-api-contract` §2 | **http** in http mode; mock mode keeps the fixture screen | service seam (`orgMembers`), plan 12. Per-member permission overrides and "leave" not wired yet |
 | Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
-| Profile | identity / `profile.md` | mock | contracts seam |
+| Own profile (`/account/profile`: name, phone, headline, about me, picture) | identity / `profile.md` | **http** in http mode; mock mode keeps the public-profile screen | service seam (`selfProfile`), shared reads in `lib/api/use-self-profile.ts` (also the top-bar avatar), plan 11 |
+| Public profile (username page, visibility, workplaces, share card) | **not built in backend yet** | mock | contracts seam (`profile`) |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
 | Loads, dispatch, tracking, finance, fuel, ELD, compliance, insurance, maintenance, audit, contracts, directory, workforce, reports, factoring, referrals, needs-you | **not built in backend yet** | mock | contracts seam |
 
-In http mode only the routes in `src/config/live-routes.ts` are reachable (plan 08). Everything
-else is hidden from the nav and shows "not available yet". Add a route there in the same change
-that moves its screens to an http adapter.
+In http mode the routes in `src/config/live-routes.ts` run on the real API (plan 08). Every other
+route is a **demo area** (plan 10): it stays in the nav and runs on the mock adapters inside a demo
+session (`lib/session/demo-session.ts`: the Northline owner's membership, organization id and
+permissions, with the real organization name), under a "Demo data" banner. Demo areas are on by
+default; `NEXT_PUBLIC_DEMO_AREAS=off` brings back plan 08 (hidden from the nav, "not available
+yet"). Add a route to `live-routes.ts` in the same change that moves its screens to an http
+adapter, and it stops being a demo area.
 
 "Legacy" means it works against the real API but breaks invariant 1/2 (see §6). Migrate it with
 `/integrate <domain>` when you next touch the screen. Don't do big-bang rewrites.

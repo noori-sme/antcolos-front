@@ -183,6 +183,8 @@ describe("people list keys match the backend (plan 06)", () => {
     expect(normalizePermissionKey("membership.list_admins")).toBe("members:list_admins");
     // Holding one list never implies another, nor the drivers record key.
     expect(normalizePermissionKey("membership.list")).toBe("members:view");
+    // Plan 12: removing a member is gated on the "cut off access" key.
+    expect(normalizePermissionKey("membership.remove")).toBe("members:suspend");
     expect(can(new Set<PermissionKey>(["members:list_drivers"]), "drivers:view")).toBe(false);
   });
 

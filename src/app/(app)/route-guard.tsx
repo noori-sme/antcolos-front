@@ -2,7 +2,13 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { isRouteAvailable, requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
+import { DemoBanner } from "@/components/data/demo-banner";
+import { canAll } from "@/lib/permissions/can";
+import {
+  isDemoRoute, isRouteAvailable, requiredPermissionsForPath,
+} from "@/lib/permissions/route-manifest";
+import { demoPermissions } from "@/lib/session/demo-session";
+import { DemoSessionProvider } from "@/lib/session/demo-session-provider";
 import { useCanAll } from "@/lib/session/hooks";
 import { Forbidden } from "./forbidden";
 import { NotAvailable } from "./not-available";
@@ -15,7 +21,10 @@ import { NotAvailable } from "./not-available";
 export function RouteGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const required = requiredPermissionsForPath(pathname);
-  const allowed = useCanAll(required);
+  const demo = isDemoRoute(pathname);
+  const realAllowed = useCanAll(required);
+  // A demo page (plan 10) is gated on what the demo company's owner may do.
+  const allowed = demo ? canAll(demoPermissions(), required) : realAllowed;
 
   // Check if token exists in cookies
   const hasToken = typeof document !== 'undefined' && document.cookie.includes('antcolos_token=');
@@ -29,5 +38,13 @@ export function RouteGuard({ children }: { children: ReactNode }) {
 
   if (!isRouteAvailable(pathname)) return <NotAvailable />;
   if (!allowed) return <Forbidden required={required} />;
+  if (demo) {
+    return (
+      <DemoSessionProvider>
+        <DemoBanner />
+        {children}
+      </DemoSessionProvider>
+    );
+  }
   return <>{children}</>;
 }

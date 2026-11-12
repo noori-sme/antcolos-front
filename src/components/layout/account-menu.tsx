@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
 import { ACCOUNT_NAV } from "@/config/nav";
+import { API_MODE } from "@/lib/api/mode";
+import { useSelfAvatarUrl } from "@/lib/api/use-self-profile";
 import { useSession } from "@/lib/session/hooks";
 import { LockedSection } from "./locked-section";
 
@@ -26,6 +28,9 @@ import { LockedSection } from "./locked-section";
  */
 export function AccountMenu() {
   const { user } = useSession();
+  // http mode (plan 11): the real picture from /users/me/avatar.
+  const selfAvatarUrl = useSelfAvatarUrl();
+  const avatarUrl = API_MODE === "http" ? selfAvatarUrl : user.avatarUrl;
   const router = useRouter();
   const queryClient = useQueryClient();
   const [showSignOut, setShowSignOut] = useState(false);
@@ -50,7 +55,7 @@ export function AccountMenu() {
         aria-label="Account menu"
       >
         <Avatar className="size-8 ring-1 ring-border">
-          {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt="" /> : null}
+          {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
           <AvatarFallback>{initialsOf(user.displayName)}</AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>

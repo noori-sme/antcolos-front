@@ -1,9 +1,11 @@
 import type { AntcolosServices } from "./contracts";
-import { API_MODE } from "./mode";
+import { API_MODE, DEMO_AREAS } from "./mode";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
+import { httpSelfProfileService } from "./http/self-profile";
+import { httpOrgMembersService } from "./http/org-members";
 import { mockAccessService } from "./mock/access";
 import { mockAgreementsService } from "./mock/agreements";
 import { mockAuditService } from "./mock/audit";
@@ -71,10 +73,21 @@ const mockServices: AntcolosServices = {
   orgRoles: httpOrgRolesService,
   // http-only: the people screens have always called the real API.
   orgPeople: httpOrgPeopleService,
+  // http-only: mock mode keeps the public-profile screen (plan 11), so the
+  // self profile is only read for real. Nothing to fall back to.
+  selfProfile: httpSelfProfileService,
+  // http-only (plan 12): mock mode keeps the fixture People screen.
+  orgMembers: httpOrgMembersService,
 };
 
+/**
+ * http mode with demo areas on (plan 10) uses the mock registry too: its four
+ * live services (trucks, orgPeople, orgInvitations, orgRoles) are already the
+ * http adapters, and every other service has no backend yet, so it serves the
+ * labelled demo data instead of throwing.
+ */
 export const services: AntcolosServices =
-  API_MODE === "http" ? httpServices : mockServices;
+  API_MODE === "http" && !DEMO_AREAS ? httpServices : mockServices;
 
 export * from "./contracts";
-export { API_MODE } from "./mode";
+export { API_MODE, DEMO_AREAS } from "./mode";
