@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePeopleList } from "@/lib/api/use-org-people";
 import { toTeamRoster } from "@/lib/people/team-roster";
 import { services } from "@/lib/api";
 import type { ServiceContext } from "@/lib/api/contracts/context";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { orgKey } from "@/lib/query/keys";
+import { orgKey, queryKeys } from "@/lib/query/keys";
+import type { OrgMemberListQuery } from "@/types/org-members";
 import type {
   ApproveInvitationRequestInput, CreateOrgInvitationInput, CreateOrgRoleInput,
   OrgInvitationListQuery, UpdateOrgRoleInput,
@@ -24,6 +25,9 @@ export const accessKeys = {
   requests: (org: string) => [...orgKey(org), "access", "invitation-requests"] as const,
   roles: (org: string) => [...orgKey(org), "access", "roles"] as const,
   catalog: (org: string) => [...orgKey(org), "access", "permission-catalog"] as const,
+  members: (org: string) => [...orgKey(org), "access", "members"] as const,
+  memberList: (org: string, query: OrgMemberListQuery) =>
+    [...orgKey(org), "access", "members", "list", query] as const,
 };
 
 /**
@@ -85,6 +89,17 @@ export function usePermissionCatalog() {
     staleTime: 0,
     gcTime: 0,
     refetchOnMount: "always",
+  });
+}
+
+/** The organization's member roster (plan 12). */
+export function useOrgMembers(query: OrgMemberListQuery) {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: accessKeys.memberList(orgOf(ctx), query),
+    queryFn: () => services.orgMembers.list(ctx!, query),
+    enabled: Boolean(ctx),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -192,4 +207,18 @@ export function useTeamRoster(enabled: boolean) {
     data,
     isLoading: drivers.isLoading || dispatchers.isLoading || admins.isLoading,
   };
+}
+
+/**
+ * End a member's access (plan 12). The roster and the Drivers / Dispatchers /
+ * Admins lists all change, so both prefixes are refreshed, also after a
+ * refusal (someone else may have removed them first: 404).
+ */
+export function useRemoveOrgMember() {
+  const ctx = useServiceContext();
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (userId: string) => services.orgMembers.remove(requireCtx(ctx), userId),
+    onSettled: () => Promise.all([invalidate(accessKeys.members), invalidate(queryKeys.people)]),
+  });
 }
