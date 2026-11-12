@@ -76,7 +76,8 @@ and cache entries can't cross organizations.
 | Session roster (organization name, active membership) | identity / `membership-api-contract` (`GET /users/me/memberships`) | **http** in http mode, fixtures in mock mode | `lib/session/http-roster.ts`, plan 08 |
 | People: admins, dispatchers, drivers | identity / `users-api-contract` | **http** (list, detail) | service seam (`orgPeople`), F0.2 |
 | Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
-| Profile | identity / `profile.md` | mock | contracts seam |
+| Own profile (`/account/profile`: name, phone, headline, about me, picture) | identity / `profile.md` | **http** in http mode; mock mode keeps the public-profile screen | service seam (`selfProfile`), shared reads in `lib/api/use-self-profile.ts` (also the top-bar avatar), plan 11 |
+| Public profile (username page, visibility, workplaces, share card) | **not built in backend yet** | mock | contracts seam (`profile`) |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
 | Loads, dispatch, tracking, finance, fuel, ELD, compliance, insurance, maintenance, audit, contracts, directory, workforce, reports, factoring, referrals, needs-you | **not built in backend yet** | mock | contracts seam |
 

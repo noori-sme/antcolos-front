@@ -4,6 +4,7 @@ import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
+import { httpSelfProfileService } from "./http/self-profile";
 import { mockAccessService } from "./mock/access";
 import { mockAgreementsService } from "./mock/agreements";
 import { mockAuditService } from "./mock/audit";
@@ -71,6 +72,9 @@ const mockServices: AntcolosServices = {
   orgRoles: httpOrgRolesService,
   // http-only: the people screens have always called the real API.
   orgPeople: httpOrgPeopleService,
+  // http-only: mock mode keeps the public-profile screen (plan 11), so the
+  // self profile is only read for real. Nothing to fall back to.
+  selfProfile: httpSelfProfileService,
 };
 
 /**
