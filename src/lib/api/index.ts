@@ -1,5 +1,5 @@
 import type { AntcolosServices } from "./contracts";
-import { API_MODE } from "./mode";
+import { API_MODE, DEMO_AREAS } from "./mode";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
@@ -80,8 +80,14 @@ const mockServices: AntcolosServices = {
   orgMembers: httpOrgMembersService,
 };
 
+/**
+ * http mode with demo areas on (plan 10) uses the mock registry too: its four
+ * live services (trucks, orgPeople, orgInvitations, orgRoles) are already the
+ * http adapters, and every other service has no backend yet, so it serves the
+ * labelled demo data instead of throwing.
+ */
 export const services: AntcolosServices =
-  API_MODE === "http" ? httpServices : mockServices;
+  API_MODE === "http" && !DEMO_AREAS ? httpServices : mockServices;
 
 export * from "./contracts";
-export { API_MODE } from "./mode";
+export { API_MODE, DEMO_AREAS } from "./mode";

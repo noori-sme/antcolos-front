@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Logo } from "@/components/brand/logo";
 import { useNeedsYouCount } from "@/features/needs-you/hooks";
-import { isRouteAvailable } from "@/lib/permissions/route-manifest";
+import { isDemoRoute, isRouteAvailable } from "@/lib/permissions/route-manifest";
+import { DemoSessionProvider } from "@/lib/session/demo-session-provider";
 import { useActiveMembership, useSession } from "@/lib/session/hooks";
 import { AccountMenu } from "./account-menu";
 import { MobileNavDrawer } from "./mobile-nav";
@@ -17,11 +18,13 @@ import { SidebarModeMenu } from "./sidebar-mode-menu";
 import { DensityToggle, ThemeToggle } from "./theme-density-controls";
 import { LockedSection, useIsDriver } from "./locked-section";
 
-function NeedsYouButton() {
+function NeedsYouButton({ demo = false }: { demo?: boolean }) {
   const { data } = useNeedsYouCount();
+  // In demo areas (plan 10) the count is the demo company's, so say so.
+  const label = `Needs You${data ? `, ${data} open` : ""}${demo ? " (demo data)" : ""}`;
   return (
     <Button asChild variant="ghost" size="icon" className="relative">
-      <Link href="/needs-you" aria-label={`Needs You${data ? `, ${data} open` : ""}`}>
+      <Link href="/needs-you" aria-label={label} title={label}>
         <Inbox aria-hidden />
         {data ? (
           <span className="tnum absolute -top-0.5 -right-0.5 inline-flex min-w-[1.05rem] items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] font-semibold text-primary-fg ring-2 ring-surface">
@@ -81,7 +84,13 @@ export function Topbar() {
           <SidebarModeMenu className="hidden lg:inline-flex" />
           <DensityToggle className="hidden sm:inline-flex" />
           <ThemeToggle />
-          {isRouteAvailable("/needs-you") ? <NeedsYouButton /> : null}
+          {isDemoRoute("/needs-you") ? (
+            <DemoSessionProvider>
+              <NeedsYouButton demo />
+            </DemoSessionProvider>
+          ) : isRouteAvailable("/needs-you") ? (
+            <NeedsYouButton />
+          ) : null}
           <Button variant="ghost" size="icon" aria-label="Notifications" className="hidden sm:inline-flex">
             <Bell aria-hidden />
           </Button>

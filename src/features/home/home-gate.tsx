@@ -8,7 +8,9 @@ import { driverProfileSync } from "@/features/driver/mock-driver";
 import { useActiveMembership } from "@/lib/session/hooks";
 import { DispatchWorkspaceScreen } from "@/features/workspace/dispatch-workspace-screen";
 import { useWorkspace } from "@/features/workspace/use-workspace";
-import { API_MODE } from "@/lib/api/mode";
+import { API_MODE, DEMO_AREAS } from "@/lib/api/mode";
+import { DemoBanner } from "@/components/data/demo-banner";
+import { DemoSessionProvider } from "@/lib/session/demo-session-provider";
 import { HomeScreen } from "./home-screen";
 import { LiveHomeScreen } from "./live-home-screen";
 
@@ -28,7 +30,24 @@ import { LiveHomeScreen } from "./live-home-screen";
  * Somebody with neither a membership nor a driver profile has not finished
  * setting up, so they go back to onboarding rather than to an empty dashboard.
  */
-export const HomeGate = API_MODE === "http" ? LiveHomeScreen : MockHomeGate;
+export const HomeGate =
+  API_MODE !== "http" ? MockHomeGate : DEMO_AREAS ? DemoHomeGate : LiveHomeScreen;
+
+/**
+ * http mode with demo areas on (plan 10): the full demo dashboard, under the
+ * "Demo data" banner. The real session decides first, so a real driver still
+ * goes to the portal (LiveHomeScreen does that hand-off).
+ */
+function DemoHomeGate() {
+  const { isDriverMembership, membership } = useActiveMembership();
+  if (!membership || isDriverMembership) return <LiveHomeScreen />;
+  return (
+    <DemoSessionProvider>
+      <DemoBanner />
+      <MockHomeGate />
+    </DemoSessionProvider>
+  );
+}
 
 function MockHomeGate() {
   const { isDriverMembership, membership } = useActiveMembership();

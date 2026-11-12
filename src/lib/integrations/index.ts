@@ -1,4 +1,4 @@
-import { API_MODE } from "@/lib/api/mode";
+import { API_MODE, DEMO_AREAS } from "@/lib/api/mode";
 import { mockIntegrationPorts } from "./mock/adapters";
 import type { IntegrationPorts } from "./ports";
 
@@ -54,12 +54,13 @@ const httpIntegrationPorts: IntegrationPorts = {
   status: () => [],
 };
 
+/** Demo areas (plan 10) run on the mock ports, like the rest of their data. */
 export const integrations: IntegrationPorts =
-  API_MODE === "http" ? httpIntegrationPorts : mockIntegrationPorts;
+  API_MODE === "http" && !DEMO_AREAS ? httpIntegrationPorts : mockIntegrationPorts;
 
 /** True while any port behind the boundary is a placeholder. */
 export function integrationsAreMocked(): boolean {
-  return API_MODE !== "http";
+  return API_MODE !== "http" || DEMO_AREAS;
 }
 
 export * from "./ports";

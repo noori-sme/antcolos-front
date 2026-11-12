@@ -82,9 +82,13 @@ and cache entries can't cross organizations.
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
 | Loads, dispatch, tracking, finance, fuel, ELD, compliance, insurance, maintenance, audit, contracts, directory, workforce, reports, factoring, referrals, needs-you | **not built in backend yet** | mock | contracts seam |
 
-In http mode only the routes in `src/config/live-routes.ts` are reachable (plan 08). Everything
-else is hidden from the nav and shows "not available yet". Add a route there in the same change
-that moves its screens to an http adapter.
+In http mode the routes in `src/config/live-routes.ts` run on the real API (plan 08). Every other
+route is a **demo area** (plan 10): it stays in the nav and runs on the mock adapters inside a demo
+session (`lib/session/demo-session.ts`: the Northline owner's membership, organization id and
+permissions, with the real organization name), under a "Demo data" banner. Demo areas are on by
+default; `NEXT_PUBLIC_DEMO_AREAS=off` brings back plan 08 (hidden from the nav, "not available
+yet"). Add a route to `live-routes.ts` in the same change that moves its screens to an http
+adapter, and it stops being a demo area.
 
 "Legacy" means it works against the real API but breaks invariant 1/2 (see §6). Migrate it with
 `/integrate <domain>` when you next touch the screen. Don't do big-bang rewrites.
