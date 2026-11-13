@@ -3,7 +3,7 @@ import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import type { PermissionKey } from "@/types";
 import { can, canAll, canAny } from "./can";
-import { normalizePermissionKey } from "./catalog";
+import { migrateKey, normalizePermissionKey } from "./catalog";
 import {
   NEVER_GRANTABLE, PERMISSION_CATALOG, PERMISSION_GROUP_LABELS,
   PERMISSION_GROUP_ORDER, availablePermissionKeys, permissionMeta,
@@ -225,3 +225,18 @@ describe("people pages refuse callers without the list key (plan 06)", () => {
     expect(keys).toEqual(expect.arrayContaining(["members:list_drivers", "members:list_dispatchers", "members:list_admins"]));
   });
 });
+
+describe("documents:review (plan 13)", () => {
+  it("maps the backend's document.review both ways", () => {
+    expect(normalizePermissionKey("document.review")).toBe("documents:review");
+    expect(migrateKey("documents:review")).toBe("document.review");
+  });
+
+  it("is in the Dispatcher template, with its prerequisite", () => {
+    const dispatcher = SEED_TEMPLATES.find((t) => t.name === "Dispatcher");
+    expect(dispatcher?.permissions).toEqual(
+      expect.arrayContaining(["documents:review", "documents:view"]),
+    );
+  });
+});
+

@@ -25,6 +25,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "loads:view", "loads:create", "loads:edit", "loads:assign", "loads:status:update",
+      // Reads and approves broker Rate Cons into loads (plan 13).
+      "documents:review",
       "proposals:view",
       // Watching the freight run, and telling the customer about it, is the
       // dispatcher's job rather than something they are lent for an afternoon.

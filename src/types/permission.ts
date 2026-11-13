@@ -41,6 +41,7 @@ export type PermissionKey =
   // Documents
   | "documents:view" | "documents:upload" | "documents:download"
   | "documents:approve" | "documents:delete"
+  | "documents:review"
   // Settlements
   | "settlements:view" | "settlements:create" | "settlements:approve" | "settlements:export"
   | "settlements:dispute" | "settlements:dispute:resolve" | "settlements:adjust"
