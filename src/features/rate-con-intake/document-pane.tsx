@@ -39,9 +39,11 @@ export function DocumentPane({
         <FileWarning className="size-5 text-fg-subtle" aria-hidden />
         <p className="text-[0.875rem] font-medium text-fg">The document can&apos;t be shown here</p>
         <p className="max-w-sm text-[0.8125rem] text-fg-muted">
-          {file.error?.message ?? "No link to the file came back."} You can still review the
-          fields.
+          You can still review the fields.
         </p>
+        {file.error?.message ? (
+          <p className="max-w-sm text-[0.75rem] text-fg-subtle">{file.error.message}</p>
+        ) : null}
       </div>
     );
   }

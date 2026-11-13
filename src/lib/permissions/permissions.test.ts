@@ -240,3 +240,13 @@ describe("documents:review (plan 13)", () => {
   });
 });
 
+describe("Rate Con routes (plan 13)", () => {
+  it("gate upload and review on documents:review", async () => {
+    const { requiredPermissionsForPath } = await import("./route-manifest");
+    expect(requiredPermissionsForPath("/rate-cons/new")).toEqual(["documents:review"]);
+    expect(
+      requiredPermissionsForPath("/rate-cons/0b6f8c1e-2d3a-4f5b-9c7d-8e9f0a1b2c3d"),
+    ).toEqual(["documents:review"]);
+  });
+});
+

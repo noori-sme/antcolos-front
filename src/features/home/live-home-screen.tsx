@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, FileUp } from "lucide-react";
+import { Can } from "@/components/auth/can";
+import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import { useVisibleNav } from "@/components/layout/use-visible-nav";
@@ -32,7 +34,21 @@ export function LiveHomeScreen() {
 
   return (
     <div className="space-y-section">
-      <PageHeader title={title} description={subtitle} />
+      <PageHeader
+        title={title}
+        description={subtitle}
+        actions={
+          // A load starts from a broker Rate Con (plan 13); it has no nav entry.
+          <Can permission="documents:review">
+            <Button asChild variant="primary">
+              <Link href="/rate-cons/new">
+                <FileUp aria-hidden />
+                New load from a Rate Con
+              </Link>
+            </Button>
+          </Can>
+        }
+      />
       {rosterFailed ? (
         <ErrorState
           title="We couldn't load your organization"
