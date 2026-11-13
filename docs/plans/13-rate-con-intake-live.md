@@ -32,6 +32,24 @@ Verify          typecheck clean; vitest 2294/2294; node 805/805; build ok (/rate
                  corrections, batch confirm, complete, preview with a missing value, fix,
                  approve → document ACCEPTED, load RC_RECEIVED with the corrected rate,
                  broker + facility rows; read-only after approval; no overflow at 360 px
+Review          contract-checker: no frontend bug, no backend gap (doc drift in §9's example,
+                 fixed in the backend contract). frontend-reviewer: no blocking. Fixed: a failed
+                 background refetch no longer replaces the screen (error state only without
+                 data, inline "couldn't refresh" otherwise); mutations no longer refetch the
+                 signed URL, the iframe is not remounted, the PDF moves on focus/click only and
+                 an expired URL is refreshed before moving; a slow read says so after 5 min,
+                 polls every 10 s after 2 min and offers "Read it again" after 10 min (the
+                 backend's reclaim window); focus returns to the row after a decision and to
+                 Correct on Cancel; a correction editor closes when the field changes under it;
+                 neutral decision error text; "Fix in the review" falls back across the listed
+                 paths; file pane retry; approve/complete/retry get a new key after a failure
+                 (state-guarded on the server), decisions keep theirs; Intl formatting cannot
+                 crash; money kept as a string; extension check when the MIME type is empty;
+                 intent-key logic extracted (src/lib/rate-con/intent-key.ts) and tested.
+                 Re-ran the live smoke (create, then a second Rate Con with the same broker
+                 load number → "Approves and updates" → one load, document ACCEPTED).
+                 Deviation kept: the browser spec is .live (an (app) route needs a real
+                 session); the gate is covered by unit tests on the manifest and live routes
 ```
 
 ## Summary

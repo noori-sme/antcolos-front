@@ -1,6 +1,8 @@
 "use client";
 
-import { FileWarning } from "lucide-react";
+import { FileWarning, RefreshCw } from "lucide-react";
+import { useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { FieldBox } from "@/types/rate-con-intake";
 import { useDocumentFileUrl } from "./hooks";
@@ -14,7 +16,7 @@ export interface ActiveSource {
 /**
  * The original Rate Con beside its fields (plan 13). An image gets the active
  * field's box drawn over it. A PDF opens in the browser's own viewer and jumps
- * to the active field's page; drawing boxes on a PDF needs a page renderer the
+ * to the focused field's page; drawing boxes on a PDF needs a page renderer the
  * bundle does not have yet (plan 13, Backend asks).
  */
 export function DocumentPane({
@@ -22,13 +24,24 @@ export function DocumentPane({
   filename,
   mimeType,
   active,
+  pdfPage,
 }: {
   documentId: string;
   filename: string;
   mimeType: string;
+  /** What hover or focus points at: drawn on images, named in the caption. */
   active: ActiveSource | null;
+  /** The page the PDF viewer shows; moves on focus or click, not on hover. */
+  pdfPage: number;
 }) {
   const file = useDocumentFileUrl(documentId);
+  const expiresAt = file.data ? Date.parse(file.data.expiresAt) : NaN;
+  const { refetch } = file;
+
+  // Moving the viewer re-requests the file: refresh a URL that has expired first.
+  useEffect(() => {
+    if (Number.isFinite(expiresAt) && expiresAt - Date.now() < 30_000) void refetch();
+  }, [pdfPage, expiresAt, refetch]);
 
   if (file.isPending) {
     return <Skeleton className="h-[60vh] w-full rounded-lg" />;
@@ -44,20 +57,22 @@ export function DocumentPane({
         {file.error?.message ? (
           <p className="max-w-sm text-[0.75rem] text-fg-subtle">{file.error.message}</p>
         ) : null}
+        <Button size="sm" variant="secondary" className="mt-2" onClick={() => void refetch()}>
+          <RefreshCw aria-hidden />
+          Try again
+        </Button>
       </div>
     );
   }
 
   const isPdf = mimeType === "application/pdf";
-  const page = active?.page ?? 1;
 
   return (
     <figure className="space-y-2">
       {isPdf ? (
         <iframe
-          // The fragment moves the viewer to the active field's page.
-          key={page}
-          src={`${file.data.url}#page=${page}`}
+          // Only the fragment changes, so the viewer moves without reloading.
+          src={`${file.data.url}#page=${pdfPage}`}
           title={`Rate confirmation ${filename}`}
           className="h-[60vh] w-full rounded-lg border border-border bg-surface lg:h-[75vh]"
         />

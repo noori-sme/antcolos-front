@@ -36,7 +36,8 @@ export function RateConUploadScreen() {
       setFile(null);
       return;
     }
-    if (chosen.type && !ACCEPTED_TYPES.includes(chosen.type)) {
+    const byExtension = /\.(pdf|jpe?g|png|webp)$/i.test(chosen.name);
+    if (chosen.type ? !ACCEPTED_TYPES.includes(chosen.type) : !byExtension) {
       setFile(null);
       setProblem("Choose a PDF, JPEG, PNG or WEBP file.");
       return;

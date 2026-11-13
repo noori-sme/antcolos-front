@@ -50,6 +50,12 @@ describe("checkCorrection", () => {
 
   it("checks money and writes two decimals", () => {
     expect(checkCorrection("totalRate", "2500")).toEqual({ ok: true, value: "2500.00" });
+    expect(checkCorrection("totalRate", "75.5")).toEqual({ ok: true, value: "75.50" });
+    // Kept as a string: no float rounding on large amounts.
+    expect(checkCorrection("totalRate", "90071992547409931.99")).toEqual({
+      ok: true,
+      value: "90071992547409931.99",
+    });
     for (const bad of ["2,500", "$2500", "-10", "12.345", "abc"]) {
       expect(checkCorrection("linehaulRate", bad).ok).toBe(false);
     }

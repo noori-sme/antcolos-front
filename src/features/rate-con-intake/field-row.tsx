@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, Pencil } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { FieldReviewStatusBadge } from "@/components/common/status-badge";
@@ -61,11 +61,20 @@ export function FieldRow({
   active: boolean;
   readOnly: boolean;
   pending: boolean;
-  onActivate: (fieldId: string) => void;
+  /** `jump` moves the PDF to the field's page: on focus or click, not on hover. */
+  onActivate: (fieldId: string, jump: boolean) => void;
   onDecide: (decision: ReviewDecision) => Promise<unknown>;
 }) {
   const inputId = useId();
-  const [editing, setEditing] = useState(false);
+  const rowRef = useRef<HTMLLIElement>(null);
+  const correctRef = useRef<HTMLButtonElement>(null);
+  // The editor belongs to the value it was opened on. If the field changes
+  // underneath it (someone else decided it, the list reloaded), it closes
+  // instead of letting a stale edit overwrite that decision.
+  const signature = `${field.reviewStatus}|${field.currentValue ?? ""}`;
+  const [editingFor, setEditingFor] = useState<string | null>(null);
+  const editing = editingFor === signature;
+  const setEditing = (open: boolean) => setEditingFor(open ? signature : null);
   const schema = useMemo(() => correctionSchema(field.path), [field.path]);
   const form = useForm<{ value: string }>({
     resolver: zodResolver(schema),
@@ -81,23 +90,30 @@ export function FieldRow({
     setEditing(true);
   }
 
-  const save = form.handleSubmit(async ({ value }) => {
+  async function correct({ value }: { value: string }) {
     const check = checkCorrection(field.path, value);
     if (!check.ok) return;
     try {
       await onDecide({ fieldId: field.id, action: "correct", value: check.value });
       setEditing(false);
+      rowRef.current?.focus();
     } catch {
       // The list shows the API's message; keep the editor open to fix it.
     }
-  });
+  }
+
+  function save(event: React.FormEvent) {
+    void form.handleSubmit(correct)(event);
+  }
 
   return (
     <li
+      ref={rowRef}
       id={fieldDomId(field.id)}
       tabIndex={-1}
-      onMouseEnter={() => onActivate(field.id)}
-      onFocusCapture={() => onActivate(field.id)}
+      onMouseEnter={() => onActivate(field.id, false)}
+      onFocusCapture={() => onActivate(field.id, true)}
+      onClick={() => onActivate(field.id, true)}
       className={cn(
         "rounded-lg border bg-surface px-4 py-3 shadow-e1 outline-none motion-safe:transition-colors",
         active ? "border-primary" : "border-border",
@@ -154,7 +170,15 @@ export function FieldRow({
             <Button type="submit" size="sm" variant="primary" disabled={pending}>
               Save correction
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setEditing(false);
+                requestAnimationFrame(() => correctRef.current?.focus());
+              }}
+            >
               Cancel
             </Button>
           </div>
@@ -166,14 +190,18 @@ export function FieldRow({
               size="sm"
               variant="secondary"
               disabled={pending}
-              onClick={() => void onDecide({ fieldId: field.id, action: "confirm" }).catch(() => {})}
+              onClick={() =>
+                void onDecide({ fieldId: field.id, action: "confirm" })
+                  .then(() => rowRef.current?.focus())
+                  .catch(() => {})
+              }
             >
               <Check aria-hidden />
               Confirm
               <span className="sr-only"> {label}</span>
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" disabled={pending} onClick={startEditing}>
+          <Button ref={correctRef} size="sm" variant="ghost" disabled={pending} onClick={startEditing}>
             <Pencil aria-hidden />
             Correct
             <span className="sr-only"> {label}</span>

@@ -38,7 +38,7 @@ export function FieldList({
   documentId: string;
   review: DocumentReview;
   activeFieldId: string | null;
-  onActivate: (fieldId: string) => void;
+  onActivate: (fieldId: string, jump: boolean) => void;
 }) {
   const decide = useDecideFields(documentId);
   const complete = useCompleteReview(documentId);
@@ -61,7 +61,7 @@ export function FieldList({
       <EmptyState
         icon={ClipboardCheck}
         title="Nothing was read from this Rate Con"
-        description="Try reading it again, or create the load by hand."
+        description="Create the load by hand, or upload a clearer copy of the Rate Con."
       />
     );
   }
@@ -70,7 +70,7 @@ export function FieldList({
     <div className="space-y-5">
       {decide.error ? (
         <p role="alert" className="rounded-md bg-st-danger-bg px-3 py-2 text-[0.8125rem] text-st-danger">
-          {decide.error.message} The list was reloaded.
+          {decide.error.message}
         </p>
       ) : null}
 
@@ -140,7 +140,7 @@ export function FieldList({
               onClick={() =>
                 complete.mutate(
                   { idempotencyKey: completeKey.keyFor("complete") },
-                  { onSuccess: () => completeKey.clear() },
+                  { onSettled: () => completeKey.clear() },
                 )
               }
             >

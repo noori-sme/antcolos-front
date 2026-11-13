@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useRef } from "react";
+import { useState } from "react";
+import { createIntentKeys } from "@/lib/rate-con/intent-key";
 import { services, type ServiceContext } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { orgKey } from "@/lib/query/keys";
@@ -25,12 +26,23 @@ export const rateConKeys = {
     [...orgKey(organizationId), "rate-con", documentId, "file"] as const,
 };
 
-/** Poll every 2.5 s while the extraction is queued or running (requirements §2). */
+/** Poll every 2.5 s while the extraction is queued or running (requirements §2), 10 s after 2 min. */
 export const POLL_MS = 2_500;
+export const SLOW_POLL_MS = 10_000;
+/** Past this, say the read is taking longer than usual (review, plan 13). */
+export const SLOW_READ_MS = 5 * 60_000;
+/** The backend lets a RUNNING run be retried after 10 minutes (contract §5). */
+export const RETRY_STUCK_MS = 10 * 60_000;
 
 export function isReading(document: RateConDocument | undefined): boolean {
   const status = document?.latestRun?.status;
   return status === "pending" || status === "running";
+}
+
+/** How long the current read has been going, from its start or the upload. */
+export function readingFor(document: RateConDocument, now = Date.now()): number {
+  const since = Date.parse(document.latestRun?.startedAt ?? document.receivedAt);
+  return Number.isFinite(since) ? Math.max(0, now - since) : 0;
 }
 
 export function useRateConDocument(documentId: string) {
@@ -39,7 +51,11 @@ export function useRateConDocument(documentId: string) {
     queryKey: rateConKeys.detail(ctx?.organizationId ?? "", documentId),
     queryFn: () => services.rateConIntake.get(ctx!, documentId),
     enabled: Boolean(ctx),
-    refetchInterval: (query) => (isReading(query.state.data) ? POLL_MS : false),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || !isReading(data)) return false;
+      return readingFor(data) > 2 * 60_000 ? SLOW_POLL_MS : POLL_MS;
+    },
   });
 }
 
@@ -62,8 +78,9 @@ export function useLoadDraft(documentId: string, enabled: boolean) {
 }
 
 /**
- * The signed URL expires (15 min by default): refetch a minute before it does,
- * and never cache it past its life.
+ * The signed URL expires (15 min by default). It is fetched once and kept: a
+ * new URL would reload the viewer. The document pane asks for a fresh one
+ * only when it needs to navigate after the old one expired.
  */
 export function useDocumentFileUrl(documentId: string) {
   const ctx = useServiceContext();
@@ -71,11 +88,7 @@ export function useDocumentFileUrl(documentId: string) {
     queryKey: rateConKeys.file(ctx?.organizationId ?? "", documentId),
     queryFn: () => services.rateConIntake.fileUrl(ctx!, documentId),
     enabled: Boolean(ctx),
-    staleTime: 10 * 60_000,
-    refetchInterval: (query) => {
-      const expiresAt = query.state.data ? Date.parse(query.state.data.expiresAt) : NaN;
-      return Number.isFinite(expiresAt) ? Math.max(expiresAt - Date.now() - 60_000, 30_000) : false;
-    },
+    staleTime: Infinity,
     retry: false,
   });
 }
@@ -92,11 +105,15 @@ function useRateConMutation<TVars, TResult>(
       return run(ctx, vars);
     },
     // A conflict (someone else decided a field) also leaves the cache stale.
+    // The file URL is left alone: refetching it would reload the viewer.
     onSettled: async () => {
       if (!ctx || !documentId) return;
-      await queryClient.invalidateQueries({
-        queryKey: rateConKeys.document(ctx.organizationId, documentId),
-      });
+      const org = ctx.organizationId;
+      await Promise.all(
+        [rateConKeys.detail(org, documentId), rateConKeys.review(org, documentId), rateConKeys.draft(org, documentId)].map(
+          (queryKey) => queryClient.invalidateQueries({ queryKey }),
+        ),
+      );
     },
   });
 }
@@ -133,21 +150,8 @@ export function useApproveRateCon(documentId: string) {
   );
 }
 
-/**
- * One Idempotency-Key per user intent (data-layer rule): the same intent
- * retried reuses its key; a different intent, or the same one after it
- * succeeded (`clear`), gets a new key.
- */
+/** One Idempotency-Key per user intent; see `createIntentKeys`. */
 export function useIntentKey() {
-  const current = useRef<{ intent: string; key: string } | null>(null);
-  const keyFor = useCallback((intent: string) => {
-    if (current.current?.intent !== intent) {
-      current.current = { intent, key: crypto.randomUUID() };
-    }
-    return current.current.key;
-  }, []);
-  const clear = useCallback(() => {
-    current.current = null;
-  }, []);
-  return { keyFor, clear };
+  const [keys] = useState(() => createIntentKeys());
+  return keys;
 }

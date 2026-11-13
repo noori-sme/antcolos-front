@@ -129,7 +129,7 @@ export function checkCorrection(path: string, raw: string): CorrectionCheck {
   switch (inputKindFor(path)) {
     case "money":
       return /^\d+(\.\d{1,2})?$/.test(text)
-        ? { ok: true, value: Number(text).toFixed(2) }
+        ? { ok: true, value: twoDecimals(text) }
         : { ok: false, message: "Enter an amount like 2500.00 (digits only)." };
     case "date":
       return isCalendarDate(text)
@@ -152,6 +152,12 @@ export function checkCorrection(path: string, raw: string): CorrectionCheck {
     default:
       return { ok: true, value: text };
   }
+}
+
+/** `2500` → `2500.00`, `75.5` → `75.50`, keeping the string (no float rounding). */
+function twoDecimals(text: string): string {
+  const [whole, fraction = ""] = text.split(".");
+  return `${whole}.${fraction.padEnd(2, "0")}`;
 }
 
 function isCalendarDate(text: string): boolean {

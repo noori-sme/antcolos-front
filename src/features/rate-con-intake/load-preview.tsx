@@ -29,14 +29,20 @@ function money(value: string | null): string | null {
 /** Local date and window of a stop, in the stop's own time zone. */
 function when(stop: LoadDraftStop): string {
   const zone = stop.timezone ?? undefined;
-  const time = (iso: string) =>
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: zone,
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-      timeZoneName: "short",
-    }).format(new Date(iso));
+  const time = (iso: string) => {
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: zone,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+        timeZoneName: "short",
+      }).format(new Date(iso));
+    } catch {
+      // An unknown zone or a bad instant: show what the API sent, don't crash.
+      return iso;
+    }
+  };
   const parts = [stop.scheduledDate ?? "No date"];
   if (stop.windowStart) {
     parts.push(stop.windowEnd ? `${time(stop.windowStart)} – ${time(stop.windowEnd)}` : time(stop.windowStart));
@@ -94,14 +100,14 @@ export function LoadPreview({
   onFix,
 }: {
   documentId: string;
-  onFix: (path: string) => void;
+  onFix: (paths: string[]) => void;
 }) {
   const draft = useLoadDraft(documentId, true);
   const approve = useApproveRateCon(documentId);
   const approveKey = useIntentKey();
 
   if (draft.isPending) return <LoadingSkeleton rows={2} />;
-  if (draft.isError) {
+  if (draft.isError && !draft.data) {
     return (
       <ErrorState
         title="Could not build the load preview"
@@ -111,7 +117,7 @@ export function LoadPreview({
     );
   }
 
-  const view: LoadDraftView = draft.data;
+  const view: LoadDraftView = draft.data!;
   const required = view.missing.filter((m) => m.required);
   const optional = view.missing.filter((m) => !m.required);
   const needs: PermissionKey[] =
@@ -151,7 +157,7 @@ export function LoadPreview({
                 <li key={m.field} className="flex flex-wrap items-center justify-between gap-2">
                   <span>{stopLabel(m.field)}</span>
                   {m.paths[0] ? (
-                    <Button size="sm" variant="link" onClick={() => onFix(m.paths[0])}>
+                    <Button size="sm" variant="link" onClick={() => onFix(m.paths)}>
                       Fix in the review
                     </Button>
                   ) : (
@@ -194,7 +200,9 @@ export function LoadPreview({
               onClick={() =>
                 approve.mutate(
                   { idempotencyKey: approveKey.keyFor("approve") },
-                  { onSuccess: () => approveKey.clear() },
+                  // Approval is guarded by the document's state, so a new key after a
+                  // failure cannot approve twice (a second try is DOCUMENT_ACCEPTED).
+                  { onSettled: () => approveKey.clear() },
                 )
               }
             >
