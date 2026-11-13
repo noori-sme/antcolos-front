@@ -1,14 +1,37 @@
 # 13 — Rate Con upload, review and approval on the real API (F1.1)
 
 ```
-Status:   approved with defaults (2026-11-13; owner: "implement with your recommended solution while I am away")
-Phase:    0 / 5 — planned
+Status:   implemented (2026-11-13; approved with defaults, owner: "implement with your recommended solution while I am away")
+Phase:    5 / 5 — done (review findings: see Review)
 Branch:   feat/loads-rate-con-approve (same name as the backend branch; backend is stacked
           feat/loads-review-api → feat/loads-rate-con-approve, neither merged yet)
 Requirements: docs/requirements/rate-con-intake.md
 Backend contract: ../antcolos/docs/requirements/documents-api-contract.md §1–§10
 Updated:  2026-11-13
 Track:    Feature (new route, new permission key, new http domain)
+```
+
+## Progress
+
+```text
+Phase 1 — done  types, contract, http adapter + 8 mapper tests (contract §2/§6/§9/§10 fixtures),
+                 src/lib/rate-con/fields.ts + 9 tests (red: module missing → green)
+Phase 2 — done  hooks.ts: org-keyed rateConKeys, polling while reading, signed-URL refresh,
+                 mutations invalidating the document prefix, useIntentKey
+Phase 3 — done  upload / review / document pane / field list / field row (rhf + zod) / load preview
+Phase 4 — done  pages, documents:review key + alias + Dispatcher template, manifest gates,
+                 /rate-cons in HTTP_LIVE_ROUTES (found by the live smoke run: http mode showed
+                 "not available yet"; red 2 → green), live Home entry, gate unit tests;
+                 browser spec is .live (an (app) route needs a real session; non-live (app)
+                 specs fail the same way here)
+Phase 5 — done  ARCHITECTURE §5, roles-and-permissions, requirements → implemented
+Verify          typecheck clean; vitest 2294/2294; node 805/805; build ok (/rate-cons/new,
+                 /rate-cons/[documentId]); lint: no errors in the 30 changed files (41 repo errors,
+                 baseline 59); live smoke against a local backend (Postgres 16 + Redis, seeded
+                 carrier@antcolos.dev): review order, client-side refusal of a bad amount,
+                 corrections, batch confirm, complete, preview with a missing value, fix,
+                 approve → document ACCEPTED, load RC_RECEIVED with the corrected rate,
+                 broker + facility rows; read-only after approval; no overflow at 360 px
 ```
 
 ## Summary

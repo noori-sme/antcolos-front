@@ -187,6 +187,14 @@ writes; `access.permission_granted` / `access.permission_revoked` with
 membership, a role-name check anywhere in authorization, or a cascade from a
 template edit to anybody's access.
 
+## Rate Con review (`documents:review`, plan 13)
+
+Uploading a broker Rate Con, reading and correcting its fields and approving it into a load
+need `documents:review` (backend `document.review`), separate from `documents:view` because
+the fields carry the rate. It is in the Dispatcher template; the Owner holds every key.
+Approving also needs `loads:create`, and `loads:edit` when the Rate Con updates a load that
+already exists. The backend checks all three; the screen only hides or disables.
+
 ## Where the code is
 
 | Thing | File |

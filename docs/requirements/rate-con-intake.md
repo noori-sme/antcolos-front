@@ -1,7 +1,7 @@
 # Rate Con intake: upload, review, approve (F1.1)
 
 ```
-Status:   agreed (2026-11-13; owner: "plan them … implement with your recommended solution while I am away")
+Status:   implemented (2026-11-13, plan 13; agreed owner: "plan them … implement with your recommended solution while I am away")
 Backend:  ../antcolos/docs/requirements/documents-api-contract.md §1–§10 (plans 20, 21, 26)
           ../antcolos/docs/requirements/documents.md (rules)
 Milestone: F1.1 (../antcolos/docs/product/milestones.md)
