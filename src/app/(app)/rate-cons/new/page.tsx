@@ -1,12 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { RateConUploadScreen } from "@/features/rate-con-intake/upload-screen";
 
-export const metadata = { title: "New load from rate confirmation" };
+export const metadata = { title: "New load from a Rate Con" };
 
 export default function Page() {
-  return (
-    <ModulePlaceholder
-      title="New load"
-      description="Upload a rate confirmation, extract the operational fields, and verify them before the load becomes canonical."
-    />
-  );
+  return <RateConUploadScreen />;
 }

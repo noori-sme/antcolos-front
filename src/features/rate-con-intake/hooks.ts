@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useRef } from "react";
 import { services, type ServiceContext } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { orgKey } from "@/lib/query/keys";
@@ -130,4 +131,23 @@ export function useApproveRateCon(documentId: string) {
   return useRateConMutation(documentId, (ctx, vars: { idempotencyKey: string }) =>
     services.rateConIntake.approve(ctx, documentId, vars.idempotencyKey),
   );
+}
+
+/**
+ * One Idempotency-Key per user intent (data-layer rule): the same intent
+ * retried reuses its key; a different intent, or the same one after it
+ * succeeded (`clear`), gets a new key.
+ */
+export function useIntentKey() {
+  const current = useRef<{ intent: string; key: string } | null>(null);
+  const keyFor = useCallback((intent: string) => {
+    if (current.current?.intent !== intent) {
+      current.current = { intent, key: crypto.randomUUID() };
+    }
+    return current.current.key;
+  }, []);
+  const clear = useCallback(() => {
+    current.current = null;
+  }, []);
+  return { keyFor, clear };
 }

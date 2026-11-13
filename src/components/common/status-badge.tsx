@@ -1,6 +1,9 @@
 import { Badge } from "@/components/ui/badge";
-import { DRIVER_STATUS, LOAD_STATUS, TRUCK_STATUS } from "@/config/statuses";
+import {
+  DRIVER_STATUS, FIELD_REVIEW_STATUS, LOAD_STATUS, RATE_CON_STATUS, TRUCK_STATUS,
+} from "@/config/statuses";
 import type { DriverStatus, LoadStatus, TruckStatus } from "@/types";
+import type { FieldReviewStatus, RateConDocumentStatus } from "@/types/rate-con-intake";
 
 export function LoadStatusBadge({ status }: { status: LoadStatus }) {
   const meta = LOAD_STATUS[status];
@@ -14,5 +17,15 @@ export function TruckStatusBadge({ status }: { status: TruckStatus }) {
 
 export function DriverStatusBadge({ status }: { status: DriverStatus }) {
   const meta = DRIVER_STATUS[status];
+  return <Badge tone={meta.tone}>{meta.label}</Badge>;
+}
+
+export function RateConStatusBadge({ status }: { status: RateConDocumentStatus }) {
+  const meta = RATE_CON_STATUS[status];
+  return <Badge tone={meta.tone}>{meta.label}</Badge>;
+}
+
+export function FieldReviewStatusBadge({ status }: { status: FieldReviewStatus }) {
+  const meta = FIELD_REVIEW_STATUS[status];
   return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }

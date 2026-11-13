@@ -91,7 +91,8 @@ export function HomeScreen() {
                 </Link>
               </Button>
             </Can>
-            <Can permission="loads:create">
+            {/* A new load starts from a broker Rate Con (plan 13). */}
+            <Can permissions={["loads:create", "documents:review"]}>
               <Button asChild variant="primary">
                 <Link href="/rate-cons/new">
                   <Plus aria-hidden />
