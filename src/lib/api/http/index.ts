@@ -1,5 +1,6 @@
 import type { AntcolosServices } from "../contracts";
 import { httpTrucksService } from "./trucks";
+import { httpRateConIntakeService } from "./rate-con-intake";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
 import { httpOrgPeopleService } from "./org-people";
 import { httpSelfProfileService } from "./self-profile";
@@ -18,6 +19,7 @@ const notImplemented = (method: string) => (): never => {
 
 export const httpServices: AntcolosServices = {
   trucks: httpTrucksService,
+  rateConIntake: httpRateConIntakeService,
   orgInvitations: httpOrgInvitationsService,
   orgRoles: httpOrgRolesService,
   orgPeople: httpOrgPeopleService,
