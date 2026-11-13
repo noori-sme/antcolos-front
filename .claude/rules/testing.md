@@ -31,6 +31,6 @@ Three tiers. Pick the lowest one that proves the claim.
   backend must say so in its name (`*.live.spec.ts`) and is excluded from CI.
 - Don't hard-code dates that will pass into the past. Build them relative to `Date.now()` or use
   `vi.useFakeTimers()`.
-- Known baseline: `staging` has pre-existing vitest failures and lint errors (see
+- Known baseline: `main` has pre-existing vitest failures and lint errors (see
   `docs/workflow/WORKFLOW.md` §Baseline). Your change must not add new ones. Don't
   "fix" unrelated failures in the same change.

@@ -13,7 +13,7 @@ Updated:  <YYYY-MM-DD>
 2–4 sentences: what the user can do afterwards, and which part is real API vs mock.
 
 ## Endpoint status
-| Endpoint | In contract | On staging | Adapter |
+| Endpoint | In contract | On backend main | Adapter |
 | --- | --- | --- | --- |
 | `GET /trucks` | yes | yes | http |
 

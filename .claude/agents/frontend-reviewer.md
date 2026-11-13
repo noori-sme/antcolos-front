@@ -11,7 +11,7 @@ each with a file:line and a concrete failure scenario.
 
 ## Input
 The caller gives you the scope. By default that's
-`git diff $(git merge-base HEAD origin/staging)...HEAD`, plus `git diff` for uncommitted
+`git diff $(git merge-base HEAD origin/main)...HEAD`, plus `git diff` for uncommitted
 work, plus untracked files from `git status --porcelain`. If you're given a plan doc instead,
 review its design against the same checklist.
 

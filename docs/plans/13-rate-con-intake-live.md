@@ -69,7 +69,8 @@ completes the review, previews the load and approves it. All real API, http-only
 | `GET /documents/:id/load-draft`, `POST /documents/:id/approve` | §9–§10 | no: `feat/loads-rate-con-approve` | http |
 
 Merge order: backend plan 21 → plan 26 → this. Until then the review/approve calls 404 on
-staging; the screen shows the error state (no fallback to mock).
+production; the screen shows the error state (no fallback to mock). Frontend PR base: `main`
+(merging deploys production on Vercel), so merge it after both backend PRs are deployed.
 
 ## Decisions (defaults)
 
