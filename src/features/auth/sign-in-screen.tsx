@@ -18,7 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLogin } from "./hooks";
 import { fetchAndStoreUserPermissions } from "@/lib/session/permissions-sync";
 import {
-  clearNextStep, clearPermissionCookies, readCookie, setCarrierData, setNextStep, setSessionToken,
+  clearAbandonedOnboarding, clearNextStep, clearPermissionCookies, readCookie, setCarrierData, setNextStep, setSessionToken,
 } from "@/lib/api/auth-cookies";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,10 @@ export function SignInScreen() {
   const invitationReturn = useInvitationReturnPath();
   const searchParams = useSearchParams();
   const verifyToken = searchParams?.get("verifyToken") || searchParams?.get("token") || null;
+
+  useEffect(() => {
+    clearAbandonedOnboarding();
+  }, []);
 
   const uid = useId();
   const emailId = `${uid}-email`;

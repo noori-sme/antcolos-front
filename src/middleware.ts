@@ -35,7 +35,15 @@ export function middleware(request: NextRequest) {
     if (pathname === '/verify-carrier') {
       return NextResponse.next()
     }
-    if (nextStep === "choose-username" && pathname !== "/sign-up") {
+    // Sign-in and sign-up are always reachable, so an onboarding session can
+    // never trap the person (e.g. the carrier link was opened on another
+    // device, which finished onboarding there). The screens drop the stale
+    // session on mount; it isn't cleared here, because prefetches of a
+    // /sign-in link would run this too.
+    if (pathname === '/sign-in' || pathname === '/sign-up') {
+      return NextResponse.next()
+    }
+    if (nextStep === "choose-username") {
       return NextResponse.redirect(new URL('/sign-up', request.url))
     }
     if (nextStep === "select-role") {
@@ -61,7 +69,7 @@ export function middleware(request: NextRequest) {
     }
     
     // Prevent access to any protected routes (like /home) if there is an active nextStep.
-    const isAllowedRoute = pathname.startsWith('/onboarding') || pathname.startsWith('/sign-up') || pathname.startsWith('/sign-in') || pathname.startsWith('/verify-email');
+    const isAllowedRoute = pathname.startsWith('/onboarding') || pathname.startsWith('/verify-email');
     if (!isAllowedRoute) {
       return NextResponse.redirect(new URL('/onboarding', request.url))
     }
