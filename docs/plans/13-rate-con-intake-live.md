@@ -50,6 +50,10 @@ Review          contract-checker: no frontend bug, no backend gap (doc drift in 
                  load number → "Approves and updates" → one load, document ACCEPTED).
                  Deviation kept: the browser spec is .live (an (app) route needs a real
                  session); the gate is covered by unit tests on the manifest and live routes
+CI fix          the .live spec ran in CI (mock mode) and failed: it lacked the repo's
+                 `test.skip(!LIVE_WEB_URL)`. Now skipped without LIVE_WEB_URL (verified: old
+                 2 failed → new 2 skipped in mock mode) and signs in as the seeded carrier
+                 when set (2/2 pass on desktop and mobile against the local stack)
 ```
 
 ## Summary
