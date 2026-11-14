@@ -1,7 +1,7 @@
 <!--
 Title: a Conventional Commit line, e.g. feat(loads): Rate Con review screen (F1.1)
 Branch: <type>/<scope>-<slug>, e.g. feat/loads-ratecon-review (CONTRIBUTING.md → Branches)
-Base: staging. A release PR (staging → main) only needs: What and why, Backend dependency, Verification, Rollback.
+Base: main. Merging deploys production on Vercel, so the backend this needs must be deployed first.
 Keep every heading. Write "n/a" and a reason rather than deleting a section.
 -->
 
@@ -31,7 +31,7 @@ Keep every heading. Write "n/a" and a reason rather than deleting a section.
 - [ ] UI gated by permission keys (`<Can>`/`can()`), never role names
 - [ ] Loading / empty / error / success states. Design tokens only
 - [ ] New routes registered in `nav.ts` or `EXTRA_ROUTES` (and `src/config/live-routes.ts` if it works in http mode)
-- [ ] New env vars added to `.env.example` and set in hosting (staging + prod)
+- [ ] New env vars added to `.env.example` and set in Vercel before merging
 - [ ] Checked at 360 px
 
 ## Verification
@@ -52,4 +52,4 @@ Keep every heading. Write "n/a" and a reason rather than deleting a section.
 
 ## Deploy notes and rollback
 
-<!-- What happens on merge (staging → Vercel preview, main → production), any Vercel/Railway setting to change first, and how to undo it: revert the merge, or promote the previous Vercel deployment. "None" is a valid answer. -->
+<!-- What happens on merge (main → Vercel production deploy), any Vercel/Railway setting to change first, and how to undo it: revert the merge, or promote the previous Vercel deployment. "None" is a valid answer. -->

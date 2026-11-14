@@ -3,7 +3,7 @@ import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
 import type { PermissionKey } from "@/types";
 import { can, canAll, canAny } from "./can";
-import { normalizePermissionKey } from "./catalog";
+import { migrateKey, normalizePermissionKey } from "./catalog";
 import {
   NEVER_GRANTABLE, PERMISSION_CATALOG, PERMISSION_GROUP_LABELS,
   PERMISSION_GROUP_ORDER, availablePermissionKeys, permissionMeta,
@@ -225,3 +225,28 @@ describe("people pages refuse callers without the list key (plan 06)", () => {
     expect(keys).toEqual(expect.arrayContaining(["members:list_drivers", "members:list_dispatchers", "members:list_admins"]));
   });
 });
+
+describe("documents:review (plan 13)", () => {
+  it("maps the backend's document.review both ways", () => {
+    expect(normalizePermissionKey("document.review")).toBe("documents:review");
+    expect(migrateKey("documents:review")).toBe("document.review");
+  });
+
+  it("is in the Dispatcher template, with its prerequisite", () => {
+    const dispatcher = SEED_TEMPLATES.find((t) => t.name === "Dispatcher");
+    expect(dispatcher?.permissions).toEqual(
+      expect.arrayContaining(["documents:review", "documents:view"]),
+    );
+  });
+});
+
+describe("Rate Con routes (plan 13)", () => {
+  it("gate upload and review on documents:review", async () => {
+    const { requiredPermissionsForPath } = await import("./route-manifest");
+    expect(requiredPermissionsForPath("/rate-cons/new")).toEqual(["documents:review"]);
+    expect(
+      requiredPermissionsForPath("/rate-cons/0b6f8c1e-2d3a-4f5b-9c7d-8e9f0a1b2c3d"),
+    ).toEqual(["documents:review"]);
+  });
+});
+

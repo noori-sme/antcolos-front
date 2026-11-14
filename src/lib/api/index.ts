@@ -2,6 +2,7 @@ import type { AntcolosServices } from "./contracts";
 import { API_MODE, DEMO_AREAS } from "./mode";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
+import { httpRateConIntakeService } from "./http/rate-con-intake";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
 import { httpSelfProfileService } from "./http/self-profile";
@@ -67,6 +68,9 @@ const mockServices: AntcolosServices = {
    * fall back to, so mock mode keeps using the real adapter.
    */
   trucks: httpTrucksService,
+  // http-only (plan 13): Rate Con upload, review and approval have no mock;
+  // the screens call the real API in both modes.
+  rateConIntake: httpRateConIntakeService,
   // http-only for the same reason: the access screens have always called
   // the real invitations and roles API in both modes.
   orgInvitations: httpOrgInvitationsService,

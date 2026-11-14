@@ -8,6 +8,7 @@ export type * from "./reports";
 export type * from "./compliance";
 export type * from "./fleet";
 export type * from "./trucks";
+export type * from "./rate-con-intake";
 export type * from "./org-people";
 export type * from "./org-access";
 export type * from "./settlements";
@@ -46,6 +47,7 @@ import type { FactoringService } from "./factoring";
 import type { FuelService, IftaService } from "./fuel";
 import type { FleetService } from "./fleet";
 import type { TrucksService } from "./trucks";
+import type { RateConIntakeService } from "./rate-con-intake";
 import type { OrgPeopleService } from "./org-people";
 import type { SelfProfileService } from "./self-profile";
 import type { OrgMembersService } from "./org-members";
@@ -80,6 +82,8 @@ export interface AntcolosServices {
   fleet: FleetService;
   /** The real truck registry (NestJS `/trucks`). http-only: see `src/lib/api/index.ts`. */
   trucks: TrucksService;
+  /** Rate Con upload, review and approval (NestJS `/documents`, plan 13). http-only. */
+  rateConIntake: RateConIntakeService;
   /** Real organization invitations (NestJS). http-only: see `src/lib/api/index.ts`. */
   orgInvitations: OrgInvitationsService;
   /** Real roles and permission catalog (NestJS). http-only. */

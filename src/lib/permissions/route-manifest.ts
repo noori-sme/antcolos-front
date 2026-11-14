@@ -56,7 +56,10 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   // watching freight run is not the same power as putting a driver on a load,
   // so it is gated on its own key rather than inheriting `loads:assign`.
   "/dispatch/tracking": ["tracking:view", "loads:view"],
-  "/rate-cons/new": ["loads:create", "documents:upload"],
+  // Rate Con upload and review on the real API (plan 13). Uploading, reading
+  // the fields and approving all need `documents:review` (backend
+  // `document.review`); Approve also checks `loads:create` on the button.
+  "/rate-cons/new": ["documents:review"],
   // Confirming who a broker is is a stronger power than reading the directory,
   // so the review screen is gated above its parent rather than inheriting it.
   "/directory/review": ["customers:view", "customers:resolve"],
@@ -70,7 +73,8 @@ const EXTRA_ROUTES: Record<string, PermissionKey[]> = {
   // /eld itself comes from the nav entry. This is the child route, which has
   // no nav item of its own and must not fall through to a weaker parent.
   "/eld/devices": ["eld:view", "trucks:view"],
-  "/rate-cons": ["loads:view"],
+  // /rate-cons/[documentId] (plan 13). No list page exists at /rate-cons.
+  "/rate-cons": ["documents:review"],
   "/reports": ["reports:view"],
   "/settings": ["members:view"],
   // Responsibility settings sit under /settings but are a stronger power than

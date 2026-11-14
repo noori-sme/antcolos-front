@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ALL_NAV_SECTIONS } from "@/config/nav";
 import { HTTP_LIVE_ROUTES } from "@/config/live-routes";
-import { isDemoRoute, isRouteAvailable } from "./route-manifest";
+import { isDemoRoute, isRouteAvailable, ROUTE_MANIFEST } from "./route-manifest";
 
 describe("isRouteAvailable (plan 08)", () => {
   it("reaches every route in mock mode", () => {
@@ -48,10 +48,19 @@ describe("isRouteAvailable (plan 08)", () => {
     expect(isRouteAvailable(path, "http", false)).toBe(false);
   });
 
-  it("only lists routes that exist in the nav, so a typo can't silently hide a page", () => {
+  it("only lists routes the app gates (nav or EXTRA_ROUTES), so a typo can't silently hide a page", () => {
     const navHrefs = new Set(ALL_NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.href)));
-    for (const route of HTTP_LIVE_ROUTES) expect(navHrefs).toContain(route);
+    const known = new Set([...navHrefs, ...Object.keys(ROUTE_MANIFEST)]);
+    for (const route of HTTP_LIVE_ROUTES) expect(known).toContain(route);
   });
+
+  it.each(["/rate-cons/new", "/rate-cons/0b6f8c1e-2d3a-4f5b-9c7d-8e9f0a1b2c3d"])(
+    "reaches %s in http mode, live rather than demo (plan 13)",
+    (path) => {
+      expect(isRouteAvailable(path, "http", false)).toBe(true);
+      expect(isDemoRoute(path, "http", true)).toBe(false);
+    },
+  );
 });
 
 describe("demo areas (plan 10)", () => {

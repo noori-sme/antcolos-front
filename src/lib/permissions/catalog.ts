@@ -102,6 +102,9 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "documents:view", label: "View documents", description: "Open uploaded paperwork such as BOLs and PODs.", group: "documents", scopeNote: "A driver's own documents reach a carrier only through the driver's own sharing consent, never through this key alone." },
   { key: "documents:upload", label: "Upload documents", description: "Attach paperwork to a load or a driver.", group: "documents", prerequisites: ["documents:view"] },
   { key: "documents:download", label: "Download documents", description: "Save copies of paperwork onto their own device.", group: "documents", prerequisites: ["documents:view"] },
+  // Rate Con review (plan 13): the fields carry the rate, so this is its own
+  // key rather than `documents:view` (backend `document.review`).
+  { key: "documents:review", label: "Review Rate Cons", description: "Upload rate confirmations, check and correct what was read from them, and see the rate.", group: "documents", financial: true, prerequisites: ["documents:view"] },
   { key: "documents:approve", label: "Approve documents", description: "Accept or reject paperwork someone submitted.", group: "documents", prerequisites: ["documents:view"] },
   { key: "documents:delete", label: "Delete documents", description: "Permanently remove uploaded paperwork.", group: "documents", sensitive: true, prerequisites: ["documents:view"] },
 
@@ -456,6 +459,7 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "documents.create": "documents:upload",
   "document.upload": "documents:upload",
   "documents.upload": "documents:upload",
+  "document.review": "documents:review",
 
   // Settlements & Invoices & Accounting
   "settlement.read": "settlements:view",

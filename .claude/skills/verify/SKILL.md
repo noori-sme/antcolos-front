@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Antcolos frontend verification gate. `fast` checks changed files (eslint, typecheck, related vitest); `full` mirrors CI (lint, typecheck, all vitest, node tests, build, browser specs for touched flows) and compares against the known staging baseline. Run before claiming any task done.
+description: Antcolos frontend verification gate. `fast` checks changed files (eslint, typecheck, related vitest); `full` mirrors CI (lint, typecheck, all vitest, node tests, build, browser specs for touched flows) and compares against the known `main` baseline. Run before claiming any task done.
 argument-hint: "[fast|full]"
 ---
 
@@ -13,7 +13,7 @@ failing file to read the full error.
 ## Changed files
 
 ```bash
-base=$(git merge-base HEAD origin/staging 2>/dev/null || git merge-base HEAD staging)
+base=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main)
 { git diff --name-only "$base"...HEAD; git diff --name-only; git ls-files --others --exclude-standard; } \
   | sort -u | grep -E '\.(ts|tsx|mts)$' | xargs -r ls 2>/dev/null
 ```
@@ -39,7 +39,7 @@ npx playwright test <specs for touched flows>   # the whole suite only for auth/
 ```
 
 ### Baseline
-`staging` isn't green today. The numbers are in `docs/workflow/WORKFLOW.md` §Baseline. The rule
+`main` isn't green today. The numbers are in `docs/workflow/WORKFLOW.md` §Baseline. The rule
 is **no new failures**: if lint errors or failing tests exceed the baseline, find out which
 ones are yours by comparing names, not just counts. Re-run on `git stash` when you're unsure. When a
 change legitimately fixes baseline failures, update the numbers in WORKFLOW.md.

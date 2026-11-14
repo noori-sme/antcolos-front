@@ -1,0 +1,152 @@
+# 13 — Rate Con upload, review and approval on the real API (F1.1)
+
+```
+Status:   implemented (2026-11-13; approved with defaults, owner: "implement with your recommended solution while I am away")
+Phase:    5 / 5 — done (review findings: see Review)
+Branch:   feat/loads-rate-con-approve (same name as the backend branch; backend is stacked
+          feat/loads-review-api → feat/loads-rate-con-approve, neither merged yet)
+Requirements: docs/requirements/rate-con-intake.md
+Backend contract: ../antcolos/docs/requirements/documents-api-contract.md §1–§10
+Updated:  2026-11-13
+Track:    Feature (new route, new permission key, new http domain)
+```
+
+## Progress
+
+```text
+Phase 1 — done  types, contract, http adapter + 8 mapper tests (contract §2/§6/§9/§10 fixtures),
+                 src/lib/rate-con/fields.ts + 9 tests (red: module missing → green)
+Phase 2 — done  hooks.ts: org-keyed rateConKeys, polling while reading, signed-URL refresh,
+                 mutations invalidating the document prefix, useIntentKey
+Phase 3 — done  upload / review / document pane / field list / field row (rhf + zod) / load preview
+Phase 4 — done  pages, documents:review key + alias + Dispatcher template, manifest gates,
+                 /rate-cons in HTTP_LIVE_ROUTES (found by the live smoke run: http mode showed
+                 "not available yet"; red 2 → green), live Home entry, gate unit tests;
+                 browser spec is .live (an (app) route needs a real session; non-live (app)
+                 specs fail the same way here)
+Phase 5 — done  ARCHITECTURE §5, roles-and-permissions, requirements → implemented
+Verify          typecheck clean; vitest 2294/2294; node 805/805; build ok (/rate-cons/new,
+                 /rate-cons/[documentId]); lint: no errors in the 30 changed files (41 repo errors,
+                 baseline 59); live smoke against a local backend (Postgres 16 + Redis, seeded
+                 carrier@antcolos.dev): review order, client-side refusal of a bad amount,
+                 corrections, batch confirm, complete, preview with a missing value, fix,
+                 approve → document ACCEPTED, load RC_RECEIVED with the corrected rate,
+                 broker + facility rows; read-only after approval; no overflow at 360 px
+Review          contract-checker: no frontend bug, no backend gap (doc drift in §9's example,
+                 fixed in the backend contract). frontend-reviewer: no blocking. Fixed: a failed
+                 background refetch no longer replaces the screen (error state only without
+                 data, inline "couldn't refresh" otherwise); mutations no longer refetch the
+                 signed URL, the iframe is not remounted, the PDF moves on focus/click only and
+                 an expired URL is refreshed before moving; a slow read says so after 5 min,
+                 polls every 10 s after 2 min and offers "Read it again" after 10 min (the
+                 backend's reclaim window); focus returns to the row after a decision and to
+                 Correct on Cancel; a correction editor closes when the field changes under it;
+                 neutral decision error text; "Fix in the review" falls back across the listed
+                 paths; file pane retry; approve/complete/retry get a new key after a failure
+                 (state-guarded on the server), decisions keep theirs; Intl formatting cannot
+                 crash; money kept as a string; extension check when the MIME type is empty;
+                 intent-key logic extracted (src/lib/rate-con/intent-key.ts) and tested.
+                 Re-ran the live smoke (create, then a second Rate Con with the same broker
+                 load number → "Approves and updates" → one load, document ACCEPTED).
+                 Deviation kept: the browser spec is .live (an (app) route needs a real
+                 session); the gate is covered by unit tests on the manifest and live routes
+CI fix          the .live spec ran in CI (mock mode) and failed: it lacked the repo's
+                 `test.skip(!LIVE_WEB_URL)`. Now skipped without LIVE_WEB_URL (verified: old
+                 2 failed → new 2 skipped in mock mode) and signs in as the seeded carrier
+                 when set (2/2 pass on desktop and mobile against the local stack)
+```
+
+## Summary
+
+`/rate-cons/new` (today a placeholder) uploads a Rate Con; `/rate-cons/[documentId]` shows the
+document beside its extracted fields in review order, takes confirm/correct decisions,
+completes the review, previews the load and approves it. All real API, http-only like trucks
+(no mock: the screens call the backend in both modes). The legacy demo review at
+`/dispatch/rate-confirmations/*` stays as it is.
+
+## Endpoint status (backend branches, checked 2026-11-13)
+
+| Endpoint | In contract | On backend main | Adapter |
+| --- | --- | --- | --- |
+| `POST /documents/rate-confirmations`, `GET /documents/:id`, `/file`, `POST /extractions` | §1–§5 | yes (plan 20) | http |
+| `GET /documents/:id/review`, `POST …/review/decisions`, `POST …/review/complete` | §6–§8 | no: `feat/loads-review-api` | http |
+| `GET /documents/:id/load-draft`, `POST /documents/:id/approve` | §9–§10 | no: `feat/loads-rate-con-approve` | http |
+
+Merge order: backend plan 21 → plan 26 → this. Until then the review/approve calls 404 on
+production; the screen shows the error state (no fallback to mock). Frontend PR base: `main`
+(merging deploys production on Vercel), so merge it after both backend PRs are deployed.
+
+## Decisions (defaults)
+
+1. **New feature folder** `src/features/rate-con-intake/` and domain `rateConIntake`; the
+   legacy `rate-confirmations` demo is untouched (different workflow: outbound signing).
+2. **New permission key** `documents:review` ↔ backend `document.review` (catalog entry,
+   alias, `migrateKey`), added to the mock Admin and Dispatcher templates so demo users keep
+   the `/rate-cons/new` entry from Home.
+3. **PDF display**: native viewer in an `<iframe>` with `#page=N`; box overlay only for images
+   (no `pdfjs-dist`: adding it changes `package-lock.json`, which needs owner approval).
+4. **Client validation mirrors the backend**: a pure `src/lib/rate-con/` module (formats, path
+   labels) with tests; the zod schema uses it.
+5. **Errors**: the interceptor's `Error(message)` is shown as is; 409 conflicts on decisions
+   refetch the review. No typed `ApiError` needed.
+6. **Polling**: `refetchInterval` 2.5 s on the document while the latest run is
+   `PENDING`/`RUNNING`, then the review query is enabled.
+7. **Idempotency**: one `crypto.randomUUID()` per user intent (per upload file, per decision
+   batch, per complete/approve click), kept in a ref and reused on retry of the same intent.
+
+## Files
+
+| File | New/changed | Why |
+| --- | --- | --- |
+| `src/types/rate-con-intake.ts` (+ `src/types/index.ts`) | new | canonical types |
+| `src/lib/api/contracts/rate-con-intake.ts` (+ `contracts/index.ts`) | new | service interface |
+| `src/lib/api/http/rate-con-intake.ts` + `.test.ts` | new | adapter + mappers (fixtures from the contract) |
+| `src/lib/api/http/index.ts`, `src/lib/api/index.ts` | changed | register http-only domain |
+| `src/lib/rate-con/fields.ts` + `.test.ts` | new | path labels, correction formats |
+| `src/lib/permissions/catalog.ts`, `templates.ts` | changed | `documents:review` |
+| `src/lib/permissions/route-manifest.ts` | changed | `/rate-cons/*` gates |
+| `src/features/rate-con-intake/hooks.ts` | new | queries + mutations (org-keyed) |
+| `src/features/rate-con-intake/upload-screen.tsx` | new | upload |
+| `src/features/rate-con-intake/review-screen.tsx`, `document-pane.tsx`, `field-list.tsx`, `field-row.tsx`, `load-preview.tsx` | new | review (split, each < 400 lines) |
+| `src/app/(app)/rate-cons/new/page.tsx` | changed | render the upload screen |
+| `src/app/(app)/rate-cons/[documentId]/page.tsx` | new | render the review screen |
+| `tests/browser/rate-con-intake.spec.ts` | new | route gate + upload screen at 360 px |
+| `docs/architecture/ARCHITECTURE.md` §5, `docs/roles-and-permissions.md` | changed | domain status, key |
+
+## Phases
+
+### Phase 1 — types, contract, adapter, pure rules
+- Types, contract, http adapter (`toRateConDocument`, `toDocumentReview`, `toLoadDraftView`,
+  `toApprovalResult`), `src/lib/rate-con/fields.ts`.
+- Tests: mapper tests on contract §2/§6/§9/§10 examples; field label + correction format tests.
+### Phase 2 — hooks and query keys
+- `rateConKeys` under `orgKey`; `useRateConDocument` (polling), `useDocumentReview`,
+  `useLoadDraft`, `useDocumentFileUrl`; mutations upload / retry / decide / complete / approve,
+  each invalidating `[...orgKey, "rate-con", id]`.
+### Phase 3 — screens
+- Upload; review (document pane, fields, load preview) with loading / empty / error / success,
+  `<Can>` gates, 360 px layout.
+### Phase 4 — routes, permissions, browser spec
+- Pages, manifest, catalog key + alias + templates, `tests/browser/rate-con-intake.spec.ts`.
+### Phase 5 — docs
+- ARCHITECTURE §5, roles-and-permissions, requirements → implemented, this plan.
+
+## Invariant checklist
+- [x] No `apiClient` outside `src/lib/api/http/**`
+- [x] Query keys under `orgKey(org)`; mutations invalidate the document's prefix
+- [x] Gates on `documents:review`, `loads:create`, `loads:edit`; no role checks
+- [x] Types follow contract §1–§10; mapping in the adapter with tests
+- [x] Stable `Idempotency-Key` per intent
+- [x] Four states per view; tokens only
+- [x] Correction validation mirrors the backend formats
+- [x] Routes in `EXTRA_ROUTES`; no new cookies
+- [x] Mobile 360 px in the browser spec
+- [x] Tests at unit (mappers, rules) and browser (gate) tier
+
+## Backend asks
+- Optional: page images for PDF highlight boxes (`GET /documents/:id/pages/:n`), or approval for
+  `pdfjs-dist` here.
+
+## Risks / open points
+- The review/approve routes exist only on unmerged backend branches; merge them first.
+- No live end-to-end run against a backend in this session unless the backend runs locally.

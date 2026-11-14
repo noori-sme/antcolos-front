@@ -44,7 +44,7 @@ read the matching `.claude/rules/<area>.md` before editing that area, and for a 
 or agent read `.claude/skills/<name>/SKILL.md` or `.claude/agents/<name>.md` and follow it.
 
 **Cloud sessions:** dependencies refresh via `bootstrap.sh` (SessionStart hook, or run it).
-Commit and push the task's own branch at the end of every phase (never `staging` or `main`):
+Commit and push the task's own branch at the end of every phase (never `main`):
 an idle VM can be reclaimed with unpushed work.
 
 **Branches:** `<type>/<scope>-<slug>`, e.g. `feat/loads-ratecon-review`, `fix/auth-individual-sign-in`
@@ -52,9 +52,11 @@ an idle VM can be reclaimed with unpushed work.
 random branch such as `claude/<words>-<hash>`. **Don't use it.** The product owner has approved
 this (2026-11-09) in place of the session's branch instruction:
 - When the task's track is known, create a conventionally named branch from the latest
-  `staging` (`git switch -c <type>/<scope>-<slug> origin/staging`), then commit and push there.
+  `main` (`git switch -c <type>/<scope>-<slug> origin/main`), then commit and push there.
 - For full-stack work, use the backend branch's name.
-- PRs go to `staging` and fill in `.github/pull_request_template.md`.
+- **PRs go to `main`, never `staging`** (owner, 2026-11-13). `main` is connected to Vercel and
+  **merging deploys production**, so the backend PR a change depends on merges first. Fill in
+  `.github/pull_request_template.md`. The `staging` branch is legacy (from before the repo split).
 - A follow-up to merged work gets a new branch.
 
 **Full-stack tasks** (backend and frontend together, in a session started above both repos):
@@ -95,7 +97,7 @@ The six rules you must never break:
 | **Change** | Behavior change inside one feature, no new endpoint, route, or permission | Bullet plan in chat → test first → implement → `/verify` → `frontend-reviewer` agent |
 | **Integrate** | Wire an existing backend endpoint group to the UI (mock → http, or a new call) | `/integrate <contract doc or endpoint group>` |
 | **Feature** | New screen/route, new domain, new permission key, nav change, auth/session/middleware change, or anything that needs backend work first | `/requirements` → `/feature` (plan doc + approval before code) |
-| **Ship** | Open a PR, promote staging → main, deploy | `/ship` |
+| **Ship** | Open a PR to `main` (merging deploys to Vercel) | `/ship` |
 
 When you're unsure between two tracks, take the larger one. Every track except XS includes the test step.
 Before starting work, state the track you picked and why, in one line (e.g. "Track: Integrate,
@@ -113,6 +115,6 @@ because the trucks endpoints already exist"), whether or not a skill was named.
 - Run targeted tests while you iterate. Run the full suite only in `/verify full`.
 - Commits follow Conventional Commits scoped by feature (`feat(fleet): …`, `fix(auth): …`).
   Locally, commit or push only when asked (cloud sessions: see above). Branch flow:
-  `<type>/<scope>-<slug>` → `staging` → `main` (see **Branches** above).
+  `<type>/<scope>-<slug>` → `main` (see **Branches** above).
 - The plan doc is the hand-off between sessions. Keep its status block current so a fresh
   session can resume after `/clear`.

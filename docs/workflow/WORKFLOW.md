@@ -13,7 +13,7 @@ except XS.
 | 3. Build | `/feature` stage 4, `/integrate`, `/fix` | `ecc:react-test` (RTL TDD), `ecc:frontend-patterns`, `ecc:nextjs-turbopack`, `ecc:react-build` (build errors). Design: `design:design-system` (new components/patterns), `ecc:make-interfaces-feel-better` (polish), `ecc:frontend-a11y`, `design:ux-copy` | code + tests, phase commits |
 | 4. Test | `/verify fast\|full` | `ecc:e2e-runner` agent, `ecc:browser-qa`, chrome-devtools MCP (screenshots, console, network), `/run` | verify report vs baseline |
 | 5. Review | `frontend-reviewer`, `contract-checker` agents | `ecc:react-review`, `ecc:security-reviewer` (auth/session), built-in `/code-review`, `/simplify`. Design: `design:design-critique` (screenshots desktop + 360 px), `design:accessibility-review` | no blocking findings |
-| 6. Ship | `/ship pr\|staging\|production` | `ecc:prp-pr`, `claude-mem:babysit` (watch CI and reviews), `engineering:deploy-checklist` | PR → staging → main, smoke-test report |
+| 6. Ship | `/ship pr\|production` | `ecc:prp-pr`, `claude-mem:babysit` (watch CI and reviews), `engineering:deploy-checklist` | PR → main (deploys production), smoke-test report |
 
 Design skills: the "which one, when" table lives in `.claude/rules/ui-components.md` and
 loads automatically whenever UI files are touched. The rule there is that the existing tokens
@@ -27,7 +27,7 @@ and `components/ui` always win over any skill's suggestion.
 **New domain that needs backend work** (e.g. loads)
 1. Backend session in `../antcolos`: `/feature` there produces `docs/requirements/<x>-api-contract.md`.
 2. Here: `/requirements <x>` (reads that contract) → `/feature` (builds on mock behind the
-   contract while the backend is in progress) → `/integrate <x>` once the backend is on staging.
+   contract while the backend is in progress) → `/integrate <x>` once the backend is deployed.
 
 **Bug**
 `/fix "<what happened>"`. It decides frontend vs backend from the network response first.
@@ -83,5 +83,6 @@ Env var matrix (all are build-time, because they're `NEXT_PUBLIC_*`):
 | `NEXT_PUBLIC_API_URL` | staging or `http://localhost:3000/api/v1` | `https://antcolos-staging.up.railway.app/api/v1` | TODO |
 | `NEXT_PUBLIC_SITE_ORIGIN` | `http://localhost:3000` | TODO | TODO |
 
-Branches: `staging` → staging deploy, `main` → production deploy. Work happens on
-`<type>/<scope>-<slug>` branches cut from `staging`; see `CONTRIBUTING.md` → Branches.
+Branches: `main` → production deploy on Vercel (merging deploys). Work happens on
+`<type>/<scope>-<slug>` branches cut from `main`, and PRs go to `main`; see `CONTRIBUTING.md`
+→ Branches. `staging` is legacy (owner, 2026-11-13).

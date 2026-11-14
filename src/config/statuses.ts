@@ -2,6 +2,7 @@ import type { badgeVariants } from "@/components/ui/badge";
 import type {
   DriverStatus, LoadStatus, PayeeKind, SettlementStatus, TruckStatus,
 } from "@/types";
+import type { FieldReviewStatus, RateConDocumentStatus } from "@/types/rate-con-intake";
 
 type Tone = NonNullable<Parameters<typeof badgeVariants>[0]>["tone"];
 
@@ -77,4 +78,20 @@ export const DOCUMENT_LABEL: Record<string, string> = {
   bol: "BOL",
   pod: "POD",
   scale_ticket: "Scale ticket",
+};
+
+/** Rate Con document lifecycle (plan 13; backend spec §10). */
+export const RATE_CON_STATUS: Record<RateConDocumentStatus, { label: string; tone: Tone }> = {
+  expected:  { label: "Expected",     tone: "neutral" },
+  received:  { label: "Reading",      tone: "progress" },
+  extracted: { label: "To review",    tone: "warning" },
+  reviewed:  { label: "Reviewed",     tone: "info" },
+  accepted:  { label: "Approved",     tone: "success" },
+};
+
+/** A Rate Con field's review decision (plan 13). */
+export const FIELD_REVIEW_STATUS: Record<FieldReviewStatus, { label: string; tone: Tone }> = {
+  unreviewed: { label: "Not checked", tone: "neutral" },
+  confirmed:  { label: "Confirmed",   tone: "success" },
+  corrected:  { label: "Corrected",   tone: "info" },
 };
