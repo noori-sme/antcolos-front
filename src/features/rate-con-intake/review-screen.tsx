@@ -8,6 +8,7 @@ import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { fieldLabel } from "@/lib/rate-con/fields";
+import { rateConDisplayStatus } from "@/lib/rate-con/status";
 import type { RateConDocument } from "@/types/rate-con-intake";
 import { DocumentPane, type ActiveSource } from "./document-pane";
 import { FieldList } from "./field-list";
@@ -167,7 +168,7 @@ export function RateConReviewScreen({ documentId }: { documentId: string }) {
       <PageHeader
         title={data.file.filename || "Rate confirmation"}
         description="Check the values against the document. High-risk values each need a decision before the load can be approved."
-        actions={<RateConStatusBadge status={data.status} />}
+        actions={<RateConStatusBadge status={rateConDisplayStatus(data)} />}
       />
 
       {document.isError ? (
