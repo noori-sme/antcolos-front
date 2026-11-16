@@ -262,3 +262,15 @@ describe("loads:correct_status (plan 14)", () => {
     expect(dispatcher?.permissions).not.toContain("loads:correct_status");
   });
 });
+
+describe("loads:respond (plan 15)", () => {
+  it("maps the backend's load.respond both ways", () => {
+    expect(normalizePermissionKey("load.respond")).toBe("loads:respond");
+    expect(migrateKey("loads:respond")).toBe("load.respond");
+  });
+
+  it("is in the Dispatcher template, as on the backend", () => {
+    const dispatcher = SEED_TEMPLATES.find((t) => t.name === "Dispatcher");
+    expect(dispatcher?.permissions).toContain("loads:respond");
+  });
+});

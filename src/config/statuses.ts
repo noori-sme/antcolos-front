@@ -1,4 +1,5 @@
 import type { LoadRecordStatus } from "@/types/load-record";
+import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
 import type { badgeVariants } from "@/components/ui/badge";
 import type {
   DriverStatus, LoadStatus, PayeeKind, SettlementStatus, TruckStatus,
@@ -43,6 +44,19 @@ export const LOAD_RECORD_STATUS: Record<LoadRecordStatus, { label: string; tone:
   pod_received:            { label: "POD received",            tone: "success" },
   invoice_ready:           { label: "Ready to invoice",        tone: "warning" },
   cancelled:               { label: "Cancelled",               tone: "danger" },
+};
+
+/** A truck's operational status on the real API, including the trip statuses (plan 15). */
+export const TRUCK_OPERATIONAL_STATUS: Record<ApiTruckStatus, { label: string; tone: Tone }> = {
+  AVAILABLE:         { label: "Available",          tone: "success" },
+  UNAVAILABLE:       { label: "Unavailable",        tone: "neutral" },
+  MAINTENANCE:       { label: "Maintenance",        tone: "danger" },
+  LOAD_BOOKED:       { label: "Booked for a load",  tone: "info" },
+  EN_ROUTE_PICKUP:   { label: "En route to pickup", tone: "progress" },
+  AT_PICKUP:         { label: "At pickup",          tone: "progress" },
+  LOADED_IN_TRANSIT: { label: "Loaded, in transit", tone: "progress" },
+  AT_DELIVERY:       { label: "At delivery",        tone: "progress" },
+  DELIVERED:         { label: "Delivered",          tone: "success" },
 };
 
 export const TRUCK_STATUS: Record<TruckStatus, { label: string; tone: Tone }> = {

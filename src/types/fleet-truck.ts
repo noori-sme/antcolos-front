@@ -14,8 +14,14 @@ export const TRUCK_EQUIPMENT_TYPES = [
 ] as const;
 export type TruckEquipmentType = (typeof TRUCK_EQUIPMENT_TYPES)[number];
 
-export const TRUCK_OPERATIONAL_STATUSES = ["UNAVAILABLE", "AVAILABLE", "MAINTENANCE"] as const;
+/** Manual statuses, then the trip statuses that follow the truck's load (plan 31). */
+export const TRUCK_OPERATIONAL_STATUSES = [
+  "UNAVAILABLE", "AVAILABLE", "MAINTENANCE",
+  "LOAD_BOOKED", "EN_ROUTE_PICKUP", "AT_PICKUP", "LOADED_IN_TRANSIT", "AT_DELIVERY", "DELIVERED",
+] as const;
 export type TruckOperationalStatus = (typeof TRUCK_OPERATIONAL_STATUSES)[number];
+/** The statuses a person sets by hand (POST /trucks/:id/available|unavailable|maintenance). */
+export type ManualTruckStatus = "AVAILABLE" | "UNAVAILABLE" | "MAINTENANCE";
 
 export const TRUCK_OWNERSHIP_TYPES = ["COMPANY", "OWNER_OPERATOR", "LEASED"] as const;
 export type TruckOwnershipType = (typeof TRUCK_OWNERSHIP_TYPES)[number];

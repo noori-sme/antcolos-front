@@ -1,8 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import {
   DRIVER_STATUS, FIELD_REVIEW_STATUS, LOAD_RECORD_STATUS, LOAD_STATUS, RATE_CON_STATUS,
-  TRUCK_STATUS,
+  TRUCK_OPERATIONAL_STATUS, TRUCK_STATUS,
 } from "@/config/statuses";
+import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
 import type { LoadRecordStatus } from "@/types/load-record";
 import type { DriverStatus, LoadStatus, TruckStatus } from "@/types";
 import type { RateConDisplayStatus } from "@/lib/rate-con/status";
@@ -15,6 +16,12 @@ export function LoadStatusBadge({ status }: { status: LoadStatus }) {
 
 export function LoadRecordStatusBadge({ status }: { status: LoadRecordStatus }) {
   const meta = LOAD_RECORD_STATUS[status];
+  return <Badge tone={meta.tone}>{meta.label}</Badge>;
+}
+
+/** A real-API truck status (plan 15); unknown values are not guessed. */
+export function TruckOperationalBadge({ status }: { status: ApiTruckStatus }) {
+  const meta = TRUCK_OPERATIONAL_STATUS[status];
   return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }
 

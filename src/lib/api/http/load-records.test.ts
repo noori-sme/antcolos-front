@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  toCancelBody, toLoadListParams, toLoadRecord, toLoadRecordPage, toLoadTimelinePage,
+  toCancelBody, toDriverAnswer, toLoadListParams, toLoadRecord, toLoadRecordPage, toLoadTimelinePage,
 } from "./load-records";
 
 /** From ../antcolos/docs/requirements/loads-api-contract.md "Load (response)" (plan 29). */
@@ -227,5 +227,51 @@ describe("load-records mappers", () => {
       tonuAmount: "150",
     });
     expect(toCancelBody({ reason: "x" })).toEqual({ reason: "x" });
+  });
+
+  it("maps the truck and driver on a load (plans 31, 32)", () => {
+    const load = toLoadRecord({
+      ...CONTRACT_LOAD,
+      status: "DRIVER_ACCEPTED",
+      truckId: "truck-1",
+      driverUserId: "driver-1",
+      driverAssignedAt: "2026-11-16T08:00:00.000Z",
+      driverAcceptedAt: "2026-11-16T09:00:00.000Z",
+    });
+    expect(load).toMatchObject({
+      status: "driver_accepted",
+      truckId: "truck-1",
+      driverUserId: "driver-1",
+      driverAcceptedAt: "2026-11-16T09:00:00.000Z",
+    });
+    expect(toLoadRecord(CONTRACT_LOAD)).toMatchObject({ truckId: null, driverUserId: null });
+  });
+
+  it("maps a driver's answer, which carries no rate (contract §10)", () => {
+    expect(
+      toDriverAnswer({
+        id: "load-1",
+        status: "DRIVER_ACCEPTED",
+        driverUserId: "driver-1",
+        driverAcceptedAt: "2026-11-16T09:00:00.000Z",
+      }),
+    ).toEqual({
+      id: "load-1",
+      status: "driver_accepted",
+      driverUserId: "driver-1",
+      driverAcceptedAt: "2026-11-16T09:00:00.000Z",
+    });
+  });
+
+  it("keeps the truck and driver ids of a timeline event", () => {
+    const page = toLoadTimelinePage({
+      data: [
+        { id: "e", type: "load.truck_assigned", occurredAt: "2026-11-16T08:00:00.000Z", source: "api", actor: null, details: { truckId: "truck-1" } },
+        { id: "f", type: "load.driver_rejected", occurredAt: "2026-11-16T08:05:00.000Z", source: "api", actor: null, details: { driverUserId: "driver-1", reason: "Truck in the shop", from: "DRIVER_ASSIGNED", to: "BOOKED" } },
+      ],
+      meta: { page: 1, pageSize: 50, totalItems: 2, totalPages: 1 },
+    });
+    expect(page.items[0]).toMatchObject({ truckId: "truck-1" });
+    expect(page.items[1]).toMatchObject({ driverUserId: "driver-1", reason: "Truck in the shop", to: "booked" });
   });
 });

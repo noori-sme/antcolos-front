@@ -187,6 +187,13 @@ writes; `access.permission_granted` / `access.permission_revoked` with
 membership, a role-name check anywhere in authorization, or a cascade from a
 template edit to anybody's access.
 
+## Answering an assigned load (`loads:respond`, plan 15)
+
+A driver accepts or turns down a load assigned to them (backend `load.respond`, plan 32). A
+dispatcher who also holds `loads:edit` records a driver's answer given by phone; the key is in
+the Dispatcher template, as on the backend. Booking a truck and assigning a driver need
+`loads:edit` (backend `load.update`).
+
 ## Load status correction (`loads:correct_status`, plan 14)
 
 Moving a load back to an earlier status (backend `load.correct_status`, plan 29) is its own key,

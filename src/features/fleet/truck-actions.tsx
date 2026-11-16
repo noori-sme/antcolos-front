@@ -14,13 +14,14 @@ import { useIdempotencyKey } from "@/lib/api/use-idempotency-key";
 import { usePermissions } from "@/lib/session/hooks";
 import { can } from "@/lib/permissions";
 import { isOwnedByThisOrganization, truckActionsFor } from "@/lib/fleet/truck-actions-policy";
-import type { FleetTruck, TruckOperationalStatus } from "@/types/fleet-truck";
+import { isOnTrip, manualStatusTargets } from "@/lib/fleet/truck-status";
+import type { FleetTruck, ManualTruckStatus } from "@/types/fleet-truck";
 import { useArchiveTruck, useEndOperating, useSetTruckStatus } from "./hooks";
 import { TruckConfirmDialog } from "./truck-dialog-parts";
 import { TruckEditDialog } from "./truck-edit-dialog";
 import { TruckOwnershipDialog } from "./truck-ownership-dialog";
 
-const STATUS_LABEL: Record<TruckOperationalStatus, string> = {
+const STATUS_LABEL: Record<ManualTruckStatus, string> = {
   AVAILABLE: "Mark available",
   UNAVAILABLE: "Mark unavailable",
   MAINTENANCE: "Put in maintenance",
@@ -52,7 +53,7 @@ export function TruckActions({ truck }: { truck: FleetTruck }) {
   });
   if (!Object.values(actions).some((v) => v === true)) return null;
 
-  const changeStatus = (next: TruckOperationalStatus) =>
+  const changeStatus = (next: ManualTruckStatus) =>
     setStatus.mutate(
       { status: next, idempotencyKey: keyFor({ status: next }) },
       { onError: (error) => toast.error(error.message) },
@@ -60,7 +61,10 @@ export function TruckActions({ truck }: { truck: FleetTruck }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {actions.status && (
+      {actions.status && isOnTrip(status) ? (
+        <p className="text-[0.8125rem] text-fg-muted">On a load: its status moves with the load.</p>
+      ) : null}
+      {actions.status && !isOnTrip(status) && (
         <Can permission="trucks:edit">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -70,9 +74,7 @@ export function TruckActions({ truck }: { truck: FleetTruck }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {(Object.keys(STATUS_LABEL) as TruckOperationalStatus[])
-                .filter((s) => s !== status)
-                .map((s) => (
+              {manualStatusTargets(status).map((s) => (
                   <DropdownMenuItem key={s} onSelect={() => changeStatus(s)}>
                     {STATUS_LABEL[s]}
                   </DropdownMenuItem>

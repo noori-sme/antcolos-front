@@ -76,6 +76,18 @@ export function timelineSentence(entry: LoadTimelineEntry): string {
       return `${statusLabel(entry.from)} → ${statusLabel(entry.to)}`;
     case "load.status_corrected":
       return `Status corrected: ${statusLabel(entry.from)} → ${statusLabel(entry.to)}`;
+    case "load.truck_assigned":
+      return "Truck booked for this load";
+    case "load.truck_unassigned":
+      return "Truck taken off this load";
+    case "load.driver_assigned":
+      return "Driver assigned";
+    case "load.driver_unassigned":
+      return "Driver taken off this load";
+    case "load.driver_accepted":
+      return "Driver accepted the load";
+    case "load.driver_rejected":
+      return "Driver turned the load down";
     case "load.cancelled": {
       const by = entry.party ? `Cancelled by ${PARTY[entry.party]}` : "Cancelled";
       const tonu = money(entry.tonuAmount);

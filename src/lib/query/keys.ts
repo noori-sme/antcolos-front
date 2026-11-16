@@ -5,6 +5,7 @@ import type {
 } from "@/types";
 import type { OrgPeopleFamily, OrgPeopleQuery } from "@/types/org-people";
 import type { LoadRecordQuery } from "@/types/load-record";
+import type { TruckListFilters } from "@/types/fleet-truck";
 
 /**
  * Every query key is namespaced by organization. Org A's data can never be
@@ -12,6 +13,20 @@ import type { LoadRecordQuery } from "@/types/load-record";
  * convention. The cache is also cleared outright on organization switch.
  */
 export const orgKey = (organizationId: string) => ["org", organizationId] as const;
+
+/**
+ * Truck registry keys (moved here from features/fleet in plan 15: a load's
+ * actions move its truck, so the loads screens invalidate them too).
+ */
+export const fleetKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "trucks"] as const,
+  list: (organizationId: string, filters: TruckListFilters) =>
+    [...orgKey(organizationId), "trucks", "list", filters] as const,
+  detail: (organizationId: string, truckId: string) =>
+    [...orgKey(organizationId), "trucks", "detail", truckId] as const,
+  lookup: (organizationId: string, vin: string) =>
+    [...orgKey(organizationId), "trucks", "lookup", vin] as const,
+};
 
 /**
  * The real loads API (F1.2, plan 14). Shared: the loads screens read it, and a

@@ -1,5 +1,5 @@
 import type {
-  CancelLoadInput, LoadRecord, LoadRecordPage, LoadRecordQuery, LoadRecordStatus,
+  CancelLoadInput, DriverAnswer, LoadRecord, LoadRecordPage, LoadRecordQuery, LoadRecordStatus,
   LoadTimelinePage,
 } from "@/types/load-record";
 import type { ServiceContext } from "./context";
@@ -39,4 +39,16 @@ export interface LoadRecordsService {
     reason: string,
     idempotencyKey: string,
   ): Promise<LoadRecord>;
+  /** §9 Book a truck before the trip starts. */
+  bookTruck(ctx: ServiceContext, loadId: string, truckId: string, idempotencyKey: string): Promise<LoadRecord>;
+  /** §9 Take the truck off before the trip starts. */
+  unbookTruck(ctx: ServiceContext, loadId: string, idempotencyKey: string): Promise<LoadRecord>;
+  /** §10 Assign a driver (an active member with the Driver role). */
+  assignDriver(ctx: ServiceContext, loadId: string, userId: string, idempotencyKey: string): Promise<LoadRecord>;
+  /** §10 Take the driver off. */
+  unassignDriver(ctx: ServiceContext, loadId: string, idempotencyKey: string): Promise<LoadRecord>;
+  /** §10 Record that the driver accepted. */
+  acceptForDriver(ctx: ServiceContext, loadId: string, idempotencyKey: string): Promise<DriverAnswer>;
+  /** §10 Record that the driver turned the load down; they come off it. */
+  rejectForDriver(ctx: ServiceContext, loadId: string, reason: string, idempotencyKey: string): Promise<DriverAnswer>;
 }

@@ -1,7 +1,7 @@
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, Paginated, ReplaceAssignmentInput,
   ReplaceOwnershipInput, TruckAssignmentRow, TruckListFilters, TruckLookup,
-  TruckOperatingRow, TruckOperationalStatus, TruckOwnershipRow, UpdateTruckInput,
+  TruckOperatingRow, ManualTruckStatus, TruckOwnershipRow, UpdateTruckInput,
 } from "@/types/fleet-truck";
 import type { ServiceContext } from "./context";
 
@@ -33,7 +33,7 @@ export interface TrucksService {
   setStatus(
     ctx: ServiceContext,
     truckId: string,
-    status: TruckOperationalStatus,
+    status: ManualTruckStatus,
     reason: string | undefined,
     idempotencyKey: string,
   ): Promise<FleetTruck>;
