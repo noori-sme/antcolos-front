@@ -2,7 +2,7 @@ import { apiClient } from "../client";
 import type { LoadRecordsService } from "../contracts/load-records";
 import { type Dto, num, obj, objects, oneOf, queryParams, str, strings } from "./dto";
 import type {
-  CancellationParty, CancelLoadInput, LoadRecord, LoadRecordPage, LoadRecordQuery,
+  CancellationParty, CancelLoadInput, DriverAnswer, LoadRecord, LoadRecordPage, LoadRecordQuery,
   LoadRecordSource, LoadRecordStatus, LoadRecordStop, LoadTimelineEntry, LoadTimelinePage,
 } from "@/types/load-record";
 
@@ -85,6 +85,10 @@ export function toLoadRecord(dto: Dto): LoadRecord {
       .map((code) => optional(STATUS, code))
       .filter((s): s is LoadRecordStatus => s !== null),
     requiresBrokerRelease: dto.requiresBrokerRelease === true,
+    truckId: text(dto.truckId),
+    driverUserId: text(dto.driverUserId),
+    driverAssignedAt: text(dto.driverAssignedAt),
+    driverAcceptedAt: text(dto.driverAcceptedAt),
     source: mapped(SOURCE, dto.source, "load source"),
     brokerName: str(dto.brokerName) ?? "",
     brokerMcNumber: str(dto.brokerMcNumber) ?? "",
@@ -141,6 +145,8 @@ function toTimelineEntry(dto: Dto): LoadTimelineEntry {
     party: optional(PARTY, details.party),
     tonuAmount: text(details.tonuAmount),
     changedFields: strings(details.changedFields),
+    truckId: text(details.truckId),
+    driverUserId: text(details.driverUserId),
   };
 }
 
@@ -148,6 +154,15 @@ export function toLoadTimelinePage(body: unknown): LoadTimelinePage {
   const root = obj(body) ?? {};
   const { page, totalItems, totalPages } = meta(root);
   return { items: objects(root.data).map(toTimelineEntry), page, totalItems, totalPages };
+}
+
+export function toDriverAnswer(dto: Dto): DriverAnswer {
+  return {
+    id: str(dto.id) ?? "",
+    status: mapped(STATUS, dto.status, "load status"),
+    driverUserId: text(dto.driverUserId),
+    driverAcceptedAt: text(dto.driverAcceptedAt),
+  };
 }
 
 export function toLoadListParams(query: LoadRecordQuery) {
@@ -207,5 +222,33 @@ export const httpLoadRecordsService: LoadRecordsService = {
       idempotent(idempotencyKey),
     );
     return toLoadRecord(single(res.data));
+  },
+  async bookTruck(_ctx, loadId, truckId, idempotencyKey) {
+    const res = await apiClient.post(`${load(loadId)}/truck`, { truckId }, idempotent(idempotencyKey));
+    return toLoadRecord(single(res.data));
+  },
+  async unbookTruck(_ctx, loadId, idempotencyKey) {
+    const res = await apiClient.delete(`${load(loadId)}/truck`, idempotent(idempotencyKey));
+    return toLoadRecord(single(res.data));
+  },
+  async assignDriver(_ctx, loadId, userId, idempotencyKey) {
+    const res = await apiClient.post(`${load(loadId)}/driver`, { userId }, idempotent(idempotencyKey));
+    return toLoadRecord(single(res.data));
+  },
+  async unassignDriver(_ctx, loadId, idempotencyKey) {
+    const res = await apiClient.delete(`${load(loadId)}/driver`, idempotent(idempotencyKey));
+    return toLoadRecord(single(res.data));
+  },
+  async acceptForDriver(_ctx, loadId, idempotencyKey) {
+    const res = await apiClient.post(`${load(loadId)}/driver/accept`, undefined, idempotent(idempotencyKey));
+    return toDriverAnswer(single(res.data));
+  },
+  async rejectForDriver(_ctx, loadId, reason, idempotencyKey) {
+    const res = await apiClient.post(
+      `${load(loadId)}/driver/reject`,
+      { reason: reason.trim() },
+      idempotent(idempotencyKey),
+    );
+    return toDriverAnswer(single(res.data));
   },
 };

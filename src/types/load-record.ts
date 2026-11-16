@@ -52,6 +52,13 @@ export interface LoadRecord {
   /** The states this caller may move the load to now, from the API. */
   allowedTransitions: LoadRecordStatus[];
   requiresBrokerRelease: boolean;
+  /** The truck booked for this load (plan 31). */
+  truckId: string | null;
+  /** The driver on this load (plan 32). */
+  driverUserId: string | null;
+  driverAssignedAt: string | null;
+  /** When the driver accepted; informational (D1.2). */
+  driverAcceptedAt: string | null;
   source: LoadRecordSource;
   brokerName: string;
   brokerMcNumber: string;
@@ -111,6 +118,8 @@ export interface LoadTimelineEntry {
   party: CancellationParty | null;
   tonuAmount: string | null;
   changedFields: string[];
+  truckId: string | null;
+  driverUserId: string | null;
 }
 
 export interface LoadTimelinePage {
@@ -125,4 +134,12 @@ export interface CancelLoadInput {
   party?: CancellationParty;
   /** "150.00" */
   tonuAmount?: string;
+}
+
+/** What a driver's accept / reject returns: no rate (contract §10). */
+export interface DriverAnswer {
+  id: string;
+  status: LoadRecordStatus;
+  driverUserId: string | null;
+  driverAcceptedAt: string | null;
 }

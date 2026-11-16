@@ -35,6 +35,8 @@ const entry = (extras: Partial<LoadTimelineEntry>): LoadTimelineEntry => ({
   party: null,
   tonuAmount: null,
   changedFields: [],
+  truckId: null,
+  driverUserId: null,
   ...extras,
 });
 
@@ -83,6 +85,9 @@ describe("load record formatting", () => {
     expect(timelineSentence(entry({ type: "load.updated", changedFields: ["notes", "weightLbs"] }))).toBe(
       "Details edited: notes, weightLbs",
     );
-    expect(timelineSentence(entry({ type: "driver.assigned" }))).toBe("driver.assigned");
+    expect(timelineSentence(entry({ type: "load.truck_assigned" }))).toBe("Truck booked for this load");
+    expect(timelineSentence(entry({ type: "load.driver_rejected" }))).toBe("Driver turned the load down");
+    expect(timelineSentence(entry({ type: "load.driver_accepted" }))).toBe("Driver accepted the load");
+    expect(timelineSentence(entry({ type: "load.pod_received" }))).toBe("load.pod_received");
   });
 });
