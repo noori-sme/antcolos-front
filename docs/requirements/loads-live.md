@@ -30,7 +30,7 @@ timezone), actions, timeline. A 404 reads "This load doesn't exist or isn't in t
   `loads:edit` (backend `load.update`);
 - "Cancel load" when `CANCELLED` is allowed: dialog with reason (required), who cancelled
   (broker, shipper, carrier, other) and an optional TONU amount;
-- "Correct status" for `loads:status:correct` (backend `load.correct_status`, new key): pick an
+- "Correct status" for `loads:correct_status` (backend `load.correct_status`, new key): pick an
   earlier trip state and give a reason;
 - each action uses one Idempotency-Key per intent; a 409 shows the API message and refreshes the
   load (someone else moved it first).
@@ -45,7 +45,7 @@ more" pages 50 at a time.
 | --- | --- | --- |
 | see `/loads`, `/loads/<id>`, timeline | `loads:view` | `load.read` |
 | step, cancel | `loads:edit` | `load.update` |
-| correct status | `loads:status:correct` (new) | `load.correct_status` |
+| correct status | `loads:correct_status` (new) | `load.correct_status` |
 
 ## Out of scope
 

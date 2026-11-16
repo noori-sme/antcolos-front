@@ -187,6 +187,13 @@ writes; `access.permission_granted` / `access.permission_revoked` with
 membership, a role-name check anywhere in authorization, or a cascade from a
 template edit to anybody's access.
 
+## Load status correction (`loads:correct_status`, plan 14)
+
+Moving a load back to an earlier status (backend `load.correct_status`, plan 29) is its own key,
+marked sensitive: every correction and its reason go to the audit log. No template grants it;
+an organization Admin holds it (backend `*`), and a custom role can add it. Stepping a load
+forward and cancelling it need `loads:edit` (backend `load.update`).
+
 ## Rate Con review (`documents:review`, plan 13)
 
 Uploading a broker Rate Con, reading and correcting its fields and approving it into a load

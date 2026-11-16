@@ -3,6 +3,7 @@ export type PermissionKey =
   // Loads
   | "loads:view" | "loads:create" | "loads:edit"
   | "loads:delete" | "loads:status:update" | "loads:export"
+  | "loads:correct_status"
   // Dispatch
   | "dispatch:view" | "loads:assign"
   // Tracking — watching a load run, and letting a customer watch a little of it.

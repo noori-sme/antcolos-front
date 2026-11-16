@@ -14,10 +14,16 @@ Track:    Feature (new http domain, routes go live, new permission key)
 ```text
 Phase 1 — done  types (src/types/load-record.ts), contract + http adapter + 7 mapper tests (contract fixtures)
 Phase 2 — done  hooks: loadRecordKeys (orgKey), list/get/timeline, one action mutation; lib/load-records/status.ts + 4 tests; LOAD_RECORD_STATUS + badge
-Phase 3 — screens: live list, live detail (facts, stops, actions, dialogs), timeline
-Phase 4 — /loads gate (http → live, mock → today's screens), HTTP_LIVE_ROUTES, permission key
-          loads:status:correct + alias, status config, browser spec (.live)
-Phase 5 — docs: ARCHITECTURE §5, roles-and-permissions, requirements
+Phase 3 — done  screens: live list (table/cards, search, status, sort, pages), live detail
+                 (facts, stops in their own timezone, actions from allowedTransitions, cancel and
+                 correct dialogs with rhf + zod), timeline (Show more); lib/load-records/format.ts
+                 + 5 tests
+Phase 4 — done  /loads gate (http → live, mock → mock screens), "/loads" in HTTP_LIVE_ROUTES
+                 (route-availability tests moved to /dispatch as the mock-only example),
+                 loads:correct_status + load.correct_status alias (+ tests), Rate Con "Approved"
+                 banner links to the load; loads-live.live.spec.ts 2/2 against a local stack
+                 (backend feat/loads-timeline-api, Postgres 16, Redis, seeded)
+Phase 5 — done  docs: ARCHITECTURE §5, roles-and-permissions, requirements
 ```
 
 ## Design
@@ -46,10 +52,10 @@ Changed: `src/lib/api/index.ts`, `src/features/loads/hooks.ts`, `src/app/(app)/l
 
 ## Invariant checklist
 
-- [ ] No network call in screens: hooks call `services.loadRecords`.
-- [ ] Every query key under `orgKey`.
-- [ ] Gates are permission keys (`loads:view`, `loads:edit`, `loads:status:correct`), no roles.
-- [ ] Contract fidelity: fields and routes exactly as the backend contract; nothing invented.
-- [ ] Tokens only; states from `components/data/states`.
-- [ ] Idempotency-Key per intent on step, cancel and correct.
-- [ ] 360 px: no sideways scroll.
+- [x] No network call in screens: hooks call `services.loadRecords`.
+- [x] Every query key under `orgKey`.
+- [x] Gates are permission keys (`loads:view`, `loads:edit`, `loads:correct_status`), no roles.
+- [x] Contract fidelity: fields and routes exactly as the backend contract; nothing invented.
+- [x] Tokens only; states from `components/data/states`.
+- [x] Idempotency-Key per intent on step, cancel and correct.
+- [x] 360 px: no sideways scroll.

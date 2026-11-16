@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { AlertTriangle, CircleCheck, PackagePlus } from "lucide-react";
 import { Can } from "@/components/auth/can";
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
@@ -234,9 +236,19 @@ export function ApprovedBanner({ loadId }: { loadId: string | null }) {
         Approved into a load
       </p>
       {loadId ? (
-        <p className="text-[0.75rem] text-fg-muted">
-          Load <span className="font-mono">{loadId.slice(0, 8)}</span>
-        </p>
+        // The load page is live in http mode (F1.2, plan 14).
+        <Can
+          permission="loads:view"
+          fallback={
+            <p className="text-[0.75rem] text-fg-muted">
+              Load <span className="font-mono">{loadId.slice(0, 8)}</span>
+            </p>
+          }
+        >
+          <Button asChild size="sm" variant="secondary">
+            <Link href={`/loads/${loadId}`}>Open the load</Link>
+          </Button>
+        </Can>
       ) : null}
     </div>
   );

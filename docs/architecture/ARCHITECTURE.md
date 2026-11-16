@@ -81,7 +81,8 @@ and cache entries can't cross organizations.
 | Own profile (`/account/profile`: name, phone, headline, about me, picture) | identity / `profile.md` | **http** in http mode; mock mode keeps the public-profile screen | service seam (`selfProfile`), shared reads in `lib/api/use-self-profile.ts` (also the top-bar avatar), plan 11 |
 | Public profile (username page, visibility, workplaces, share card) | **not built in backend yet** | mock | contracts seam (`profile`) |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |
-| Loads, dispatch, tracking, finance, fuel, ELD, compliance, insurance, maintenance, audit, contracts, directory, workforce, reports, factoring, referrals, needs-you | **not built in backend yet** | mock | contracts seam |
+| Loads list, load detail, trip steps, cancel, status correction, timeline (`/loads`, `/loads/[loadId]`) | loads / `loads-api-contract` §2–§8 | **http** in http mode (`loadRecords`); mock mode keeps the mock loads screens | service seam (`loadRecords`), `features/loads/live-*`, plan 14; needs backend plans 29 and 30 |
+| Dispatch, tracking, finance, fuel, ELD, compliance, insurance, maintenance, audit, contracts, directory, workforce, reports, factoring, referrals, needs-you | **not built in backend yet** | mock | contracts seam |
 
 In http mode the routes in `src/config/live-routes.ts` run on the real API (plan 08). Every other
 route is a **demo area** (plan 10): it stays in the nav and runs on the mock adapters inside a demo
