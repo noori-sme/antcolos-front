@@ -29,6 +29,8 @@ export function LiveLoadTimeline({ loadId }: { loadId: string }) {
           description={timeline.error.message}
           onRetry={() => void timeline.refetch()}
         />
+      ) : timeline.data.pages[0]?.items.length === 0 ? (
+        <p className="text-[0.8125rem] text-fg-muted">Nothing recorded for this load yet.</p>
       ) : (
         <>
           <ol className="space-y-0 border-l border-border pl-4">

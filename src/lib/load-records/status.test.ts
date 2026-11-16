@@ -27,6 +27,8 @@ describe("load record status helpers", () => {
       "rc_received",
       "booked",
     ]);
+    expect(correctionTargets("in_transit")).not.toContain("awaiting_broker_release");
+    expect(correctionTargets("in_transit", true)[0]).toBe("awaiting_broker_release");
     expect(correctionTargets("booked")).toEqual([]);
     expect(correctionTargets("cancelled")).toEqual([]);
   });

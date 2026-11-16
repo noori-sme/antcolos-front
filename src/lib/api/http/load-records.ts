@@ -63,7 +63,8 @@ function toStop(dto: Dto): LoadRecordStop {
     city: str(dto.city) ?? "",
     state: str(dto.state) ?? "",
     postalCode: text(dto.postalCode),
-    timezone: str(dto.timezone) ?? "UTC",
+    // Required by the contract; never guess a zone (a wrong one shifts the window).
+    timezone: str(dto.timezone) ?? "",
     scheduledDate: text(dto.scheduledDate),
     windowStart: text(dto.windowStart),
     windowEnd: text(dto.windowEnd),

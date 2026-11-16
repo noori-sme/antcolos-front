@@ -49,8 +49,17 @@ export function stepActions(allowed: readonly LoadRecordStatus[]): {
   };
 }
 
-/** Earlier trip states, nearest first: what a status correction may move back to. */
-export function correctionTargets(current: LoadRecordStatus): LoadRecordStatus[] {
+/**
+ * Earlier trip states, nearest first: what a status correction may move back
+ * to. A load that needs no broker release never waits for one.
+ */
+export function correctionTargets(
+  current: LoadRecordStatus,
+  requiresBrokerRelease = false,
+): LoadRecordStatus[] {
   const index = LOAD_TRIP.indexOf(current);
-  return index > 0 ? LOAD_TRIP.slice(0, index).reverse() : [];
+  if (index <= 0) return [];
+  return LOAD_TRIP.slice(0, index)
+    .reverse()
+    .filter((status) => requiresBrokerRelease || status !== "awaiting_broker_release");
 }

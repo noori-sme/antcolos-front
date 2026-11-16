@@ -32,7 +32,7 @@ function time(iso: string, timezone: string, withZone: boolean): string {
 
 /** The appointment window in the stop's own timezone: "08:00–10:00 CST". */
 export function stopWindow(stop: LoadRecordStop): string | null {
-  if (!stop.windowStart) return null;
+  if (!stop.windowStart || !stop.timezone) return null;
   if (!stop.windowEnd) return time(stop.windowStart, stop.timezone, true);
   return `${time(stop.windowStart, stop.timezone, false)}–${time(stop.windowEnd, stop.timezone, true)}`;
 }

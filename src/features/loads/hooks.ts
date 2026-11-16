@@ -7,7 +7,7 @@ import { useState } from "react";
 import { services } from "@/lib/api";
 import type { LoadFilters, LoadSort } from "@/lib/api/contracts/loads";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { orgKey } from "@/lib/query/keys";
+import { loadRecordKeys, orgKey } from "@/lib/query/keys";
 import { createIntentKeys } from "@/lib/rate-con/intent-key";
 import type {
   CancelLoadInput, LoadRecord, LoadRecordQuery, LoadRecordStatus,
@@ -62,20 +62,6 @@ export function useLoadDocuments(loadId: string) {
 }
 
 // ── Live loads on the real API (F1.2, plan 14) ──────────────────────────────
-
-/**
- * Keys for the real loads API. A mutation writes the returned load into its
- * detail entry and invalidates the lists and that load's timeline.
- */
-export const loadRecordKeys = {
-  all: (organizationId: string) => [...orgKey(organizationId), "load-records"] as const,
-  list: (organizationId: string, query: LoadRecordQuery) =>
-    [...orgKey(organizationId), "load-records", "list", query] as const,
-  detail: (organizationId: string, loadId: string) =>
-    [...orgKey(organizationId), "load-records", loadId, "detail"] as const,
-  timeline: (organizationId: string, loadId: string) =>
-    [...orgKey(organizationId), "load-records", loadId, "timeline"] as const,
-};
 
 export function useLoadRecords(query: LoadRecordQuery) {
   const ctx = useServiceContext();
@@ -152,3 +138,5 @@ export function useLoadAction(loadId: string) {
     },
   });
 }
+
+export { loadRecordKeys };

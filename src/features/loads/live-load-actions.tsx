@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, History, XCircle } from "lucide-react";
 import { useId, useState } from "react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
+import type { z } from "zod";
 import { Can } from "@/components/auth/can";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -12,28 +12,13 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LOAD_RECORD_STATUS } from "@/config/statuses";
+import { cancelSchema, correctSchema, intentOf } from "@/lib/load-records/forms";
 import { correctionTargets, stepActions, stepLabel } from "@/lib/load-records/status";
 import type { CancellationParty, LoadRecord, LoadRecordStatus } from "@/types/load-record";
 import { useLoadAction, useLoadIntentKey } from "./hooks";
 
 const SELECT =
   "h-control w-full rounded-md border border-border bg-surface px-3 text-[0.875rem] text-fg shadow-e1 hover:border-border-strong focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35";
-
-/** Mirrors the backend's CancelLoadDto (loads-api-contract.md §5). */
-export const cancelSchema = z.object({
-  reason: z.string().trim().min(1, "Say why the load is cancelled.").max(500, "Keep it under 500 characters."),
-  party: z.enum(["", "broker", "shipper", "carrier", "other"]),
-  tonuAmount: z
-    .string()
-    .trim()
-    .refine((v) => v === "" || /^\d{1,6}(\.\d{1,2})?$/.test(v), "Enter an amount like 150.00."),
-});
-
-/** Mirrors CorrectLoadStatusDto (§7). */
-export const correctSchema = z.object({
-  to: z.string().min(1, "Choose the status to go back to."),
-  reason: z.string().trim().min(1, "Say why the status is corrected.").max(500, "Keep it under 500 characters."),
-});
 
 /**
  * What a person may do with this load now. Every button comes from the
@@ -43,16 +28,16 @@ export function LiveLoadActions({ load }: { load: LoadRecord }) {
   const action = useLoadAction(load.id);
   const keys = useLoadIntentKey();
   const { steps, canCancel } = stepActions(load.allowedTransitions);
-  const targets = correctionTargets(load.status);
+  const targets = correctionTargets(load.status, load.requiresBrokerRelease);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [correctOpen, setCorrectOpen] = useState(false);
 
   const step = (to: LoadRecordStatus) =>
     action.mutate(
       { action: { kind: "step", to }, idempotencyKey: keys.keyFor(`step:${load.status}:${to}`) },
-      // Steps are guarded by state on the server: a fresh key after any
-      // outcome cannot apply the same step twice.
-      { onSettled: () => keys.clear() },
+      // Keep the key after a failure: a retry of the same step (say, after a
+      // lost response) replays the server's answer instead of a 409.
+      { onSuccess: () => keys.clear() },
     );
 
   const nothing = steps.length === 0 && !canCancel && targets.length === 0;
@@ -130,14 +115,14 @@ function CancelDialog({
             tonuAmount: values.tonuAmount || undefined,
           },
         },
-        idempotencyKey: keys.keyFor("cancel"),
+        idempotencyKey: keys.keyFor(intentOf("cancel", values)),
       },
       {
         onSuccess: () => {
+          keys.clear();
           onOpenChange(false);
           form.reset();
         },
-        onSettled: () => keys.clear(),
       },
     ),
   );
@@ -221,14 +206,14 @@ function CorrectDialog({
     action.mutate(
       {
         action: { kind: "correct", to: values.to as LoadRecordStatus, reason: values.reason },
-        idempotencyKey: keys.keyFor(`correct:${load.status}:${values.to}`),
+        idempotencyKey: keys.keyFor(intentOf(`correct:${load.status}`, values)),
       },
       {
         onSuccess: () => {
+          keys.clear();
           onOpenChange(false);
           form.reset({ to: "", reason: "" });
         },
-        onSettled: () => keys.clear(),
       },
     ),
   );

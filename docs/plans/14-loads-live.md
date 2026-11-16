@@ -24,6 +24,12 @@ Phase 4 — done  /loads gate (http → live, mock → mock screens), "/loads" i
                  banner links to the load; loads-live.live.spec.ts 2/2 against a local stack
                  (backend feat/loads-timeline-api, Postgres 16, Redis, seeded)
 Phase 5 — done  docs: ARCHITECTURE §5, roles-and-permissions, requirements
+Review          frontend-reviewer: fixed the Idempotency-Key being cleared after a failure
+                 (retry is now the same intent; cancel/correct keys include the values),
+                 Rate Con approval invalidates load-records (keys moved to lib/query/keys.ts),
+                 no invented stop timezone, no broker-release correction target when not
+                 required, dialog schemas in lib/load-records/forms.ts + 4 tests, timeline
+                 empty state. contract-checker: no wire mismatch.
 ```
 
 ## Design
