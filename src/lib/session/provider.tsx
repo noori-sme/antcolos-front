@@ -196,7 +196,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const nextStep = readCookie('antcolos_next_step');
-    if (!isLoading && !fetchedUser && !isAuthPage && !isOnboardingPage && !nextStep) {
+    if (process.env.NEXT_PUBLIC_API_MODE !== 'mock' && !isLoading && !fetchedUser && !isAuthPage && !isOnboardingPage && !nextStep) {
       window.location.href = '/sign-in';
     }
   }, [isLoading, fetchedUser, isAuthPage, isOnboardingPage]);
@@ -205,6 +205,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const user = useMemo(() => {
     // Until /auth/me answers, show no identity rather than the fixture's, so
     // the header never flashes a placeholder name before the redirect.
+    if (!fetchedUser && process.env.NEXT_PUBLIC_API_MODE === 'mock') return baseUser;
     if (!fetchedUser) return { ...baseUser, displayName: "", email: "", phone: "" };
     return {
       ...baseUser,

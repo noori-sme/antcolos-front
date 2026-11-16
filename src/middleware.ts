@@ -15,7 +15,7 @@ export function middleware(request: NextRequest) {
   }
 
   // 1. If no token, they must be unauthenticated.
-  if (!token) {
+  if (!token && process.env.NEXT_PUBLIC_API_MODE !== 'mock') {
     if (!isAuthPage) {
       // Redirect to sign-in, and clear any stale nextStep cookie
       const response = NextResponse.redirect(new URL('/sign-in', request.url));
