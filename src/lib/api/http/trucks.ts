@@ -8,7 +8,7 @@ import {
   TRUCK_VERIFICATION_STATUSES,
   type FleetTruck, type Paginated, type TruckAssignment, type TruckAssignmentRow,
   type TruckLegalOwner, type TruckListFilters, type TruckLookup, type TruckOperating,
-  type TruckOperatingRow, type TruckOperationalStatus, type TruckOwnershipRow,
+  type ManualTruckStatus, type TruckOperatingRow, type TruckOwnershipRow,
 } from "@/types/fleet-truck";
 
 export function toTruckAssignment(dto: Dto): TruckAssignment | undefined {
@@ -165,7 +165,7 @@ export function toTruckOperatingRow(dto: Dto): TruckOperatingRow {
   };
 }
 
-const STATUS_PATH: Record<TruckOperationalStatus, string> = {
+const STATUS_PATH: Record<ManualTruckStatus, string> = {
   AVAILABLE: "available",
   UNAVAILABLE: "unavailable",
   MAINTENANCE: "maintenance",

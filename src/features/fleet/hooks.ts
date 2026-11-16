@@ -7,7 +7,7 @@ import { orgKey, queryKeys } from "@/lib/query/keys";
 import { usePeopleList } from "@/lib/api/use-org-people";
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, ReplaceAssignmentInput,
-  ReplaceOwnershipInput, TruckListFilters, TruckOperationalStatus, UpdateTruckInput,
+  ManualTruckStatus, ReplaceOwnershipInput, TruckListFilters, UpdateTruckInput,
 } from "@/types/fleet-truck";
 import type { OrgPeopleFamily } from "@/types/org-people";
 
@@ -130,7 +130,7 @@ export function useSetTruckStatus(truckId: string) {
   return useTruckMutation(
     (
       ctx,
-      vars: { status: TruckOperationalStatus; reason?: string; idempotencyKey: string },
+      vars: { status: ManualTruckStatus; reason?: string; idempotencyKey: string },
     ) => services.trucks.setStatus(ctx, truckId, vars.status, vars.reason, vars.idempotencyKey),
     { onTruck: asTruck },
   );

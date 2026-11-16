@@ -1,5 +1,8 @@
 "use client";
 
+import { TruckOperationalBadge } from "@/components/common/status-badge";
+import { TRUCK_OPERATIONAL_STATUS } from "@/config/statuses";
+
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
@@ -60,6 +63,10 @@ function formatEquipmentType(type?: string): string {
 
 function OperationalStatusBadge({ status }: { status?: string }) {
   const s = status?.toUpperCase();
+  // Trip statuses follow the truck's load (plan 15); never show them as "Unavailable".
+  if (s && s !== "AVAILABLE" && s !== "MAINTENANCE" && s !== "UNAVAILABLE" && s in TRUCK_OPERATIONAL_STATUS) {
+    return <TruckOperationalBadge status={s as keyof typeof TRUCK_OPERATIONAL_STATUS} />;
+  }
   if (s === "AVAILABLE") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-st-success-bg px-2.5 py-0.5 text-[0.6875rem] font-medium text-st-success border border-st-success/20">
