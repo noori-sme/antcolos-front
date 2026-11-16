@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { SIGNED_IN_AS_DEMO } from '@/lib/api/mode'
 import { isAuthPath, isPublicPath } from '@/lib/session/route-access'
 
 export function middleware(request: NextRequest) {
@@ -15,7 +16,11 @@ export function middleware(request: NextRequest) {
   }
 
   // 1. If no token, they must be unauthenticated.
-  if (!token && process.env.NEXT_PUBLIC_API_MODE !== 'mock') {
+  if (!token) {
+    // Explicit mock mode is signed in as the fixtures' demo user (no backend).
+    if (SIGNED_IN_AS_DEMO) {
+      return NextResponse.next();
+    }
     if (!isAuthPage) {
       // Redirect to sign-in, and clear any stale nextStep cookie
       const response = NextResponse.redirect(new URL('/sign-in', request.url));

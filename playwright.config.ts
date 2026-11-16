@@ -47,6 +47,9 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev -- --port 3100",
+    // Mock mode, explicitly: the app is signed in as the fixtures' demo user
+    // (src/lib/api/mode.ts SIGNED_IN_AS_DEMO), so specs open app pages directly.
+    env: { NEXT_PUBLIC_API_MODE: "mock" },
     /*
      * ★ NO TEST-ONLY AFFORDANCE IS MOUNTED ANY MORE ★
      *

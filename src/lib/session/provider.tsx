@@ -27,7 +27,7 @@ import {
   rosterServerSnapshot, rosterSnapshot, subscribeRoster,
 } from "./membership-store";
 import { readSessionScenario, type SessionScenario } from "./scenarios";
-import { API_MODE } from "@/lib/api/mode";
+import { API_MODE, SIGNED_IN_AS_DEMO } from "@/lib/api/mode";
 import { orgKey } from "@/lib/query/keys";
 import { authApi } from "./auth-api";
 import { toSessionRoster } from "./http-roster";
@@ -196,7 +196,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const nextStep = readCookie('antcolos_next_step');
-    if (process.env.NEXT_PUBLIC_API_MODE !== 'mock' && !isLoading && !fetchedUser && !isAuthPage && !isOnboardingPage && !nextStep) {
+    // Explicit mock mode has no backend session: it is the fixtures' demo user.
+    if (!SIGNED_IN_AS_DEMO && !isLoading && !fetchedUser && !isAuthPage && !isOnboardingPage && !nextStep) {
       window.location.href = '/sign-in';
     }
   }, [isLoading, fetchedUser, isAuthPage, isOnboardingPage]);
@@ -205,7 +206,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const user = useMemo(() => {
     // Until /auth/me answers, show no identity rather than the fixture's, so
     // the header never flashes a placeholder name before the redirect.
-    if (!fetchedUser && process.env.NEXT_PUBLIC_API_MODE === 'mock') return baseUser;
+    if (!fetchedUser && SIGNED_IN_AS_DEMO) return baseUser;
     if (!fetchedUser) return { ...baseUser, displayName: "", email: "", phone: "" };
     return {
       ...baseUser,
