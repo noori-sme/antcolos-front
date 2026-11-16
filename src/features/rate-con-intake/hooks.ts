@@ -5,7 +5,7 @@ import { useState } from "react";
 import { createIntentKeys } from "@/lib/rate-con/intent-key";
 import { services, type ServiceContext } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { orgKey } from "@/lib/query/keys";
+import { loadRecordKeys, orgKey } from "@/lib/query/keys";
 import type { RateConDocument, ReviewDecision } from "@/types/rate-con-intake";
 
 /**
@@ -110,9 +110,13 @@ function useRateConMutation<TVars, TResult>(
       if (!ctx || !documentId) return;
       const org = ctx.organizationId;
       await Promise.all(
-        [rateConKeys.detail(org, documentId), rateConKeys.review(org, documentId), rateConKeys.draft(org, documentId)].map(
-          (queryKey) => queryClient.invalidateQueries({ queryKey }),
-        ),
+        [
+          rateConKeys.detail(org, documentId),
+          rateConKeys.review(org, documentId),
+          rateConKeys.draft(org, documentId),
+          // Approval creates or moves a load (plan 14 shows it live).
+          loadRecordKeys.all(org),
+        ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       );
     },
   });

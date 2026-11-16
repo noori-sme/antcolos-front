@@ -4,6 +4,7 @@ import type {
   SettlementSort,
 } from "@/types";
 import type { OrgPeopleFamily, OrgPeopleQuery } from "@/types/org-people";
+import type { LoadRecordQuery } from "@/types/load-record";
 
 /**
  * Every query key is namespaced by organization. Org A's data can never be
@@ -11,6 +12,20 @@ import type { OrgPeopleFamily, OrgPeopleQuery } from "@/types/org-people";
  * convention. The cache is also cleared outright on organization switch.
  */
 export const orgKey = (organizationId: string) => ["org", organizationId] as const;
+
+/**
+ * The real loads API (F1.2, plan 14). Shared: the loads screens read it, and a
+ * Rate Con approval (which creates or moves a load) invalidates `all`.
+ */
+export const loadRecordKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "load-records"] as const,
+  list: (organizationId: string, query: LoadRecordQuery) =>
+    [...orgKey(organizationId), "load-records", "list", query] as const,
+  detail: (organizationId: string, loadId: string) =>
+    [...orgKey(organizationId), "load-records", loadId, "detail"] as const,
+  timeline: (organizationId: string, loadId: string) =>
+    [...orgKey(organizationId), "load-records", loadId, "timeline"] as const,
+};
 
 export const queryKeys = {
   home: (organizationId: string, membershipId: string) =>

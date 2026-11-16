@@ -250,3 +250,15 @@ describe("Rate Con routes (plan 13)", () => {
   });
 });
 
+
+describe("loads:correct_status (plan 14)", () => {
+  it("maps the backend's load.correct_status both ways", () => {
+    expect(normalizePermissionKey("load.correct_status")).toBe("loads:correct_status");
+    expect(migrateKey("loads:correct_status")).toBe("load.correct_status");
+  });
+
+  it("is not in the Dispatcher template", () => {
+    const dispatcher = SEED_TEMPLATES.find((t) => t.name === "Dispatcher");
+    expect(dispatcher?.permissions).not.toContain("loads:correct_status");
+  });
+});

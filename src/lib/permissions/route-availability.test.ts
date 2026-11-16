@@ -31,8 +31,8 @@ describe("isRouteAvailable (plan 08)", () => {
   it.each([
     "/needs-you",
     "/work",
-    "/loads",
-    "/loads/l1",
+    "/dispatch",
+    "/dispatch/loops",
     "/dispatch",
     "/fleet",
     "/fleet/trailers",
@@ -54,6 +54,14 @@ describe("isRouteAvailable (plan 08)", () => {
     for (const route of HTTP_LIVE_ROUTES) expect(known).toContain(route);
   });
 
+  it.each(["/loads", "/loads/6f1c2b9e-1d3a-4c55-9a51-0d1f3c2b7e10"])(
+    "reaches %s in http mode, live rather than demo (plan 14)",
+    (path) => {
+      expect(isRouteAvailable(path, "http", false)).toBe(true);
+      expect(isDemoRoute(path, "http", true)).toBe(false);
+    },
+  );
+
   it.each(["/rate-cons/new", "/rate-cons/0b6f8c1e-2d3a-4f5b-9c7d-8e9f0a1b2c3d"])(
     "reaches %s in http mode, live rather than demo (plan 13)",
     (path) => {
@@ -64,7 +72,7 @@ describe("isRouteAvailable (plan 08)", () => {
 });
 
 describe("demo areas (plan 10)", () => {
-  it.each(["/needs-you", "/loads", "/loads/l1", "/finance/settlements", "/driver/home"])(
+  it.each(["/needs-you", "/dispatch", "/dispatch/loops", "/finance/settlements", "/driver/home"])(
     "reaches %s in http mode with demo areas on, as a demo route",
     (path) => {
       expect(isRouteAvailable(path, "http", true)).toBe(true);

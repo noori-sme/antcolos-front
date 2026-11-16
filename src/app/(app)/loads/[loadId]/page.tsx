@@ -1,4 +1,4 @@
-import { LoadDetail } from "@/features/loads/load-detail";
+import { LoadRoute } from "@/features/loads/loads-route";
 
 export const metadata = { title: "Load" };
 
@@ -8,5 +8,5 @@ export default async function LoadDetailPage({
   params: Promise<{ loadId: string }>;
 }) {
   const { loadId } = await params;
-  return <LoadDetail loadId={loadId} />;
+  return <LoadRoute loadId={loadId} />;
 }

@@ -48,6 +48,7 @@ import type { FuelService, IftaService } from "./fuel";
 import type { FleetService } from "./fleet";
 import type { TrucksService } from "./trucks";
 import type { RateConIntakeService } from "./rate-con-intake";
+import type { LoadRecordsService } from "./load-records";
 import type { OrgPeopleService } from "./org-people";
 import type { SelfProfileService } from "./self-profile";
 import type { OrgMembersService } from "./org-members";
@@ -84,6 +85,8 @@ export interface AntcolosServices {
   trucks: TrucksService;
   /** Rate Con upload, review and approval (NestJS `/documents`, plan 13). http-only. */
   rateConIntake: RateConIntakeService;
+  /** Booked loads on the real API (F1.2, plan 14); http-only. */
+  loadRecords: LoadRecordsService;
   /** Real organization invitations (NestJS). http-only: see `src/lib/api/index.ts`. */
   orgInvitations: OrgInvitationsService;
   /** Real roles and permission catalog (NestJS). http-only. */

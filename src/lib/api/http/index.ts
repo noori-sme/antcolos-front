@@ -1,3 +1,4 @@
+import { httpLoadRecordsService } from "./load-records";
 import type { AntcolosServices } from "../contracts";
 import { httpTrucksService } from "./trucks";
 import { httpRateConIntakeService } from "./rate-con-intake";
@@ -20,6 +21,7 @@ const notImplemented = (method: string) => (): never => {
 export const httpServices: AntcolosServices = {
   trucks: httpTrucksService,
   rateConIntake: httpRateConIntakeService,
+  loadRecords: httpLoadRecordsService,
   orgInvitations: httpOrgInvitationsService,
   orgRoles: httpOrgRolesService,
   orgPeople: httpOrgPeopleService,

@@ -1,7 +1,7 @@
-import { LoadsScreen } from "@/features/loads/loads-screen";
+import { LoadsRoute } from "@/features/loads/loads-route";
 
 export const metadata = { title: "Loads" };
 
 export default function LoadsPage() {
-  return <LoadsScreen />;
+  return <LoadsRoute />;
 }

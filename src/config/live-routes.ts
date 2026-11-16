@@ -20,4 +20,5 @@ export const HTTP_LIVE_ROUTES: readonly string[] = [
   "/account/profile",       // selfProfile (profile.md, plan 11)
   "/settings/users",        // orgMembers (membership-api-contract §2, plan 12)
   "/rate-cons",             // rateConIntake (documents-api-contract, plan 13)
+  "/loads",                 // loadRecords (loads-api-contract, plan 14)
 ];

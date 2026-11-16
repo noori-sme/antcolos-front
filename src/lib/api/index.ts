@@ -3,6 +3,7 @@ import { API_MODE, DEMO_AREAS } from "./mode";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import { httpRateConIntakeService } from "./http/rate-con-intake";
+import { httpLoadRecordsService } from "./http/load-records";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
 import { httpSelfProfileService } from "./http/self-profile";
@@ -71,6 +72,9 @@ const mockServices: AntcolosServices = {
   // http-only (plan 13): Rate Con upload, review and approval have no mock;
   // the screens call the real API in both modes.
   rateConIntake: httpRateConIntakeService,
+  // http-only (plan 14): mock mode keeps the mock loads screens, which do not
+  // call this service; /loads picks the live screens only in http mode.
+  loadRecords: httpLoadRecordsService,
   // http-only for the same reason: the access screens have always called
   // the real invitations and roles API in both modes.
   orgInvitations: httpOrgInvitationsService,

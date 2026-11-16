@@ -23,6 +23,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "loads:create", label: "Create loads", description: "Add new loads by hand or by import.", group: "loads", prerequisites: ["loads:view"] },
   { key: "loads:edit", label: "Edit loads", description: "Change load details, stops and reference numbers.", group: "loads", prerequisites: ["loads:view"] },
   { key: "loads:status:update", label: "Update load status", description: "Move a load along — picked up, in transit, delivered.", group: "loads", prerequisites: ["loads:view"], scopeNote: "Narrowed by record scope, so a driver updates only their own loads." },
+  { key: "loads:correct_status", label: "Correct a load's status", description: "Move a load back to an earlier status when it was set by mistake. Each correction and its reason go to the audit log.", group: "loads", sensitive: true, prerequisites: ["loads:view"] },
   { key: "loads:export", label: "Download loads", description: "Export load lists out of Antcolos as a file.", group: "loads", prerequisites: ["loads:view"] },
   { key: "loads:delete", label: "Delete loads", description: "Permanently remove a load and its history.", group: "loads", sensitive: true, prerequisites: ["loads:view"] },
 
@@ -368,6 +369,7 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "load.delete": "loads:delete",
   "loads.delete": "loads:delete",
   "load.status.update": "loads:status:update",
+  "load.correct_status": "loads:correct_status",
   "load.assign": "loads:assign",
   "load.export": "loads:export",
 
