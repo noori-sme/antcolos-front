@@ -13,11 +13,12 @@ Track:    Feature (new UI on the load, permission key, truck statuses)
 ```text
 Phase 1 — done  truck trip statuses: types, labels + tones, shared badge, fleet roster/profile, status
           menu only from manual states (lib/fleet/truck-status.ts + tests)
-Phase 2 — load record: truckId, driver fields; loadRecords book/unbook truck, assign/unassign
-          driver, accept/reject (mapper tests); timeline sentences for truck/driver events
-Phase 3 — "Truck & driver" panel on the load: book / take off, assign / take off, record the
-          driver's answer; hooks; dialogs (rhf + zod); gates
-Phase 4 — permission key loads:respond (alias load.respond); docs; live spec
+Phase 2 — done  load record: truckId, driver fields; loadRecords book/unbook truck, assign/unassign
+                 driver, accept/reject (3 mapper tests); timeline sentences for truck/driver events
+Phase 3 — done  "Truck & driver" panel (live-load-crew.tsx); hooks; fleetKeys moved to
+                 lib/query/keys.ts (a load action invalidates the truck too)
+Phase 4 — permission key loads:respond (alias load.respond, Dispatcher template, 2 tests) done;
+          docs; live spec
 ```
 
 ## Design

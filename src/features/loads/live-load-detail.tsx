@@ -11,6 +11,7 @@ import { equipmentLabel, money, routeSummary, stopWindow } from "@/lib/load-reco
 import type { LoadRecord, LoadRecordStop } from "@/types/load-record";
 import { useLoadRecord } from "./hooks";
 import { LiveLoadActions } from "./live-load-actions";
+import { LiveLoadCrew } from "./live-load-crew";
 import { LiveLoadTimeline } from "./live-load-timeline";
 
 const SINCE = new Intl.DateTimeFormat("en-US", {
@@ -80,6 +81,7 @@ export function LiveLoadDetail({ loadId }: { loadId: string }) {
 
       <div className="grid gap-section lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="min-w-0 space-y-section">
+          <LiveLoadCrew load={load} />
           <Facts load={load} />
           <Stops stops={load.stops} />
         </div>

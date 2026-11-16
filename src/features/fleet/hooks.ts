@@ -3,7 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { orgKey, queryKeys } from "@/lib/query/keys";
+import { fleetKeys, queryKeys } from "@/lib/query/keys";
 import { usePeopleList } from "@/lib/api/use-org-people";
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, ReplaceAssignmentInput,
@@ -16,15 +16,7 @@ import type { OrgPeopleFamily } from "@/types/org-people";
  * truck mutation invalidates `fleetKeys.all(org)` (list and detail), and an
  * assignment change also `queryKeys.people(org)` (people lists show trucks).
  */
-export const fleetKeys = {
-  all: (organizationId: string) => [...orgKey(organizationId), "trucks"] as const,
-  list: (organizationId: string, filters: TruckListFilters) =>
-    [...orgKey(organizationId), "trucks", "list", filters] as const,
-  detail: (organizationId: string, truckId: string) =>
-    [...orgKey(organizationId), "trucks", "detail", truckId] as const,
-  lookup: (organizationId: string, vin: string) =>
-    [...orgKey(organizationId), "trucks", "lookup", vin] as const,
-};
+export { fleetKeys };
 
 
 export function useTrucks(filters: TruckListFilters) {

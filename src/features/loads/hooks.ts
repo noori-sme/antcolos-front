@@ -7,7 +7,8 @@ import { useState } from "react";
 import { services } from "@/lib/api";
 import type { LoadFilters, LoadSort } from "@/lib/api/contracts/loads";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { loadRecordKeys, orgKey } from "@/lib/query/keys";
+import { fleetKeys, loadRecordKeys, orgKey } from "@/lib/query/keys";
+import { usePeopleList, usePerson } from "@/lib/api/use-org-people";
 import { createIntentKeys } from "@/lib/rate-con/intent-key";
 import type {
   CancelLoadInput, LoadRecord, LoadRecordQuery, LoadRecordStatus,
@@ -105,7 +106,14 @@ export function useLoadIntentKey() {
 type LoadAction =
   | { kind: "step"; to: LoadRecordStatus }
   | { kind: "cancel"; input: CancelLoadInput }
-  | { kind: "correct"; to: LoadRecordStatus; reason: string };
+  | { kind: "correct"; to: LoadRecordStatus; reason: string }
+  // Truck and driver (F1.3, plan 15).
+  | { kind: "bookTruck"; truckId: string }
+  | { kind: "unbookTruck" }
+  | { kind: "assignDriver"; userId: string }
+  | { kind: "unassignDriver" }
+  | { kind: "acceptForDriver" }
+  | { kind: "rejectForDriver"; reason: string };
 
 /**
  * Step, cancel or correct a load. The caller passes the intent's key; on
@@ -117,7 +125,13 @@ export function useLoadAction(loadId: string) {
   const ctx = useServiceContext();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ action, idempotencyKey }: { action: LoadAction; idempotencyKey: string }) => {
+    mutationFn: async ({
+      action,
+      idempotencyKey,
+    }: {
+      action: LoadAction;
+      idempotencyKey: string;
+    }): Promise<LoadRecord | null> => {
       const loads = services.loadRecords;
       switch (action.kind) {
         case "step":
@@ -126,17 +140,71 @@ export function useLoadAction(loadId: string) {
           return loads.cancel(ctx!, loadId, action.input, idempotencyKey);
         case "correct":
           return loads.correctStatus(ctx!, loadId, action.to, action.reason, idempotencyKey);
+        case "bookTruck":
+          return loads.bookTruck(ctx!, loadId, action.truckId, idempotencyKey);
+        case "unbookTruck":
+          return loads.unbookTruck(ctx!, loadId, idempotencyKey);
+        case "assignDriver":
+          return loads.assignDriver(ctx!, loadId, action.userId, idempotencyKey);
+        case "unassignDriver":
+          return loads.unassignDriver(ctx!, loadId, idempotencyKey);
+        // A driver's answer returns no load; the refetch below brings it.
+        case "acceptForDriver":
+          await loads.acceptForDriver(ctx!, loadId, idempotencyKey);
+          return null;
+        case "rejectForDriver":
+          await loads.rejectForDriver(ctx!, loadId, action.reason, idempotencyKey);
+          return null;
       }
     },
-    onSuccess: (load: LoadRecord) => {
-      if (!ctx) return;
+    onSuccess: (load) => {
+      if (!ctx || !load) return;
       queryClient.setQueryData(loadRecordKeys.detail(ctx.organizationId, loadId), load);
     },
     onSettled: () => {
       if (!ctx) return;
       void queryClient.invalidateQueries({ queryKey: loadRecordKeys.all(ctx.organizationId) });
+      // The load's truck moves with it (plan 31): its status is stale too.
+      void queryClient.invalidateQueries({ queryKey: fleetKeys.all(ctx.organizationId) });
     },
   });
+}
+
+/** The truck booked for a load, from the fleet API (plan 15). */
+export function useLoadTruck(truckId: string | null) {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx && truckId ? fleetKeys.detail(ctx.organizationId, truckId) : ["trucks", "no-context"],
+    queryFn: () => services.trucks.get(ctx!, truckId!),
+    enabled: Boolean(ctx && truckId),
+    retry: false,
+  });
+}
+
+/** This organization's AVAILABLE trucks: the ones a load can book. */
+export function useBookableTrucks(enabled: boolean) {
+  const ctx = useServiceContext();
+  const filters = {
+    operationalStatus: "AVAILABLE",
+    sortBy: "unitNumber",
+    sortOrder: "asc",
+    pageSize: 100,
+  } as const;
+  return useQuery({
+    queryKey: ctx ? fleetKeys.list(ctx.organizationId, filters) : ["trucks", "no-context"],
+    queryFn: () => services.trucks.list(ctx!, filters),
+    enabled: Boolean(ctx) && enabled,
+  });
+}
+
+/** The driver on a load (people API, members:list_drivers). */
+export function useLoadDriver(userId: string | null) {
+  return usePerson("drivers", userId ?? "");
+}
+
+/** Active drivers to choose from, searched by name. */
+export function useDriverOptions(q: string, enabled: boolean) {
+  return usePeopleList("drivers", { q: q.trim() || undefined, pageSize: 50 }, enabled);
 }
 
 export { loadRecordKeys };
