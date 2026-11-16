@@ -1,3 +1,4 @@
+import type { LoadRecordStatus } from "@/types/load-record";
 import type { badgeVariants } from "@/components/ui/badge";
 import type {
   DriverStatus, LoadStatus, PayeeKind, SettlementStatus, TruckStatus,
@@ -24,6 +25,24 @@ export const LOAD_STATUS: Record<LoadStatus, { label: string; tone: Tone }> = {
   invoiced:         { label: "Invoiced",         tone: "info" },
   paid:             { label: "Paid",             tone: "success" },
   cancelled:        { label: "Cancelled",        tone: "danger" },
+};
+
+/** Live load statuses (F1.2, plan 14): the backend's release-1 trip. */
+export const LOAD_RECORD_STATUS: Record<LoadRecordStatus, { label: string; tone: Tone }> = {
+  booked:                  { label: "Booked",                  tone: "neutral" },
+  rc_received:             { label: "Rate Con received",       tone: "info" },
+  driver_assigned:         { label: "Driver assigned",         tone: "info" },
+  driver_accepted:         { label: "Driver accepted",         tone: "info" },
+  en_route_pickup:         { label: "En route to pickup",      tone: "progress" },
+  arrived_pickup:          { label: "At pickup",               tone: "progress" },
+  loaded:                  { label: "Loaded",                  tone: "progress" },
+  awaiting_broker_release: { label: "Awaiting broker release", tone: "warning" },
+  in_transit:              { label: "In transit",              tone: "progress" },
+  arrived_delivery:        { label: "At delivery",             tone: "progress" },
+  delivered:               { label: "Delivered",               tone: "success" },
+  pod_received:            { label: "POD received",            tone: "success" },
+  invoice_ready:           { label: "Ready to invoice",        tone: "warning" },
+  cancelled:               { label: "Cancelled",               tone: "danger" },
 };
 
 export const TRUCK_STATUS: Record<TruckStatus, { label: string; tone: Tone }> = {

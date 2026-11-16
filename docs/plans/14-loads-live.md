@@ -13,7 +13,7 @@ Track:    Feature (new http domain, routes go live, new permission key)
 
 ```text
 Phase 1 — done  types (src/types/load-record.ts), contract + http adapter + 7 mapper tests (contract fixtures)
-Phase 2 — hooks: loadRecordKeys (orgKey), list/get/timeline, step/cancel/correct mutations
+Phase 2 — done  hooks: loadRecordKeys (orgKey), list/get/timeline, one action mutation; lib/load-records/status.ts + 4 tests; LOAD_RECORD_STATUS + badge
 Phase 3 — screens: live list, live detail (facts, stops, actions, dialogs), timeline
 Phase 4 — /loads gate (http → live, mock → today's screens), HTTP_LIVE_ROUTES, permission key
           loads:status:correct + alias, status config, browser spec (.live)
