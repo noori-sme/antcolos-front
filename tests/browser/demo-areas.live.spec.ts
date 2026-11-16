@@ -76,3 +76,18 @@ test("a live area has no demo banner", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(banner(page)).toHaveCount(0);
 });
+
+// The session is built from cookies, which the server does not have. Read
+// during render, they made the server's sidebar differ from the client's and
+// every signed-in page threw React #418 (hydration mismatch) in production.
+test("signed-in pages hydrate without a mismatch", async ({ page }) => {
+  const hydration: string[] = [];
+  page.on("pageerror", (e) => {
+    if (/#418|Hydration failed/.test(e.message)) hydration.push(`${page.url()}: ${e.message.slice(0, 120)}`);
+  });
+  await signIn(page);
+  for (const path of ["/home", "/fleet", "/rate-cons/new"]) {
+    await page.goto(`${WEB}${path}`, { waitUntil: "networkidle" });
+  }
+  expect(hydration).toEqual([]);
+});
