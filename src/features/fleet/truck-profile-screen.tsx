@@ -1,7 +1,8 @@
 "use client";
 
 import { TruckOperationalBadge } from "@/components/common/status-badge";
-import { TRUCK_OPERATIONAL_STATUS } from "@/config/statuses";
+import { isOnTrip } from "@/lib/fleet/truck-status";
+import type { TruckOperationalStatus } from "@/types/fleet-truck";
 
 import Link from "next/link";
 import {
@@ -56,8 +57,8 @@ function formatNumber(num?: number): string {
 function OperationalStatusBadge({ status }: { status?: string }) {
   const s = status?.toUpperCase();
   // Trip statuses follow the truck's load (plan 15); never show them as "Unavailable".
-  if (s && s !== "AVAILABLE" && s !== "MAINTENANCE" && s !== "UNAVAILABLE" && s in TRUCK_OPERATIONAL_STATUS) {
-    return <TruckOperationalBadge status={s as keyof typeof TRUCK_OPERATIONAL_STATUS} />;
+  if (s && (isOnTrip(s as TruckOperationalStatus) || s === "DELIVERED")) {
+    return <TruckOperationalBadge status={s as TruckOperationalStatus} />;
   }
   if (s === "AVAILABLE") {
     return (

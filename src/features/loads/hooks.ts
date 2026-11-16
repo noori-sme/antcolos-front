@@ -174,7 +174,7 @@ export function useLoadAction(loadId: string) {
 export function useLoadTruck(truckId: string | null) {
   const ctx = useServiceContext();
   return useQuery({
-    queryKey: ctx && truckId ? fleetKeys.detail(ctx.organizationId, truckId) : ["trucks", "no-context"],
+    queryKey: ctx && truckId ? fleetKeys.detail(ctx.organizationId, truckId) : [...orgKey("none"), "trucks", "no-context"],
     queryFn: () => services.trucks.get(ctx!, truckId!),
     enabled: Boolean(ctx && truckId),
     retry: false,
@@ -191,7 +191,7 @@ export function useBookableTrucks(enabled: boolean) {
     pageSize: 100,
   } as const;
   return useQuery({
-    queryKey: ctx ? fleetKeys.list(ctx.organizationId, filters) : ["trucks", "no-context"],
+    queryKey: ctx ? fleetKeys.list(ctx.organizationId, filters) : [...orgKey("none"), "trucks", "no-context"],
     queryFn: () => services.trucks.list(ctx!, filters),
     enabled: Boolean(ctx) && enabled,
   });
