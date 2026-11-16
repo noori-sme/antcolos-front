@@ -1,7 +1,7 @@
 # 15 — Book a truck and assign a driver from the load (F1.3)
 
 ```
-Status:   in progress (2026-11-16; owner: "Do the pending front-end tasks")
+Status:   implemented (2026-11-16; owner: "Do the pending front-end tasks")
 Branch:   feat/loads-assign-driver-truck (stacked on feat/loads-list-detail, front #26)
 Backend contract: ../antcolos/docs/requirements/loads-api-contract.md §9 (truck, plan 31),
           §10 (driver, plan 32); fleet-api-contract.md (operational status)
@@ -17,8 +17,9 @@ Phase 2 — done  load record: truckId, driver fields; loadRecords book/unbook t
                  driver, accept/reject (3 mapper tests); timeline sentences for truck/driver events
 Phase 3 — done  "Truck & driver" panel (live-load-crew.tsx); hooks; fleetKeys moved to
                  lib/query/keys.ts (a load action invalidates the truck too)
-Phase 4 — permission key loads:respond (alias load.respond, Dispatcher template, 2 tests) done;
-          docs; live spec
+Phase 4 — done  loads:respond (alias load.respond, Dispatcher template, 2 tests); docs;
+                 load-crew.live.spec.ts 1/1 + loads-live 2/2 against a local stack (backend
+                 feat/loads-driver-assignment, Postgres 16, Redis, seeded truck and driver)
 ```
 
 ## Design

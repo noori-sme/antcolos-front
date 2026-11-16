@@ -110,7 +110,7 @@ function TruckCard({ load, editable, action }: { load: LoadRecord; editable: boo
             </p>
           </>
         ) : (
-          <p className="text-[0.875rem] text-fg-muted">This truck can't be shown ({truck.error?.message}).</p>
+          <p className="text-[0.875rem] text-fg-muted">This truck can&apos;t be shown ({truck.error?.message}).</p>
         )
       ) : (
         <p className="text-[0.875rem] text-fg-muted">No truck booked.</p>
