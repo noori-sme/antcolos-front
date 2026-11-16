@@ -3,7 +3,7 @@
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiClient, logoutDueToPermissionsError } from "@/lib/api/client";
 import {
-  readCookie, setAccountKind, setPermissionCookies, setUserRoleFromRoleId,
+  AUTH_COOKIE, readCookie, setAccountKind, setPermissionCookies, setUserRoleFromRoleId,
 } from "@/lib/api/auth-cookies";
 import { usePathname } from "next/navigation";
 import {
@@ -77,6 +77,23 @@ const subscribeNothing = () => () => {};
 const serverScenario = (): SessionScenario => "demo";
 const readDriverAccount = () => readCookie("antcolos_user_role") === "DRIVER";
 const serverDriverAccount = () => false;
+
+/**
+ * The session cookies the permission set and the driver check are built from.
+ * The server has no cookies, so reading them during render made the server's
+ * nav differ from the client's (React #418 on every signed-in page). They are
+ * read through `useSyncExternalStore` instead: hydration uses the server's
+ * empty snapshot, then the client re-renders with the real values.
+ */
+const SESSION_COOKIES = [
+  AUTH_COOKIE.token, AUTH_COOKIE.permissions, AUTH_COOKIE.userPermissions,
+  AUTH_COOKIE.roleTemplate, AUTH_COOKIE.roleId, AUTH_COOKIE.userRole, AUTH_COOKIE.orgRole,
+] as const;
+type SessionCookies = Partial<Record<(typeof SESSION_COOKIES)[number], string>>;
+// A string, so the snapshot compares by value and is stable between renders.
+const readSessionCookies = () =>
+  JSON.stringify(Object.fromEntries(SESSION_COOKIES.map((name) => [name, readCookie(name)])));
+const serverSessionCookies = () => "{}";
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -306,17 +323,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     serverDriverAccount,
   );
 
+  const cookieSnapshot = useSyncExternalStore(
+    subscribeNothing,
+    readSessionCookies,
+    serverSessionCookies,
+  );
+  const cookies = useMemo(() => JSON.parse(cookieSnapshot) as SessionCookies, [cookieSnapshot]);
+
   const isDriverMembership = useMemo(() => {
     const roleId =
       userPermissionsData?.roleId ||
-      readCookie('antcolos_role_id') ||
-      readCookie('antcolos_user_role') ||
-      readCookie('antcolos_org_role');
+      cookies.antcolos_role_id ||
+      cookies.antcolos_user_role ||
+      cookies.antcolos_org_role;
     if (roleId && String(roleId).toUpperCase() === 'DRIVER') {
       return true;
     }
     return Boolean(activeMembership?.driverProfileId);
-  }, [userPermissionsData, activeMembership]);
+  }, [userPermissionsData, activeMembership, cookies]);
 
   const permissions = useMemo<ReadonlySet<PermissionKey>>(() => {
     let rawList: string[] = [];
@@ -326,7 +350,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ? userPermissionsData.permissions
         : [String(userPermissionsData.permissions)];
     } else {
-      const cookieVal = readCookie('antcolos_permissions') || readCookie('antcolos_user_permissions');
+      const cookieVal = cookies.antcolos_permissions || cookies.antcolos_user_permissions;
       if (cookieVal) {
         try {
           const parsed = JSON.parse(cookieVal);
@@ -343,7 +367,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           ? userPermissionsData.roleTemplate
           : [String(userPermissionsData.roleTemplate)];
       } else {
-        const tmplCookie = readCookie('antcolos_role_template');
+        const tmplCookie = cookies.antcolos_role_template;
         if (tmplCookie) {
           try {
             const parsed = JSON.parse(tmplCookie);
@@ -353,7 +377,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const token = readCookie('antcolos_token');
+    const token = cookies.antcolos_token;
 
     // Authenticated user with real permissions
     if (token) {
@@ -378,7 +402,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // Local unauthenticated mock / demo fallback
     if (!activeMembership || !activeOrganization) return new Set<PermissionKey>();
     return effectivePermissions(activeMembership, activeOrganization);
-  }, [userPermissionsData, activeMembership, activeOrganization]);
+  }, [userPermissionsData, activeMembership, activeOrganization, cookies]);
 
   const switchOrganization = useCallback(
     (membershipId: string) => {
