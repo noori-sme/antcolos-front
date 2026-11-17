@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { useVisibleNav } from "@/components/layout/use-visible-nav";
 import { useActiveMembership, useRosterStatus, useSession } from "@/lib/session/hooks";
 import { greeting } from "./greeting";
+import { LiveOwnerOverview } from "./live-owner-overview";
 
 /**
  * Home in http mode (plan 08). The full Home is built from mock-only services,
@@ -49,6 +50,7 @@ export function LiveHomeScreen() {
           </Can>
         }
       />
+      {rosterFailed ? null : <LiveOwnerOverview />}
       {rosterFailed ? (
         <ErrorState
           title="We couldn't load your organization"
