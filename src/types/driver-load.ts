@@ -1,3 +1,4 @@
+import type { LoadException } from "./load-exception";
 import type { LoadRecordStatus, LoadRecordStop } from "./load-record";
 
 /**
@@ -52,6 +53,8 @@ export interface DriverLoad {
   driverAcceptedAt: string | null;
   stops: LoadRecordStop[];
   documents: LoadDocument[];
+  /** Problems reported on this load, newest first (no money; F1.5). */
+  exceptions: LoadException[];
   nextMilestones: NextMilestone[];
 }
 

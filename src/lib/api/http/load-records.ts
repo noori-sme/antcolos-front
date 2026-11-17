@@ -156,6 +156,13 @@ function toTimelineEntry(dto: Dto): LoadTimelineEntry {
     changedFields: strings(details.changedFields),
     truckId: text(details.truckId),
     driverUserId: text(details.driverUserId),
+    stopSequence: num(details.stopSequence) ?? null,
+    stopType: details.stopType === "PICKUP" ? "pickup" : details.stopType === "DELIVERY" ? "delivery" : null,
+    documentType: text(details.documentType),
+    exceptionType: text(details.type),
+    severity: text(details.severity),
+    financialImpact: text(details.financialImpact),
+    recipient: text(details.recipient),
   };
 }
 

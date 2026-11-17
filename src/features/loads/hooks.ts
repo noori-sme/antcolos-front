@@ -7,9 +7,10 @@ import { useState } from "react";
 import { services } from "@/lib/api";
 import type { LoadFilters, LoadSort } from "@/lib/api/contracts/loads";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { fleetKeys, loadRecordKeys, orgKey } from "@/lib/query/keys";
+import { fleetKeys, loadExceptionKeys, loadRecordKeys, orgKey } from "@/lib/query/keys";
 import { usePeopleList, usePerson } from "@/lib/api/use-org-people";
 import { createIntentKeys } from "@/lib/rate-con/intent-key";
+import type { ReportExceptionInput, ResolveExceptionInput } from "@/types/load-exception";
 import type {
   CancelLoadInput, LoadRecord, LoadRecordQuery, LoadRecordStatus,
 } from "@/types/load-record";
@@ -208,3 +209,45 @@ export function useDriverOptions(q: string, enabled: boolean) {
 }
 
 export { loadRecordKeys };
+
+// ── Exceptions beside the load (F1.5) ───────────────────────────────────────
+
+/** The load's exceptions, newest first; needs loads:view (load.read). */
+export function useLoadExceptions(loadId: string) {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx ? loadExceptionKeys.forLoad(ctx.organizationId, loadId) : ["load-exceptions", "no-context"],
+    queryFn: () => services.loadExceptions.listForLoad(ctx!, loadId),
+    enabled: Boolean(ctx),
+    retry: false,
+  });
+}
+
+type ExceptionAction =
+  | { kind: "report"; input: ReportExceptionInput }
+  | { kind: "acknowledge"; exceptionId: string }
+  | { kind: "resolve"; exceptionId: string; input: ResolveExceptionInput };
+
+/** Report, take or resolve an exception; the list and timeline refresh. */
+export function useExceptionAction(loadId: string) {
+  const ctx = useServiceContext();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ action, idempotencyKey }: { action: ExceptionAction; idempotencyKey: string }) => {
+      const exceptions = services.loadExceptions;
+      switch (action.kind) {
+        case "report":
+          return exceptions.report(ctx!, loadId, action.input, idempotencyKey);
+        case "acknowledge":
+          return exceptions.acknowledge(ctx!, loadId, action.exceptionId, idempotencyKey);
+        case "resolve":
+          return exceptions.resolve(ctx!, loadId, action.exceptionId, action.input, idempotencyKey);
+      }
+    },
+    onSettled: () => {
+      if (!ctx) return;
+      void queryClient.invalidateQueries({ queryKey: loadExceptionKeys.all(ctx.organizationId) });
+      void queryClient.invalidateQueries({ queryKey: loadRecordKeys.timeline(ctx.organizationId, loadId) });
+    },
+  });
+}
