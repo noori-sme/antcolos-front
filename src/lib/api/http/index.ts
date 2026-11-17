@@ -5,6 +5,7 @@ import { httpTrucksService } from "./trucks";
 import { httpRateConIntakeService } from "./rate-con-intake";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
 import { httpOrgPeopleService } from "./org-people";
+import { httpDriverCredentialsService } from "./driver-credentials";
 import { httpSelfProfileService } from "./self-profile";
 import { httpOrgMembersService } from "./org-members";
 
@@ -28,6 +29,7 @@ export const httpServices: AntcolosServices = {
   orgInvitations: httpOrgInvitationsService,
   orgRoles: httpOrgRolesService,
   orgPeople: httpOrgPeopleService,
+  driverCredentials: httpDriverCredentialsService,
   selfProfile: httpSelfProfileService,
   orgMembers: httpOrgMembersService,
   needsYou: {

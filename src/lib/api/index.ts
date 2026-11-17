@@ -7,6 +7,7 @@ import { httpLoadRecordsService } from "./http/load-records";
 import { httpDriverLoadsService } from "./http/driver-loads";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
+import { httpDriverCredentialsService } from "./http/driver-credentials";
 import { httpSelfProfileService } from "./http/self-profile";
 import { httpOrgMembersService } from "./http/org-members";
 import { mockAccessService } from "./mock/access";
@@ -84,6 +85,8 @@ const mockServices: AntcolosServices = {
   orgRoles: httpOrgRolesService,
   // http-only: the people screens have always called the real API.
   orgPeople: httpOrgPeopleService,
+  // http-only (plan 20): credentials sit on the people screens, which call the real API.
+  driverCredentials: httpDriverCredentialsService,
   // http-only: mock mode keeps the public-profile screen (plan 11), so the
   // self profile is only read for real. Nothing to fall back to.
   selfProfile: httpSelfProfileService,
