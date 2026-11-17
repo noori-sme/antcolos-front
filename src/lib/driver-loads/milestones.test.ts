@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DriverLoad } from "@/types/driver-load";
 import type { LoadRecordStop } from "@/types/load-record";
 import {
-  activeLoad, canUpload, currentStop, isOnTrip, milestoneConfirm, milestoneLabel, stopName,
+  activeLoad, canUpload, currentStop, uploadStop, isOnTrip, milestoneConfirm, milestoneLabel, stopName,
 } from "./milestones";
 
 const stop = (sequence: number, type: "pickup" | "delivery", city: string, extras: Partial<LoadRecordStop> = {}): LoadRecordStop => ({
@@ -63,5 +63,12 @@ describe("driver milestones (plan 16)", () => {
     const done = { actualArrivalAt: "x", actualCompletedAt: "x", actualDepartureAt: "x" };
     expect(currentStop(load({ stops: [stop(1, "pickup", "Joliet", done), stops[2]] }))?.sequence).toBe(3);
     expect(currentStop(load({ stops: [stop(1, "pickup", "Joliet", done)] }))).toBeNull();
+  });
+
+  it("files a BOL under the pickup the driver is at", () => {
+    const at = stop(1, "pickup", "Joliet", { actualArrivalAt: "x" });
+    expect(uploadStop(load({ stops: [at, stops[1], stops[2]] }), "bol")).toBe(1);
+    expect(uploadStop(load(), "bol")).toBeNull();
+    expect(uploadStop(load({ stops: [at] }), "pod")).toBeNull();
   });
 });

@@ -77,7 +77,7 @@ function context(permissions: PermissionKey[]): ServiceContext {
 }
 
 const DRIVER_ACCESS: PermissionKey[] = [
-  "loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view",
+  "loads:view", "loads:status:update", "loads:respond", "documents:view", "documents:upload", "settlements:view",
 ];
 
 const SENDER = () => context(["invitations:view", "invitations:create", ...DRIVER_ACCESS]);

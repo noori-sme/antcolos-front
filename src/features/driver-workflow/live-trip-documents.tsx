@@ -4,7 +4,7 @@ import { Camera, FileText } from "lucide-react";
 import { useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { canUpload } from "@/lib/driver-loads/milestones";
+import { canUpload, uploadStop } from "@/lib/driver-loads/milestones";
 import type { DriverLoad } from "@/types/driver-load";
 import { useDriverLoadAction, useIntentKeys } from "./hooks";
 
@@ -54,7 +54,7 @@ function UploadButton({ load, type }: { load: DriverLoad; type: "bol" | "pod" })
   const upload = (file: File) =>
     action.mutate(
       {
-        action: { kind: "upload", type, stopSequence: null, file },
+        action: { kind: "upload", type, stopSequence: uploadStop(load, type), file },
         // The same file retried keeps its key; another file is another intent.
         idempotencyKey: keys.keyFor(`${type}:${file.name}:${file.size}:${file.lastModified}`),
       },
@@ -67,7 +67,6 @@ function UploadButton({ load, type }: { load: DriverLoad; type: "bol" | "pod" })
         ref={input}
         type="file"
         accept={ACCEPT}
-        capture="environment"
         className="sr-only"
         aria-label={label}
         onChange={(e) => {

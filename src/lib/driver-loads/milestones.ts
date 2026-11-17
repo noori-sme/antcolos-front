@@ -81,3 +81,14 @@ export function canUpload(status: LoadRecordStatus, type: "bol" | "pod"): boolea
 export function currentStop(load: DriverLoad): LoadRecordStop | null {
   return load.stops.find((s) => !s.actualDepartureAt) ?? null;
 }
+
+/**
+ * The stop a BOL / POD belongs to: the pickup the driver is at (a BOL on a
+ * multi-pickup load is that pickup's), else null so the API picks the last
+ * pickup / delivery (contract §13).
+ */
+export function uploadStop(load: DriverLoad, type: "bol" | "pod"): number | null {
+  if (type === "pod") return null;
+  const at = load.stops.find((s) => s.type === "pickup" && s.actualArrivalAt && !s.actualDepartureAt);
+  return at?.sequence ?? null;
+}

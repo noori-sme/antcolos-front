@@ -6,7 +6,9 @@ import {
   NEVER_GRANTABLE, PERMISSION_CATALOG, PERMISSION_GROUP_LABELS,
   PERMISSION_GROUP_ORDER, availablePermissionKeys,
 } from "@/lib/permissions/catalog";
+import { canAll } from "@/lib/permissions/can";
 import { effectivePermissions } from "@/lib/permissions/effective";
+import type { PermissionKey } from "@/types/permission";
 import { requiredPermissionsForPath } from "@/lib/permissions/route-manifest";
 import {
   MOCK_MEMBERSHIPS, MOCK_ORGANIZATIONS, } from "@/lib/session/fixtures";
@@ -81,7 +83,14 @@ describe("route gating still matches the nav", () => {
   it("gates the new driver routes and inherits on nested paths", () => {
     assert.deepEqual(requiredPermissionsForPath("/driver/proposals"), ["proposals:view"]);
     assert.deepEqual(requiredPermissionsForPath("/driver/proposals/prop_1"), ["proposals:view"]);
-    assert.deepEqual(requiredPermissionsForPath("/driver/loads/load_1"), ["loads:view"]);
+    // A driver's own loads need loads:respond, not loads:view (plan 16).
+    assert.deepEqual(requiredPermissionsForPath("/driver/loads/load_1"), ["loads:respond"]);
+  });
+
+  it("refuses a driver's loads to a seat without loads:respond (plan 16)", () => {
+    const required = requiredPermissionsForPath("/driver/loads");
+    assert.equal(canAll(new Set(["loads:view"] as PermissionKey[]), required), false);
+    assert.equal(canAll(new Set(["loads:respond"] as PermissionKey[]), required), true);
   });
 
   it("leaves the existing routes where they were", () => {
