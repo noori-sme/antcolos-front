@@ -1,7 +1,7 @@
 # 20 — Driver credentials on the driver profile (F2.4)
 
 ```
-Status:   in progress (2026-11-17; owner: "plan and implement each one of these modules")
+Status:   implemented (2026-11-17; owner: "plan and implement each one of these modules")
 Branch:   feat/identity-driver-credentials (same name as the backend branch)
 Backend contract: ../antcolos/docs/requirements/driver-credentials-api-contract.md (backend plan 40, M2.7)
 Track:    Feature (new permission keys, new section on the driver profile)
@@ -11,9 +11,9 @@ Numbering: 17–19 left free for the M1 work running in another session.
 ## Progress
 
 ```text
-Phase 1 — pending  types, contract, http adapter + mapper tests, query keys, permission keys
-Phase 2 — pending  lib/driver-credentials (labels, next statuses, expiry) + tests; hooks
-Phase 3 — pending  credentials panel on /people/drivers/[driverId]; add / edit / status / history
+Phase 1 — done  types, contract, http adapter + mapper tests (3), query keys, permission keys
+Phase 2 — done  lib/driver-credentials (labels, next statuses, expiry) + tests (5); hooks
+Phase 3 — done  credentials panel on /people/drivers/[driverId]; add / edit / status / history
 ```
 
 ## Goal
@@ -44,9 +44,19 @@ app; no screen uses it in this slice.
 
 ## Invariant checklist
 
-- [ ] Components never call the network: panel → `features/driver/hooks.ts` → `services.driverCredentials`.
-- [ ] Query keys org-namespaced (`queryKeys.credentials*`).
-- [ ] No role-name checks: `<Can>` on `credentials:*`.
-- [ ] Contract is the authority: fields and errors from the contract doc only.
-- [ ] Tokens only: status tones from existing `st-*` tokens.
-- [ ] No secrets in the client.
+- [x] Components never call the network: panel → `features/driver/hooks.ts` → `services.driverCredentials`.
+- [x] Query keys org-namespaced (`queryKeys.credentials*`).
+- [x] No role-name checks: `<Can>` on `credentials:*`.
+- [x] Contract is the authority: fields and errors from the contract doc only.
+- [x] Tokens only: status tones from existing `st-*` tokens.
+- [x] No secrets in the client.
+
+## Verification (2026-11-17)
+
+- vitest: 140 files, 2356 tests pass; `npm run build` passes; new files lint clean (the 3 problems
+  left in `carrier-driver-detail.tsx` were there before).
+- Run together against the backend branch (seeded carrier admin, driver member): empty state →
+  add Medical card expiring in 20 days (201, "Expires within 30 days" shown) → add CDL Class A
+  (201) → same again (409, "This driver already has a credential of this type and label" shown in
+  the dialog) → suspend CDL (button disabled until a reason is typed; 201) → history shows
+  "Recorded" and "ACTIVE → SUSPENDED — <reason>". 360 px: no horizontal scroll, actions wrap.
