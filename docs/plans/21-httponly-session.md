@@ -10,11 +10,11 @@ Track:    Feature (auth/session/proxy change). Security-sensitive.
 ## Progress
 
 ```text
-Phase 1 — pending  lib/api/bff.ts helpers (+ tests): cookie names/options, claims-only token, header forwarding
-Phase 2 — pending  /api/session/[...path] route handler (session endpoints, refresh, logout) + tests
-Phase 3 — pending  proxy.ts (renamed): /api/backend/* rewrite with Authorization from the httpOnly cookie
-Phase 4 — pending  client.ts: same-origin base URLs, 401 → refresh once → retry; sign-out revokes
-Phase 5 — pending  run against the local backend: sign-in, browse, expired access token refreshes, logout
+Phase 1 — done  lib/api/bff.ts helpers + 5 tests
+Phase 2 — done  /api/session/[...path] route handler + 7 tests
+Phase 3 — done  proxy.ts (renamed): /api/backend/* rewrite with Authorization from the httpOnly cookie
+Phase 4 — done  client.ts: same-origin base URLs, 401 → shared refresh → retry; sign-out revokes
+Phase 5 — done  run against the local backend (results below)
 ```
 
 ## Why
@@ -50,3 +50,29 @@ shorten `JWT_EXPIRES_IN`.
 - Existing sessions: a signed-in user has only the old readable `antcolos_token` (a real JWT). The
   proxy accepts it once as a fallback when `antcolos_at` is missing, so nobody is signed out by the
   deploy; the next session call moves them to httpOnly cookies.
+
+## Verification (2026-11-17)
+
+Local stack: backend branch `feat/identity-session-refresh` with `JWT_EXPIRES_IN=20s` and
+`BFF_SHARED_SECRET`, this app in http mode on :3001, Playwright.
+
+- Sign-in: `antcolos_at` httpOnly path `/`; `antcolos_rt` httpOnly path `/api/session`;
+  `antcolos_token` readable and claims-only (no signature). Page scripts see no usable token. No
+  browser request goes to the API's origin.
+- After 25 s (access token expired): `/users/me/permissions` 401 and `/auth/me` 401 → one
+  `POST /api/session/auth/refresh` 200 → requests retried; the user stays on the page.
+- The readable `antcolos_token` sent straight to the API → 401.
+- Logout: the three session cookies cleared; the session family revoked in the database.
+- Upload: a 1.5 MB PDF through `/api/backend/documents/rate-confirmations` → 202 with the exact
+  byte size; without the cookie → 401.
+- Rate limiting: 11 wrong-password logins from one browser IP → 10×401 then 429; from 11 IPs → no
+  429 (the API keys on `x-antcolos-client-ip` with the shared secret).
+- Found and fixed while running it: the 401 handler signed out on `/auth/me` before trying a
+  refresh; the session route forwarded the browser's `Content-Length` with a rebuilt body, so the
+  API dropped the connection.
+- vitest 140 files / 2360 tests pass; build passes (`ƒ Proxy`, `/api/session/[...path]`); new files
+  lint clean (`client.ts` keeps its one pre-existing error).
+- Browser specs (mock mode): `carrier-lookup` passes after its stub follows the new path.
+  `landing-auth-boundary` (4 tests: sign-in/sign-up against the mock password) and
+  `driver-self-onboarding` fail the same way on `origin/main` (checked on the same machine): not
+  caused by this change.
