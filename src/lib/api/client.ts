@@ -178,14 +178,23 @@ function setupInterceptors(client: AxiosInstance) {
       const isSignInCall = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/verify-email');
       if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isSignInCall) {
         originalRequest._retry = true;
-        const refreshed = await refreshSession();
-        if (refreshed) {
+        const outcome = await refreshSession();
+        if (outcome === "ok") {
           return client.request(originalRequest);
         }
+        if (outcome === "unavailable") {
+          // The API could not renew it right now (rate limit, restart): keep
+          // the session and let the caller retry later.
+          return Promise.reject(new Error("Could not reach the server. Try again in a moment."));
+        }
+        // "expired": another tab may have rotated the session a moment ago and
+        // its cookie may still be landing; give it a beat, then retry once.
+        await new Promise((resolve) => setTimeout(resolve, 750));
         try {
           return await client.request(originalRequest);
-        } catch {
-          // Still unauthorized: handled below as a signed-out session.
+        } catch (retryError) {
+          // The retry's own 401 already went through the sign-out below.
+          return Promise.reject(retryError instanceof Error ? retryError : new Error("Session expired. Please sign in again."));
         }
       }
 
@@ -234,16 +243,38 @@ function setupInterceptors(client: AxiosInstance) {
   );
 }
 
-let refreshing: Promise<boolean> | null = null;
+export type RefreshOutcome = "ok" | "expired" | "unavailable";
 
-/** One `POST /api/session/auth/refresh` at a time; callers share its answer. */
-export function refreshSession(): Promise<boolean> {
-  refreshing ??= fetch(`${SESSION_URL}/auth/refresh`, { method: "POST", credentials: "same-origin" })
-    .then((res) => res.ok)
-    .catch(() => false)
-    .finally(() => {
+let refreshing: Promise<RefreshOutcome> | null = null;
+
+/** What a refresh answer means for the session. Only a 401 ends it. */
+export function refreshOutcome(status: number | null): RefreshOutcome {
+  if (status !== null && status >= 200 && status < 300) return "ok";
+  return status === 401 ? "expired" : "unavailable";
+}
+
+function callRefresh(): Promise<RefreshOutcome> {
+  return fetch(`${SESSION_URL}/auth/refresh`, { method: "POST", credentials: "same-origin" })
+    .then((res) => refreshOutcome(res.status))
+    .catch(() => refreshOutcome(null));
+}
+
+/**
+ * One `POST /api/session/auth/refresh` at a time: shared by every request in
+ * this tab, and serialized across tabs (Web Locks) so two tabs never present
+ * the same refresh token at once and sign each other out.
+ */
+export function refreshSession(): Promise<RefreshOutcome> {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  if (!refreshing) {
+    const run: Promise<RefreshOutcome> = locks
+      // `then` flattens the lock's Promise<Promise<…>> typing.
+      ? locks.request("antcolos-session-refresh", callRefresh).then((outcome) => outcome)
+      : callRefresh();
+    refreshing = run.finally(() => {
       refreshing = null;
     });
+  }
   return refreshing;
 }
 

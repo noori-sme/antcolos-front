@@ -102,4 +102,42 @@ describe("/api/session route", () => {
       expect(res.cookies.get(name)?.maxAge).toBe(0);
     }
   });
+
+  it("refuses a cross-site form login (login CSRF) without calling the API", async () => {
+    const res = await POST(
+      req("auth/login", {
+        method: "POST",
+        body: "email=attacker%40x.com&password=pw",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example" },
+      }),
+      ctx("auth", "login"),
+    );
+    expect(res.status).toBe(403);
+    expect(res.cookies.getAll()).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a same-origin form post too: session calls are JSON only", async () => {
+    const res = await POST(
+      req("auth/login", {
+        method: "POST",
+        body: "email=a&password=b",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://localhost:3001" },
+      }),
+      ctx("auth", "login"),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it.each([429, 500, 502])("maps a %s from the API refresh to 503, not a sign-out", async (status) => {
+    fetchMock.mockResolvedValue(json({ message: "busy" }, status));
+    const res = await POST(req("auth/refresh", { method: "POST", cookie: `antcolos_rt=${"o".repeat(43)}` }), ctx("auth", "refresh"));
+    expect(res.status).toBe(503);
+  });
+
+  it("maps a network failure on refresh to 503", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    const res = await POST(req("auth/refresh", { method: "POST", cookie: `antcolos_rt=${"o".repeat(43)}` }), ctx("auth", "refresh"));
+    expect(res.status).toBe(503);
+  });
 });

@@ -79,13 +79,48 @@ export function upstreamHeaders(incoming: Headers, accessToken: string | undefin
 }
 
 /**
- * The access token for an API call: the httpOnly cookie, or — once, for a
- * session started before this change — the old readable cookie if it still
- * holds a real JWT.
+ * The access token for an API call: the httpOnly cookie, or — for a session
+ * started before this change, until that token expires — the old readable
+ * cookie if it still holds a real JWT. Remove the fallback once
+ * `JWT_EXPIRES_IN` has passed after the deploy.
  */
 export function accessTokenFrom(cookies: { get(name: string): { value: string } | undefined }): string | undefined {
   const access = cookies.get(SESSION_COOKIE.access)?.value;
   if (access) return access;
   const legacy = cookies.get(SESSION_COOKIE.claims)?.value;
   return legacy && !isClaimsOnly(legacy) ? legacy : undefined;
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * CSRF guard for cookie-authenticated same-origin endpoints: a request that
+ * changes something must come from this app's own pages. Browsers send
+ * `Origin` on every cross-site and same-origin POST; `Sec-Fetch-Site` is the
+ * fallback. A request with neither (curl, server code) has no ambient cookie
+ * to abuse and is allowed.
+ */
+export function isAllowedOrigin(method: string, headers: Headers, ownOrigin: string): boolean {
+  if (SAFE_METHODS.has(method.toUpperCase())) return true;
+  const origin = headers.get("origin");
+  if (origin) return origin === ownOrigin;
+  const site = headers.get("sec-fetch-site");
+  return !site || site === "same-origin" || site === "none";
+}
+
+/** A body-carrying session call must be JSON (a cross-site form cannot send it without a preflight). */
+export function isJsonOrEmpty(method: string, headers: Headers): boolean {
+  if (SAFE_METHODS.has(method.toUpperCase())) return true;
+  const length = headers.get("content-length");
+  const type = headers.get("content-type") ?? "";
+  return type.startsWith("application/json") || (!type && (length === null || length === "0"));
+}
+
+/** `/api/backend/<rest>` → the API URL for `<rest>` (host is never taken from the path). */
+export function backendTarget(pathname: string, search: string, prefix = "/api/backend"): URL {
+  const rest = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : "";
+  const base = new URL(`${upstreamBase()}/`);
+  const target = new URL(`${upstreamBase()}${rest.startsWith("/") || rest === "" ? rest : `/${rest}`}${search}`);
+  if (target.origin !== base.origin) throw new Error("backend target escaped the API origin");
+  return target;
 }

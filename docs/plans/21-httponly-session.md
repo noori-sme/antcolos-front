@@ -1,7 +1,7 @@
 # 21 — Session in httpOnly cookies, refresh flow, `middleware.ts` → `proxy.ts` (F6.1)
 
 ```
-Status:   in progress (2026-11-17; owner: "plan and implement each one of these modules")
+Status:   implemented (2026-11-17; owner: "plan and implement each one of these modules")
 Branch:   feat/identity-session-refresh (same name as the backend branch)
 Backend:  ../antcolos/docs/plans/45-session-refresh.md; signup-api-contract.md "Session refresh"
 Track:    Feature (auth/session/proxy change). Security-sensitive.
@@ -48,8 +48,13 @@ shorten `JWT_EXPIRES_IN`.
 - Everything authenticated now passes through the app's origin; a broken proxy breaks the app.
   Phase 5 exercises it end to end.
 - Existing sessions: a signed-in user has only the old readable `antcolos_token` (a real JWT). The
-  proxy accepts it once as a fallback when `antcolos_at` is missing, so nobody is signed out by the
-  deploy; the next session call moves them to httpOnly cookies.
+  proxy keeps accepting it while `antcolos_at` is missing, until it expires (`JWT_EXPIRES_IN`), so
+  nobody is signed out by the deploy; their next sign-in moves them to httpOnly cookies. Remove the
+  fallback (`accessTokenFrom` in `lib/api/bff.ts`) once that time has passed.
+- **Deployment requirement:** the client IP sent to the API is the first `X-Forwarded-For` entry.
+  Vercel overwrites that header, so it is trustworthy there. On any host that passes a
+  client-supplied `X-Forwarded-For` through, leave `BFF_SHARED_SECRET` unset (per-IP limits then
+  fall back to the proxy's address) until the IP is read from that host's own header.
 
 ## Verification (2026-11-17)
 
@@ -76,3 +81,18 @@ Local stack: backend branch `feat/identity-session-refresh` with `JWT_EXPIRES_IN
   `landing-auth-boundary` (4 tests: sign-in/sign-up against the mock password) and
   `driver-self-onboarding` fail the same way on `origin/main` (checked on the same machine): not
   caused by this change.
+
+## Security review (2026-11-17) and fixes
+
+| Finding | Fix |
+| --- | --- |
+| BLOCKING: login CSRF — a cross-site form could POST to `/api/session/auth/login` and plant the attacker's session (Lax cookies are stored on top-level navigation responses). | Non-GET session calls must come from this origin (`Origin`, else `Sec-Fetch-Site`) and be JSON; same origin check on non-GET `/api/backend/*` in `proxy.ts`. Verified live: cross-site form login → 403, cross-site API write with a valid cookie → 403. |
+| Proxy buffers bodies to 10 MB (`experimental.proxyClientMaxBodySize`); API takes 20 MB Rate Cons. | Raised to 25 MB in `next.config.ts`. Verified: a 15 MB upload → 202 with the exact byte size. |
+| Any failed refresh (429, 5xx, network) signed the user out and revoked the session. | Session route: only the API's 401 → 401; anything else → 503. Client: `unavailable` keeps the session. |
+| Two tabs refreshing together could sign each other out. | Refresh serialized across tabs with Web Locks; after an `expired` answer the retry waits 750 ms; one sign-out path. Verified: two tabs past expiry → one refresh (200), both stay signed in, no reuse event. |
+| Wording: the legacy fallback is not "once". | Fixed in code comment, test name and Risks above. |
+| Tests for the proxy and the refresh decision. | `backendTarget`, `isAllowedOrigin`, `isJsonOrEmpty` (bff.test.ts), CSRF and 503 cases (route.test.ts), `refreshOutcome` (refresh-outcome.test.ts). |
+
+Checked clean by the review: no open proxy (host fixed; `//host` stays on the API), headers
+replaced not merged (browser `cookie`/`authorization`/`x-antcolos-*` dropped), no token in
+page-readable responses or logs, cookie flags/paths, no refresh loop.

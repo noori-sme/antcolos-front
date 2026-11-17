@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import {
-  SESSION_COOKIE, accessTokenFrom, claimsOnly, cookieOptions, upstreamBase, upstreamHeaders,
+  SESSION_COOKIE, accessTokenFrom, claimsOnly, cookieOptions, isAllowedOrigin, isJsonOrEmpty,
+  upstreamBase, upstreamHeaders,
 } from "@/lib/api/bff";
 import { issuesSessionToken } from "@/lib/api/session-token";
 
@@ -26,6 +27,12 @@ async function handle(request: NextRequest, context: Context): Promise<NextRespo
   const { path } = await context.params;
   const apiPath = `/${path.map(encodeURIComponent).join("/")}`;
   const secure = request.nextUrl.protocol === "https:";
+
+  // Login CSRF guard: a cross-site form must not plant or clear a session.
+  if (!isAllowedOrigin(request.method, request.headers, request.nextUrl.origin)
+    || !isJsonOrEmpty(request.method, request.headers)) {
+    return NextResponse.json({ message: "Cross-site request refused" }, { status: 403 });
+  }
 
   if (apiPath === REFRESH) return refresh(request, secure);
   if (apiPath === LOGOUT) return logout(request, secure);
@@ -112,11 +119,18 @@ async function refresh(request: NextRequest, secure: boolean): Promise<NextRespo
     headers,
     body: JSON.stringify({ refreshToken }),
     cache: "no-store",
-  });
-  const tokens = upstream.ok ? sessionTokens(await upstream.json().catch(() => null)) : undefined;
+  }).catch(() => null);
+  // Cookies are left alone on any failure: another tab may have just stored
+  // fresh ones. Only the API's own 401 means the session is over; a 429, 5xx
+  // or network error is "try later", not "signed out".
+  if (!upstream || !upstream.ok) {
+    return upstream?.status === 401
+      ? NextResponse.json({ message: "Session expired. Sign in again." }, { status: 401 })
+      : NextResponse.json({ message: "Could not renew the session right now." }, { status: 503 });
+  }
+  const tokens = sessionTokens(await upstream.json().catch(() => null));
   if (!tokens) {
-    // Cookies are left alone: another tab may have just stored fresh ones.
-    return NextResponse.json({ message: "Session expired. Sign in again." }, { status: 401 });
+    return NextResponse.json({ message: "Could not renew the session right now." }, { status: 503 });
   }
   const response = NextResponse.json({ refreshed: true });
   setSession(response, tokens.access, tokens.refresh, secure);

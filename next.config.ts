@@ -29,6 +29,12 @@ const nextConfig: NextConfig = {
   // UI is what we review.
   devIndicators: false,
   poweredByHeader: false,
+  experimental: {
+    // Every API call passes through src/proxy.ts (plan 21), which buffers the
+    // body up to this size and cuts the rest. The API takes Rate Cons up to
+    // 20 MB (OCR_MAX_FILE_BYTES); leave room for multipart overhead.
+    proxyClientMaxBodySize: 25 * 1024 * 1024,
+  },
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },

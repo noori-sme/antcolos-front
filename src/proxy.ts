@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { accessTokenFrom, upstreamBase, upstreamHeaders } from '@/lib/api/bff'
+import { accessTokenFrom, backendTarget, isAllowedOrigin, upstreamHeaders } from '@/lib/api/bff'
 import { SIGNED_IN_AS_DEMO } from '@/lib/api/mode'
 import { isAuthPath, isPublicPath } from '@/lib/session/route-access'
 
@@ -107,8 +107,11 @@ const BACKEND_PREFIX = '/api/backend'
 
 /** `/api/backend/<path>` → `<API>/<path>`, authorized by the httpOnly cookie. */
 function toBackend(request: NextRequest) {
-  const path = request.nextUrl.pathname.slice(BACKEND_PREFIX.length)
-  const target = new URL(`${upstreamBase()}${path}${request.nextUrl.search}`)
+  // The session cookie is ambient: a write must come from this app's pages.
+  if (!isAllowedOrigin(request.method, request.headers, request.nextUrl.origin)) {
+    return NextResponse.json({ message: 'Cross-site request refused' }, { status: 403 })
+  }
+  const target = backendTarget(request.nextUrl.pathname, request.nextUrl.search, BACKEND_PREFIX)
   return NextResponse.rewrite(target, {
     request: { headers: upstreamHeaders(request.headers, accessTokenFrom(request.cookies)) },
   })
