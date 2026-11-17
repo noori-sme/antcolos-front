@@ -43,6 +43,11 @@ const SOURCE: Record<string, LoadRecordSource> = {
 };
 const STOP_TYPE: Record<string, LoadRecordStop["type"]> = { PICKUP: "pickup", DELIVERY: "delivery" };
 
+/** A load status from the API; an unknown one throws rather than guess. */
+export function toLoadStatus(value: unknown): LoadRecordStatus {
+  return mapped(STATUS, value, "load status");
+}
+
 function mapped<T>(table: Record<string, T>, value: unknown, what: string): T {
   const key = oneOf(Object.keys(table), value);
   if (!key) throw new Error(`Unexpected ${what} from the API: ${String(value)}`);
@@ -54,7 +59,8 @@ const optional = <T,>(table: Record<string, T>, value: unknown): T | null => {
 };
 const text = (v: unknown): string | null => str(v) ?? null;
 
-function toStop(dto: Dto): LoadRecordStop {
+/** Shared with the driver's loads (plan 16). */
+export function toStop(dto: Dto): LoadRecordStop {
   return {
     sequence: num(dto.sequence) ?? 0,
     type: mapped(STOP_TYPE, dto.type, "stop type"),
@@ -72,6 +78,9 @@ function toStop(dto: Dto): LoadRecordStop {
     contactName: text(dto.contactName),
     contactPhone: text(dto.contactPhone),
     notes: text(dto.notes),
+    actualArrivalAt: text(dto.actualArrivalAt),
+    actualCompletedAt: text(dto.actualCompletedAt),
+    actualDepartureAt: text(dto.actualDepartureAt),
   };
 }
 
