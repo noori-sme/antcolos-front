@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
  * The public carrier lookup page (plan 09): reachable signed out, driven by
  * the URL, and honest about every answer FMCSA can give.
  *
- * Runs in mock mode with no backend: `GET /api/v1/carriers/lookup` is stubbed
+ * Runs in mock mode with no backend: `GET /api/backend/carriers/lookup` (the same-origin API proxy, plan 21) is stubbed
  * with `page.route`, using the shapes in
  * `../antcolos/docs/requirements/carrier-lookup.md` §8.2.
  */
@@ -26,7 +26,7 @@ const GREYHOUND = {
 async function stubLookup(page: Page, status: number, body: unknown) {
   const queries: string[] = [];
   await page.route(
-    (url) => url.pathname.endsWith("/api/v1/carriers/lookup"),
+    (url) => url.pathname.endsWith("/api/backend/carriers/lookup"),
     async (route) => {
       queries.push(new URL(route.request().url()).search);
       await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -88,7 +88,7 @@ test("only lookup_not_configured reads as 'not set up'; a bare 500 can be retrie
   let body: unknown = { statusCode: 500, error: "lookup_not_configured" };
   let status = 500;
   await page.route(
-    (url) => url.pathname.endsWith("/api/v1/carriers/lookup"),
+    (url) => url.pathname.endsWith("/api/backend/carriers/lookup"),
     (route) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) }),
   );
   await page.goto("/carriers/lookup?mc=1515");
