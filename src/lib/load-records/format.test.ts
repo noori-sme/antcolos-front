@@ -38,6 +38,13 @@ const entry = (extras: Partial<LoadTimelineEntry>): LoadTimelineEntry => ({
   party: null,
   tonuAmount: null,
   changedFields: [],
+  stopSequence: null,
+  stopType: null,
+  documentType: null,
+  exceptionType: null,
+  severity: null,
+  financialImpact: null,
+  recipient: null,
   truckId: null,
   driverUserId: null,
   ...extras,
@@ -92,5 +99,22 @@ describe("load record formatting", () => {
     expect(timelineSentence(entry({ type: "load.driver_rejected" }))).toBe("Driver turned the load down");
     expect(timelineSentence(entry({ type: "load.driver_accepted" }))).toBe("Driver accepted the load");
     expect(timelineSentence(entry({ type: "load.pod_received" }))).toBe("load.pod_received");
+  });
+
+  it("tells the milestone, document, exception and accounting events (plans 33–39)", () => {
+    expect(timelineSentence(entry({ type: "load.stop_arrived", stopType: "pickup", stopSequence: 1 }))).toBe(
+      "Arrived at pickup (stop 1)",
+    );
+    expect(timelineSentence(entry({ type: "load.document_received", documentType: "POD" }))).toBe("POD received");
+    expect(
+      timelineSentence(entry({ type: "load.broker_email_sent", documentType: "BOL", recipient: "ops@broker.example" })),
+    ).toBe("BOL emailed to ops@broker.example");
+    expect(
+      timelineSentence(entry({ type: "load.exception_opened", exceptionType: "PICKUP_DELAY", severity: "HIGH" })),
+    ).toBe("Problem reported: pickup delay (high)");
+    expect(timelineSentence(entry({ type: "load.exception_resolved", financialImpact: "150.00" }))).toMatch(
+      /^Problem resolved · cost \$150/,
+    );
+    expect(timelineSentence(entry({ type: "load.accounting_exported" }))).toBe("Sent to accounting");
   });
 });

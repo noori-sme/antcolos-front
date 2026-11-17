@@ -6,7 +6,8 @@ import {
 import { useCallback, useRef, useState } from "react";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { driverLoadKeys, loadRecordKeys, orgKey } from "@/lib/query/keys";
+import { driverLoadKeys, loadExceptionKeys, loadRecordKeys, orgKey } from "@/lib/query/keys";
+import type { ReportExceptionInput } from "@/types/load-exception";
 import { createIntentKeys } from "@/lib/rate-con/intent-key";
 import type { NextMilestone } from "@/types/driver-load";
 import type {
@@ -236,7 +237,9 @@ export type DriverLoadAction =
   | { kind: "milestone"; next: NextMilestone }
   | { kind: "accept" }
   | { kind: "reject"; reason: string }
-  | { kind: "upload"; type: "bol" | "pod"; stopSequence: number | null; file: File };
+  | { kind: "upload"; type: "bol" | "pod"; stopSequence: number | null; file: File }
+  // A problem on the load (F1.5): reported from the phone, the status does not change.
+  | { kind: "report"; input: ReportExceptionInput };
 
 /** Every driver write; on success the driver's loads (and the dispatcher's view) refetch. */
 export function useDriverLoadAction(loadId: string) {
@@ -262,12 +265,15 @@ export function useDriverLoadAction(loadId: string) {
             stopSequence: action.stopSequence,
             file: action.file,
           }, idempotencyKey);
+        case "report":
+          return services.loadExceptions.report(ctx, loadId, action.input, idempotencyKey);
       }
     },
     onSettled: () => {
       if (!ctx) return;
       void queryClient.invalidateQueries({ queryKey: driverLoadKeys.all(ctx.organizationId) });
       void queryClient.invalidateQueries({ queryKey: loadRecordKeys.all(ctx.organizationId) });
+      void queryClient.invalidateQueries({ queryKey: loadExceptionKeys.all(ctx.organizationId) });
     },
   });
 }

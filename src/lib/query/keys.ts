@@ -270,3 +270,12 @@ export const driverLoadKeys = {
   detail: (organizationId: string, loadId: string) =>
     [...orgKey(organizationId), "driver-loads", loadId] as const,
 };
+
+/** Exceptions beside a load (F1.5). */
+export const loadExceptionKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "load-exceptions"] as const,
+  forLoad: (organizationId: string, loadId: string) =>
+    [...orgKey(organizationId), "load-exceptions", "load", loadId] as const,
+  open: (organizationId: string, page: number) =>
+    [...orgKey(organizationId), "load-exceptions", "open", page] as const,
+};

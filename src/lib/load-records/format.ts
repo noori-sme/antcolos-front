@@ -93,7 +93,50 @@ export function timelineSentence(entry: LoadTimelineEntry): string {
       const tonu = money(entry.tonuAmount);
       return tonu ? `${by} · TONU ${tonu}` : by;
     }
+    // Driver milestones (plan 33).
+    case "load.stop_arrived":
+      return `Arrived at ${stopName(entry)}`;
+    case "load.stop_loaded":
+      return `Loaded at ${stopName(entry)}`;
+    case "load.stop_departed":
+      return `Departed ${stopName(entry)}`;
+    case "load.stop_delivered":
+      return `Delivered at ${stopName(entry)}`;
+    // Documents (plans 34, 37).
+    case "load.document_received":
+      return `${docName(entry.documentType)} received`;
+    case "load.broker_email_requested":
+      return `${docName(entry.documentType)} queued for the broker`;
+    case "load.broker_email_sent":
+      return `${docName(entry.documentType)} emailed to ${entry.recipient ?? "the broker"}`;
+    case "load.broker_email_failed":
+      return `${docName(entry.documentType)} could not be emailed to the broker`;
+    // Exceptions (plan 36).
+    case "load.exception_opened":
+      return `Problem reported: ${exceptionName(entry.exceptionType)}${entry.severity ? ` (${entry.severity.toLowerCase()})` : ""}`;
+    case "load.exception_acknowledged":
+      return "Problem taken by dispatch";
+    case "load.exception_resolved": {
+      const cost = money(entry.financialImpact);
+      return cost ? `Problem resolved · cost ${cost}` : "Problem resolved";
+    }
+    // Accounting (plan 39).
+    case "load.accounting_exported":
+      return "Sent to accounting";
     default:
       return entry.type;
   }
+}
+
+function stopName(entry: LoadTimelineEntry): string {
+  const kind = entry.stopType === "delivery" ? "delivery" : entry.stopType === "pickup" ? "pickup" : "stop";
+  return entry.stopSequence != null ? `${kind} (stop ${entry.stopSequence})` : kind;
+}
+
+const DOC_NAME: Record<string, string> = { BOL: "BOL", POD: "POD", RATE_CONFIRMATION: "Rate Con" };
+const docName = (type: string | null) => (type && DOC_NAME[type]) || "Document";
+
+function exceptionName(type: string | null): string {
+  if (!type) return "other";
+  return type.toLowerCase().replace(/_/g, " ");
 }

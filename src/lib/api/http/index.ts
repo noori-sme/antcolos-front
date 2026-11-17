@@ -1,5 +1,6 @@
 import { httpLoadRecordsService } from "./load-records";
 import { httpDriverLoadsService } from "./driver-loads";
+import { httpLoadExceptionsService } from "./load-exceptions";
 import type { AntcolosServices } from "../contracts";
 import { httpTrucksService } from "./trucks";
 import { httpRateConIntakeService } from "./rate-con-intake";
@@ -26,6 +27,7 @@ export const httpServices: AntcolosServices = {
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.
   driverLoads: httpDriverLoadsService,
+  loadExceptions: httpLoadExceptionsService,
   orgInvitations: httpOrgInvitationsService,
   orgRoles: httpOrgRolesService,
   orgPeople: httpOrgPeopleService,

@@ -14,6 +14,7 @@ import type { DriverLoad, NextMilestone } from "@/types/driver-load";
 import type { LoadRecordStop } from "@/types/load-record";
 import { DriverAnswerCard } from "./live-trip-answer";
 import { DriverLoadDocuments } from "./live-trip-documents";
+import { DriverLoadProblems } from "./live-trip-problems";
 import { useDriverLoad, useDriverLoadAction, useIntentKeys } from "./hooks";
 
 const TIME = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -54,6 +55,7 @@ export function DriverLoadScreen({ loadId }: { loadId: string }) {
       <Stops stops={load.stops} />
       <Details load={load} />
       <DriverLoadDocuments load={load} />
+      <DriverLoadProblems load={load} />
     </div>
   );
 }

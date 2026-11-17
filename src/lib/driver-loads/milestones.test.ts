@@ -17,7 +17,7 @@ const load = (extras: Partial<DriverLoad> = {}): DriverLoad => ({
   id: "l1", status: "driver_accepted", statusChangedAt: "", brokerLoadNumber: "NS-1",
   referenceNumbers: [], equipmentType: "DRY_VAN", weightLbs: null, commodity: null,
   specialInstructions: null, requiresBrokerRelease: false, truckId: null, driverAssignedAt: null,
-  driverAcceptedAt: null, stops, documents: [], nextMilestones: [], ...extras,
+  driverAcceptedAt: null, stops, documents: [], exceptions: [], nextMilestones: [], ...extras,
 });
 
 describe("driver milestones (plan 16)", () => {
