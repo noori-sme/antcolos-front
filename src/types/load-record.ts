@@ -125,6 +125,14 @@ export interface LoadTimelineEntry {
   changedFields: string[];
   truckId: string | null;
   driverUserId: string | null;
+  /** Driver milestones, documents and exceptions (plans 33–39). */
+  stopSequence: number | null;
+  stopType: "pickup" | "delivery" | null;
+  documentType: string | null;
+  exceptionType: string | null;
+  severity: string | null;
+  financialImpact: string | null;
+  recipient: string | null;
 }
 
 export interface LoadTimelinePage {

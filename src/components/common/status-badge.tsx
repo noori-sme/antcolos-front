@@ -1,9 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import {
-  DRIVER_STATUS, FIELD_REVIEW_STATUS, LOAD_RECORD_STATUS, LOAD_STATUS, RATE_CON_STATUS,
+  DRIVER_STATUS, FIELD_REVIEW_STATUS, LOAD_EXCEPTION_SEVERITY, LOAD_EXCEPTION_STATUS, LOAD_RECORD_STATUS, LOAD_STATUS, RATE_CON_STATUS,
   TRUCK_OPERATIONAL_STATUS, TRUCK_STATUS,
 } from "@/config/statuses";
 import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
+import type { LoadExceptionSeverity, LoadExceptionStatus } from "@/types/load-exception";
 import type { LoadRecordStatus } from "@/types/load-record";
 import type { DriverStatus, LoadStatus, TruckStatus } from "@/types";
 import type { RateConDisplayStatus } from "@/lib/rate-con/status";
@@ -42,5 +43,15 @@ export function RateConStatusBadge({ status }: { status: RateConDisplayStatus })
 
 export function FieldReviewStatusBadge({ status }: { status: FieldReviewStatus }) {
   const meta = FIELD_REVIEW_STATUS[status];
+  return <Badge tone={meta.tone}>{meta.label}</Badge>;
+}
+
+export function ExceptionSeverityBadge({ severity }: { severity: LoadExceptionSeverity }) {
+  const meta = LOAD_EXCEPTION_SEVERITY[severity];
+  return <Badge tone={meta.tone}>{meta.label}</Badge>;
+}
+
+export function ExceptionStatusBadge({ status }: { status: LoadExceptionStatus }) {
+  const meta = LOAD_EXCEPTION_STATUS[status];
   return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }

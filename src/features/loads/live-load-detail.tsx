@@ -12,6 +12,7 @@ import type { LoadRecord, LoadRecordStop } from "@/types/load-record";
 import { useLoadRecord } from "./hooks";
 import { LiveLoadActions } from "./live-load-actions";
 import { LiveLoadCrew } from "./live-load-crew";
+import { LiveLoadExceptions } from "./live-load-exceptions";
 import { LiveLoadTimeline } from "./live-load-timeline";
 
 const SINCE = new Intl.DateTimeFormat("en-US", {
@@ -82,6 +83,7 @@ export function LiveLoadDetail({ loadId }: { loadId: string }) {
       <div className="grid gap-section lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="min-w-0 space-y-section">
           <LiveLoadCrew load={load} />
+          <LiveLoadExceptions load={load} />
           <Facts load={load} />
           <Stops stops={load.stops} />
         </div>
