@@ -256,3 +256,11 @@ export const riskKeys = {
   extensions: (organizationId: string) =>
     [...orgKey(organizationId), "risk", "extensions"] as const,
 } as const;
+
+/** The driver's own loads (F1.4, plan 16). */
+export const driverLoadKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "driver-loads"] as const,
+  list: (organizationId: string) => [...orgKey(organizationId), "driver-loads", "list"] as const,
+  detail: (organizationId: string, loadId: string) =>
+    [...orgKey(organizationId), "driver-loads", loadId] as const,
+};

@@ -23,7 +23,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "loads:create", label: "Create loads", description: "Add new loads by hand or by import.", group: "loads", prerequisites: ["loads:view"] },
   { key: "loads:edit", label: "Edit loads", description: "Change load details, stops and reference numbers.", group: "loads", prerequisites: ["loads:view"] },
   { key: "loads:status:update", label: "Update load status", description: "Move a load along — picked up, in transit, delivered.", group: "loads", prerequisites: ["loads:view"], scopeNote: "Narrowed by record scope, so a driver updates only their own loads." },
-  { key: "loads:respond", label: "Answer an assigned load", description: "Accept or turn down a load you are assigned to; a dispatcher who also edits loads records a driver's answer.", group: "loads", prerequisites: [] },
+  { key: "loads:respond", label: "Answer an assigned load", description: "Your own assigned loads: accept or turn them down, record arrivals, loading and delivery, and upload the BOL and POD. A dispatcher who also edits loads records these for a driver.", group: "loads", prerequisites: [] },
   { key: "loads:correct_status", label: "Correct a load's status", description: "Move a load back to an earlier status when it was set by mistake. Each correction and its reason go to the audit log.", group: "loads", sensitive: true, prerequisites: ["loads:view"] },
   { key: "loads:export", label: "Download loads", description: "Export load lists out of Antcolos as a file.", group: "loads", prerequisites: ["loads:view"] },
   { key: "loads:delete", label: "Delete loads", description: "Permanently remove a load and its history.", group: "loads", sensitive: true, prerequisites: ["loads:view"] },

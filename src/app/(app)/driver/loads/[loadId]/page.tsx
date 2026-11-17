@@ -1,8 +1,8 @@
-import { TripScreen } from "@/features/driver-workflow/trip-screen";
+import { DriverLoadRoute } from "@/features/driver-workflow/trips-route";
 
-export const metadata = { title: "Trip" };
+export const metadata = { title: "Load" };
 
 export default async function Page({ params }: { params: Promise<{ loadId: string }> }) {
   const { loadId } = await params;
-  return <TripScreen loadId={decodeURIComponent(loadId)} />;
+  return <DriverLoadRoute loadId={decodeURIComponent(loadId)} />;
 }
