@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { accessTokenFrom, upstreamBase, upstreamHeaders } from '@/lib/api/bff'
 import { SIGNED_IN_AS_DEMO } from '@/lib/api/mode'
 import { isAuthPath, isPublicPath } from '@/lib/session/route-access'
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
+  // Every API call goes through this origin (plan 21): the session token lives
+  // in an httpOnly cookie that page scripts cannot read, and is added here.
+  if (request.nextUrl.pathname.startsWith(BACKEND_PREFIX)) {
+    return toBackend(request)
+  }
+
   const token = request.cookies.get('antcolos_token')?.value
   const nextStep = request.cookies.get('antcolos_next_step')?.value
   const pathname = request.nextUrl.pathname
@@ -96,6 +103,20 @@ export function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
+const BACKEND_PREFIX = '/api/backend'
+
+/** `/api/backend/<path>` → `<API>/<path>`, authorized by the httpOnly cookie. */
+function toBackend(request: NextRequest) {
+  const path = request.nextUrl.pathname.slice(BACKEND_PREFIX.length)
+  const target = new URL(`${upstreamBase()}${path}${request.nextUrl.search}`)
+  return NextResponse.rewrite(target, {
+    request: { headers: upstreamHeaders(request.headers, accessTokenFrom(request.cookies)) },
+  })
+}
+
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/api/backend/:path*',
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 }

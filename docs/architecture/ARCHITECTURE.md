@@ -52,9 +52,13 @@ and cache entries can't cross organizations.
 
 ## 4. Session, auth, permissions
 
-- **Sign-in/onboarding**: `(auth)` screens call `/auth/*`. The response interceptor in
-  `src/lib/api/client.ts` stores `antcolos_token` and `antcolos_next_step` (plus role/org cookies)
-  via js-cookie for 7 days. `src/middleware.ts` redirects on cookie presence and `nextStep`
+- **Sign-in/onboarding**: `(auth)` screens call `/auth/*`. Every API call goes to this app's
+  origin (plan 21): session-issuing calls to `/api/session/*` (route handler), which keeps the
+  access and refresh tokens in httpOnly cookies (`antcolos_at`, `antcolos_rt`) and returns a
+  claims-only copy; everything else to `/api/backend/*`, which `src/proxy.ts` rewrites to the API
+  with `Authorization` from the httpOnly cookie. The interceptor in `src/lib/api/client.ts` stores
+  the claims-only `antcolos_token` and `antcolos_next_step` (plus role/org cookies), and on a 401
+  runs one shared refresh and retries. `src/proxy.ts` redirects on cookie presence and `nextStep`
   (optimistic only).
 - **Session**: `SessionProvider` (`src/lib/session/provider.tsx`) loads the user and
   memberships. `permissions-sync.ts` pulls `/users/me/permissions` and logs out on an
@@ -113,8 +117,7 @@ adapter, and it stops being a demo area.
 5. **`client.ts` interceptor does too much**: token capture from any response shape, onboarding
    cookies, role cookies, permission validation, and redirects via `window.location`. Split it when
    auth is next touched.
-6. **`src/middleware.ts` is deprecated in Next 16**, and the convention is now `proxy.ts`
-   (`npx @next/codemod@canary middleware-to-proxy .`). Do this as its own small Feature-track PR.
+6. ~~`src/middleware.ts` is deprecated in Next 16~~: renamed to `src/proxy.ts` in plan 21.
 7. **Oversized screens**: `mt-loop/truck-dispatch-screen` (1,583 lines), `trailers/trailer-profile-screen`
    (1,539), `access/invite-flow` (1,405), `access/acceptance-screen` (1,233), and more over 800.
 8. **Test tooling**: three runners. `vitest.config.mts` is dead (`vitest.config.ts` wins), and
