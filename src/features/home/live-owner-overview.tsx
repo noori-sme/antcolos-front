@@ -23,7 +23,7 @@ export function LiveOwnerOverview() {
       <h2 id="owner-overview" className="text-[0.9375rem] font-semibold text-fg">
         Today
       </h2>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3">
         <Can permission="trucks:view">
           <TrucksTile />
         </Can>
@@ -38,6 +38,8 @@ export function LiveOwnerOverview() {
 function TrucksTile() {
   const trucks = useOverviewTrucks();
   const counts = trucks.data ? truckCounts(trucks.data.data) : undefined;
+  // First cut counts one page; say so rather than show a wrong total.
+  const partial = trucks.data ? trucks.data.meta.totalItems > trucks.data.data.length : false;
   return (
     <StatTile
       icon={Truck}
@@ -46,7 +48,7 @@ function TrucksTile() {
       hint={hint(
         trucks,
         counts
-          ? `${counts.available} available${counts.maintenance ? ` · ${counts.maintenance} in maintenance` : ""}`
+          ? `${counts.available} available${counts.maintenance ? ` · ${counts.maintenance} in maintenance` : ""}${partial ? " · first 100 counted" : ""}`
           : "",
       )}
       href="/fleet/trucks"
@@ -82,10 +84,10 @@ function LoadTiles() {
       />
       <StatTile
         icon={Hourglass}
-        label="Documents to invoice"
+        label="Blocked from invoicing"
         value={tileValue(docsMissing.data)}
         tone={warn(docsMissing.data)}
-        hint={hint(docsMissing, "POD in; Rate Con not accepted yet")}
+        hint={hint(docsMissing, "POD in, no accepted Rate Con")}
         href="/loads"
       />
       <StatTile
