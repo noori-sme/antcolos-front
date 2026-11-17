@@ -5,6 +5,7 @@ import { httpTrucksService } from "./http/trucks";
 import { httpRateConIntakeService } from "./http/rate-con-intake";
 import { httpLoadRecordsService } from "./http/load-records";
 import { httpDriverLoadsService } from "./http/driver-loads";
+import { httpLoadExceptionsService } from "./http/load-exceptions";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
 import { httpSelfProfileService } from "./http/self-profile";
@@ -78,6 +79,8 @@ const mockServices: AntcolosServices = {
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.
   driverLoads: httpDriverLoadsService,
+  // http-only (F1.5): exceptions live beside live loads, which are http-only.
+  loadExceptions: httpLoadExceptionsService,
   // http-only for the same reason: the access screens have always called
   // the real invitations and roles API in both modes.
   orgInvitations: httpOrgInvitationsService,

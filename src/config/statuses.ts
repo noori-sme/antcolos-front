@@ -1,3 +1,4 @@
+import type { LoadExceptionSeverity, LoadExceptionStatus } from "@/types/load-exception";
 import type { LoadRecordStatus } from "@/types/load-record";
 import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
 import type { badgeVariants } from "@/components/ui/badge";
@@ -129,4 +130,18 @@ export const FIELD_REVIEW_STATUS: Record<FieldReviewStatus, { label: string; ton
   unreviewed: { label: "Not checked", tone: "neutral" },
   confirmed:  { label: "Confirmed",   tone: "success" },
   corrected:  { label: "Corrected",   tone: "info" },
+};
+
+/** Load exceptions (F1.5): severity and lifecycle chips. */
+export const LOAD_EXCEPTION_SEVERITY: Record<LoadExceptionSeverity, { label: string; tone: Tone }> = {
+  low:      { label: "Low",      tone: "neutral" },
+  medium:   { label: "Medium",   tone: "warning" },
+  high:     { label: "High",     tone: "danger" },
+  critical: { label: "Critical", tone: "danger" },
+};
+
+export const LOAD_EXCEPTION_STATUS: Record<LoadExceptionStatus, { label: string; tone: Tone }> = {
+  open:         { label: "Open",         tone: "warning" },
+  acknowledged: { label: "Acknowledged", tone: "info" },
+  resolved:     { label: "Resolved",     tone: "success" },
 };

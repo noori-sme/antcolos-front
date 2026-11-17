@@ -1,6 +1,7 @@
 import { apiClient, fileApiClient } from "../client";
 import type { DriverLoadsService } from "../contracts/driver-loads";
 import { type Dto, num, obj, objects, oneOf, str, strings } from "./dto";
+import { toLoadExceptions } from "./load-exceptions";
 import { toDriverAnswer, toLoadStatus, toStop } from "./load-records";
 import type {
   DriverLoad, DriverLoadPage, DriverMilestone, LoadDocument, LoadDocumentType, NextMilestone,
@@ -79,6 +80,7 @@ export function toDriverLoad(dto: Dto): DriverLoad {
     documents: objects(dto.documents)
       .map(toLoadDocument)
       .filter((d): d is LoadDocument => d !== null),
+    exceptions: toLoadExceptions(objects(dto.exceptions)),
     nextMilestones: objects(dto.nextMilestones)
       .map(toNextMilestone)
       .filter((m): m is NextMilestone => m !== null),

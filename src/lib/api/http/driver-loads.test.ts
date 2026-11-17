@@ -36,6 +36,9 @@ const CONTRACT_VIEW = {
     { id: "d1", type: "BOL", status: "RECEIVED", stopSequence: 1, version: 1, superseded: false, source: "mobile_web", uploadedByUserId: "u1", receivedAt: "2026-11-25T15:00:00.000Z" },
     { id: "d2", type: "INVOICE", status: "RECEIVED", stopSequence: null, version: 1, superseded: false, source: "web", uploadedByUserId: "u1", receivedAt: "2026-11-25T15:00:00.000Z" },
   ],
+  exceptions: [
+    { id: "x1", loadId: "6f1c2b9e-1d3a-4c55-9a51-0d1f3c2b7e10", brokerLoadNumber: "NS-55821", stopSequence: 1, type: "PICKUP_DELAY", severity: "MEDIUM", status: "OPEN", notes: "Shipper not ready.", occurredAt: "2026-11-25T14:30:00.000Z", openedAt: "2026-11-25T14:35:00.000Z", openedByUserId: "u1", source: "mobile_web", ownerUserId: null, acknowledgedAt: null, resolution: null, resolvedAt: null },
+  ],
   nextMilestones: [{ milestone: "LOADED", stopSequence: 1 }, { milestone: "TELEPORT" }],
 };
 
@@ -52,6 +55,7 @@ describe("driver-loads mappers", () => {
     expect(load.stops.map((s) => [s.sequence, s.type])).toEqual([[1, "pickup"], [2, "delivery"]]);
     expect(load.stops[0]).toMatchObject({ actualArrivalAt: "2026-11-25T14:20:00.000Z", contactPhone: "+13125550199" });
     expect(load).not.toHaveProperty("rateTotal");
+    expect(load.exceptions).toMatchObject([{ id: "x1", type: "pickup_delay", status: "open", financialImpact: null }]);
   });
 
   it("keeps known documents and milestones, drops what it does not know", () => {
