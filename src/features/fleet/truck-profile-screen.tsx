@@ -1,6 +1,7 @@
 "use client";
 
 import { TruckOperationalBadge } from "@/components/common/status-badge";
+import { capabilityRows } from "@/lib/fleet/capabilities";
 import { isOnTrip } from "@/lib/fleet/truck-status";
 import type { TruckOperationalStatus } from "@/types/fleet-truck";
 
@@ -299,6 +300,9 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
                 label="Trailer Length"
                 value={truck.trailerLengthFt ? `${truck.trailerLengthFt} ft` : undefined}
               />
+              {capabilityRows(truck).map((row) => (
+                <InfoRow key={row.label} label={row.label} value={row.value} />
+              ))}
             </dl>
           </section>
 
