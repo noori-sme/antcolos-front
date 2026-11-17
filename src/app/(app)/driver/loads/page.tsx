@@ -1,7 +1,7 @@
-import { TripsScreen } from "@/features/driver-workflow/trips-screen";
+import { DriverLoadsRoute } from "@/features/driver-workflow/trips-route";
 
 export const metadata = { title: "My loads" };
 
 export default function Page() {
-  return <TripsScreen />;
+  return <DriverLoadsRoute />;
 }

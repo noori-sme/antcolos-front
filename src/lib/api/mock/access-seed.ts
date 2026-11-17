@@ -50,7 +50,7 @@ export function seedInvitations(): InvitationSeed[] {
       id: "inv_1", token: "INV-DRIVER", kind: "driver", roleName: "Driver",
       engagementType: "company_driver",
       recipientName: "Yusuf Demir", recipientEmail: "yusuf.demir@example.com",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      permissions: ["loads:view", "loads:status:update", "loads:respond", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(6), createdAt: daysAgo(1), status: "pending",
     },
     {
@@ -82,7 +82,7 @@ export function seedInvitations(): InvitationSeed[] {
       ...base,
       id: "inv_5", token: "INV-ACCEPTED", kind: "driver", roleName: "Driver",
       recipientName: "Tomas Reyes", recipientEmail: "tomas@example.com",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      permissions: ["loads:view", "loads:status:update", "loads:respond", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: null, createdAt: daysAgo(22), status: "pending",
     },
     {
@@ -104,7 +104,7 @@ export function seedInvitations(): InvitationSeed[] {
       id: "inv_10", token: "INV-OWNEROP", kind: "driver", roleName: "Driver",
       engagementType: "owner_operator",
       recipientName: "Marcus Hale", recipientEmail: "marcus.hale@example.com",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      permissions: ["loads:view", "loads:status:update", "loads:respond", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(11), createdAt: daysAgo(1), status: "pending",
     },
     {
@@ -112,7 +112,7 @@ export function seedInvitations(): InvitationSeed[] {
       id: "inv_11", token: "INV-DRIVER-ACCT", kind: "driver", roleName: "Driver",
       engagementType: "company_driver",
       recipientName: "Sam Murtaza", recipientEmail: "sam@antcolos.com",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      permissions: ["loads:view", "loads:status:update", "loads:respond", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(12), createdAt: daysAgo(1), status: "pending",
     },
     {
@@ -133,7 +133,7 @@ export function seedInvitations(): InvitationSeed[] {
       id: "inv_12", token: "INV-NEWCOMER", kind: "driver", roleName: "Driver",
       engagementType: "company_driver",
       recipientName: "Alex Rivera", recipientEmail: "alex.rivera@example.com",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      permissions: ["loads:view", "loads:status:update", "loads:respond", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(14), createdAt: daysAgo(1), status: "pending",
     },
     {
@@ -147,7 +147,7 @@ export function seedInvitations(): InvitationSeed[] {
       engagementType: "owner_operator",
       recipientName: "Sam Murtaza", recipientEmail: "sam@antcolos.com",
       engagementId: "weng_nl_migrated_driver",
-      permissions: ["loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view"],
+      permissions: ["loads:view", "loads:status:update", "loads:respond", "documents:view", "documents:upload", "settlements:view"],
       expiresAt: daysFromNow(21), createdAt: daysAgo(2), status: "pending",
     },
     {

@@ -43,6 +43,11 @@ export interface LoadRecordStop {
   contactName: string | null;
   contactPhone: string | null;
   notes: string | null;
+  /** Actual times from the driver milestones (plan 33); the window above is the plan. ISO. */
+  actualArrivalAt: string | null;
+  /** Loaded at a pickup, delivered at a delivery. */
+  actualCompletedAt: string | null;
+  actualDepartureAt: string | null;
 }
 
 export interface LoadRecord {

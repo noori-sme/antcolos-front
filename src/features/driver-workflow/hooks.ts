@@ -3,10 +3,12 @@
 import {
   useMutation, useQuery, useQueryClient, type UseMutationResult,
 } from "@tanstack/react-query";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { orgKey } from "@/lib/query/keys";
+import { driverLoadKeys, loadRecordKeys, orgKey } from "@/lib/query/keys";
+import { createIntentKeys } from "@/lib/rate-con/intent-key";
+import type { NextMilestone } from "@/types/driver-load";
 import type {
   ProposalCommand, WorkflowCommand,
 } from "@/lib/driver-workflow/commands";
@@ -198,4 +200,74 @@ export function useIdempotencyKeys() {
   }, []);
 
   return { keyFor, rotate };
+}
+
+// ── The driver's own loads on the real API (F1.4, plan 16) ────────────────────
+
+/** The driver's own loads on the real API (F1.4, plan 16). */
+export function useDriverLoads() {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx ? driverLoadKeys.list(ctx.organizationId) : [...orgKey("none"), "driver-loads", "no-context"],
+    queryFn: () => services.driverLoads.list(ctx!, 1),
+    enabled: Boolean(ctx),
+  });
+}
+
+export function useDriverLoad(loadId: string) {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx
+      ? driverLoadKeys.detail(ctx.organizationId, loadId)
+      : [...orgKey("none"), "driver-loads", "no-context", loadId],
+    queryFn: () => services.driverLoads.get(ctx!, loadId),
+    enabled: Boolean(ctx),
+    retry: false,
+  });
+}
+
+/** One Idempotency-Key per intent, kept across re-renders. */
+export function useIntentKeys() {
+  const [keys] = useState(() => createIntentKeys());
+  return keys;
+}
+
+export type DriverLoadAction =
+  | { kind: "milestone"; next: NextMilestone }
+  | { kind: "accept" }
+  | { kind: "reject"; reason: string }
+  | { kind: "upload"; type: "bol" | "pod"; stopSequence: number | null; file: File };
+
+/** Every driver write; on success the driver's loads (and the dispatcher's view) refetch. */
+export function useDriverLoadAction(loadId: string) {
+  const ctx = useServiceContext();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ action, idempotencyKey }: { action: DriverLoadAction; idempotencyKey: string }) => {
+      if (!ctx) throw new Error("Not signed in");
+      const svc = services.driverLoads;
+      switch (action.kind) {
+        case "milestone":
+          return svc.recordMilestone(ctx, loadId, {
+            milestone: action.next.milestone,
+            stopSequence: action.next.stopSequence,
+          }, idempotencyKey);
+        case "accept":
+          return svc.accept(ctx, loadId, idempotencyKey);
+        case "reject":
+          return svc.reject(ctx, loadId, action.reason, idempotencyKey);
+        case "upload":
+          return svc.uploadDocument(ctx, loadId, {
+            type: action.type,
+            stopSequence: action.stopSequence,
+            file: action.file,
+          }, idempotencyKey);
+      }
+    },
+    onSettled: () => {
+      if (!ctx) return;
+      void queryClient.invalidateQueries({ queryKey: driverLoadKeys.all(ctx.organizationId) });
+      void queryClient.invalidateQueries({ queryKey: loadRecordKeys.all(ctx.organizationId) });
+    },
+  });
 }

@@ -77,6 +77,9 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "loads:view", "loads:status:update",
+      // Mirrors the backend DRIVER template (load.respond): their own loads,
+      // answers, milestones and BOL/POD (plans 15, 16).
+      "loads:respond",
       "proposals:view", "proposals:respond", "trips:execute",
       "documents:view", "documents:upload",
       "settlements:view",

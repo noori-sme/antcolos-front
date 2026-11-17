@@ -20,6 +20,9 @@ const stop = (extras: Partial<LoadRecordStop> = {}): LoadRecordStop => ({
   contactName: null,
   contactPhone: null,
   notes: null,
+  actualArrivalAt: null,
+  actualCompletedAt: null,
+  actualDepartureAt: null,
   ...extras,
 });
 

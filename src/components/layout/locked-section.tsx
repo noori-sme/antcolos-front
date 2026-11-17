@@ -1,14 +1,20 @@
 "use client";
 
 import { Lock } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
+import { DRIVER_OPEN_ROUTES } from "@/config/live-routes";
+import { API_MODE } from "@/lib/api/mode";
 import { useIsDriverAccount } from "@/lib/session/hooks";
 import { cn } from "@/lib/utils";
 
 export function LockedSection({ children, className, message, hideIcon }: { children: React.ReactNode, className?: string, message?: string, hideIcon?: boolean }) {
   const isDriver = useIsDriverAccount();
+  // The driver's own areas stay open (plan 16): the rest of the dashboard is
+  // locked for a driver account. UX only; the API enforces permissions.
+  const open = useOnDriverOpenRoute();
 
-  if (!isDriver) {
+  if (!isDriver || open) {
     return <>{children}</>;
   }
 
@@ -47,10 +53,18 @@ export function LockedSection({ children, className, message, hideIcon }: { chil
   );
 }
 
+/** True when the page is a driver's own area (plan 16), which stays open. */
+function useOnDriverOpenRoute(): boolean {
+  const pathname = usePathname();
+  // Only the live driver screens (http mode) are open; mock mode keeps the lock.
+  return API_MODE === "http" && DRIVER_OPEN_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
+
 export function useIsDriver() {
   const isDriver = useIsDriverAccount();
+  const open = useOnDriverOpenRoute();
   useEffect(() => {
-    if (isDriver) {
+    if (isDriver && !open) {
       document.body.classList.add("overflow-hidden");
     } else {
       document.body.classList.remove("overflow-hidden");
@@ -59,6 +73,6 @@ export function useIsDriver() {
     return () => {
       document.body.classList.remove("overflow-hidden");
     };
-  }, [isDriver]);
-  return isDriver;
+  }, [isDriver, open]);
+  return isDriver && !open;
 }

@@ -133,7 +133,7 @@ const withheldCategoryLabels = () =>
  * Nothing here widens anything — it only ever removes.
  */
 const DRIVER_SEAT_CEILING: readonly PermissionKey[] = [
-  "loads:view", "loads:status:update",
+  "loads:view", "loads:status:update", "loads:respond",
   "documents:view", "documents:upload",
   "settlements:view",
   "proposals:view", "proposals:respond", "trips:execute",

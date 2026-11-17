@@ -136,7 +136,9 @@ export const DRIVER_NAV: NavSection[] = [
     items: [
       { label: "Home", href: "/driver/home", icon: Home, requires: [], driverOnly: true, primaryMobile: true },
       { label: "Proposals", href: "/driver/proposals", icon: Handshake, requires: ["proposals:view"], driverOnly: true, primaryMobile: true },
-      { label: "My loads", href: "/driver/loads", icon: ClipboardList, requires: ["loads:view"], driverOnly: true, primaryMobile: true },
+      // loads:respond, not loads:view: a real driver answers and records on their own
+      // loads without reading the organization's (plan 16, backend load.respond).
+      { label: "My loads", href: "/driver/loads", icon: ClipboardList, requires: ["loads:respond"], driverOnly: true, primaryMobile: true },
       { label: "My documents", href: "/driver/documents", icon: FileText, requires: ["documents:view"], driverOnly: true, primaryMobile: true },
       { label: "My shares", href: "/driver/shares", icon: Share2, requires: ["documents:view"], driverOnly: true },
       { label: "My compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"], driverOnly: true },

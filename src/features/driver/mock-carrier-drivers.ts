@@ -69,7 +69,7 @@ export interface CarrierDriver {
 }
 
 const DRIVER_PERMS: PermissionKey[] = [
-  "loads:view", "loads:status:update", "documents:view", "documents:upload", "settlements:view",
+  "loads:view", "loads:status:update", "loads:respond", "documents:view", "documents:upload", "settlements:view",
 ];
 
 function seed(): CarrierDriver[] {

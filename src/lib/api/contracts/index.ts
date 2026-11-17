@@ -49,6 +49,7 @@ import type { FleetService } from "./fleet";
 import type { TrucksService } from "./trucks";
 import type { RateConIntakeService } from "./rate-con-intake";
 import type { LoadRecordsService } from "./load-records";
+import type { DriverLoadsService } from "./driver-loads";
 import type { OrgPeopleService } from "./org-people";
 import type { SelfProfileService } from "./self-profile";
 import type { OrgMembersService } from "./org-members";
@@ -87,6 +88,8 @@ export interface AntcolosServices {
   rateConIntake: RateConIntakeService;
   /** Booked loads on the real API (F1.2, plan 14); http-only. */
   loadRecords: LoadRecordsService;
+  /** http-only (plan 16): the driver's own loads. */
+  driverLoads: DriverLoadsService;
   /** Real organization invitations (NestJS). http-only: see `src/lib/api/index.ts`. */
   orgInvitations: OrgInvitationsService;
   /** Real roles and permission catalog (NestJS). http-only. */
