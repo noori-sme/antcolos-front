@@ -23,3 +23,9 @@ export const HTTP_LIVE_ROUTES: readonly string[] = [
   "/loads",                 // loadRecords (loads-api-contract, plan 14)
   "/driver/loads",          // driverLoads (loads-api-contract §10–§13, plan 16)
 ];
+
+/**
+ * Routes a driver account may use while the rest of the dashboard is locked for
+ * it (components/layout/locked-section.tsx): the driver's own loads (plan 16).
+ */
+export const DRIVER_OPEN_ROUTES: readonly string[] = ["/driver/loads"];

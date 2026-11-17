@@ -74,13 +74,14 @@ function LoadCard({ load, highlight = false }: { load: DriverLoad; highlight?: b
           {stopName(load.stops, stop.sequence)} · {stop.facilityName ?? `${stop.city}, ${stop.state}`}
         </p>
       ) : null}
-      {next ? (
+      {load.status === "driver_assigned" ? (
+        // Accepting is informational (D1.2), but the driver is asked first.
+        <p className="mt-1.5 text-[0.8125rem] font-medium text-primary">Waiting for your answer</p>
+      ) : next ? (
         <p className="mt-1.5 flex items-center gap-1 text-[0.8125rem] font-medium text-primary">
           Next: {milestoneLabel(next, load.stops)}
           <ArrowRight className="size-3.5" aria-hidden />
         </p>
-      ) : load.status === "driver_assigned" ? (
-        <p className="mt-1.5 text-[0.8125rem] font-medium text-primary">Waiting for your answer</p>
       ) : null}
     </Link>
   );

@@ -50,8 +50,7 @@ export function DriverLoadScreen({ loadId }: { loadId: string }) {
     <div className="space-y-section">
       <BackLink />
       <PageHeader title={`Load ${load.brokerLoadNumber}`} actions={<LoadRecordStatusBadge status={load.status} />} />
-      {load.status === "driver_assigned" ? <DriverAnswerCard load={load} /> : null}
-      <NextAction load={load} />
+      {load.status === "driver_assigned" ? <DriverAnswerCard load={load} /> : <NextAction load={load} />}
       <Stops stops={load.stops} />
       <Details load={load} />
       <DriverLoadDocuments load={load} />
