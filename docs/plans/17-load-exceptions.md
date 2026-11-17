@@ -29,8 +29,11 @@ never moves the load.
 
 - The report form is one shared presentational dialog (`components/load-exceptions`); each
   feature passes its own mutation, so features do not import each other.
-- Dispatcher actions are gated on `loads:edit` (backend `load.update`); a driver reports through
-  the driver view (`load.respond` on their own load) and never sees the cost.
+- Report is gated on `loads:edit` + `loads:respond` (contract: `load.respond`, plus `load.update`
+  for anyone but the driver); take and resolve on `loads:edit`. A driver reports through the
+  driver view and never sees the cost. Keys live in `lib/load-exceptions/forms.ts`, tested.
+- A type, severity or status the screen does not know yet shows as other / high / open, so a
+  new backend value never hides a problem.
 - The organization-wide list (`GET /exceptions`) is in the service for the owner dashboard (F1.6).
 
 ## Tests
@@ -39,3 +42,10 @@ never moves the load.
 - `src/lib/load-exceptions/forms.test.ts`: schemas mirror the DTO limits; ordering.
 - `src/lib/load-records/format.test.ts`: the new timeline sentences.
 - `src/lib/api/http/driver-loads.test.ts`: the driver view carries exceptions.
+
+## Review (frontend-reviewer, 2026-11-17)
+
+Fixed: report gate needs both keys; gating keys tested; unknown enum values stay visible; resolve
+form resets per problem; org-namespaced fallback key; no client rule on terminal loads (the
+backend decides); date guard. Kept: `listOpen` for F1.6. No browser spec: these screens run only
+in http mode, which CI does not start (testing rule); the gate is a tested pure key set.

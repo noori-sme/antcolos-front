@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { LoadException } from "@/types/load-exception";
+import { canAll } from "@/lib/permissions/can";
+import type { PermissionKey } from "@/types/permission";
 import {
-  reportExceptionSchema, resolveExceptionSchema, sortExceptions, unresolvedCount,
+  MANAGE_EXCEPTION_KEYS, REPORT_EXCEPTION_KEYS, reportExceptionSchema, resolveExceptionSchema, sortExceptions, unresolvedCount,
 } from "./forms";
 
 const ex = (extras: Partial<LoadException>): LoadException => ({
@@ -36,5 +38,17 @@ describe("load exception forms", () => {
     ]);
     expect(sorted.map((e) => e.id)).toEqual(["critical", "low", "resolved-new", "resolved-old"]);
     expect(unresolvedCount(sorted)).toBe(2);
+  });
+
+  it("gates the dispatcher actions as the contract does", () => {
+    const seat = (...keys: PermissionKey[]) => new Set<PermissionKey>(keys);
+    // A dispatcher holds both: report, take, resolve.
+    expect(canAll(seat("loads:edit", "loads:respond"), REPORT_EXCEPTION_KEYS)).toBe(true);
+    expect(canAll(seat("loads:edit", "loads:respond"), MANAGE_EXCEPTION_KEYS)).toBe(true);
+    // loads:edit alone would get a 403 on report (load.respond is required).
+    expect(canAll(seat("loads:edit"), REPORT_EXCEPTION_KEYS)).toBe(false);
+    // A driver (loads:respond only) sees none of these; they report from the driver app.
+    expect(canAll(seat("loads:respond"), REPORT_EXCEPTION_KEYS)).toBe(false);
+    expect(canAll(seat("loads:respond"), MANAGE_EXCEPTION_KEYS)).toBe(false);
   });
 });

@@ -58,11 +58,12 @@ describe("load-exceptions mappers", () => {
     ).toMatchObject({ status: "resolved", resolution: "Broker approved detention.", financialImpact: "150.00" });
   });
 
-  it("drops an exception with a type, severity or status it does not know", () => {
-    expect(toLoadException({ ...CONTRACT_EXCEPTION, type: "ALIENS" })).toBeNull();
+  it("keeps a problem with values it does not know yet, visibly", () => {
     expect(
-      toLoadExceptions([CONTRACT_EXCEPTION, { ...CONTRACT_EXCEPTION, severity: "EXTREME" }, "junk"]),
-    ).toHaveLength(1);
+      toLoadException({ ...CONTRACT_EXCEPTION, type: "ALIENS", severity: "EXTREME", status: "ESCALATED" }),
+    ).toMatchObject({ type: "other", severity: "high", status: "open" });
+    expect(toLoadException({ ...CONTRACT_EXCEPTION, id: undefined })).toBeNull();
+    expect(toLoadExceptions([CONTRACT_EXCEPTION, "junk"])).toHaveLength(1);
   });
 
   it("builds the report and resolve bodies", () => {

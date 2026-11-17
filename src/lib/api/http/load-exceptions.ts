@@ -17,12 +17,16 @@ const STATUS: Record<string, LoadExceptionStatus> = {
 };
 const text = (v: unknown): string | null => str(v) ?? null;
 
-/** An exception, or null when its type, severity or status is unknown to this screen. */
+/**
+ * An exception (null without an id). A type, severity or status this screen
+ * does not know yet is shown as "other", "high" and "open": a new backend value
+ * must not hide a problem from dispatch.
+ */
 export function toLoadException(dto: Dto): LoadException | null {
-  const type = oneOf(upper(LOAD_EXCEPTION_TYPES), dto.type);
-  const severity = oneOf(upper(LOAD_EXCEPTION_SEVERITIES), dto.severity);
-  const status = oneOf(Object.keys(STATUS), dto.status);
-  if (!type || !severity || !status) return null;
+  if (!str(dto.id)) return null;
+  const type = oneOf(upper(LOAD_EXCEPTION_TYPES), dto.type) ?? "OTHER";
+  const severity = oneOf(upper(LOAD_EXCEPTION_SEVERITIES), dto.severity) ?? "HIGH";
+  const status = oneOf(Object.keys(STATUS), dto.status) ?? "OPEN";
   return {
     id: str(dto.id) ?? "",
     loadId: str(dto.loadId) ?? "",

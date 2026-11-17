@@ -216,7 +216,9 @@ export { loadRecordKeys };
 export function useLoadExceptions(loadId: string) {
   const ctx = useServiceContext();
   return useQuery({
-    queryKey: ctx ? loadExceptionKeys.forLoad(ctx.organizationId, loadId) : ["load-exceptions", "no-context"],
+    queryKey: ctx
+      ? loadExceptionKeys.forLoad(ctx.organizationId, loadId)
+      : [...orgKey("none"), "load-exceptions", "no-context"],
     queryFn: () => services.loadExceptions.listForLoad(ctx!, loadId),
     enabled: Boolean(ctx),
     retry: false,
@@ -233,15 +235,16 @@ export function useExceptionAction(loadId: string) {
   const ctx = useServiceContext();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ action, idempotencyKey }: { action: ExceptionAction; idempotencyKey: string }) => {
+    mutationFn: async ({ action, idempotencyKey }: { action: ExceptionAction; idempotencyKey: string }) => {
+      if (!ctx) throw new Error("Not signed in");
       const exceptions = services.loadExceptions;
       switch (action.kind) {
         case "report":
-          return exceptions.report(ctx!, loadId, action.input, idempotencyKey);
+          return exceptions.report(ctx, loadId, action.input, idempotencyKey);
         case "acknowledge":
-          return exceptions.acknowledge(ctx!, loadId, action.exceptionId, idempotencyKey);
+          return exceptions.acknowledge(ctx, loadId, action.exceptionId, idempotencyKey);
         case "resolve":
-          return exceptions.resolve(ctx!, loadId, action.exceptionId, action.input, idempotencyKey);
+          return exceptions.resolve(ctx, loadId, action.exceptionId, action.input, idempotencyKey);
       }
     },
     onSettled: () => {

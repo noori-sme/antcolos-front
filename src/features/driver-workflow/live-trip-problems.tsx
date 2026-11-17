@@ -17,7 +17,6 @@ export function DriverLoadProblems({ load }: { load: DriverLoad }) {
   const keys = useIntentKeys();
   const [open, setOpen] = useState(false);
   const items = sortExceptions(load.exceptions);
-  const finished = load.status === "cancelled" || load.status === "invoice_ready";
 
   const report = (input: ReportedException) =>
     action
@@ -33,12 +32,10 @@ export function DriverLoadProblems({ load }: { load: DriverLoad }) {
         <h2 id="driver-problems" className="text-[0.9375rem] font-semibold text-fg">
           Problems
         </h2>
-        {finished ? null : (
-          <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
-            <AlertTriangle aria-hidden />
-            Report a problem
-          </Button>
-        )}
+        <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+          <AlertTriangle aria-hidden />
+          Report a problem
+        </Button>
       </div>
       {items.length === 0 ? (
         <p className="text-[0.8125rem] text-fg-muted">

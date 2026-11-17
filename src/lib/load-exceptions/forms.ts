@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PermissionKey } from "@/types/permission";
 import {
   LOAD_EXCEPTION_SEVERITIES, LOAD_EXCEPTION_TYPES,
   type LoadException, type LoadExceptionType,
@@ -51,3 +52,11 @@ export function sortExceptions(items: LoadException[]): LoadException[] {
 /** How many still need someone (open or acknowledged). */
 export const unresolvedCount = (items: LoadException[]) =>
   items.filter((e) => e.status !== "resolved").length;
+
+/**
+ * Who may do what (contract §14). Reporting needs load.respond, and anyone but
+ * the load's own driver also load.update; taking and resolving need load.update.
+ * The driver reports from the driver app, never from these screens.
+ */
+export const REPORT_EXCEPTION_KEYS: readonly PermissionKey[] = ["loads:edit", "loads:respond"];
+export const MANAGE_EXCEPTION_KEYS: readonly PermissionKey[] = ["loads:edit"];

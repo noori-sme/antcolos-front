@@ -17,7 +17,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  EXCEPTION_TYPE_LABEL, resolveExceptionSchema, sortExceptions, unresolvedCount,
+  EXCEPTION_TYPE_LABEL, MANAGE_EXCEPTION_KEYS, REPORT_EXCEPTION_KEYS, resolveExceptionSchema, sortExceptions, unresolvedCount,
 } from "@/lib/load-exceptions/forms";
 import { money } from "@/lib/load-records/format";
 import { intentOf } from "@/lib/load-records/forms";
@@ -31,6 +31,11 @@ const WHEN = new Intl.DateTimeFormat("en-US", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+function when(iso: string) {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : <time dateTime={iso}>{WHEN.format(date)}</time>;
+}
 
 /** Problems beside the load's status (F1.5, contract §14). */
 export function LiveLoadExceptions({ load }: { load: LoadRecord }) {
@@ -71,7 +76,7 @@ export function LiveLoadExceptions({ load }: { load: LoadRecord }) {
         <h2 id="load-exceptions" className="text-[0.9375rem] font-semibold text-fg">
           Problems{open ? ` · ${open} open` : ""}
         </h2>
-        <Can permission="loads:edit">
+        <Can permissions={REPORT_EXCEPTION_KEYS}>
           <Button size="sm" variant="secondary" onClick={() => setReportOpen(true)}>
             <AlertTriangle aria-hidden />
             Report a problem
@@ -103,7 +108,7 @@ export function LiveLoadExceptions({ load }: { load: LoadRecord }) {
                     {exception.stopSequence != null ? ` · stop ${exception.stopSequence}` : ""}
                   </p>
                   <p className="mt-0.5 text-[0.75rem] text-fg-subtle">
-                    Reported <time dateTime={exception.openedAt}>{WHEN.format(new Date(exception.openedAt))}</time>
+                    Reported {when(exception.openedAt)}
                     {exception.source === "mobile_web" ? " by the driver" : ""}
                   </p>
                 </div>
@@ -119,7 +124,7 @@ export function LiveLoadExceptions({ load }: { load: LoadRecord }) {
                   {exception.financialImpact ? ` · cost ${money(exception.financialImpact)}` : ""}
                 </p>
               ) : (
-                <Can permission="loads:edit">
+                <Can permissions={MANAGE_EXCEPTION_KEYS}>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {exception.status === "open" ? (
                       <Button
@@ -161,7 +166,7 @@ export function LiveLoadExceptions({ load }: { load: LoadRecord }) {
         pending={action.isPending}
         error={action.error}
       />
-      <ResolveDialog loadId={load.id} exception={resolving} onClose={() => setResolving(null)} />
+      <ResolveDialog key={resolving?.id ?? "none"} loadId={load.id} exception={resolving} onClose={() => setResolving(null)} />
     </section>
   );
 }
