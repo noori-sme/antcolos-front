@@ -73,6 +73,7 @@ export const PRODUCT_NAV: NavSection[] = [
       // key would mean only people who can grant permissions may triage.
       { label: "Referrals", href: "/referrals", icon: UserPlus, requires: ["referrals:review"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
+      { label: "Availability", href: "/fleet/availability", icon: CalendarClock, requires: ["trucks:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
       { label: "Safety & Compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"] },
       { label: "Maintenance", href: "/maintenance", icon: Wrench, requires: ["maintenance:view"] },
