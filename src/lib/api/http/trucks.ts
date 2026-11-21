@@ -5,7 +5,8 @@ import {
   TRUCK_ASSIGNMENT_STATUSES, TRUCK_ASSIGNMENT_TYPES,
   TRUCK_CAB_TYPES, TRUCK_DISPATCHER_COVERAGES, TRUCK_EQUIPMENT_TYPES, TRUCK_FUEL_TYPES,
   TRUCK_OPERATIONAL_STATUSES, TRUCK_OWNER_TYPES, TRUCK_OWNERSHIP_TYPES,
-  TRUCK_VERIFICATION_STATUSES,
+  TRUCK_VERIFICATION_STATUSES, AVAILABILITY_BUCKETS,
+  type AvailabilityPrediction, type TruckAvailability,
   type FleetTruck, type Paginated, type TruckAssignment, type TruckAssignmentRow,
   type TruckLegalOwner, type TruckListFilters, type TruckLookup, type TruckOperating,
   type ManualTruckStatus, type TruckOperatingRow, type TruckOwnershipRow,
@@ -50,6 +51,43 @@ export function toTruckOperating(dto: Dto): TruckOperating {
     startAt: str(dto.startAt),
     endAt: nullableStr(dto.endAt),
   };
+}
+
+/** Availability row (contract "Truck availability"); undefined without a truck id. */
+function toTruckAvailability(dto: Dto): TruckAvailability | undefined {
+  const truckId = str(dto.truckId);
+  if (!truckId) return undefined;
+  return {
+    truckId,
+    unitNumber: str(dto.unitNumber),
+    equipmentType: oneOf(TRUCK_EQUIPMENT_TYPES, dto.equipmentType),
+    operationalStatus: oneOf(TRUCK_OPERATIONAL_STATUSES, dto.operationalStatus),
+    // A bucket this build does not know yet still has to land somewhere honest.
+    bucket: oneOf(AVAILABILITY_BUCKETS, dto.bucket) ?? "UNKNOWN",
+    estimatedEmptyAt: nullableStr(dto.estimatedEmptyAt) ?? null,
+    emptyCity: nullableStr(dto.emptyCity) ?? null,
+    emptyState: nullableStr(dto.emptyState) ?? null,
+    activeLoadId: nullableStr(dto.activeLoadId) ?? null,
+  };
+}
+
+export function toTruckAvailabilityPage(body: unknown): Paginated<TruckAvailability> {
+  const page = toPage(body, toTruckAvailability);
+  return { ...page, data: page.data.filter((row): row is TruckAvailability => row !== undefined) };
+}
+
+function toAvailabilityPrediction(dto: Dto): AvailabilityPrediction {
+  return {
+    loadId: str(dto.loadId) ?? "",
+    predictedEmptyAt: str(dto.predictedEmptyAt) ?? "",
+    recordedAt: str(dto.recordedAt) ?? "",
+    actualEmptyAt: nullableStr(dto.actualEmptyAt) ?? null,
+    errorMinutes: num(dto.errorMinutes) ?? null,
+  };
+}
+
+export function toAvailabilityPredictionPage(body: unknown): Paginated<AvailabilityPrediction> {
+  return toPage(body, toAvailabilityPrediction);
 }
 
 /** Contract §Truck → canonical `FleetTruck`. */
@@ -258,5 +296,16 @@ export const httpTrucksService: TrucksService = {
       idempotent(idempotencyKey),
     );
     return toTruckAssignmentRow(unwrap(res.data));
+  },
+  async listAvailability(_ctx, filters) {
+    const res = await apiClient.get("/fleet/availability", { params: queryParams({ ...filters }) });
+    return toTruckAvailabilityPage(res.data);
+  },
+  async availabilityHistory(_ctx, truckId, page) {
+    const res = await apiClient.get(
+      `/fleet/availability/${encodeURIComponent(truckId)}/history`,
+      { params: queryParams({ ...page }) },
+    );
+    return toAvailabilityPredictionPage(res.data);
   },
 };

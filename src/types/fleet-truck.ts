@@ -247,3 +247,43 @@ export type ReplaceOwnershipInput =
   | { ownerType: "ORGANIZATION"; ownerOrganizationId: string; ownershipType?: TruckOwnershipType };
 
 export type { Paginated } from "./common";
+
+/**
+ * Truck availability (fleet-api-contract.md "Truck availability", backend plan 47).
+ * Buckets in the order the board shows them.
+ */
+export const AVAILABILITY_BUCKETS = [
+  "AVAILABLE_NOW", "WITHIN_5H", "LATER_TODAY", "LATER", "UNKNOWN", "MAINTENANCE", "UNAVAILABLE",
+] as const;
+export type AvailabilityBucket = (typeof AVAILABILITY_BUCKETS)[number];
+
+/** One truck of the fleet and when it comes empty. */
+export interface TruckAvailability {
+  truckId: string;
+  unitNumber?: string;
+  equipmentType?: TruckEquipmentType;
+  operationalStatus?: TruckOperationalStatus;
+  bucket: AvailabilityBucket;
+  /** ISO time; null when the truck is empty or the time is unknown. */
+  estimatedEmptyAt: string | null;
+  emptyCity: string | null;
+  emptyState: string | null;
+  activeLoadId: string | null;
+}
+
+export interface TruckAvailabilityFilters {
+  bucket?: AvailabilityBucket;
+  page: number;
+  pageSize: number;
+}
+
+/** A stored estimate of when the truck empties, against what happened. */
+export interface AvailabilityPrediction {
+  loadId: string;
+  predictedEmptyAt: string;
+  recordedAt: string;
+  /** Null until the load's last delivery stop is completed. */
+  actualEmptyAt: string | null;
+  /** actual − predicted, in minutes; null until delivered. */
+  errorMinutes: number | null;
+}

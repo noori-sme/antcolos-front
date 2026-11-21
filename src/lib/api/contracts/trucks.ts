@@ -2,6 +2,7 @@ import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, Paginated, ReplaceAssignmentInput,
   ReplaceOwnershipInput, TruckAssignmentRow, TruckListFilters, TruckLookup,
   TruckOperatingRow, ManualTruckStatus, TruckOwnershipRow, UpdateTruckInput,
+  AvailabilityPrediction, TruckAvailability, TruckAvailabilityFilters,
 } from "@/types/fleet-truck";
 import type { ServiceContext } from "./context";
 
@@ -74,4 +75,15 @@ export interface TrucksService {
     assignmentId: string,
     idempotencyKey: string,
   ): Promise<TruckAssignmentRow>;
+  /** Availability: every truck of the fleet, soonest empty first. `truck.read`. */
+  listAvailability(
+    ctx: ServiceContext,
+    filters: TruckAvailabilityFilters,
+  ): Promise<Paginated<TruckAvailability>>;
+  /** Stored predictions for one truck, newest first. 404 when it is not on this fleet. */
+  availabilityHistory(
+    ctx: ServiceContext,
+    truckId: string,
+    page: { page: number; pageSize: number },
+  ): Promise<Paginated<AvailabilityPrediction>>;
 }
