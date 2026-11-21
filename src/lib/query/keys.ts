@@ -5,7 +5,7 @@ import type {
 } from "@/types";
 import type { OrgPeopleFamily, OrgPeopleQuery } from "@/types/org-people";
 import type { LoadRecordQuery } from "@/types/load-record";
-import type { TruckListFilters } from "@/types/fleet-truck";
+import type { TruckAvailabilityFilters, TruckListFilters } from "@/types/fleet-truck";
 
 /**
  * Every query key is namespaced by organization. Org A's data can never be
@@ -26,6 +26,17 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "detail", truckId] as const,
   lookup: (organizationId: string, vin: string) =>
     [...orgKey(organizationId), "trucks", "lookup", vin] as const,
+};
+
+/**
+ * Availability board (plan 23). Under `fleetKeys.all`, so any truck mutation
+ * (status, assignment, a load moving the truck) refreshes the board too.
+ */
+export const availabilityKeys = {
+  list: (organizationId: string, filters: TruckAvailabilityFilters) =>
+    [...orgKey(organizationId), "trucks", "availability", "list", filters] as const,
+  history: (organizationId: string, truckId: string, page: number) =>
+    [...orgKey(organizationId), "trucks", "availability", "history", truckId, page] as const,
 };
 
 /**

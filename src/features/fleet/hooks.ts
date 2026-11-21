@@ -3,11 +3,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { fleetKeys, queryKeys } from "@/lib/query/keys";
+import { availabilityKeys, fleetKeys, queryKeys } from "@/lib/query/keys";
 import { usePeopleList } from "@/lib/api/use-org-people";
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, ReplaceAssignmentInput,
-  ManualTruckStatus, ReplaceOwnershipInput, TruckListFilters, UpdateTruckInput,
+  ManualTruckStatus, ReplaceOwnershipInput, TruckAvailabilityFilters, TruckListFilters,
+  UpdateTruckInput,
 } from "@/types/fleet-truck";
 import type { OrgPeopleFamily } from "@/types/org-people";
 
@@ -25,6 +26,35 @@ export function useTrucks(filters: TruckListFilters) {
     queryKey: ctx ? fleetKeys.list(ctx.organizationId, filters) : ["trucks", "no-context"],
     queryFn: () => services.trucks.list(ctx!, filters),
     enabled: Boolean(ctx),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Refetched every 5 minutes while the tab is visible: ETAs move with drivers'
+ * trip steps, which other people make, so a board left open would go stale.
+ */
+const AVAILABILITY_REFRESH_MS = 5 * 60_000;
+
+export function useTruckAvailability(filters: TruckAvailabilityFilters) {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx ? availabilityKeys.list(ctx.organizationId, filters) : ["trucks", "no-context"],
+    queryFn: () => services.trucks.listAvailability(ctx!, filters),
+    enabled: Boolean(ctx),
+    placeholderData: keepPreviousData,
+    refetchInterval: AVAILABILITY_REFRESH_MS,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Stored predictions for one truck; only fetched while `enabled` (the dialog is open). */
+export function useAvailabilityHistory(truckId: string, page: number, enabled: boolean) {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx ? availabilityKeys.history(ctx.organizationId, truckId, page) : ["trucks", "no-context"],
+    queryFn: () => services.trucks.availabilityHistory(ctx!, truckId, { page, pageSize: 20 }),
+    enabled: Boolean(ctx) && Boolean(truckId) && enabled,
     placeholderData: keepPreviousData,
   });
 }
