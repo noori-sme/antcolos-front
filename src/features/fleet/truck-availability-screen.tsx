@@ -9,10 +9,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { BUCKET_LABEL, BUCKET_ORDER, emptyIn, emptyPlace, groupByBucket } from "@/lib/fleet/availability";
 import { equipmentLabel } from "@/lib/load-records/format";
-import type { AvailabilityQuery, TruckAvailability } from "@/types/fleet-availability";
+import type { TruckAvailability } from "@/types/fleet-availability";
 import { useTruckAvailability } from "./hooks";
 
-const QUERY: AvailabilityQuery = { page: 1, pageSize: 100 };
 const AT = new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
 
 /**
@@ -21,7 +20,7 @@ const AT = new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric",
  * truck's active load and refreshes every few minutes.
  */
 export function TruckAvailabilityScreen() {
-  const query = useTruckAvailability(QUERY);
+  const query = useTruckAvailability();
   const groups = useMemo(() => groupByBucket(query.data?.data ?? []), [query.data]);
   const total = query.data?.meta.totalItems ?? 0;
   const shown = query.data?.data.length ?? 0;
@@ -62,7 +61,7 @@ export function TruckAvailabilityScreen() {
         <>
           {total > shown ? (
             <p className="text-[0.8125rem] text-fg-muted">
-              Showing the {shown} trucks that are empty soonest, of {total}.
+              Showing {shown} of {total} trucks; open Trucks to see the rest.
             </p>
           ) : null}
           <div className="space-y-section">
@@ -125,7 +124,7 @@ function AvailabilityCard({ row, now }: { row: TruckAvailability; now: Date }) {
       {row.activeLoadId ? (
         <Link
           href={`/loads/${encodeURIComponent(row.activeLoadId)}`}
-          className="mt-2 inline-block text-[0.8125rem] text-primary hover:underline"
+          className="mt-2 inline-block text-[0.8125rem] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
         >
           Current load
         </Link>

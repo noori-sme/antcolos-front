@@ -18,8 +18,8 @@ link to the truck and its current load.
 
 - `fleetAvailability` service (http-only, like trucks): `GET /fleet/availability`, mapper
   `toTruckAvailability` (unknown bucket → `UNKNOWN`, never dropped).
-- `/fleet/trucks/availability`: the board, grouped by bucket in the contract's order; first 100
-  trucks (says so when there are more); refreshes every 5 minutes. Gated like the trucks list
+- `/fleet/trucks/availability`: the board, grouped by bucket in the contract's order; reads every
+  page (up to 500 trucks; says so beyond that); refreshes every 5 minutes. Gated like the trucks list
   (`trucks:view`, inherited from `/fleet/trucks`); linked from the trucks page header.
 - `lib/fleet/availability.ts`: labels, grouping, "empty in 3 h 20 min", place.
 
@@ -35,3 +35,12 @@ groups by bucket).
 `src/lib/fleet/availability.test.ts` (grouping, place, relative time),
 `tests/existing-behaviour.test.ts` (route gate). Not rendered against a live API: staging
 Postgres was down (2026-11-19 →).
+
+## Review (frontend-reviewer, 2026-11-21)
+
+Fixed: `WITHIN_5H` is "Available within 5 hours" (the contract has no lower bound; the spec's
+"2–5 hours" wording is narrower than the API); all pages are read so later groups never drop off;
+focus ring on the load link; unrelated import churn reverted; disabled-query key reuses
+`fleetKeys.availability`. Kept: an unknown bucket shows under "On a trip, no estimate". No browser
+spec: the board runs on the real API only, which CI's mock-mode run does not start; the gate is
+covered by the route-manifest test.

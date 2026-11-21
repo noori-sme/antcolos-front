@@ -3,7 +3,7 @@ import type { AvailabilityBucket, TruckAvailability } from "@/types/fleet-availa
 /** The board's columns, in reading order, with what a person sees (spec §18 wording). */
 export const BUCKET_LABEL: Record<AvailabilityBucket, string> = {
   AVAILABLE_NOW: "Available now",
-  WITHIN_5H: "Available in 2–5 hours",
+  WITHIN_5H: "Available within 5 hours",
   LATER_TODAY: "Available later today",
   LATER: "Available later",
   UNKNOWN: "On a trip, no estimate",

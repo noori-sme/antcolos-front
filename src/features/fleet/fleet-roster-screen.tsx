@@ -6,7 +6,22 @@ import type { TruckOperationalStatus } from "@/types/fleet-truck";
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { AlertTriangle, Calendar, CheckCircle2, ChevronRight, Clock, Filter, MapPin, Plus, Search, Shield, Truck as TruckIcon, User, Users, Wrench } from "lucide-react";
+import {
+  Calendar,
+  ChevronRight,
+  Filter,
+  Plus,
+  Search,
+  Truck as TruckIcon,
+  User,
+  Users,
+  MapPin,
+  Shield,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Wrench,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
