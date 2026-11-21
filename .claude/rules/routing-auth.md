@@ -19,13 +19,15 @@ description: Routes, route groups, session, onboarding gating, permissions
 - Every new `(app)` route needs an entry in `src/config/nav.ts` (with `requires`) or in
   `EXTRA_ROUTES` in `src/lib/permissions/route-manifest.ts`. If you leave a child route out,
   it inherits its parent's requirements by longest prefix. Decide that on purpose.
-- `src/middleware.ts` does optimistic cookie checks only (token present, `nextStep`
-  onboarding redirects). It's not an authorization layer. In Next 16 the convention is
-  `proxy.ts` (`middleware` is deprecated). Migrating it is its own Feature-track task
-  (`npx @next/codemod@canary middleware-to-proxy .`). Don't rename it as a side effect.
-- Auth cookies (`antcolos_token`, `antcolos_next_step`, role/org cookies) are written only
-  by the interceptor in `src/lib/api/client.ts` and cleared only by `clearAllAuthCookies()`.
-  If you add a cookie, add it to `clearAllAuthCookies()` too.
+- `src/proxy.ts` (Next 16's name for middleware) does optimistic cookie checks only (token
+  present, `nextStep` onboarding redirects); it's not an authorization layer. It also rewrites
+  `/api/backend/*` to the API with `Authorization` from the httpOnly `antcolos_at` cookie (plan 21).
+- The usable tokens are httpOnly (`antcolos_at`, `antcolos_rt`), written only by
+  `src/app/api/session/[...path]/route.ts`. `antcolos_token` is a readable, claims-only copy
+  (no signature): read claims from it, never send it. Other auth cookies (`antcolos_next_step`,
+  role/org) are written only by the interceptor in `src/lib/api/client.ts` and cleared only by
+  `clearAllAuthCookies()`, which also calls `/api/session/auth/logout`. If you add a cookie, add
+  it to `clearAllAuthCookies()` too. Never call the API's origin from the browser.
 - Permissions: the backend's `/users/me/permissions` list is synced by
   `src/lib/session/permissions-sync.ts`. Keys are normalized by `src/lib/permissions/catalog.ts`
   (backend dot-notation `truck.read` ↔ UI `trucks:view`). A new backend key gets a catalog
