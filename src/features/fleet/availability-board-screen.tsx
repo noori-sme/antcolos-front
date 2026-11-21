@@ -32,15 +32,24 @@ export function AvailabilityBoardScreen() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const bucket = parseBucket(searchParams.get("bucket"));
-  const [page, setPage] = useState(1);
+  // The page belongs to the bucket it was chosen in: back/forward to another bucket starts at 1.
+  const [paging, setPaging] = useState<{ bucket?: AvailabilityBucket; page: number }>({ page: 1 });
+  const page = paging.bucket === bucket ? paging.page : 1;
+  const setPage = (next: number | ((p: number) => number)) =>
+    setPaging({ bucket, page: typeof next === "function" ? next(page) : next });
   const [historyFor, setHistoryFor] = useState<TruckAvailability | null>(null);
 
   const query = useTruckAvailability({ bucket, page, pageSize: PAGE_SIZE });
-  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = query;
+  const { data, isLoading, isError, error, refetch, isFetching, isPlaceholderData, dataUpdatedAt } = query;
   const rows = data?.data ?? [];
   const meta = data?.meta;
   const groups = groupByBucket(rows);
   const morePages = (meta?.totalPages ?? 1) > 1;
+  // A refetch can shrink the fleet under the page we are on: step back to the last page.
+  if (meta && meta.totalPages > 0 && page > meta.totalPages && !isPlaceholderData) {
+    setPaging({ bucket, page: meta.totalPages });
+  }
+  const staleAfterError = isError && Boolean(data);
 
   const selectBucket = (next: AvailabilityBucket | undefined) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -88,14 +97,19 @@ export function AvailabilityBoardScreen() {
       )}
 
       {isLoading && <LoadingSkeleton rows={4} />}
-      {isError && (
+      {staleAfterError && (
+        <p role="status" className="text-[0.8125rem] text-fg-muted">
+          Couldn&apos;t refresh just now ({error?.message}). Showing the last update.
+        </p>
+      )}
+      {isError && !data && (
         <ErrorState
           title="Couldn't load availability"
           description={error?.message}
           onRetry={() => refetch()}
         />
       )}
-      {!isLoading && !isError && rows.length === 0 && (
+      {!isLoading && !(isError && !data) && rows.length === 0 && (
         <EmptyState
           icon={CalendarClock}
           title={bucket ? `No trucks ${bucketLabel(bucket).toLowerCase()}` : "No trucks on this fleet yet"}
@@ -107,6 +121,7 @@ export function AvailabilityBoardScreen() {
         />
       )}
 
+      <div aria-busy={isPlaceholderData} className={isPlaceholderData ? "space-y-section opacity-60" : "space-y-section"}>
       {groups.map((group) => (
         <section key={group.bucket} aria-labelledby={`bucket-${group.bucket}`} className="space-y-2">
           <h2 id={`bucket-${group.bucket}`} className="text-[0.9375rem] font-semibold text-fg">
@@ -122,6 +137,7 @@ export function AvailabilityBoardScreen() {
           </ul>
         </section>
       ))}
+      </div>
 
       {meta && meta.totalPages > 1 && (
         <div className="flex flex-col items-center justify-between gap-3 border-t border-border pt-4 sm:flex-row">

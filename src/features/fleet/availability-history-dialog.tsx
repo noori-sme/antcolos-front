@@ -8,10 +8,10 @@ import { predictionErrorText } from "@/lib/fleet/availability";
 import { useAvailabilityHistory } from "./hooks";
 import { History } from "lucide-react";
 
-const clock = new Intl.DateTimeFormat(undefined, {
+const dateTime = new Intl.DateTimeFormat(undefined, {
   month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
 });
-const when = (iso: string | null) => (iso ? clock.format(new Date(iso)) : "—");
+const when = (iso: string | null) => (iso ? dateTime.format(new Date(iso)) : "—");
 
 /** Stored predictions for one truck against when it actually came empty (plan 23). */
 export function AvailabilityHistoryDialog({
