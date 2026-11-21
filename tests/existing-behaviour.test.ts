@@ -93,6 +93,10 @@ describe("route gating still matches the nav", () => {
     assert.equal(canAll(new Set(["loads:respond"] as PermissionKey[]), required), true);
   });
 
+  it("gates the truck availability board like the trucks list (F2.5)", () => {
+    assert.deepEqual(requiredPermissionsForPath("/fleet/trucks/availability"), ["trucks:view"]);
+  });
+
   it("leaves the existing routes where they were", () => {
     assert.deepEqual(requiredPermissionsForPath("/loads"), ["loads:view"]);
     assert.deepEqual(requiredPermissionsForPath("/loads/abc"), ["loads:view"]);

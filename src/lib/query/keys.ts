@@ -1,3 +1,4 @@
+import type { AvailabilityQuery } from "@/types/fleet-availability";
 import type {
   AuditEventFilters, ComplianceFilters, FleetAssetKind, FleetEquipmentFilters,
   NeedsYouFilters, RiskCaseFilters, RiskSignalFilters, SettlementFilters,
@@ -26,6 +27,9 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "detail", truckId] as const,
   lookup: (organizationId: string, vin: string) =>
     [...orgKey(organizationId), "trucks", "lookup", vin] as const,
+  // Under "trucks" so a truck or load change that invalidates the fleet refreshes it (F2.5).
+  availability: (organizationId: string, query: AvailabilityQuery) =>
+    [...orgKey(organizationId), "trucks", "availability", query] as const,
 };
 
 /**

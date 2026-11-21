@@ -6,22 +6,7 @@ import type { TruckOperationalStatus } from "@/types/fleet-truck";
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import {
-  Calendar,
-  ChevronRight,
-  Filter,
-  Plus,
-  Search,
-  Truck as TruckIcon,
-  User,
-  Users,
-  MapPin,
-  Shield,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  Wrench,
-} from "lucide-react";
+import { AlertTriangle, Calendar, CheckCircle2, ChevronRight, Clock, Filter, MapPin, Plus, Search, Shield, Truck as TruckIcon, User, Users, Wrench } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
@@ -130,14 +115,22 @@ export function FleetRosterScreen() {
         title="Trucks"
         description="Every truck in your fleet, active assignments, and operational status."
         actions={
-          <Can permission="trucks:create">
-            <Button variant="primary" asChild>
-              <Link href="/fleet/trucks/new">
-                <Plus aria-hidden />
-                Add truck
+          <>
+            <Button variant="secondary" asChild>
+              <Link href="/fleet/trucks/availability">
+                <Clock aria-hidden />
+                Availability
               </Link>
             </Button>
-          </Can>
+            <Can permission="trucks:create">
+              <Button variant="primary" asChild>
+                <Link href="/fleet/trucks/new">
+                  <Plus aria-hidden />
+                  Add truck
+                </Link>
+              </Button>
+            </Can>
+          </>
         }
       />
 

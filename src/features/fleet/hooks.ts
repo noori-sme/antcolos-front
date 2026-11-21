@@ -3,7 +3,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { fleetKeys, queryKeys } from "@/lib/query/keys";
+import { fleetKeys, orgKey, queryKeys } from "@/lib/query/keys";
+import type { AvailabilityQuery } from "@/types/fleet-availability";
 import { usePeopleList } from "@/lib/api/use-org-people";
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, ReplaceAssignmentInput,
@@ -175,4 +176,16 @@ export function useRemoveAssignment(truckId: string) {
       services.trucks.removeAssignment(ctx, truckId, vars.assignmentId, vars.idempotencyKey),
     { invalidatesPeople: true },
   );
+}
+
+/** The availability board (F2.5): first 100 trucks, soonest empty first. */
+export function useTruckAvailability(query: AvailabilityQuery) {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx ? fleetKeys.availability(ctx.organizationId, query) : [...orgKey("none"), "trucks", "availability"],
+    queryFn: () => services.fleetAvailability.list(ctx!, query),
+    enabled: Boolean(ctx),
+    // Estimates move with the clock and the loads; refresh while the board is open.
+    refetchInterval: 5 * 60_000,
+  });
 }
