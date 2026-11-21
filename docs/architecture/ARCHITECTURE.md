@@ -78,6 +78,7 @@ and cache entries can't cross organizations.
 | Settings → People (member roster, remove a member) | identity / `membership-api-contract` §2 | **http** in http mode; mock mode keeps the fixture screen | service seam (`orgMembers`), plan 12. Per-member permission overrides and "leave" not wired yet |
 | Rate Con upload, review, approve (`/rate-cons/new`, `/rate-cons/[documentId]`) | loads / `documents-api-contract` §1–§10 | **http** in both modes (no mock); needs backend plans 21 and 26 merged | service seam (`rateConIntake`), `features/rate-con-intake`, plan 13. PDF box highlight not built (no PDF renderer) |
 | Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
+| Truck availability | fleet / `fleet-api-contract` "Truck availability" | **http** (board, prediction history) | `trucks.listAvailability`, `trucks.availabilityHistory`, plan 23 |
 | Own profile (`/account/profile`: name, phone, headline, about me, picture) | identity / `profile.md` | **http** in http mode; mock mode keeps the public-profile screen | service seam (`selfProfile`), shared reads in `lib/api/use-self-profile.ts` (also the top-bar avatar), plan 11 |
 | Public profile (username page, visibility, workplaces, share card) | **not built in backend yet** | mock | contracts seam (`profile`) |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |

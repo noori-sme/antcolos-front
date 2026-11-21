@@ -1,8 +1,8 @@
 # 23 — Truck availability board (F2.5)
 
 ```
-Status:   approved (owner, 2026-11-21: "plan all of them, verify the plan and go ahead")
-Phase:    1 — not started (plan reviewed by frontend-reviewer 2026-11-21; findings applied)
+Status:   implemented (2026-11-21; owner: "plan all of them, verify the plan and go ahead")
+Phase:    5 — done (plan reviewed by frontend-reviewer 2026-11-21; findings applied)
 Branch:   feat/fleet-availability-board
 Requirements: this plan (milestones.md F2.5; spec §18 M2 "truck availability view")
 Backend contract: ../antcolos/docs/requirements/fleet-api-contract.md → "Truck availability" (plan 47, #84)
@@ -44,7 +44,7 @@ owner can see how good the estimates are. Real API only (the trucks service is h
 | `src/config/nav.ts` | changed | "Availability" under Fleet & people, `requires: ["trucks:view"]` |
 | `src/config/live-routes.ts` | changed | `/fleet/availability` in `HTTP_LIVE_ROUTES`, otherwise http mode shows "not available yet" (covered by `route-availability.test.ts`) |
 | `src/lib/permissions/permissions.test.ts` | changed | `requiredPermissionsForPath("/fleet/availability")` → `["trucks:view"]` (the refusal check, pure) |
-| `tests/browser/fleet-availability.spec.ts` | new | mock-mode spec (demo user) stubbing only the two availability endpoints with `page.route`, as `carrier-lookup.spec.ts` does |
+| `tests/browser/fleet-availability.live.spec.ts` | new | live spec (see Phase 4 note): real sign-in and board; the on-trip scenarios stub only the availability endpoints |
 | `docs/architecture/ARCHITECTURE.md` §5 | changed | availability: http |
 
 ## Phases
@@ -86,10 +86,13 @@ owner can see how good the estimates are. Real API only (the trucks service is h
 ### Phase 4 — route, nav, browser spec
 - [ ] `app/(app)/fleet/availability/page.tsx`; nav entry (route manifest derives from nav).
 - [ ] `live-routes.ts` entry; permissions test for the route's key.
-- [ ] Mock-mode browser spec (demo user, which holds `trucks:view`) with `page.route` stubbing only
-      the two availability endpoints: grouping order, chip filter sets `?bucket=`, history dialog
-      opens, an error response shows the error state. The refusal for a seat without
-      `trucks:view` is the pure permissions test above.
+- [x] Browser spec, **live** instead of mock (found while building): in mock mode
+      `(app)/route-guard.tsx` sends a browser without an `antcolos_token` cookie to `/sign-in`
+      (pre-existing on `main`; the CI browser job is `continue-on-error`), and with a cookie the
+      permission sync calls the real API. So `fleet-availability.live.spec.ts` signs in to the
+      local stack, checks the real board, filter-in-URL and reload, and stubs only the
+      availability endpoints for trucks on a trip, the history dialog and the error state.
+      The refusal for a seat without `trucks:view` is the pure permissions test above.
 - [ ] Manual run against the local backend (#84 code): seed a truck on a load with a delivery
       window, check the bucket and ETA; screenshots desktop 1280 and mobile 360.
 - → verify: `npm run test:browser -- fleet-availability`, `npm run build`
@@ -117,3 +120,15 @@ owner can see how good the estimates are. Real API only (the trucks service is h
 - Chip counts are per page, not fleet-wide (see above). Labelled "on this page" when more pages exist.
 - `estimatedEmptyAt` is shown in the viewer's local time; the delivery stop's timezone is not in
   the response. The text says "your time".
+
+## Verification (2026-11-21)
+
+- vitest: new `trucks-availability.test.ts` (4), `availability.test.ts` (7), permissions route key (1).
+- Live spec against the local backend on `main` (#84) and this app in http mode:
+  `fleet-availability.live.spec.ts` 9 passed, 1 skipped (mobile-only check on desktop).
+- Real data: two trucks (available, maintenance) render in their groups; `?bucket=MAINTENANCE`
+  filters the request and survives a reload; history dialog shows its empty state.
+- Screenshots desktop 1280 and Pixel 7: no horizontal scroll; rows stack on the phone.
+- Found, not fixed (out of scope): mock-mode browser specs that open `(app)` routes land on
+  `/sign-in` locally and in CI (route guard, above). Worth its own Fix.
+
