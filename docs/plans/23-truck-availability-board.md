@@ -2,7 +2,7 @@
 
 ```
 Status:   approved (owner, 2026-11-21: "plan all of them, verify the plan and go ahead")
-Phase:    1 — not started
+Phase:    1 — not started (plan reviewed by frontend-reviewer 2026-11-21; findings applied)
 Branch:   feat/fleet-availability-board
 Requirements: this plan (milestones.md F2.5; spec §18 M2 "truck availability view")
 Backend contract: ../antcolos/docs/requirements/fleet-api-contract.md → "Truck availability" (plan 47, #84)
@@ -32,17 +32,19 @@ owner can see how good the estimates are. Real API only (the trucks service is h
 
 | File | New/changed | Why |
 | --- | --- | --- |
-| `src/types/fleet-truck.ts` | changed | `AvailabilityBucket`, `TruckAvailability`, `AvailabilityPrediction` |
+| `src/types/fleet-truck.ts` | changed | `AVAILABILITY_BUCKETS` const array, `AvailabilityBucket`, `TruckAvailability`, `AvailabilityPrediction` |
 | `src/lib/api/contracts/trucks.ts` | changed | `listAvailability`, `availabilityHistory` on `TrucksService` |
-| `src/lib/api/http/trucks.ts` (+ test) | changed | calls + DTO mappers (dates to `Date`-safe ISO strings, unknown bucket kept as `UNKNOWN`) |
+| `src/lib/api/http/trucks.ts` (+ test) | changed | calls + DTO mappers using `oneOf` / `toPage` / `queryParams` from `http/dto.ts`; `oneOf` returns `undefined`, so an unknown bucket falls back to `UNKNOWN` explicitly; fixtures copied from the contract example |
 | `src/lib/fleet/availability.ts` (+ test) | new | bucket order and labels, "empties in 3 h 20 min" / "overdue" text, prediction error text ("42 min late") |
-| `src/lib/query/keys.ts` | changed | `trucks.availability(org, filters)`, `trucks.availabilityHistory(org, truckId, page)` |
+| `src/lib/query/keys.ts` | changed | new `availabilityKeys` under `[...orgKey(org), "trucks", "availability", …]`, so a truck mutation that invalidates `fleetKeys.all` also refreshes the board |
 | `src/features/fleet/hooks.ts` | changed | `useTruckAvailability`, `useAvailabilityHistory` |
 | `src/features/fleet/availability-board-screen.tsx` | new | bucket filter chips with counts from the loaded page, grouped list, four states |
 | `src/features/fleet/availability-history-dialog.tsx` | new | predictions vs actuals for one truck, paginated |
 | `src/app/(app)/fleet/availability/page.tsx` | new | thin route |
 | `src/config/nav.ts` | changed | "Availability" under Fleet & people, `requires: ["trucks:view"]` |
-| `tests/browser/fleet-availability.spec.ts` | new | route gate + board render with mocked API responses |
+| `src/config/live-routes.ts` | changed | `/fleet/availability` in `HTTP_LIVE_ROUTES`, otherwise http mode shows "not available yet" (covered by `route-availability.test.ts`) |
+| `src/lib/permissions/permissions.test.ts` | changed | `requiredPermissionsForPath("/fleet/availability")` → `["trucks:view"]` (the refusal check, pure) |
+| `tests/browser/fleet-availability.spec.ts` | new | mock-mode spec (demo user) stubbing only the two availability endpoints with `page.route`, as `carrier-lookup.spec.ts` does |
 | `docs/architecture/ARCHITECTURE.md` §5 | changed | availability: http |
 
 ## Phases
@@ -59,20 +61,22 @@ owner can see how good the estimates are. Real API only (the trucks service is h
       ("now", "in 45 min", "in 3 h 20 min", "overdue by 1 h"), `predictionErrorText(minutes)`
       ("on time" within 5 min, "42 min late", "1 h 10 min early", "not delivered yet").
 - [ ] Keys under `orgKey(org)`; hooks use `useServiceContext()`; history query enabled only while
-      the dialog is open. Refetch the board every 5 minutes while visible (the backend stores a
-      prediction hourly; ETAs move with trip steps).
+      the dialog is open. `refetchInterval: 5 min`, `refetchIntervalInBackground: false`: ETAs move
+      with drivers' trip steps, which other people make, so the board would otherwise go stale
+      while it sits open on a dispatcher's screen.
 - Tests: helper unit tests incl. boundaries (exactly 5 h, past time, null). → verify:
   `npx vitest run src/lib/fleet/availability.test.ts`
 
 ### Phase 3 — screens
 - [ ] Board: header with "Updated hh:mm" and a refresh button; bucket chips (All + each bucket,
       chip shows count of rows on the page); rows grouped by bucket in `BUCKET_ORDER`; row = unit
-      (link to truck profile), equipment label, operating status chip (existing `status-chips`),
+      (link to truck profile), equipment label, operating status badge (`TruckOperationalBadge` in `components/common/status-badge.tsx`, which takes the API's uppercase status; not `TruckStatusChip`, which is the old mock status),
       empties text + local time, empty city/state, "Load" link when `activeLoadId` (gated on
       `loads:view`), "History" button. `UNKNOWN` rows say why in plain words ("On a trip; no
       delivery time we can see").
-- [ ] Pagination like the roster (pageSize 50). Bucket filter → `bucket` query param, kept in the
-      URL (`?bucket=`) so the view can be shared.
+- [ ] Pagination like the roster (`useState(page)`, `keepPreviousData`, pageSize 50). Bucket filter →
+      `bucket` query param, kept in the URL (`?bucket=`, `useSearchParams`, screen wrapped in
+      `Suspense`) so the view can be shared.
 - [ ] History dialog: table predicted / recorded / actual / error; empty state "No predictions
       stored yet — the hourly job records one when a load's planned empty time changes".
 - [ ] Loading / empty / error states from `components/data/states`; tokens only; 360 px: rows
@@ -81,8 +85,11 @@ owner can see how good the estimates are. Real API only (the trucks service is h
 
 ### Phase 4 — route, nav, browser spec
 - [ ] `app/(app)/fleet/availability/page.tsx`; nav entry (route manifest derives from nav).
-- [ ] Browser spec with `page.route` stubbing the two endpoints: grouping order, chip filter
-      sets `?bucket=`, history dialog opens, a seat without `trucks:view` is refused.
+- [ ] `live-routes.ts` entry; permissions test for the route's key.
+- [ ] Mock-mode browser spec (demo user, which holds `trucks:view`) with `page.route` stubbing only
+      the two availability endpoints: grouping order, chip filter sets `?bucket=`, history dialog
+      opens, an error response shows the error state. The refusal for a seat without
+      `trucks:view` is the pure permissions test above.
 - [ ] Manual run against the local backend (#84 code): seed a truck on a load with a delivery
       window, check the bucket and ETA; screenshots desktop 1280 and mobile 360.
 - → verify: `npm run test:browser -- fleet-availability`, `npm run build`
@@ -98,7 +105,7 @@ owner can see how good the estimates are. Real API only (the trucks service is h
 - [x] Idempotent routes: n/a, read-only
 - [x] Four states for every data view; tokens only
 - [x] Forms: n/a (no form; the bucket filter is a fixed enum)
-- [x] New route is in nav; no new cookies
+- [x] New route is in nav and `HTTP_LIVE_ROUTES`; no new cookies
 - [ ] Mobile 360 px checked (phase 4)
 - [x] Tests at the right tier: vitest for mappers/helpers, Playwright for the screen
 
