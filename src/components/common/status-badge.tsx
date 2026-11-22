@@ -1,9 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import {
   DRIVER_STATUS, FIELD_REVIEW_STATUS, LOAD_EXCEPTION_SEVERITY, LOAD_EXCEPTION_STATUS, LOAD_RECORD_STATUS, LOAD_STATUS, RATE_CON_STATUS,
-  TRUCK_OPERATIONAL_STATUS, TRUCK_STATUS,
+  TRUCK_OPERATIONAL_STATUS, TRUCK_STATUS, CARRIER_AUTHORITY_STATUS,
 } from "@/config/statuses";
 import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
+import type { CarrierAuthorityStatus } from "@/types/carrier-authority";
 import type { LoadExceptionSeverity, LoadExceptionStatus } from "@/types/load-exception";
 import type { LoadRecordStatus } from "@/types/load-record";
 import type { DriverStatus, LoadStatus, TruckStatus } from "@/types";
@@ -55,3 +56,10 @@ export function ExceptionStatusBadge({ status }: { status: LoadExceptionStatus }
   const meta = LOAD_EXCEPTION_STATUS[status];
   return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }
+
+/** The carrier's FMCSA authority (plan 25); an unknown value shows as-is. */
+export function CarrierAuthorityBadge({ status }: { status: string }) {
+  const meta = CARRIER_AUTHORITY_STATUS[status as CarrierAuthorityStatus];
+  return <Badge tone={meta?.tone ?? "neutral"}>{meta?.label ?? status}</Badge>;
+}
+

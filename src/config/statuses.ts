@@ -1,3 +1,4 @@
+import type { CarrierAuthorityStatus } from "@/types/carrier-authority";
 import type { LoadExceptionSeverity, LoadExceptionStatus } from "@/types/load-exception";
 import type { LoadRecordStatus } from "@/types/load-record";
 import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
@@ -145,3 +146,11 @@ export const LOAD_EXCEPTION_STATUS: Record<LoadExceptionStatus, { label: string;
   acknowledged: { label: "Acknowledged", tone: "info" },
   resolved:     { label: "Resolved",     tone: "success" },
 };
+
+/** The carrier's FMCSA authority (plan 25). */
+export const CARRIER_AUTHORITY_STATUS: Record<CarrierAuthorityStatus, { label: string; tone: Tone }> = {
+  AUTHORIZED: { label: "Authorized", tone: "success" },
+  NOT_AUTHORIZED: { label: "Not authorized", tone: "danger" },
+  OUT_OF_SERVICE: { label: "Out of service", tone: "danger" },
+};
+

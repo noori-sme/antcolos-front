@@ -1,9 +1,12 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { fleetKeys, loadExceptionKeys, loadRecordKeys, orgKey, queryKeys } from "@/lib/query/keys";
+import {
+  carrierAuthorityKeys, fleetKeys, loadExceptionKeys, loadRecordKeys, orgKey, queryKeys,
+} from "@/lib/query/keys";
+import { useCan } from "@/lib/session/hooks";
 import type { TruckListFilters } from "@/types/fleet-truck";
 import type { LoadRecordQuery, LoadRecordStatus } from "@/types/load-record";
 
@@ -59,3 +62,40 @@ export function useOpenExceptionsCount() {
     select: (page) => page.totalItems,
   });
 }
+
+// ── Carrier authority (plan 25) ────────────────────────────────────────────
+
+export function useCarrierAuthority() {
+  const ctx = useServiceContext();
+  const allowed = useCan("carrier:authority:view");
+  return useQuery({
+    queryKey: ctx ? carrierAuthorityKeys.current(ctx.organizationId) : ["carrier-authority", "no-context"],
+    queryFn: () => services.carrierAuthority.current(ctx!),
+    enabled: Boolean(ctx) && allowed,
+  });
+}
+
+export function useCarrierAuthorityHistory(page: number, enabled: boolean) {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: ctx ? carrierAuthorityKeys.history(ctx.organizationId, page) : ["carrier-authority", "no-context"],
+    queryFn: () => services.carrierAuthority.history(ctx!, { page, pageSize: 20 }),
+    enabled: Boolean(ctx) && enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Ask FMCSA now; the stored check and its history refresh after. */
+export function useRefreshCarrierAuthority() {
+  const ctx = useServiceContext();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!ctx) throw new Error("No organization selected");
+      return services.carrierAuthority.refresh(ctx);
+    },
+    onSuccess: () =>
+      ctx && queryClient.invalidateQueries({ queryKey: carrierAuthorityKeys.all(ctx.organizationId) }),
+  });
+}
+
