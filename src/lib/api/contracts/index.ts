@@ -9,6 +9,7 @@ export type * from "./reports";
 export type * from "./compliance";
 export type * from "./fleet";
 export type * from "./trucks";
+export type * from "./carrier-authority";
 export type * from "./rate-con-intake";
 export type * from "./org-people";
 export type * from "./org-access";
@@ -48,6 +49,9 @@ import type { FactoringService } from "./factoring";
 import type { FuelService, IftaService } from "./fuel";
 import type { FleetService } from "./fleet";
 import type { TrucksService } from "./trucks";
+import type {
+  CarrierAuthorityService, OrgDirectoryService, SelfMembershipsService,
+} from "./carrier-authority";
 import type { RateConIntakeService } from "./rate-con-intake";
 import type { LoadRecordsService } from "./load-records";
 import type { DriverLoadsService } from "./driver-loads";
@@ -85,6 +89,12 @@ export interface AntcolosServices {
   fleet: FleetService;
   /** The real truck registry (NestJS `/trucks`). http-only: see `src/lib/api/index.ts`. */
   trucks: TrucksService;
+  /** The carrier's FMCSA authority (backend plan 41). http-only. */
+  carrierAuthority: CarrierAuthorityService;
+  /** Other carriers by name, MC or DOT (plan 42). http-only. */
+  orgDirectory: OrgDirectoryService;
+  /** The signed-in person's own memberships (plan 42). http-only. */
+  selfMemberships: SelfMembershipsService;
   /** Rate Con upload, review and approval (NestJS `/documents`, plan 13). http-only. */
   rateConIntake: RateConIntakeService;
   /** Booked loads on the real API (F1.2, plan 14); http-only. */
