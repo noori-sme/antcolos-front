@@ -187,6 +187,16 @@ writes; `access.permission_granted` / `access.permission_revoked` with
 membership, a role-name check anywhere in authorization, or a cascade from a
 template edit to anybody's access.
 
+## Truck maintenance (`maintenance:*`, plan 24)
+
+Backend plan 48 maps one key per route. `maintenance:view` (`maintenance.read`) reads every
+truck's schedules and the fleet's tasks; `maintenance:manage` adds, edits and archives intervals
+and acknowledges, defers and completes tasks; `maintenance:readings:record`
+(`maintenance.record_reading`) records an odometer or engine hours on any truck of the fleet. A
+driver holds `maintenance:own:view` and `maintenance:own:update` (`read_own` / `update_own`):
+only through the My loads card, and only for the truck they are the current driver of; the API
+answers 404 for any other. A dispatcher gets view + readings, not manage.
+
 ## Answering an assigned load (`loads:respond`, plan 15)
 
 A driver accepts or turns down a load assigned to them (backend `load.respond`, plan 32). A

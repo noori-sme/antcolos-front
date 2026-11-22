@@ -1,8 +1,8 @@
 # 24 — Maintenance on the real API (F2.3)
 
 ```
-Status:   approved (owner, 2026-11-21: "plan all of them one by one, verify the plan and go ahead")
-Phase:    1 — not started (plan reviewed by frontend-reviewer 2026-11-22; findings applied)
+Status:   implemented (2026-11-22); (owner, 2026-11-21: "plan all of them one by one, verify the plan and go ahead")
+Phase:    5 — done (plan reviewed by frontend-reviewer 2026-11-22; findings applied)
 Branch:   feat/fleet-maintenance (same name as the backend branch, noori-sme/antcolos#87)
 Requirements: ../antcolos/docs/requirements/maintenance.md (M2.5)
 Backend contract: ../antcolos/docs/requirements/maintenance-api-contract.md (plan 48)
@@ -145,3 +145,14 @@ screens and are left out (no adapter method for an unused route).
 - The mock `/maintenance` area and the live "Service due" both appear in mock mode's nav. Mock
   mode is a demo; in http mode only "Service due" shows.
 - Completing with a receipt: the UI offers a note, not a document picker, until receipts exist.
+
+## Verification (2026-11-22)
+
+- vitest: new mappers 5, due helpers 8, permission mapping + route key; all green.
+- Live spec `fleet-maintenance.live.spec.ts` against the local backend on `feat/fleet-maintenance`:
+  4 passed (owner from due to done on desktop; dispatcher read-only; driver on desktop and
+  Pixel 7), 2 skipped (desktop-only flows on mobile). No horizontal scroll on the phone.
+- Found while building: the hooks live in `features/fleet/hooks.ts` and
+  `features/driver-workflow/hooks.ts` (no cross-feature imports); the panel filters tasks by
+  `truckId` (contract query param) to get full task objects for the dialogs.
+
