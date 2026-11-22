@@ -161,6 +161,7 @@ export const SETTINGS_NAV: NavSection[] = [
     label: "Organization",
     items: [
       { label: "Organization", href: "/settings/organization", icon: Building2, requires: ["organization:manage"] },
+      { label: "Usage & costs", href: "/settings/usage", icon: Gauge, requires: ["usage:view"] },
       { label: "People", href: "/settings/users", icon: Users, requires: ["members:view"] },
       // `invitations:create`, not the weaker view key. The route manifest is
       // derived from this line, so it is also what the route guard enforces —

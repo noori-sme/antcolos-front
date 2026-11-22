@@ -149,6 +149,7 @@ export type PermissionKey =
   // records it reaches, and both have to agree.
   | "factoring:view" | "factoring:check" | "factoring:manage" | "factoring:override"
   // Organization settings
+  | "usage:view"
   | "organization:manage" | "integrations:view" | "integrations:manage" | "audit:view"
   // Audit & Risk — the one ledger, and the cases opened off it.
   //

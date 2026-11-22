@@ -28,6 +28,12 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "lookup", vin] as const,
 };
 
+/** Usage and estimated costs (plan 26). */
+export const usageKeys = {
+  organization: (organizationId: string, range: { from: string; to: string }) =>
+    [...orgKey(organizationId), "usage", range.from, range.to] as const,
+};
+
 /**
  * The real loads API (F1.2, plan 14). Shared: the loads screens read it, and a
  * Rate Con approval (which creates or moves a load) invalidates `all`.
