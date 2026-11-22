@@ -2,7 +2,7 @@
 
 ```
 Status:   approved (owner, 2026-11-21: "plan all of them one by one, verify the plan and go ahead")
-Phase:    1 — not started
+Phase:    1 — not started (plan reviewed by frontend-reviewer 2026-11-22; findings applied)
 Branch:   feat/fleet-maintenance (same name as the backend branch, noori-sme/antcolos#87)
 Requirements: ../antcolos/docs/requirements/maintenance.md (M2.5)
 Backend contract: ../antcolos/docs/requirements/maintenance-api-contract.md (plan 48)
@@ -12,7 +12,8 @@ Updated:  2026-11-21
 
 ## Summary
 
-Owners and dispatchers manage service intervals on the **truck profile** (schedules by date,
+Owners (`maintenance:manage`) manage service intervals on the **truck profile**; dispatchers see it
+read-only and may record a reading (schedules by date,
 miles or engine hours; latest odometer and engine hours; record a reading; acknowledge, defer,
 complete the open task). **Fleet & people → Service due** lists the fleet's open maintenance
 tasks. A driver sees **their truck's maintenance** at the top of My loads: what is due, record the
@@ -65,7 +66,8 @@ screens and are left out (no adapter method for an unused route).
 | `src/features/driver-workflow/my-truck-maintenance-card.tsx` | new | driver card; shown on My loads when the caller holds `maintenance:own:view` |
 | `src/features/driver-workflow/live-trips-screen.tsx` | changed | render the card above the trips |
 | `src/features/fleet/truck-profile-screen.tsx` | changed | render the panel (gated `maintenance:view`) |
-| `src/lib/permissions/catalog.ts` | changed | 3 keys + 5 backend mappings |
+| `src/lib/permissions/catalog.ts` | changed | 3 keys (plain-language description, `scopeNote` for the own keys, prerequisites) + backend mappings next to the existing `maintenance.*` ones |
+| `src/lib/permissions/templates.ts` | changed | match the backend: Driver drops `maintenance:view`, gets `maintenance:own:view` + `maintenance:own:update`; Dispatcher gets `maintenance:readings:record`; every template holding `maintenance:manage` also gets `maintenance:readings:record` |
 | `src/config/nav.ts`, `src/config/live-routes.ts` | changed | "Service due" `/fleet/maintenance`, `requires: ["maintenance:view"]`; live route |
 | `tests/browser/fleet-maintenance.live.spec.ts` | new | live spec (mock-mode `(app)` specs can't run: plan 23 note) |
 | `docs/architecture/ARCHITECTURE.md` §5, `docs/roles-and-permissions.md` | changed | domain row; new keys |
@@ -78,7 +80,8 @@ screens and are left out (no adapter method for an unused route).
       category or task status keeps its raw string and renders through a label fallback.
 - [ ] Catalog keys and backend mappings; `permissions.test.ts` cases for the mapping and
       `requiredPermissionsForPath("/fleet/maintenance")`.
-- Tests: mapper tests with contract fixtures (schedule with due, task, my-truck, reading).
+- Tests: mapper tests with contract fixtures (schedule with due, task, my-truck, reading); the
+  repeated `status` query param is sent as `status=OPEN&status=ACKNOWLEDGED` (not `status[]=`).
   → verify: `npx vitest run src/lib/api/http/maintenance.test.ts src/lib/permissions`
 
 ### Phase 2 — domain helpers, keys, hooks
@@ -86,7 +89,13 @@ screens and are left out (no adapter method for an unused route).
       null meters, defer max date).
 - [ ] Hooks: `useTruckMaintenance(truckId)`, `useMaintenanceTasks(filters)`, `useMyTruckMaintenance()`
       (404 `NO_CURRENT_TRUCK` → `null`, not an error), mutations for each write. Each mutation
-      takes an `idempotencyKey` created when the dialog opens (one per intent, reused on retry).
+      takes `{ …, idempotencyKey }` like `features/fleet/hooks.ts`: dialogs create it when they
+      open; one-click actions (acknowledge, archive confirm, the driver's acknowledge) keep it in
+      a ref from the first click until success, so a retry reuses it.
+- [ ] Keys: truck maintenance `[...orgKey, "trucks", "maintenance", truckId]` (a trucks
+      invalidation refetching it is fine); tasks `[...orgKey, "maintenance", "tasks", filters]`;
+      mine `[...orgKey, "maintenance", "mine"]`. Writes invalidate the truck's maintenance, the
+      tasks prefix and mine. Queries are `enabled` only when the caller holds the key.
   → verify: `npx vitest run src/lib/maintenance`
 
 ### Phase 3 — screens
@@ -96,15 +105,20 @@ screens and are left out (no adapter method for an unused route).
       archive schedule (`ConfirmDialog` for archive). Empty state: "No service intervals yet".
 - [ ] Service due screen: tasks with unit (link to truck), title, status, due summary, opened;
       filter chips Open (default: OPEN, ACKNOWLEDGED, DEFERRED) / Completed / All; pagination.
-- [ ] Driver card: their truck's open tasks with Acknowledge; "Record odometer" form; hidden
-      when the caller drives no truck (404) or lacks `maintenance:own:view`.
+- [ ] Driver card: their truck's open tasks with Acknowledge; "Record odometer" form
+      (`maintenance:own:update`); rendered outside the loads empty/error ternary so it shows
+      with or without loads; `<Can maintenance:own:view>` so the query never fires without the
+      key; a 404 (no truck) renders nothing.
+- [ ] Truck panel wrapped in `<Can maintenance:view>` (the profile itself only needs
+      `trucks:view`). "Record reading" there needs `maintenance:readings:record`; the task and
+      schedule actions need `maintenance:manage`.
 - [ ] All four states; tokens only; 360 px.
 
 ### Phase 4 — route, nav, browser spec, live run
-- [ ] Route + nav + live route.
+- [ ] Route + nav + live route; manifest test `requiredPermissionsForPath("/fleet/maintenance")`.
 - [ ] Live spec against the local backend on `feat/fleet-maintenance`: admin adds a schedule on a
       truck, records a reading that makes it due, the task shows on the profile and in Service due,
-      defers then completes it; the driver (seeded driver assigned to the truck) sees the card,
+      defers then completes it; a dispatcher sees the panel read-only; the driver (seeded driver assigned to the truck) sees the card,
       records a reading, acknowledges. Desktop + Pixel 7 screenshots.
   → verify: `LIVE_WEB_URL=… npx playwright test tests/browser/fleet-maintenance.live.spec.ts`, `npm run build`
 
