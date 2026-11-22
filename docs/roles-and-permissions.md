@@ -187,6 +187,11 @@ writes; `access.permission_granted` / `access.permission_revoked` with
 membership, a role-name check anywhere in authorization, or a cascade from a
 template edit to anybody's access.
 
+## Usage and costs (`usage:view`, plan 26)
+
+`usage:view` (`usage.read`) opens Settings → Usage & costs: the organization's AI, storage and
+message usage with estimated costs. Admins only by default; it is marked sensitive and financial.
+
 ## Answering an assigned load (`loads:respond`, plan 15)
 
 A driver accepts or turns down a load assigned to them (backend `load.respond`, plan 32). A
