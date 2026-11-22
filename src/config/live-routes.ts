@@ -18,6 +18,7 @@ export const HTTP_LIVE_ROUTES: readonly string[] = [
   "/settings/invitations",  // orgInvitations (invitations-api-contract)
   "/settings/permissions",  // orgRoles + catalog (permissions-api-contract)
   "/account/profile",       // selfProfile (profile.md, plan 11)
+  "/account/organizations", // selfMemberships (membership-api-contract §2, plan 25)
   "/settings/users",        // orgMembers (membership-api-contract §2, plan 12)
   "/rate-cons",             // rateConIntake (documents-api-contract, plan 13)
   "/loads",                 // loadRecords (loads-api-contract, plan 14)
