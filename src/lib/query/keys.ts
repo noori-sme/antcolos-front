@@ -6,6 +6,7 @@ import type {
 import type { OrgPeopleFamily, OrgPeopleQuery } from "@/types/org-people";
 import type { LoadRecordQuery } from "@/types/load-record";
 import type { TruckListFilters } from "@/types/fleet-truck";
+import type { MaintenanceTaskFilters } from "@/types/maintenance-live";
 
 /**
  * Every query key is namespaced by organization. Org A's data can never be
@@ -26,6 +27,21 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "detail", truckId] as const,
   lookup: (organizationId: string, vin: string) =>
     [...orgKey(organizationId), "trucks", "lookup", vin] as const,
+};
+
+/**
+ * Real-API maintenance (plan 24). A truck's maintenance sits under the trucks
+ * prefix (a truck invalidation refetching it is fine); the fleet task list and
+ * the driver's own truck have their own prefixes.
+ */
+export const maintenanceKeys = {
+  trucksAll: (organizationId: string) => [...orgKey(organizationId), "trucks", "maintenance"] as const,
+  truck: (organizationId: string, truckId: string) =>
+    [...orgKey(organizationId), "trucks", "maintenance", truckId] as const,
+  tasksAll: (organizationId: string) => [...orgKey(organizationId), "maintenance", "tasks"] as const,
+  tasks: (organizationId: string, filters: MaintenanceTaskFilters) =>
+    [...orgKey(organizationId), "maintenance", "tasks", filters] as const,
+  mine: (organizationId: string) => [...orgKey(organizationId), "maintenance", "mine"] as const,
 };
 
 /**
