@@ -127,6 +127,7 @@ export interface CompleteTaskInput {
 
 export interface MaintenanceTaskFilters {
   status?: readonly MaintenanceTaskStatus[];
+  truckId?: string;
   page: number;
   pageSize: number;
 }

@@ -30,6 +30,8 @@ import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { useTruck } from "./hooks";
 import { TruckActions } from "./truck-actions";
 import { TruckAssignmentsPanel } from "./truck-assignments-panel";
+import { TruckMaintenancePanel } from "./truck-maintenance-panel";
+import { Can } from "@/components/auth/can";
 import { cn } from "@/lib/utils";
 
 export type {
@@ -329,6 +331,9 @@ export function TruckProfileScreen({ truckId }: { truckId: string }) {
         <div className="space-y-6">
           {/* Driver & Dispatcher Assignments */}
           <TruckAssignmentsPanel truck={truck} />
+          <Can permission="maintenance:view">
+            <TruckMaintenancePanel truckId={truck.id} />
+          </Can>
 
           {/* Operational & Terminal Information */}
           <section className="rounded-lg border border-border bg-surface p-5 shadow-e1">

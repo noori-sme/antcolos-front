@@ -109,5 +109,6 @@ describe("maintenance mappers", () => {
     expect(taskQuery({ status: ["OPEN", "ACKNOWLEDGED"], page: 1, pageSize: 50 }).toString()).toBe(
       "page=1&pageSize=50&status=OPEN&status=ACKNOWLEDGED",
     );
+    expect(taskQuery({ truckId: "t-1", page: 2, pageSize: 20 }).toString()).toBe("page=2&pageSize=20&truckId=t-1");
   });
 });

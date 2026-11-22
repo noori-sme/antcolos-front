@@ -115,8 +115,14 @@ export function toMyTruck(body: unknown): MyTruckMaintenance {
 }
 
 /** `status=OPEN&status=ACKNOWLEDGED`, the shape the API's repeatable param reads. */
-export function taskQuery(filters: { status?: readonly string[]; page: number; pageSize: number }): URLSearchParams {
+export function taskQuery(filters: {
+  status?: readonly string[];
+  truckId?: string;
+  page: number;
+  pageSize: number;
+}): URLSearchParams {
   const params = new URLSearchParams({ page: String(filters.page), pageSize: String(filters.pageSize) });
+  if (filters.truckId) params.set("truckId", filters.truckId);
   for (const status of filters.status ?? []) params.append("status", status);
   return params;
 }
