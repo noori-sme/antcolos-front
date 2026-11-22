@@ -1,8 +1,8 @@
 # 25 — Carrier authority, hand-off to another carrier, leave an organization
 
 ```
-Status:   approved (owner, 2026-11-21: "plan all of them one by one, verify the plan and go ahead")
-Phase:    1 — not started (plan reviewed by frontend-reviewer 2026-11-22; findings below applied)
+Status:   implemented (2026-11-22); (owner, 2026-11-21: "plan all of them one by one, verify the plan and go ahead")
+Phase:    5 — done (plan reviewed by frontend-reviewer 2026-11-22; findings below applied)
 Branch:   feat/identity-carrier-authority-ui
 Backend:  ../antcolos plans 41 (#78) and 42 (#79), both merged to main
 Contracts: ../antcolos/docs/requirements/carrier-authority-api-contract.md;
@@ -135,4 +135,15 @@ Templates (mock mode) mirror the backend: Admin both; Dispatcher view. Search ne
   docstring updated.
 - Catalog aliases next to the others; `orgTypes: ["CARRIER"]`; refused-path test for refresh on
   the Dispatcher template; `/account/organizations` page branches on `API_MODE`.
+
+## Verification (2026-11-22)
+
+- vitest: mappers 4, format 3, permission mapping + refused refresh on Dispatcher; all green.
+- Live spec `authority-directory-leave.live.spec.ts` with `NEXT_PUBLIC_DEMO_AREAS=off` (the live
+  Home only renders then, like the F1.6 owner dashboard): desktop 4 passed; mobile 1 passed
+  (leave), 3 desktop-only skipped. Dev-only data, idempotent:
+  - `Bluefin Freight` (CARRIER, MC778899) for the carrier search;
+  - the seeded dispatcher as a DISPATCHER of `Pacific Dispatch LLC`, to leave.
+- Screens checked: authority card empty ("Never checked") and populated (Authorized, 7 years 7
+  months, MC/DOT, authorities); re-check on the seed carrier shows the API's 400 reason.
 

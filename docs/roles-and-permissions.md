@@ -187,6 +187,13 @@ writes; `access.permission_granted` / `access.permission_revoked` with
 membership, a role-name check anywhere in authorization, or a cascade from a
 template edit to anybody's access.
 
+## Carrier authority (`carrier:authority:*`, plan 25)
+
+`carrier:authority:view` (`carrier_authority.read`) shows the carrier's stored FMCSA authority on
+the live Home; `carrier:authority:refresh` (`carrier_authority.refresh`) asks FMCSA again. Both are
+carrier-only. Admins hold both; dispatchers only view. Handing a truck to another carrier needs
+`trucks:edit` (the carrier search is behind `truck.update`); leaving an organization needs no key.
+
 ## Answering an assigned load (`loads:respond`, plan 15)
 
 A driver accepts or turns down a load assigned to them (backend `load.respond`, plan 32). A
