@@ -33,6 +33,12 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "availability", query] as const,
 };
 
+/** Usage and estimated costs (plan 26). */
+export const usageKeys = {
+  organization: (organizationId: string, range: { from: string; to: string }) =>
+    [...orgKey(organizationId), "usage", range.from, range.to] as const,
+};
+
 /**
  * Real-API maintenance (plan 24). A truck's maintenance sits under the trucks
  * prefix (a truck invalidation refetching it is fine); the fleet task list and

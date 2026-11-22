@@ -197,6 +197,11 @@ driver holds `maintenance:own:view` and `maintenance:own:update` (`read_own` / `
 only through the My loads card, and only for the truck they are the current driver of; the API
 answers 404 for any other. A dispatcher gets view + readings, not manage.
 
+## Usage and costs (`usage:view`, plan 26)
+
+`usage:view` (`usage.read`) opens Settings → Usage & costs: the organization's AI, storage and
+message usage with estimated costs. Admins only by default; it is marked sensitive and financial.
+
 ## Answering an assigned load (`loads:respond`, plan 15)
 
 A driver accepts or turns down a load assigned to them (backend `load.respond`, plan 32). A

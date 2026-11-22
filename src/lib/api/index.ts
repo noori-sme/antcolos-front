@@ -4,6 +4,7 @@ import { httpFleetAvailabilityService } from "./http/fleet-availability";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import { httpMaintenanceService } from "./http/maintenance";
+import { httpUsageService } from "./http/usage";
 import { httpRateConIntakeService } from "./http/rate-con-intake";
 import { httpLoadRecordsService } from "./http/load-records";
 import { httpDriverLoadsService } from "./http/driver-loads";
@@ -76,6 +77,8 @@ const mockServices: AntcolosServices = {
   trucks: httpTrucksService,
   // http-only (plan 24), like trucks: no maintenance mock for these routes.
   maintenance: httpMaintenanceService,
+  // http-only (plan 26), like trucks.
+  usage: httpUsageService,
   // http-only (plan 13): Rate Con upload, review and approval have no mock;
   // the screens call the real API in both modes.
   rateConIntake: httpRateConIntakeService,

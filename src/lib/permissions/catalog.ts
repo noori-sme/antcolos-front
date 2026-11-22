@@ -253,6 +253,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "factoring:override", label: "Book past a factoring block", description: "Book a load your factor has refused or has not approved, on the record, with a reason. The strongest factoring permission there is.", group: "factoring", financial: true, sensitive: true, prerequisites: ["factoring:view"], scopeNote: "Only where the carrier's own policy permits an override. Every use requires a reason and writes one audit entry that can never be edited or removed." },
 
   // ---- Organization settings ---------------------------------------------
+  { key: "usage:view", label: "See usage and costs", description: "See what the organization used (AI, stored files, messages) and what it is estimated to cost.", group: "organization", sensitive: true, financial: true },
   { key: "organization:manage", label: "Manage organization settings", description: "Edit the organization's details and billing information.", group: "organization", sensitive: true },
   { key: "integrations:view", label: "View integrations", description: "See which outside tools are connected.", group: "organization" },
   { key: "integrations:manage", label: "Manage integrations", description: "Connect and disconnect outside tools.", group: "organization", sensitive: true, prerequisites: ["integrations:view"] },
@@ -547,6 +548,7 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "risk.read": "risk:view",
   "risk.view": "risk:view",
   "organization.manage": "organization:manage",
+  "usage.read": "usage:view",
   "organization.edit": "organization:manage",
   "organization.update": "organization:manage",
   "integration.read": "integrations:view",
