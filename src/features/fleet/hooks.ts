@@ -3,7 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { fleetKeys, queryKeys } from "@/lib/query/keys";
+import { fleetKeys, orgDirectoryKeys, queryKeys } from "@/lib/query/keys";
 import { usePeopleList } from "@/lib/api/use-org-people";
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, ReplaceAssignmentInput,
@@ -176,3 +176,19 @@ export function useRemoveAssignment(truckId: string) {
     { invalidatesPeople: true },
   );
 }
+
+/**
+ * Other carriers by name, MC or DOT, to hand a truck to (plan 25). The screen
+ * debounces `q`; nothing is asked for under 2 characters (the API refuses it).
+ */
+export function useCarrierSearch(q: string) {
+  const ctx = useServiceContext();
+  const query = q.trim();
+  return useQuery({
+    queryKey: ctx ? orgDirectoryKeys.carriers(ctx.organizationId, query) : ["directory", "no-context"],
+    queryFn: () => services.orgDirectory.searchCarriers(ctx!, query),
+    enabled: Boolean(ctx) && query.length >= 2,
+    placeholderData: keepPreviousData,
+  });
+}
+
