@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LoadRecordStatusBadge } from "@/components/common/status-badge";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
+import { MyTruckMaintenanceCard } from "./my-truck-maintenance-card";
 import { activeLoad, currentStop, milestoneLabel, stopName } from "@/lib/driver-loads/milestones";
 import { routeSummary } from "@/lib/load-records/format";
 import type { DriverLoad } from "@/types/driver-load";
@@ -20,6 +21,8 @@ export function DriverLoadsScreen() {
   return (
     <div className="space-y-section">
       <PageHeader title="My loads" description="The loads dispatch put you on, until the POD is in." />
+      {/* Outside the loads states: a driver with no loads still sees their truck (plan 24). */}
+      <MyTruckMaintenanceCard />
       {loads.isPending ? (
         <LoadingSkeleton rows={3} />
       ) : loads.isError ? (

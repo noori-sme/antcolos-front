@@ -10,7 +10,7 @@ import { categoryLabel, dueSummary, intervalSummary } from "@/lib/maintenance/du
 import { OPEN_TASK_STATUSES, type MaintenanceSchedule, type MaintenanceTask } from "@/types/maintenance-live";
 import {
   useAcknowledgeTask, useArchiveSchedule, useMaintenanceTasks, useRecordReading, useTruckMaintenance,
-} from "./maintenance-hooks";
+} from "./hooks";
 import { CompleteDialog, DeferDialog, ReadingDialog, ScheduleDialog } from "./maintenance-dialogs";
 import { TruckConfirmDialog } from "./truck-dialog-parts";
 

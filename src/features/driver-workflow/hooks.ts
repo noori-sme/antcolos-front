@@ -6,7 +6,11 @@ import {
 import { useCallback, useRef, useState } from "react";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { driverLoadKeys, loadExceptionKeys, loadRecordKeys, orgKey } from "@/lib/query/keys";
+import {
+  driverLoadKeys, loadExceptionKeys, loadRecordKeys, maintenanceKeys, orgKey,
+} from "@/lib/query/keys";
+import { useCan } from "@/lib/session/hooks";
+import type { ReadingInput } from "@/types/maintenance-live";
 import type { ReportExceptionInput } from "@/types/load-exception";
 import { createIntentKeys } from "@/lib/rate-con/intent-key";
 import type { NextMilestone } from "@/types/driver-load";
@@ -277,3 +281,48 @@ export function useDriverLoadAction(loadId: string) {
     },
   });
 }
+
+// ── The driver's own truck maintenance (F2.3, plan 24) ────────────────────
+
+/** Their current truck's maintenance; `null` data when they drive no truck here. */
+export function useMyTruckMaintenance() {
+  const ctx = useServiceContext();
+  const allowed = useCan("maintenance:own:view");
+  return useQuery({
+    queryKey: ctx ? maintenanceKeys.mine(ctx.organizationId) : ["maintenance", "no-context"],
+    queryFn: () => services.maintenance.myTruck(ctx!),
+    enabled: Boolean(ctx) && allowed,
+  });
+}
+
+function useMyMaintenanceMutation<TVars>(run: (ctx: NonNullable<ReturnType<typeof useServiceContext>>, vars: TVars) => Promise<unknown>) {
+  const ctx = useServiceContext();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: TVars) => {
+      if (!ctx) throw new Error("No organization selected");
+      return run(ctx, vars);
+    },
+    onSuccess: async () => {
+      if (!ctx) return;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: maintenanceKeys.mine(ctx.organizationId) }),
+        queryClient.invalidateQueries({ queryKey: maintenanceKeys.tasksAll(ctx.organizationId) }),
+        queryClient.invalidateQueries({ queryKey: maintenanceKeys.trucksAll(ctx.organizationId) }),
+      ]);
+    },
+  });
+}
+
+export function useRecordMyReading() {
+  return useMyMaintenanceMutation((ctx, vars: { input: ReadingInput; idempotencyKey: string }) =>
+    services.maintenance.recordMyReading(ctx, vars.input, vars.idempotencyKey),
+  );
+}
+
+export function useAcknowledgeMyTask() {
+  return useMyMaintenanceMutation((ctx, vars: { taskId: string; idempotencyKey: string }) =>
+    services.maintenance.acknowledgeMyTask(ctx, vars.taskId, vars.idempotencyKey),
+  );
+}
+

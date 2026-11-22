@@ -14,7 +14,7 @@ import {
   type ScheduleInput,
 } from "@/types/maintenance-live";
 import { DialogActions, DialogError, SELECT_CLASS } from "./truck-dialog-parts";
-import { useCompleteTask, useCreateSchedule, useDeferTask, useUpdateSchedule } from "./maintenance-hooks";
+import { useCompleteTask, useCreateSchedule, useDeferTask, useUpdateSchedule } from "./hooks";
 
 /** One key per intent: made when the dialog opens, reused if the submit is retried. */
 const useIntentKey = () => useState(() => crypto.randomUUID())[0];

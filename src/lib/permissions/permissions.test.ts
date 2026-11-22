@@ -145,6 +145,7 @@ describe("the route manifest", () => {
   it("still guards the routes it guarded before", () => {
     expect(requiredPermissionsForPath("/loads")).toEqual(["loads:view"]);
     expect(requiredPermissionsForPath("/fleet/trucks")).toEqual(["trucks:view"]);
+    expect(requiredPermissionsForPath("/fleet/maintenance")).toEqual(["maintenance:view"]);
     expect(requiredPermissionsForPath("/home")).toEqual([]);
   });
 
