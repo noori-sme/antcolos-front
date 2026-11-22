@@ -1,5 +1,6 @@
 import type { AntcolosServices } from "./contracts";
 import { API_MODE, DEMO_AREAS } from "./mode";
+import { httpFleetAvailabilityService } from "./http/fleet-availability";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import { httpRateConIntakeService } from "./http/rate-con-intake";
@@ -80,6 +81,8 @@ const mockServices: AntcolosServices = {
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.
   driverLoads: httpDriverLoadsService,
+  // http-only (F2.5): availability comes from the backend's live loads; no mock.
+  fleetAvailability: httpFleetAvailabilityService,
   // http-only (F1.5): exceptions live beside live loads, which are http-only.
   loadExceptions: httpLoadExceptionsService,
   // http-only for the same reason: the access screens have always called

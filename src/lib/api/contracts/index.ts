@@ -1,3 +1,4 @@
+import type { FleetAvailabilityService } from "./fleet-availability";
 import type { LoadExceptionsService } from "./load-exceptions";
 export * from "./context";
 export type * from "./needs-you";
@@ -92,6 +93,7 @@ export interface AntcolosServices {
   loadRecords: LoadRecordsService;
   /** http-only (plan 16): the driver's own loads. */
   driverLoads: DriverLoadsService;
+  fleetAvailability: FleetAvailabilityService;
   loadExceptions: LoadExceptionsService;
   /** Real organization invitations (NestJS). http-only: see `src/lib/api/index.ts`. */
   orgInvitations: OrgInvitationsService;
