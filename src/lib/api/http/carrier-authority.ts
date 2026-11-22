@@ -86,7 +86,10 @@ export const httpSelfMembershipsService: SelfMembershipsService = {
       .filter((m): m is MyOrganization => m !== undefined);
   },
   async leave(_ctx, organizationId) {
-    // 200 with an empty body: nothing to map.
-    await apiClient.post(`/users/me/memberships/${encodeURIComponent(organizationId)}/leave`, {});
+    // 200 with an empty body: nothing to map. A 404 is an answer (already left), not an error.
+    const res = await apiClient.post(`/users/me/memberships/${encodeURIComponent(organizationId)}/leave`, {}, {
+      validateStatus: (status) => (status >= 200 && status < 300) || status === 404,
+    });
+    return { alreadyLeft: res.status === 404 };
   },
 };

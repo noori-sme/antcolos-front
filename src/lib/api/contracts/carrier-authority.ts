@@ -20,6 +20,9 @@ export interface OrgDirectoryService {
 /** The signed-in person's own memberships (plan 42). */
 export interface SelfMembershipsService {
   list(ctx: ServiceContext): Promise<MyOrganization[]>;
-  /** Ends the caller's own membership. 409 for the last admin; 404 when already left. */
-  leave(ctx: ServiceContext, organizationId: string): Promise<void>;
+  /**
+   * Ends the caller's own membership. 409 for the last admin (thrown).
+   * `alreadyLeft` when there was no active membership (404): a repeat or another tab.
+   */
+  leave(ctx: ServiceContext, organizationId: string): Promise<{ alreadyLeft: boolean }>;
 }

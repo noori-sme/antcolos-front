@@ -26,9 +26,9 @@ export function MyOrganizationsScreen() {
   return (
     <div className="space-y-section">
       <PageHeader title="My organizations" description="Where you work. Leaving one never deletes your Antcolos account." />
-      {isLoading && <LoadingSkeleton rows={2} />}
+      {(isLoading || !ctx) && <LoadingSkeleton rows={2} />}
       {isError && <ErrorState title="Couldn't load your organizations" description={error?.message} onRetry={() => refetch()} />}
-      {!isLoading && !isError && orgs.length === 0 && (
+      {ctx && !isLoading && !isError && orgs.length === 0 && (
         <EmptyState icon={Building2} title="No organizations" description="When a carrier or dispatch company adds you, it shows up here." />
       )}
       {orgs.length > 0 && (

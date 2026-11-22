@@ -29,13 +29,8 @@ export function useLeaveOrganization() {
   return useMutation({
     mutationFn: async (organization: { organizationId: string; name: string }) => {
       if (!ctx) throw new Error("No organization selected");
-      try {
-        await services.selfMemberships.leave(ctx, organization.organizationId);
-      } catch (error) {
-        // Already gone (a repeat, or another tab): the list just needs to catch up.
-        if (error instanceof Error && /membership not found/i.test(error.message)) return organization;
-        throw error;
-      }
+      // Already gone (a repeat, or another tab) is not an error: the list just catches up.
+      await services.selfMemberships.leave(ctx, organization.organizationId);
       return organization;
     },
     onSuccess: async (organization) => {
