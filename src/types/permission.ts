@@ -63,7 +63,8 @@ export type PermissionKey =
   // Compliance & safety
   | "compliance:view" | "compliance:manage"
   // Maintenance — equipment upkeep. Separate from compliance, which is paperwork.
-  | "maintenance:view" | "maintenance:manage"
+  | "maintenance:view" | "maintenance:manage" | "maintenance:readings:record"
+  | "maintenance:own:view" | "maintenance:own:update"
   | "maintenance:defects:report" | "maintenance:defects:manage"
   | "maintenance:repairs:manage" | "maintenance:service:record"
   | "maintenance:costs:view" | "maintenance:outofservice:manage"

@@ -54,7 +54,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // A dispatcher covering a truck needs to know how far out it is; a
       // dispatcher who is not covering it learns nothing either way.
       "eld:location:precise:view",
-      "maintenance:view",
+      // The fleet's service due, and a reading a driver phoned in (backend plan 48).
+      "maintenance:view", "maintenance:readings:record",
       // A dispatcher is usually the first to hear about a wreck, so they can
       // open a claim. They are not given the policy, and never the money.
       "claims:view", "claims:create",
@@ -92,6 +93,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "settlements:view", "settlements:dispute",
       // Their own assigned truck, and the ability to report a fault on it.
       "trucks:view", "maintenance:view", "maintenance:defects:report",
+      // Their current truck's service due: see it, record its odometer, acknowledge (plan 24).
+      "maintenance:own:view", "maintenance:own:update",
       // A driver reads the agreement that governs their own work and signs
       // their own side of it. Signer authority is what decides which party
       // that is, so this key can never reach the carrier's signature line —
@@ -136,8 +139,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "eld:view", "eld:diagnostics:view", "eld:location:precise:view",
       "trucks:documents:manage", "trailers:documents:manage",
       "documents:view", "documents:upload", "documents:approve", "loads:view",
-      "maintenance:view", "maintenance:manage", "maintenance:defects:manage",
-      "maintenance:outofservice:manage",
+      "maintenance:view", "maintenance:manage", "maintenance:readings:record",
+      "maintenance:defects:manage", "maintenance:outofservice:manage",
       "insurance:view", "claims:view", "claims:create", "claims:manage",
       // Safety is usually the first to be shown a flagged concern. Reading one
       // is not the same as working it, so this is `risk:view` alone.
@@ -191,7 +194,7 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "trailers:view", "trailers:edit", "trailers:documents:manage",
       "trailers:status:manage", "trailers:attachments:manage",
       "documents:view", "documents:upload",
-      "maintenance:view", "maintenance:manage",
+      "maintenance:view", "maintenance:manage", "maintenance:readings:record",
       "maintenance:defects:report", "maintenance:defects:manage",
       "maintenance:repairs:manage", "maintenance:service:record",
       "maintenance:costs:view", "maintenance:outofservice:manage",

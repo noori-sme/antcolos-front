@@ -3,6 +3,7 @@ import { httpDriverLoadsService } from "./driver-loads";
 import { httpLoadExceptionsService } from "./load-exceptions";
 import type { AntcolosServices } from "../contracts";
 import { httpTrucksService } from "./trucks";
+import { httpMaintenanceService } from "./maintenance";
 import { httpRateConIntakeService } from "./rate-con-intake";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
 import { httpOrgPeopleService } from "./org-people";
@@ -22,6 +23,8 @@ const notImplemented = (method: string) => (): never => {
 
 export const httpServices: AntcolosServices = {
   trucks: httpTrucksService,
+  // http-only (plan 24), like trucks: no maintenance mock for these routes.
+  maintenance: httpMaintenanceService,
   rateConIntake: httpRateConIntakeService,
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.
