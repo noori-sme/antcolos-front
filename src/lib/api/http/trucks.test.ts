@@ -13,6 +13,13 @@ const CONTRACT_TRUCK = {
   color: "White",
   equipmentType: "DRY_VAN",
   trailerLengthFt: 53,
+  trailerWidthIn: 102,
+  trailerHeightIn: 110,
+  hasLiftgate: true,
+  hasPalletJack: false,
+  strapCount: 12,
+  reeferMinTempF: null,
+  reeferMaxTempF: null,
   trailerNumber: "TRL-104",
   payloadLbs: 45000,
   gvwrLbs: 80000,
@@ -101,6 +108,18 @@ describe("toTruck", () => {
     const truck = toTruck({ ...CONTRACT_TRUCK, equipmentType: "SPACESHIP", operationalStatus: 7 });
     expect(truck.equipmentType).toBeUndefined();
     expect(truck.operationalStatus).toBeUndefined();
+  });
+
+  it("maps capability fields; a null flag stays not-recorded, false stays false (plan 46)", () => {
+    expect(toTruck(CONTRACT_TRUCK)).toMatchObject({
+      trailerWidthIn: 102,
+      trailerHeightIn: 110,
+      hasLiftgate: true,
+      hasPalletJack: false,
+      strapCount: 12,
+      reeferMinTempF: undefined,
+    });
+    expect(toTruck({ ...CONTRACT_TRUCK, hasLiftgate: null }).hasLiftgate).toBeNull();
   });
 
   it("turns null identity fields into undefined", () => {

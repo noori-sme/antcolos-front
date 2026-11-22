@@ -158,6 +158,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   // ---- Compliance & safety -----------------------------------------------
   { key: "compliance:view", label: "View compliance", description: "See licences, inspections and what is about to expire.", group: "compliance", scopeNote: "Narrowed by record scope, so a driver sees the requirements that are theirs." },
   { key: "compliance:manage", label: "Manage compliance", description: "Record and clear compliance items.", group: "compliance", prerequisites: ["compliance:view"] },
+  // Driver credentials, one key per backend `credential.*` action (plan 20).
+  { key: "credentials:view", label: "See driver credentials", description: "See every driver's licences and endorsements (CDL, TWIC, Hazmat, medical card, …), their status, expiry and history.", group: "compliance" },
+  { key: "credentials:view_own", label: "See your own credentials", description: "See the credentials this organization holds on record for you.", group: "compliance" },
+  { key: "credentials:create", label: "Record driver credentials", description: "Add a credential to a driver's record.", group: "compliance", sensitive: true, prerequisites: ["credentials:view"] },
+  { key: "credentials:edit", label: "Update driver credentials", description: "Change a credential's dates and status — suspend, revoke, renew.", group: "compliance", sensitive: true, prerequisites: ["credentials:view"] },
 
   // ---- Maintenance -------------------------------------------------------
   { key: "maintenance:view", label: "View maintenance", description: "See what equipment is due for service, what has been reported broken, and what has been done to it.", group: "maintenance" },
@@ -498,6 +503,11 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
 
   // Compliance & Maintenance
   "compliance.read": "compliance:view",
+  // Driver credentials (backend plan 40).
+  "credential.read": "credentials:view",
+  "credential.read_own": "credentials:view_own",
+  "credential.create": "credentials:create",
+  "credential.update": "credentials:edit",
   "compliance.view": "compliance:view",
   "maintenance.read": "maintenance:view",
   "maintenance.view": "maintenance:view",

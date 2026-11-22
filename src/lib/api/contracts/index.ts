@@ -1,3 +1,4 @@
+import type { FleetAvailabilityService } from "./fleet-availability";
 import type { LoadExceptionsService } from "./load-exceptions";
 export * from "./context";
 export type * from "./needs-you";
@@ -54,6 +55,7 @@ import type { RateConIntakeService } from "./rate-con-intake";
 import type { LoadRecordsService } from "./load-records";
 import type { DriverLoadsService } from "./driver-loads";
 import type { OrgPeopleService } from "./org-people";
+import type { DriverCredentialsService } from "./driver-credentials";
 import type { SelfProfileService } from "./self-profile";
 import type { OrgMembersService } from "./org-members";
 import type { OrgInvitationsService, OrgRolesService } from "./org-access";
@@ -95,6 +97,7 @@ export interface AntcolosServices {
   loadRecords: LoadRecordsService;
   /** http-only (plan 16): the driver's own loads. */
   driverLoads: DriverLoadsService;
+  fleetAvailability: FleetAvailabilityService;
   loadExceptions: LoadExceptionsService;
   /** Real organization invitations (NestJS). http-only: see `src/lib/api/index.ts`. */
   orgInvitations: OrgInvitationsService;
@@ -102,6 +105,7 @@ export interface AntcolosServices {
   orgRoles: OrgRolesService;
   /** Real organization people lists (NestJS). http-only. */
   orgPeople: OrgPeopleService;
+  driverCredentials: DriverCredentialsService;
   /** The signed-in person's own record (NestJS `/users/me`). http-only. */
   selfProfile: SelfProfileService;
   /** Real organization member roster (NestJS `/organizations/members`). http-only. */
