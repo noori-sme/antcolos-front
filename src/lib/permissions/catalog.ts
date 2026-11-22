@@ -158,6 +158,11 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   // ---- Compliance & safety -----------------------------------------------
   { key: "compliance:view", label: "View compliance", description: "See licences, inspections and what is about to expire.", group: "compliance", scopeNote: "Narrowed by record scope, so a driver sees the requirements that are theirs." },
   { key: "compliance:manage", label: "Manage compliance", description: "Record and clear compliance items.", group: "compliance", prerequisites: ["compliance:view"] },
+  // Driver credentials, one key per backend `credential.*` action (plan 20).
+  { key: "credentials:view", label: "See driver credentials", description: "See every driver's licences and endorsements (CDL, TWIC, Hazmat, medical card, …), their status, expiry and history.", group: "compliance" },
+  { key: "credentials:view_own", label: "See your own credentials", description: "See the credentials this organization holds on record for you.", group: "compliance" },
+  { key: "credentials:create", label: "Record driver credentials", description: "Add a credential to a driver's record.", group: "compliance", sensitive: true, prerequisites: ["credentials:view"] },
+  { key: "credentials:edit", label: "Update driver credentials", description: "Change a credential's dates and status — suspend, revoke, renew.", group: "compliance", sensitive: true, prerequisites: ["credentials:view"] },
 
   // ---- Maintenance -------------------------------------------------------
   { key: "maintenance:view", label: "View maintenance", description: "See what equipment is due for service, what has been reported broken, and what has been done to it.", group: "maintenance" },
@@ -245,6 +250,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "factoring:override", label: "Book past a factoring block", description: "Book a load your factor has refused or has not approved, on the record, with a reason. The strongest factoring permission there is.", group: "factoring", financial: true, sensitive: true, prerequisites: ["factoring:view"], scopeNote: "Only where the carrier's own policy permits an override. Every use requires a reason and writes one audit entry that can never be edited or removed." },
 
   // ---- Organization settings ---------------------------------------------
+  { key: "usage:view", label: "See usage and costs", description: "See what the organization used (AI, stored files, messages) and what it is estimated to cost.", group: "organization", sensitive: true, financial: true },
   { key: "organization:manage", label: "Manage organization settings", description: "Edit the organization's details and billing information.", group: "organization", sensitive: true },
   { key: "integrations:view", label: "View integrations", description: "See which outside tools are connected.", group: "organization" },
   { key: "integrations:manage", label: "Manage integrations", description: "Connect and disconnect outside tools.", group: "organization", sensitive: true, prerequisites: ["integrations:view"] },
@@ -495,6 +501,11 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
 
   // Compliance & Maintenance
   "compliance.read": "compliance:view",
+  // Driver credentials (backend plan 40).
+  "credential.read": "credentials:view",
+  "credential.read_own": "credentials:view_own",
+  "credential.create": "credentials:create",
+  "credential.update": "credentials:edit",
   "compliance.view": "compliance:view",
   "maintenance.read": "maintenance:view",
   "maintenance.view": "maintenance:view",
@@ -531,6 +542,7 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "risk.read": "risk:view",
   "risk.view": "risk:view",
   "organization.manage": "organization:manage",
+  "usage.read": "usage:view",
   "organization.edit": "organization:manage",
   "organization.update": "organization:manage",
   "integration.read": "integrations:view",

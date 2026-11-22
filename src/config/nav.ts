@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BadgeCheck, Bell, Briefcase, Building2, CalendarClock, ClipboardList, Container, FileBadge,
+  BadgeCheck, Bell, Briefcase, Building2, CalendarClock, CircleDollarSign, ClipboardList, Container, FileBadge,
   FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
   Inbox, Landmark, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
   Share2,
@@ -161,6 +161,7 @@ export const SETTINGS_NAV: NavSection[] = [
     label: "Organization",
     items: [
       { label: "Organization", href: "/settings/organization", icon: Building2, requires: ["organization:manage"] },
+      { label: "Usage & costs", href: "/settings/usage", icon: CircleDollarSign, requires: ["usage:view"] },
       { label: "People", href: "/settings/users", icon: Users, requires: ["members:view"] },
       // `invitations:create`, not the weaker view key. The route manifest is
       // derived from this line, so it is also what the route guard enforces —

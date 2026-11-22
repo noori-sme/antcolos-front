@@ -8,10 +8,15 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { CAPABILITY_BOUNDS, capabilityError, flagFormValue } from "@/lib/fleet/capabilities";
 import { buildTruckPatch } from "@/lib/fleet/truck-patch";
 import type { FleetTruck } from "@/types/fleet-truck";
 import { useUpdateTruck } from "./hooks";
 import { DialogActions, DialogError } from "./truck-dialog-parts";
+
+const SELECT =
+  "h-control w-full rounded-md border border-border bg-surface px-3 text-[0.875rem] text-fg shadow-e1 " +
+  "hover:border-border-strong focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35";
 
 const optionalState = z
   .string()
@@ -40,6 +45,23 @@ const schema = z.object({
   insuranceExpiresAt: optionalDate,
   eldProvider: z.string().trim(),
   eldDeviceId: z.string().trim(),
+  // Capabilities (backend plan 46): strings in the form, numbers/flags in the PATCH.
+  trailerWidthIn: z.string().trim(),
+  trailerHeightIn: z.string().trim(),
+  strapCount: z.string().trim(),
+  hasLiftgate: z.enum(["", "yes", "no"]),
+  hasPalletJack: z.enum(["", "yes", "no"]),
+  reeferMinTempF: z.string().trim(),
+  reeferMaxTempF: z.string().trim(),
+}).superRefine((values, ctx) => {
+  for (const field of Object.keys(CAPABILITY_BOUNDS) as (keyof typeof CAPABILITY_BOUNDS)[]) {
+    const message = capabilityError(field, values[field]);
+    if (message) ctx.addIssue({ code: "custom", path: [field], message });
+  }
+  const min = values.reeferMinTempF, max = values.reeferMaxTempF;
+  if (min !== "" && max !== "" && Number(min) > Number(max)) {
+    ctx.addIssue({ code: "custom", path: ["reeferMaxTempF"], message: "Must be at least the lowest temperature." });
+  }
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -47,7 +69,10 @@ const OPERATING_FIELDS = ["unitNumber", "homeTerminalCity", "homeTerminalState",
 const IDENTITY_FIELDS = [
   "licensePlate", "licensePlateState", "year", "make", "model", "color",
   "registrationExpiresAt", "insuranceExpiresAt", "eldProvider", "eldDeviceId",
+  "trailerWidthIn", "trailerHeightIn", "strapCount", "hasLiftgate", "hasPalletJack",
 ] as const;
+/** Sent only for a REEFER truck: the API refuses a range on anything else. */
+const REEFER_FIELDS = ["reeferMinTempF", "reeferMaxTempF"] as const;
 
 function initialValues(truck: FleetTruck): FormValues {
   const op = truck.operating;
@@ -66,6 +91,13 @@ function initialValues(truck: FleetTruck): FormValues {
     insuranceExpiresAt: truck.insuranceExpiresAt?.slice(0, 10) ?? "",
     eldProvider: truck.eldProvider ?? "",
     eldDeviceId: truck.eldDeviceId ?? "",
+    trailerWidthIn: truck.trailerWidthIn?.toString() ?? "",
+    trailerHeightIn: truck.trailerHeightIn?.toString() ?? "",
+    strapCount: truck.strapCount?.toString() ?? "",
+    hasLiftgate: flagFormValue(truck.hasLiftgate),
+    hasPalletJack: flagFormValue(truck.hasPalletJack),
+    reeferMinTempF: truck.reeferMinTempF?.toString() ?? "",
+    reeferMaxTempF: truck.reeferMaxTempF?.toString() ?? "",
   };
   return Object.fromEntries(
     Object.entries(values).map(([k, v]) => [k, v.trim()]),
@@ -93,7 +125,10 @@ export function TruckEditDialog({
   const {
     register, handleSubmit, reset, formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: defaults });
-  const editable = isLegalOwner ? [...OPERATING_FIELDS, ...IDENTITY_FIELDS] : OPERATING_FIELDS;
+  const isReefer = truck.equipmentType === "REEFER";
+  const editable = isLegalOwner
+    ? [...OPERATING_FIELDS, ...IDENTITY_FIELDS, ...(isReefer ? REEFER_FIELDS : [])]
+    : OPERATING_FIELDS;
 
   const close = () => {
     reset(defaults);
@@ -110,6 +145,15 @@ export function TruckEditDialog({
   const text = (name: keyof FormValues, label: string, hint?: string) => (
     <Field label={label} htmlFor={`${id}-${name}`} error={errors[name]?.message} hint={hint}>
       <Input id={`${id}-${name}`} {...register(name)} />
+    </Field>
+  );
+  const flag = (name: "hasLiftgate" | "hasPalletJack", label: string) => (
+    <Field label={label} htmlFor={`${id}-${name}`}>
+      <select id={`${id}-${name}`} className={SELECT} {...register(name)}>
+        <option value="">Not recorded</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
     </Field>
   );
   const date = (name: keyof FormValues, label: string) => (
@@ -152,6 +196,18 @@ export function TruckEditDialog({
                 {text("eldProvider", "ELD provider")}
                 {text("eldDeviceId", "ELD device ID")}
               </div>
+            )}
+            {isLegalOwner && (
+              <fieldset className="grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
+                <legend className="mb-1 text-[0.8125rem] font-semibold text-fg">Capabilities</legend>
+                {text("trailerWidthIn", "Interior width (in)")}
+                {text("trailerHeightIn", "Interior height (in)")}
+                {flag("hasLiftgate", "Liftgate")}
+                {flag("hasPalletJack", "Pallet jack")}
+                {text("strapCount", "Load straps")}
+                {isReefer && text("reeferMinTempF", "Reefer lowest (°F)")}
+                {isReefer && text("reeferMaxTempF", "Reefer highest (°F)")}
+              </fieldset>
             )}
           </div>
           <DialogError error={update.error} />

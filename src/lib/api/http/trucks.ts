@@ -52,6 +52,9 @@ export function toTruckOperating(dto: Dto): TruckOperating {
   };
 }
 
+/** A nullable boolean: `null` (not recorded) stays apart from `false`. */
+const flag = (v: unknown): boolean | null => (typeof v === "boolean" ? v : null);
+
 /** Contract §Truck → canonical `FleetTruck`. */
 export function toTruck(dto: Dto): FleetTruck {
   const legalOwner = obj(dto.legalOwner);
@@ -69,6 +72,13 @@ export function toTruck(dto: Dto): FleetTruck {
     color: str(dto.color),
     equipmentType: oneOf(TRUCK_EQUIPMENT_TYPES, dto.equipmentType),
     trailerLengthFt: num(dto.trailerLengthFt),
+    trailerWidthIn: num(dto.trailerWidthIn),
+    trailerHeightIn: num(dto.trailerHeightIn),
+    hasLiftgate: flag(dto.hasLiftgate),
+    hasPalletJack: flag(dto.hasPalletJack),
+    strapCount: num(dto.strapCount),
+    reeferMinTempF: num(dto.reeferMinTempF),
+    reeferMaxTempF: num(dto.reeferMaxTempF),
     trailerNumber: str(dto.trailerNumber),
     payloadLbs: num(dto.payloadLbs),
     gvwrLbs: num(dto.gvwrLbs),

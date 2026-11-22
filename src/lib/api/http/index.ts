@@ -1,11 +1,14 @@
 import { httpLoadRecordsService } from "./load-records";
 import { httpDriverLoadsService } from "./driver-loads";
+import { httpFleetAvailabilityService } from "./fleet-availability";
 import { httpLoadExceptionsService } from "./load-exceptions";
 import type { AntcolosServices } from "../contracts";
 import { httpTrucksService } from "./trucks";
+import { httpUsageService } from "./usage";
 import { httpRateConIntakeService } from "./rate-con-intake";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
 import { httpOrgPeopleService } from "./org-people";
+import { httpDriverCredentialsService } from "./driver-credentials";
 import { httpSelfProfileService } from "./self-profile";
 import { httpOrgMembersService } from "./org-members";
 
@@ -22,14 +25,19 @@ const notImplemented = (method: string) => (): never => {
 
 export const httpServices: AntcolosServices = {
   trucks: httpTrucksService,
+  // http-only (plan 26), like trucks.
+  usage: httpUsageService,
   rateConIntake: httpRateConIntakeService,
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.
   driverLoads: httpDriverLoadsService,
+  // http-only (F2.5): availability is computed by the backend from live loads.
+  fleetAvailability: httpFleetAvailabilityService,
   loadExceptions: httpLoadExceptionsService,
   orgInvitations: httpOrgInvitationsService,
   orgRoles: httpOrgRolesService,
   orgPeople: httpOrgPeopleService,
+  driverCredentials: httpDriverCredentialsService,
   selfProfile: httpSelfProfileService,
   orgMembers: httpOrgMembersService,
   needsYou: {

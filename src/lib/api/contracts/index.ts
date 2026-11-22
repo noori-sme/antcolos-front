@@ -1,3 +1,4 @@
+import type { FleetAvailabilityService } from "./fleet-availability";
 import type { LoadExceptionsService } from "./load-exceptions";
 export * from "./context";
 export type * from "./needs-you";
@@ -9,6 +10,7 @@ export type * from "./reports";
 export type * from "./compliance";
 export type * from "./fleet";
 export type * from "./trucks";
+export type * from "./usage";
 export type * from "./rate-con-intake";
 export type * from "./org-people";
 export type * from "./org-access";
@@ -48,10 +50,12 @@ import type { FactoringService } from "./factoring";
 import type { FuelService, IftaService } from "./fuel";
 import type { FleetService } from "./fleet";
 import type { TrucksService } from "./trucks";
+import type { UsageService } from "./usage";
 import type { RateConIntakeService } from "./rate-con-intake";
 import type { LoadRecordsService } from "./load-records";
 import type { DriverLoadsService } from "./driver-loads";
 import type { OrgPeopleService } from "./org-people";
+import type { DriverCredentialsService } from "./driver-credentials";
 import type { SelfProfileService } from "./self-profile";
 import type { OrgMembersService } from "./org-members";
 import type { OrgInvitationsService, OrgRolesService } from "./org-access";
@@ -85,12 +89,15 @@ export interface AntcolosServices {
   fleet: FleetService;
   /** The real truck registry (NestJS `/trucks`). http-only: see `src/lib/api/index.ts`. */
   trucks: TrucksService;
+  /** Usage and estimated costs (backend plan 49). http-only. */
+  usage: UsageService;
   /** Rate Con upload, review and approval (NestJS `/documents`, plan 13). http-only. */
   rateConIntake: RateConIntakeService;
   /** Booked loads on the real API (F1.2, plan 14); http-only. */
   loadRecords: LoadRecordsService;
   /** http-only (plan 16): the driver's own loads. */
   driverLoads: DriverLoadsService;
+  fleetAvailability: FleetAvailabilityService;
   loadExceptions: LoadExceptionsService;
   /** Real organization invitations (NestJS). http-only: see `src/lib/api/index.ts`. */
   orgInvitations: OrgInvitationsService;
@@ -98,6 +105,7 @@ export interface AntcolosServices {
   orgRoles: OrgRolesService;
   /** Real organization people lists (NestJS). http-only. */
   orgPeople: OrgPeopleService;
+  driverCredentials: DriverCredentialsService;
   /** The signed-in person's own record (NestJS `/users/me`). http-only. */
   selfProfile: SelfProfileService;
   /** Real organization member roster (NestJS `/organizations/members`). http-only. */

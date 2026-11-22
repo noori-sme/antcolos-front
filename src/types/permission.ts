@@ -62,6 +62,8 @@ export type PermissionKey =
   | "ifta:view" | "ifta:manage"
   // Compliance & safety
   | "compliance:view" | "compliance:manage"
+  // Driver credentials (plan 20, backend credential.*)
+  | "credentials:view" | "credentials:view_own" | "credentials:create" | "credentials:edit"
   // Maintenance — equipment upkeep. Separate from compliance, which is paperwork.
   | "maintenance:view" | "maintenance:manage"
   | "maintenance:defects:report" | "maintenance:defects:manage"
@@ -149,6 +151,7 @@ export type PermissionKey =
   // records it reaches, and both have to agree.
   | "factoring:view" | "factoring:check" | "factoring:manage" | "factoring:override"
   // Organization settings
+  | "usage:view"
   | "organization:manage" | "integrations:view" | "integrations:manage" | "audit:view"
   // Audit & Risk — the one ledger, and the cases opened off it.
   //

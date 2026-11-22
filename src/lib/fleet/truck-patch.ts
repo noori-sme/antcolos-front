@@ -5,7 +5,11 @@ export type TruckFormValues = Record<string, string>;
 
 const UPPERCASE = new Set(["homeTerminalState", "licensePlateState"]);
 const REQUIRED = new Set(["unitNumber"]);
-const NUMERIC = new Set(["year"]);
+const NUMERIC = new Set([
+  "year", "trailerWidthIn", "trailerHeightIn", "strapCount", "reeferMinTempF", "reeferMaxTempF",
+]);
+/** Three-way selects: "" = not recorded (null), "yes" / "no". */
+const BOOLEAN = new Set(["hasLiftgate", "hasPalletJack"]);
 
 /**
  * PATCH body for `PATCH /trucks/:id` (fleet contract §4) from the edit form:
@@ -25,6 +29,7 @@ export function buildTruckPatch(
     if ((before[field] ?? "") === value) continue;
     if (REQUIRED.has(field)) patch[field] = value;
     else if (value === "") patch[field] = null;
+    else if (BOOLEAN.has(field)) patch[field] = value === "yes";
     else if (NUMERIC.has(field)) patch[field] = Number(value);
     else if (UPPERCASE.has(field)) patch[field] = value.toUpperCase();
     else patch[field] = value;

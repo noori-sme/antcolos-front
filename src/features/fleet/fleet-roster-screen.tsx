@@ -130,14 +130,22 @@ export function FleetRosterScreen() {
         title="Trucks"
         description="Every truck in your fleet, active assignments, and operational status."
         actions={
-          <Can permission="trucks:create">
-            <Button variant="primary" asChild>
-              <Link href="/fleet/trucks/new">
-                <Plus aria-hidden />
-                Add truck
+          <>
+            <Button variant="secondary" asChild>
+              <Link href="/fleet/trucks/availability">
+                <Clock aria-hidden />
+                Availability
               </Link>
             </Button>
-          </Can>
+            <Can permission="trucks:create">
+              <Button variant="primary" asChild>
+                <Link href="/fleet/trucks/new">
+                  <Plus aria-hidden />
+                  Add truck
+                </Link>
+              </Button>
+            </Can>
+          </>
         }
       />
 
