@@ -155,7 +155,10 @@ test("the Driver template stays minimal", () => {
 test("the Dispatcher template gains no maintenance power beyond looking", () => {
   const dispatcher = seedTemplates("org_test").find((t) => t.name === "Dispatcher")!;
   const maintenance = dispatcher.permissions.filter((k) => k.startsWith("maintenance:"));
-  assert.deepEqual(maintenance, ["maintenance:view"]);
+  // Recording an odometer a driver phoned in is data capture, not managing
+  // maintenance: no intervals, no tasks (backend plan 48 DISPATCHER template).
+  assert.deepEqual(maintenance, ["maintenance:view", "maintenance:readings:record"]);
+  assert.ok(!dispatcher.permissions.includes("maintenance:manage"));
   assert.ok(!dispatcher.permissions.includes("rates:view"), "still does not see what a load pays");
 });
 

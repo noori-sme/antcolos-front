@@ -51,6 +51,7 @@ async function adminApi() {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     expect(res.ok, `${method} ${path} → ${res.status} ${await res.clone().text()}`).toBe(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose API fixtures in a live test
     return res.json() as Promise<Record<string, any>>;
   };
   return call;
