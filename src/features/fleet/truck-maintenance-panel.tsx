@@ -138,6 +138,12 @@ export function TruckMaintenancePanel({ truckId }: { truckId: string }) {
               })}
             </ul>
           )}
+          {tasks.isError && (
+            <p role="alert" className="mt-3 text-[0.8125rem] text-st-danger">
+              Couldn&apos;t load the open tasks, so their actions are hidden.{" "}
+              <button type="button" className="underline" onClick={() => tasks.refetch()}>Try again</button>
+            </p>
+          )}
           {acknowledge.error && (
             <p role="alert" className="mt-3 text-[0.8125rem] text-st-danger">{acknowledge.error.message}</p>
           )}

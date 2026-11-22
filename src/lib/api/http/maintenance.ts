@@ -169,7 +169,9 @@ export const httpMaintenanceService: MaintenanceService = {
     const res = await apiClient.get("/maintenance/my-truck", {
       validateStatus: (status) => (status >= 200 && status < 300) || status === 404,
     });
-    return res.status === 404 ? null : toMyTruck(res.data);
+    if (res.status !== 404) return toMyTruck(res.data);
+    if (obj(res.data)?.error === "NO_CURRENT_TRUCK") return null;
+    throw new Error(str(obj(res.data)?.message) ?? "Your truck's maintenance is not available");
   },
   async recordMyReading(_ctx, input, key) {
     const res = await apiClient.post("/maintenance/my-truck/meter-readings", input, idempotent(key));

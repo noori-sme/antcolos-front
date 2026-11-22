@@ -261,8 +261,9 @@ export function DeferDialog({ task, truckId, onClose }: { task: MaintenanceTask;
     defaultValues: { reason: "", until: "" },
   });
   const onSubmit = handleSubmit(async (v) => {
-    // Noon UTC on the chosen day: in the future whatever the viewer's time zone.
-    await defer.mutateAsync({ taskId: task.id, reason: v.reason, deferredUntil: `${v.until}T12:00:00.000Z`, idempotencyKey: key });
+    // The start of the chosen (UTC) day: after today, so in the future, and never past the
+    // 90-day cap even on its last day.
+    await defer.mutateAsync({ taskId: task.id, reason: v.reason, deferredUntil: `${v.until}T00:00:00.000Z`, idempotencyKey: key });
     onClose();
   });
   return (
