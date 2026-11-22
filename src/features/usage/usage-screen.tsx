@@ -124,7 +124,7 @@ export function UsageScreen() {
                           <span className="tabular-nums text-fg">{usd(d.costUsd)}</span>
                         </div>
                       </td>
-                      <td className="w-20 py-1 text-right tabular-nums text-fg-muted">{d.calls} calls</td>
+                      <td className="w-20 py-1 text-right tabular-nums text-fg-muted">{d.calls} {d.calls === 1 ? "call" : "calls"}</td>
                     </tr>
                   ))}
                 </tbody>

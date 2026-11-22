@@ -1,8 +1,8 @@
 # 26 — Usage & costs (M6.3 frontend)
 
 ```
-Status:   approved (owner, 2026-11-21: "plan all of them one by one, verify the plan and go ahead")
-Phase:    1 — not started
+Status:   implemented (2026-11-22); (owner, 2026-11-21: "plan all of them one by one, verify the plan and go ahead")
+Phase:    3 — done
 Branch:   feat/platform-cost-dashboard (same name as noori-sme/antcolos#89)
 Backend contract: ../antcolos/docs/requirements/usage-api-contract.md (plan 49)
 Track:    Feature (new route, nav entry, permission key)
@@ -44,3 +44,10 @@ estimated total, a daily AI chart, the unit prices used and what is not metered 
 
 ## Backend asks
 - None. (A platform UI needs platform sign-in in this app: a separate feature.)
+
+## Verification (2026-11-22)
+
+- vitest: mapper 2, format 4, route key; all green. Live spec `usage.live.spec.ts` against #89:
+  3 passed (admin desktop + Pixel 7: totals, daily bars, `?range=7d`, no horizontal scroll;
+  dispatcher has no page or nav entry), 1 skipped.
+
