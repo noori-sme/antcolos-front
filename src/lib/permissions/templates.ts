@@ -36,6 +36,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "drivers:view", "trucks:view", "trailers:view",
       // Mirrors the backend DISPATCHER default: the drivers list, not the others.
       "members:list_drivers",
+      // Who is cleared for what (backend plan 40); writes stay with admins.
+      "credentials:view",
       "customers:view", "customers:create", "customers:private:manage", "customers:resolve",
       "documents:view", "documents:upload", "compliance:view",
       // Operational fuel only. No cost, and deliberately no IFTA: tax access
@@ -89,6 +91,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       // their medical card. Record scope keeps it to their own record; without
       // this they cannot see why they are about to be taken off dispatch.
       "compliance:view",
+      // Their own credential records (backend credential.read_own, plan 40).
+      "credentials:view_own",
       // A driver sees their own settlements and may say one looks wrong. They
       // cannot approve, correct or pay one — including their own.
       "settlements:view", "settlements:dispute",

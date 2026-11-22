@@ -17,6 +17,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingSkeleton } from "@/components/data/states";
 import { cn } from "@/lib/utils";
+import { Can } from "@/components/auth/can";
+import { DriverCredentialsPanel } from "./driver-credentials-panel";
 import { useDriver } from "./hooks";
 
 function formatDate(iso?: string): string {
@@ -333,6 +335,10 @@ export function CarrierDriverDetail({
           </section>
         </div>
       </div>
+
+      <Can permission="credentials:view">
+        <DriverCredentialsPanel userId={driver.userId} driverName={displayName} />
+      </Can>
     </div>
   );
 }

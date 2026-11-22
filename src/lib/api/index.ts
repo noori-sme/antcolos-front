@@ -1,5 +1,6 @@
 import type { AntcolosServices } from "./contracts";
 import { API_MODE, DEMO_AREAS } from "./mode";
+import { httpFleetAvailabilityService } from "./http/fleet-availability";
 import { httpServices } from "./http";
 import { httpTrucksService } from "./http/trucks";
 import {
@@ -11,6 +12,7 @@ import { httpDriverLoadsService } from "./http/driver-loads";
 import { httpLoadExceptionsService } from "./http/load-exceptions";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
+import { httpDriverCredentialsService } from "./http/driver-credentials";
 import { httpSelfProfileService } from "./http/self-profile";
 import { httpOrgMembersService } from "./http/org-members";
 import { mockAccessService } from "./mock/access";
@@ -86,6 +88,8 @@ const mockServices: AntcolosServices = {
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.
   driverLoads: httpDriverLoadsService,
+  // http-only (F2.5): availability comes from the backend's live loads; no mock.
+  fleetAvailability: httpFleetAvailabilityService,
   // http-only (F1.5): exceptions live beside live loads, which are http-only.
   loadExceptions: httpLoadExceptionsService,
   // http-only for the same reason: the access screens have always called
@@ -94,6 +98,8 @@ const mockServices: AntcolosServices = {
   orgRoles: httpOrgRolesService,
   // http-only: the people screens have always called the real API.
   orgPeople: httpOrgPeopleService,
+  // http-only (plan 20): credentials sit on the people screens, which call the real API.
+  driverCredentials: httpDriverCredentialsService,
   // http-only: mock mode keeps the public-profile screen (plan 11), so the
   // self profile is only read for real. Nothing to fall back to.
   selfProfile: httpSelfProfileService,

@@ -1,3 +1,4 @@
+import type { AvailabilityQuery } from "@/types/fleet-availability";
 import type {
   AuditEventFilters, ComplianceFilters, FleetAssetKind, FleetEquipmentFilters,
   NeedsYouFilters, RiskCaseFilters, RiskSignalFilters, SettlementFilters,
@@ -26,6 +27,9 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "detail", truckId] as const,
   lookup: (organizationId: string, vin: string) =>
     [...orgKey(organizationId), "trucks", "lookup", vin] as const,
+  // Under "trucks" so a truck or load change that invalidates the fleet refreshes it (F2.5).
+  availability: (organizationId: string, query: AvailabilityQuery) =>
+    [...orgKey(organizationId), "trucks", "availability", query] as const,
 };
 
 /** Carrier authority, carrier directory search and own memberships (plan 25). */
@@ -66,6 +70,12 @@ export const queryKeys = {
     [...orgKey(organizationId), "needs-you", membershipId, "count"] as const,
   members: (organizationId: string) =>
     [...orgKey(organizationId), "members"] as const,
+  /** Driver credentials (plan 20); a write invalidates `credentials(org)`. */
+  credentials: (organizationId: string) => [...orgKey(organizationId), "credentials"] as const,
+  credentialList: (organizationId: string, query: object) =>
+    [...orgKey(organizationId), "credentials", "list", query] as const,
+  credentialHistory: (organizationId: string, credentialId: string) =>
+    [...orgKey(organizationId), "credentials", "history", credentialId] as const,
   /** Real people lists (drivers / dispatchers / admins). Shared by people, access and fleet. */
   people: (organizationId: string) => [...orgKey(organizationId), "people"] as const,
   peopleList: (organizationId: string, family: OrgPeopleFamily, query: OrgPeopleQuery) =>

@@ -38,4 +38,15 @@ describe("buildTruckPatch (fleet contract §4)", () => {
       buildTruckPatch({ ...before, make: "" }, { ...before, make: "Kenworth" }, fields),
     ).toEqual({ make: "Kenworth" });
   });
+
+  it("sends capability numbers as numbers and yes/no/unknown as true/false/null (plan 46)", () => {
+    const capBefore = { strapCount: "", hasLiftgate: "", hasPalletJack: "yes", reeferMinTempF: "-10" };
+    expect(
+      buildTruckPatch(
+        capBefore,
+        { strapCount: "12", hasLiftgate: "no", hasPalletJack: "", reeferMinTempF: "-20" },
+        Object.keys(capBefore),
+      ),
+    ).toEqual({ strapCount: 12, hasLiftgate: false, hasPalletJack: null, reeferMinTempF: -20 });
+  });
 });

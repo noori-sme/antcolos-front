@@ -4,6 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { fleetKeys, orgDirectoryKeys, queryKeys } from "@/lib/query/keys";
+import type { AvailabilityQuery } from "@/types/fleet-availability";
 import { usePeopleList } from "@/lib/api/use-org-people";
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, ReplaceAssignmentInput,
@@ -192,3 +193,30 @@ export function useCarrierSearch(q: string) {
   });
 }
 
+/** Pages the board reads at most: 5 × 100 trucks covers a small carrier with room to spare. */
+const AVAILABILITY_MAX_PAGES = 5;
+const AVAILABILITY_QUERY: AvailabilityQuery = { page: 1, pageSize: 100 };
+
+/**
+ * The availability board (F2.5): every truck (up to 500), soonest empty first. All pages are
+ * read so the later groups (maintenance, unavailable) never drop off a large fleet.
+ */
+export function useTruckAvailability() {
+  const ctx = useServiceContext();
+  return useQuery({
+    queryKey: fleetKeys.availability(ctx?.organizationId ?? "none", AVAILABILITY_QUERY),
+    queryFn: async () => {
+      const first = await services.fleetAvailability.list(ctx!, AVAILABILITY_QUERY);
+      const pages = Math.min(first.meta.totalPages, AVAILABILITY_MAX_PAGES);
+      const rest = await Promise.all(
+        Array.from({ length: pages - 1 }, (_, i) =>
+          services.fleetAvailability.list(ctx!, { ...AVAILABILITY_QUERY, page: i + 2 }),
+        ),
+      );
+      return { ...first, data: [first, ...rest].flatMap((p) => p.data) };
+    },
+    enabled: Boolean(ctx),
+    // Estimates move with the clock and the loads; refresh while the board is open.
+    refetchInterval: 5 * 60_000,
+  });
+}

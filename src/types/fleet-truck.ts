@@ -87,6 +87,16 @@ export interface FleetTruck {
   color?: string;
   equipmentType?: TruckEquipmentType;
   trailerLengthFt?: number;
+  /** Capabilities (backend plan 46). Interior inches. */
+  trailerWidthIn?: number;
+  trailerHeightIn?: number;
+  /** null/undefined = not recorded; false = known absent. */
+  hasLiftgate?: boolean | null;
+  hasPalletJack?: boolean | null;
+  strapCount?: number;
+  /** °F; only on a REEFER truck. */
+  reeferMinTempF?: number;
+  reeferMaxTempF?: number;
   trailerNumber?: string;
   payloadLbs?: number;
   gvwrLbs?: number;
@@ -221,6 +231,13 @@ export interface UpdateTruckInput {
   insuranceExpiresAt?: string | null;
   eldProvider?: string | null;
   eldDeviceId?: string | null;
+  trailerWidthIn?: number | null;
+  trailerHeightIn?: number | null;
+  hasLiftgate?: boolean | null;
+  hasPalletJack?: boolean | null;
+  strapCount?: number | null;
+  reeferMinTempF?: number | null;
+  reeferMaxTempF?: number | null;
   unitNumber?: string;
   homeTerminalCity?: string | null;
   homeTerminalState?: string | null;
