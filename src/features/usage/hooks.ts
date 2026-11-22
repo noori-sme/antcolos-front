@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { usageKeys } from "@/lib/query/keys";
@@ -11,9 +11,13 @@ export function useOrganizationUsage(range: { from: string; to: string }) {
   const ctx = useServiceContext();
   const allowed = useCan("usage:view");
   return useQuery({
-    queryKey: ctx ? usageKeys.organization(ctx.organizationId, range) : ["usage", "no-context"],
+    queryKey: ctx
+      ? usageKeys.organization(ctx.organizationId, range)
+      : ["usage", "no-context"],
     queryFn: () => services.usage.organization(ctx!, range),
     enabled: Boolean(ctx) && allowed,
-    placeholderData: keepPreviousData,
+    // Keep the previous period on screen while the next loads, but never across organizations.
+    placeholderData: (prev, prevQuery) =>
+      ctx && prevQuery?.queryKey[1] === ctx.organizationId ? prev : undefined,
   });
 }

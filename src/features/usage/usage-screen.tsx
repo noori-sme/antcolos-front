@@ -5,21 +5,48 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Bot, HardDrive, Mail, Send, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Chip } from "@/components/ui/chip";
-import { ErrorState, LoadingSkeleton } from "@/components/data/states";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingSkeleton,
+} from "@/components/data/states";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { bytes, notMeteredLabel, RANGE_PRESETS, rangeFor, usd, type RangePreset } from "@/lib/usage/format";
+import {
+  bytes,
+  notMeteredLabel,
+  RANGE_PRESETS,
+  rangeFor,
+  usd,
+  type RangePreset,
+} from "@/lib/usage/format";
 import { useOrganizationUsage } from "./hooks";
 
-const PRESET_LABELS: Record<RangePreset, string> = { "7d": "7 days", "30d": "30 days", "90d": "90 days" };
+const PRESET_LABELS: Record<RangePreset, string> = {
+  "7d": "7 days",
+  "30d": "30 days",
+  "90d": "90 days",
+};
 
-function Tile({ icon: Icon, label, value, detail }: { icon: LucideIcon; label: string; value: string; detail: string }) {
+function Tile({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  detail: string;
+}) {
   return (
     <div className="rounded-lg border border-border bg-surface p-4 shadow-e1">
       <div className="flex items-center gap-2 text-[0.8125rem] text-fg-muted">
         <Icon aria-hidden className="size-4" />
         {label}
       </div>
-      <p className="mt-2 text-[1.25rem] font-semibold tabular-nums text-fg">{value}</p>
+      <p className="mt-2 text-[1.25rem] font-semibold tabular-nums text-fg">
+        {value}
+      </p>
       <p className="mt-1 text-[0.8125rem] text-fg-muted">{detail}</p>
     </div>
   );
@@ -32,17 +59,22 @@ export function UsageScreen() {
   const params = useSearchParams();
   const ctx = useServiceContext();
   const preset: RangePreset =
-    (Object.keys(RANGE_PRESETS) as RangePreset[]).find((p) => p === params.get("range")) ?? "30d";
+    (Object.keys(RANGE_PRESETS) as RangePreset[]).find(
+      (p) => p === params.get("range"),
+    ) ?? "30d";
   // Stable for the day: the range is whole UTC days.
   const range = useMemo(() => rangeFor(preset, new Date()), [preset]);
-  const { data, isLoading, isError, error, refetch, isPlaceholderData } = useOrganizationUsage(range);
+  const { data, isLoading, isError, error, refetch, isPlaceholderData } =
+    useOrganizationUsage(range);
 
   const select = (next: RangePreset) => {
     const qs = new URLSearchParams(params.toString());
     if (next === "30d") qs.delete("range");
     else qs.set("range", next);
     const query = qs.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
   };
 
   const t = data?.totals;
@@ -56,18 +88,53 @@ export function UsageScreen() {
       />
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Period">
         {(Object.keys(RANGE_PRESETS) as RangePreset[]).map((p) => (
-          <Chip key={p} label={PRESET_LABELS[p]} selected={preset === p} onToggle={() => select(p)} />
+          <Chip
+            key={p}
+            label={PRESET_LABELS[p]}
+            selected={preset === p}
+            onToggle={() => select(p)}
+          />
         ))}
       </div>
 
       {(isLoading || !ctx) && <LoadingSkeleton rows={3} />}
-      {isError && !data && <ErrorState title="Couldn't load usage" description={error?.message} onRetry={() => refetch()} />}
+      {isError && (
+        <ErrorState
+          title="Couldn't load usage"
+          description={error?.message}
+          onRetry={() => refetch()}
+        />
+      )}
 
-      {t && (
-        <div aria-busy={isPlaceholderData} className={isPlaceholderData ? "space-y-section opacity-60" : "space-y-section"}>
+      {t &&
+        !isError &&
+        t.ai.calls +
+          t.storage.files +
+          t.email.sent +
+          t.email.failed +
+          t.telegram.sent +
+          t.telegram.failed ===
+          0 && (
+          <EmptyState
+            title="No usage in this period"
+            description="AI calls, stored files and messages will show here once your team starts using them."
+          />
+        )}
+
+      {t && !isError && (
+        <div
+          aria-busy={isPlaceholderData}
+          className={
+            isPlaceholderData ? "space-y-section opacity-60" : "space-y-section"
+          }
+        >
           <div className="rounded-lg border border-border bg-surface p-5 shadow-e1">
-            <p className="text-[0.8125rem] text-fg-muted">Estimated total, last {PRESET_LABELS[preset]}</p>
-            <p className="mt-1 text-[1.75rem] font-semibold tabular-nums text-fg">{usd(t.estimatedTotalUsd)}</p>
+            <p className="text-[0.8125rem] text-fg-muted">
+              Estimated total, last {PRESET_LABELS[preset]}
+            </p>
+            <p className="mt-1 text-[1.75rem] font-semibold tabular-nums text-fg">
+              {usd(t.estimatedTotalUsd)}
+            </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Tile
@@ -96,10 +163,20 @@ export function UsageScreen() {
             />
           </div>
 
-          <section aria-labelledby="usage-daily" className="rounded-lg border border-border bg-surface p-5 shadow-e1">
-            <h2 id="usage-daily" className="text-[0.9375rem] font-semibold text-fg">AI cost by day</h2>
+          <section
+            aria-labelledby="usage-daily"
+            className="rounded-lg border border-border bg-surface p-5 shadow-e1"
+          >
+            <h2
+              id="usage-daily"
+              className="text-[0.9375rem] font-semibold text-fg"
+            >
+              AI cost by day
+            </h2>
             {data.aiDaily.length === 0 ? (
-              <p className="mt-2 text-[0.8125rem] text-fg-muted">No AI calls in this period.</p>
+              <p className="mt-2 text-[0.8125rem] text-fg-muted">
+                No AI calls in this period.
+              </p>
             ) : (
               <table className="mt-3 w-full text-[0.8125rem]">
                 <caption className="sr-only">AI calls and cost per day</caption>
@@ -113,18 +190,28 @@ export function UsageScreen() {
                 <tbody>
                   {data.aiDaily.map((d) => (
                     <tr key={d.day}>
-                      <td className="w-24 py-1 pr-3 tabular-nums text-fg-muted">{d.day.slice(5)}</td>
+                      <td className="w-24 py-1 pr-3 tabular-nums text-fg-muted">
+                        {d.day.slice(5)}
+                      </td>
                       <td className="py-1 pr-3">
                         <div className="flex items-center gap-2">
-                          <div
-                            aria-hidden
-                            className="h-2 rounded-full bg-primary"
-                            style={{ width: `${maxDaily > 0 ? Math.max(2, (d.costUsd / maxDaily) * 100) : 2}%` }}
-                          />
-                          <span className="tabular-nums text-fg">{usd(d.costUsd)}</span>
+                          <div className="min-w-0 flex-1">
+                            <div
+                              aria-hidden
+                              className="h-2 rounded-full bg-primary"
+                              style={{
+                                width: `${maxDaily > 0 ? Math.max(2, (d.costUsd / maxDaily) * 100) : 2}%`,
+                              }}
+                            />
+                          </div>
+                          <span className="shrink-0 tabular-nums text-fg">
+                            {usd(d.costUsd)}
+                          </span>
                         </div>
                       </td>
-                      <td className="w-20 py-1 text-right tabular-nums text-fg-muted">{d.calls} {d.calls === 1 ? "call" : "calls"}</td>
+                      <td className="w-20 py-1 text-right tabular-nums text-fg-muted">
+                        {d.calls} {d.calls === 1 ? "call" : "calls"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -133,9 +220,15 @@ export function UsageScreen() {
           </section>
 
           <p className="text-[0.8125rem] text-fg-muted">
-            Rates: storage {usd(data.rates.storageUsdPerGbMonth)} per GB per month, email{" "}
-            {usd(data.rates.emailUsdPerMessage)} per message.
-            {data.notMetered.length > 0 && <> Not counted yet: {data.notMetered.map(notMeteredLabel).join(", ")}.</>}
+            Rates: storage {usd(data.rates.storageUsdPerGbMonth)} per GB per
+            month, email {usd(data.rates.emailUsdPerMessage)} per message.
+            {data.notMetered.length > 0 && (
+              <>
+                {" "}
+                Not counted yet:{" "}
+                {data.notMetered.map(notMeteredLabel).join(", ")}.
+              </>
+            )}
           </p>
         </div>
       )}
