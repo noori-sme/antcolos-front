@@ -5,7 +5,7 @@ import { SIGNED_IN_AS_DEMO } from '@/lib/api/mode'
 import { isAuthPath, isPublicPath } from '@/lib/session/route-access'
 
 export function proxy(request: NextRequest) {
-  // Every API call goes through this origin (plan 21): the session token lives
+  // Every API call goes through this origin (plan 27): the session token lives
   // in an httpOnly cookie that page scripts cannot read, and is added here.
   if (request.nextUrl.pathname.startsWith(BACKEND_PREFIX)) {
     return toBackend(request)

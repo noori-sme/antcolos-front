@@ -1,5 +1,5 @@
 /**
- * Server-side helpers for the same-origin API proxy (plan 21). Used by
+ * Server-side helpers for the same-origin API proxy (plan 27). Used by
  * `src/proxy.ts` and `app/api/session/[...path]/route.ts`; never imported by
  * browser code.
  */

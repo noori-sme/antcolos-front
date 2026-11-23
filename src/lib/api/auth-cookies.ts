@@ -158,7 +158,7 @@ export function clearAllAuthCookies() {
   for (const name of Object.values(AUTH_COOKIE)) {
     if (name !== AUTH_COOKIE.invitationToken) remove(name);
   }
-  // The real tokens are httpOnly (plan 21): only the server can clear them,
+  // The real tokens are httpOnly (plan 27): only the server can clear them,
   // and it revokes the session on the API at the same time.
   if (typeof window !== "undefined" && typeof fetch === "function") {
     void fetch("/api/session/auth/logout", {

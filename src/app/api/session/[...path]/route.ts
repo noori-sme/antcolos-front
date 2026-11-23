@@ -6,7 +6,7 @@ import {
 import { issuesSessionToken } from "@/lib/api/session-token";
 
 /**
- * Same-origin session endpoints (plan 21). Session-issuing API calls come here
+ * Same-origin session endpoints (plan 27). Session-issuing API calls come here
  * so the tokens they return go into httpOnly cookies; page scripts get only a
  * claims-only copy. `/auth/refresh` and `/auth/logout` use the refresh cookie.
  */

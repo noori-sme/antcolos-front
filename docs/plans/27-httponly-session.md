@@ -1,4 +1,4 @@
-# 21 — Session in httpOnly cookies, refresh flow, `middleware.ts` → `proxy.ts` (F6.1)
+# 27 — Session in httpOnly cookies, refresh flow, `middleware.ts` → `proxy.ts` (F6.1)
 
 ```
 Status:   implemented (2026-11-17; owner: "plan and implement each one of these modules")

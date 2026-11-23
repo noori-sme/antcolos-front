@@ -5,7 +5,7 @@ import {
 } from "./auth-cookies";
 
 /**
- * Every call goes to this app's own origin (plan 21): `/api/backend/*` is
+ * Every call goes to this app's own origin (plan 27): `/api/backend/*` is
  * rewritten to the API by `src/proxy.ts`, which adds the session from an
  * httpOnly cookie; session-issuing calls go to `/api/session/*`, which stores
  * the tokens it receives in httpOnly cookies. The browser never holds a usable

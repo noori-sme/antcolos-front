@@ -53,7 +53,7 @@ and cache entries can't cross organizations.
 ## 4. Session, auth, permissions
 
 - **Sign-in/onboarding**: `(auth)` screens call `/auth/*`. Every API call goes to this app's
-  origin (plan 21): session-issuing calls to `/api/session/*` (route handler), which keeps the
+  origin (plan 27): session-issuing calls to `/api/session/*` (route handler), which keeps the
   access and refresh tokens in httpOnly cookies (`antcolos_at`, `antcolos_rt`) and returns a
   claims-only copy; everything else to `/api/backend/*`, which `src/proxy.ts` rewrites to the API
   with `Authorization` from the httpOnly cookie. The interceptor in `src/lib/api/client.ts` stores
@@ -118,7 +118,7 @@ adapter, and it stops being a demo area.
 5. **`client.ts` interceptor does too much**: token capture from any response shape, onboarding
    cookies, role cookies, permission validation, and redirects via `window.location`. Split it when
    auth is next touched.
-6. ~~`src/middleware.ts` is deprecated in Next 16~~: renamed to `src/proxy.ts` in plan 21.
+6. ~~`src/middleware.ts` is deprecated in Next 16~~: renamed to `src/proxy.ts` in plan 27.
 7. **Oversized screens**: `mt-loop/truck-dispatch-screen` (1,583 lines), `trailers/trailer-profile-screen`
    (1,539), `access/invite-flow` (1,405), `access/acceptance-screen` (1,233), and more over 800.
 8. **Test tooling**: three runners. `vitest.config.mts` is dead (`vitest.config.ts` wins), and
