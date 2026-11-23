@@ -12,6 +12,7 @@
 export const HTTP_LIVE_ROUTES: readonly string[] = [
   "/home",                  // live home (features/home/live-home-screen)
   "/fleet/trucks",          // trucks (fleet-api-contract)
+  "/fleet/maintenance",     // maintenance (maintenance-api-contract, plan 24)
   "/people/drivers",        // orgPeople (users-api-contract)
   "/people/dispatchers",
   "/people/admins",

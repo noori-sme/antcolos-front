@@ -4,6 +4,7 @@ import { httpFleetAvailabilityService } from "./fleet-availability";
 import { httpLoadExceptionsService } from "./load-exceptions";
 import type { AntcolosServices } from "../contracts";
 import { httpTrucksService } from "./trucks";
+import { httpMaintenanceService } from "./maintenance";
 import { httpUsageService } from "./usage";
 import { httpRateConIntakeService } from "./rate-con-intake";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
@@ -25,6 +26,8 @@ const notImplemented = (method: string) => (): never => {
 
 export const httpServices: AntcolosServices = {
   trucks: httpTrucksService,
+  // http-only (plan 24), like trucks: no maintenance mock for these routes.
+  maintenance: httpMaintenanceService,
   // http-only (plan 26), like trucks.
   usage: httpUsageService,
   rateConIntake: httpRateConIntakeService,
