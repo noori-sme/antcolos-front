@@ -7,7 +7,7 @@ import Cookies from "js-cookie";
  *
  * These cookies are readable by page scripts (js-cookie). `antcolos_token`
  * holds only the claims of the session (the JWT without its signature, plan
- * 21); the usable tokens are httpOnly cookies set by `/api/session`.
+ * 27); the usable tokens are httpOnly cookies set by `/api/session`.
  */
 export const AUTH_COOKIE = {
   token: "antcolos_token",
