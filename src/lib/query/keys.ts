@@ -7,6 +7,7 @@ import type {
 import type { OrgPeopleFamily, OrgPeopleQuery } from "@/types/org-people";
 import type { LoadRecordQuery } from "@/types/load-record";
 import type { TruckListFilters } from "@/types/fleet-truck";
+import type { MaintenanceTaskFilters } from "@/types/maintenance-live";
 
 /**
  * Every query key is namespaced by organization. Org A's data can never be
@@ -32,10 +33,40 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "availability", query] as const,
 };
 
+/** Carrier authority, carrier directory search and own memberships (plan 25). */
+export const carrierAuthorityKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "carrier-authority"] as const,
+  current: (organizationId: string) => [...orgKey(organizationId), "carrier-authority", "current"] as const,
+  history: (organizationId: string, page: number) =>
+    [...orgKey(organizationId), "carrier-authority", "history", page] as const,
+};
+export const orgDirectoryKeys = {
+  carriers: (organizationId: string, q: string) => [...orgKey(organizationId), "directory", "carriers", q] as const,
+};
+/** The person's own memberships; under orgKey because the cache is cleared on org switch anyway. */
+export const selfMembershipKeys = {
+  list: (organizationId: string) => [...orgKey(organizationId), "account", "memberships"] as const,
+};
+
 /** Usage and estimated costs (plan 26). */
 export const usageKeys = {
   organization: (organizationId: string, range: { from: string; to: string }) =>
     [...orgKey(organizationId), "usage", range.from, range.to] as const,
+};
+
+/**
+ * Real-API maintenance (plan 24). A truck's maintenance sits under the trucks
+ * prefix (a truck invalidation refetching it is fine); the fleet task list and
+ * the driver's own truck have their own prefixes.
+ */
+export const maintenanceKeys = {
+  trucksAll: (organizationId: string) => [...orgKey(organizationId), "trucks", "maintenance"] as const,
+  truck: (organizationId: string, truckId: string) =>
+    [...orgKey(organizationId), "trucks", "maintenance", truckId] as const,
+  tasksAll: (organizationId: string) => [...orgKey(organizationId), "maintenance", "tasks"] as const,
+  tasks: (organizationId: string, filters: MaintenanceTaskFilters) =>
+    [...orgKey(organizationId), "maintenance", "tasks", filters] as const,
+  mine: (organizationId: string) => [...orgKey(organizationId), "maintenance", "mine"] as const,
 };
 
 /**

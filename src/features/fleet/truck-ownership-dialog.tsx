@@ -6,6 +6,8 @@ import { useIdempotencyKey } from "@/lib/api/use-idempotency-key";
 import type { FleetTruck, TruckOwnershipType } from "@/types/fleet-truck";
 import { useReplaceOwnership } from "./hooks";
 import { PeoplePicker } from "./people-picker";
+import { CarrierPicker } from "./carrier-picker";
+import { Chip } from "@/components/ui/chip";
 import { DialogActions, DialogError, SELECT_CLASS } from "./truck-dialog-parts";
 
 const OWNERSHIP_OPTIONS: { value: TruckOwnershipType; label: string }[] = [
@@ -15,9 +17,8 @@ const OWNERSHIP_OPTIONS: { value: TruckOwnershipType; label: string }[] = [
 ];
 
 /**
- * Hand legal ownership to a member of this organization (contract §12).
- * Handing off to another carrier needs its organization id and there is no
- * organization search yet (plan 02, backend ask), so only members are offered.
+ * Hand legal ownership to a member of this organization, or to another carrier
+ * found through the carrier directory search (contract §12; plan 25).
  */
 export function TruckOwnershipDialog({
   truck,
@@ -30,7 +31,9 @@ export function TruckOwnershipDialog({
 }) {
   const labelId = useId();
   const typeId = useId();
+  const [to, setTo] = useState<"member" | "carrier">("member");
   const [userId, setUserId] = useState<string | null>(null);
+  const [carrierId, setCarrierId] = useState<string | null>(null);
   const [ownershipType, setOwnershipType] = useState<TruckOwnershipType>("OWNER_OPERATOR");
   const { keyFor } = useIdempotencyKey();
   const handoff = useReplaceOwnership(truck.id);
@@ -38,6 +41,8 @@ export function TruckOwnershipDialog({
 
   const close = () => {
     setUserId(null);
+    setCarrierId(null);
+    setTo("member");
     handoff.reset();
     onOpenChange(false);
   };
@@ -51,12 +56,20 @@ export function TruckOwnershipDialog({
         <div className="mt-4 space-y-4">
           <div className="space-y-1.5">
             <p id={labelId} className="text-[0.8125rem] font-medium text-fg">New owner</p>
-            <PeoplePicker
-              labelId={labelId}
-              families={["drivers", "dispatchers", "admins"]}
-              value={userId}
-              onChange={(person) => setUserId(person.userId)}
-            />
+            <div className="flex gap-1.5" role="group" aria-label="Who gets the truck">
+              <Chip label="A member" selected={to === "member"} onToggle={() => setTo("member")} />
+              <Chip label="Another carrier" selected={to === "carrier"} onToggle={() => setTo("carrier")} />
+            </div>
+            {to === "member" ? (
+              <PeoplePicker
+                labelId={labelId}
+                families={["drivers", "dispatchers", "admins"]}
+                value={userId}
+                onChange={(person) => setUserId(person.userId)}
+              />
+            ) : (
+              <CarrierPicker labelId={labelId} value={carrierId} onChange={(c) => setCarrierId(c.organizationId)} />
+            )}
           </div>
           <div className="space-y-1.5">
             <label htmlFor={typeId} className="text-[0.8125rem] font-medium text-fg">
@@ -79,10 +92,14 @@ export function TruckOwnershipDialog({
           onCancel={close}
           submitLabel="Hand off"
           pending={handoff.isPending}
-          disabled={!userId || !ownershipId}
+          disabled={!(to === "member" ? userId : carrierId) || !ownershipId}
           onSubmit={() => {
-            if (!userId || !ownershipId) return;
-            const input = { ownerType: "USER" as const, ownerUserId: userId, ownershipType };
+            if (!ownershipId) return;
+            const input =
+              to === "member"
+                ? userId && { ownerType: "USER" as const, ownerUserId: userId, ownershipType }
+                : carrierId && { ownerType: "ORGANIZATION" as const, ownerOrganizationId: carrierId, ownershipType };
+            if (!input) return;
             handoff.mutate(
               { ownershipId, input, idempotencyKey: keyFor({ ownershipId, input }) },
               { onSuccess: close },

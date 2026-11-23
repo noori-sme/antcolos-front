@@ -3,9 +3,13 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
-import { fleetKeys, queryKeys } from "@/lib/query/keys";
+import { fleetKeys, maintenanceKeys, orgDirectoryKeys, queryKeys } from "@/lib/query/keys";
 import type { AvailabilityQuery } from "@/types/fleet-availability";
 import { usePeopleList } from "@/lib/api/use-org-people";
+import { useCan } from "@/lib/session/hooks";
+import type {
+  CompleteTaskInput, MaintenanceTaskFilters, ReadingInput, ScheduleInput,
+} from "@/types/maintenance-live";
 import type {
   AssignTruckInput, CreateTruckInput, FleetTruck, ReplaceAssignmentInput,
   ManualTruckStatus, ReplaceOwnershipInput, TruckListFilters, UpdateTruckInput,
@@ -175,6 +179,137 @@ export function useRemoveAssignment(truckId: string) {
     (ctx, vars: { assignmentId: string; idempotencyKey: string }) =>
       services.trucks.removeAssignment(ctx, truckId, vars.assignmentId, vars.idempotencyKey),
     { invalidatesPeople: true },
+  );
+}
+
+/**
+ * Other carriers by name, MC or DOT, to hand a truck to (plan 25). The screen
+ * debounces `q`; nothing is asked for under 2 characters (the API refuses it).
+ */
+export function useCarrierSearch(q: string) {
+  const ctx = useServiceContext();
+  const query = q.trim();
+  return useQuery({
+    queryKey: ctx ? orgDirectoryKeys.carriers(ctx.organizationId, query) : ["directory", "no-context"],
+    queryFn: () => services.orgDirectory.searchCarriers(ctx!, query),
+    enabled: Boolean(ctx) && query.length >= 2,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// ── Maintenance (F2.3, plan 24) ───────────────────────────────────────────
+
+type Ctx = NonNullable<ReturnType<typeof useServiceContext>>;
+
+
+/** A truck's maintenance; only fetched for a caller who may read it. */
+export function useTruckMaintenance(truckId: string) {
+  const ctx = useServiceContext();
+  const allowed = useCan("maintenance:view");
+  return useQuery({
+    queryKey: ctx ? maintenanceKeys.truck(ctx.organizationId, truckId) : ["maintenance", "no-context"],
+    queryFn: () => services.maintenance.forTruck(ctx!, truckId),
+    enabled: Boolean(ctx) && Boolean(truckId) && allowed,
+  });
+}
+
+export function useMaintenanceTasks(filters: MaintenanceTaskFilters) {
+  const ctx = useServiceContext();
+  const allowed = useCan("maintenance:view");
+  return useQuery({
+    queryKey: ctx ? maintenanceKeys.tasks(ctx.organizationId, filters) : ["maintenance", "no-context"],
+    queryFn: () => services.maintenance.listTasks(ctx!, filters),
+    enabled: Boolean(ctx) && allowed,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Every maintenance write refreshes the truck's maintenance, the fleet task
+ * list and the driver's own view: a reading or a completion moves all three.
+ */
+function useMaintenanceMutation<TVars, TResult>(
+  run: (ctx: Ctx, vars: TVars) => Promise<TResult>,
+  truckId?: string,
+) {
+  const ctx = useServiceContext();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: TVars) => {
+      if (!ctx) throw new Error("No organization selected");
+      return run(ctx, vars);
+    },
+    onSuccess: async () => {
+      if (!ctx) return;
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: truckId
+            ? maintenanceKeys.truck(ctx.organizationId, truckId)
+            : maintenanceKeys.trucksAll(ctx.organizationId),
+        }),
+        queryClient.invalidateQueries({ queryKey: maintenanceKeys.tasksAll(ctx.organizationId) }),
+        queryClient.invalidateQueries({ queryKey: maintenanceKeys.mine(ctx.organizationId) }),
+      ]);
+    },
+  });
+}
+
+export function useCreateSchedule(truckId: string) {
+  return useMaintenanceMutation(
+    (ctx, vars: { input: ScheduleInput; idempotencyKey: string }) =>
+      services.maintenance.createSchedule(ctx, truckId, vars.input, vars.idempotencyKey),
+    truckId,
+  );
+}
+
+export function useUpdateSchedule(truckId: string) {
+  return useMaintenanceMutation(
+    (ctx, vars: { scheduleId: string; input: ScheduleInput }) =>
+      services.maintenance.updateSchedule(ctx, vars.scheduleId, vars.input),
+    truckId,
+  );
+}
+
+export function useArchiveSchedule(truckId: string) {
+  return useMaintenanceMutation(
+    (ctx, vars: { scheduleId: string; idempotencyKey: string }) =>
+      services.maintenance.archiveSchedule(ctx, vars.scheduleId, vars.idempotencyKey),
+    truckId,
+  );
+}
+
+export function useRecordReading(truckId: string) {
+  return useMaintenanceMutation(
+    (ctx, vars: { input: ReadingInput; idempotencyKey: string }) =>
+      services.maintenance.recordReading(ctx, truckId, vars.input, vars.idempotencyKey),
+    truckId,
+  );
+}
+
+/** Task actions; `truckId` when known (the profile), else every truck's maintenance refreshes. */
+export function useAcknowledgeTask(truckId?: string) {
+  return useMaintenanceMutation(
+    (ctx, vars: { taskId: string; idempotencyKey: string }) =>
+      services.maintenance.acknowledgeTask(ctx, vars.taskId, vars.idempotencyKey),
+    truckId,
+  );
+}
+
+export function useDeferTask(truckId?: string) {
+  return useMaintenanceMutation(
+    (ctx, vars: { taskId: string; reason: string; deferredUntil: string; idempotencyKey: string }) =>
+      services.maintenance.deferTask(
+        ctx, vars.taskId, { reason: vars.reason, deferredUntil: vars.deferredUntil }, vars.idempotencyKey,
+      ),
+    truckId,
+  );
+}
+
+export function useCompleteTask(truckId?: string) {
+  return useMaintenanceMutation(
+    (ctx, vars: { taskId: string; input: CompleteTaskInput; idempotencyKey: string }) =>
+      services.maintenance.completeTask(ctx, vars.taskId, vars.input, vars.idempotencyKey),
+    truckId,
   );
 }
 

@@ -187,6 +187,23 @@ writes; `access.permission_granted` / `access.permission_revoked` with
 membership, a role-name check anywhere in authorization, or a cascade from a
 template edit to anybody's access.
 
+## Carrier authority (`carrier:authority:*`, plan 25)
+
+`carrier:authority:view` (`carrier_authority.read`) shows the carrier's stored FMCSA authority on
+the live Home; `carrier:authority:refresh` (`carrier_authority.refresh`) asks FMCSA again. Both are
+carrier-only. Admins hold both; dispatchers only view. Handing a truck to another carrier needs
+`trucks:edit` (the carrier search is behind `truck.update`); leaving an organization needs no key.
+
+## Truck maintenance (`maintenance:*`, plan 24)
+
+Backend plan 48 maps one key per route. `maintenance:view` (`maintenance.read`) reads every
+truck's schedules and the fleet's tasks; `maintenance:manage` adds, edits and archives intervals
+and acknowledges, defers and completes tasks; `maintenance:readings:record`
+(`maintenance.record_reading`) records an odometer or engine hours on any truck of the fleet. A
+driver holds `maintenance:own:view` and `maintenance:own:update` (`read_own` / `update_own`):
+only through the My loads card, and only for the truck they are the current driver of; the API
+answers 404 for any other. A dispatcher gets view + readings, not manage.
+
 ## Usage and costs (`usage:view`, plan 26)
 
 `usage:view` (`usage.read`) opens Settings → Usage & costs: the organization's AI, storage and
