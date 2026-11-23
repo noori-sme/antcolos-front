@@ -62,6 +62,14 @@ describe("isRouteAvailable (plan 08)", () => {
     },
   );
 
+  it.each(["/driver/receipts", "/finance/receipts"])(
+    "reaches %s in http mode, live rather than demo (plan 27)",
+    (path) => {
+      expect(isRouteAvailable(path, "http", false)).toBe(true);
+      expect(isDemoRoute(path, "http", true)).toBe(false);
+    },
+  );
+
   it.each(["/rate-cons/new", "/rate-cons/0b6f8c1e-2d3a-4f5b-9c7d-8e9f0a1b2c3d"])(
     "reaches %s in http mode, live rather than demo (plan 13)",
     (path) => {

@@ -3,7 +3,8 @@
 Backend: plan 50 (`../antcolos/docs/plans/50-receipts.md`), merged as noori-sme/antcolos#92.
 Contract: `../antcolos/docs/requirements/receipts-api-contract.md`. Milestone F2.1.
 
-Status: **IN PROGRESS** (2026-11-23). Approved with plan 50 ("start implementing other
+Status: **BUILT** (2026-11-23): phases 1–4 done; PR to main after the backend (#92) is on
+staging. Approved with plan 50 ("start implementing other
 phases", product owner 2026-11-23). Track: Feature (new routes, new permission keys, nav).
 Branch: `feat/finance-receipts` (same name as the backend).
 
@@ -25,7 +26,8 @@ Branch: `feat/finance-receipts` (same name as the backend).
 | Routes | `/driver/receipts` (driver app, `receipts:create`): capture + own list + confirm. `/finance/receipts` (Business nav, `receipts:view`): list with status/kind filters, detail sheet, confirm/reject for `receipts:review`. |
 | Idempotency | One key per intent (`createIntentKeys`), reused on retry, rotated after success. |
 | Failures | The detail shows the backend's `failures` as plain sentences (label map in `src/lib/receipts/receipt-rules.ts`). |
-| Polling | A receipt in `EXTRACTING` refetches every 3 s until it leaves that state (stops after 2 min). |
+| Polling | A receipt in `EXTRACTING` refetches every 3 s until it leaves that state (stops after 2 min, then says it is slow and offers "Check again"). |
+| Http mode | `/driver/receipts` and `/finance/receipts` are in `HTTP_LIVE_ROUTES`; `/driver/receipts` is a `DRIVER_OPEN_ROUTES` entry so a driver account's locked dashboard leaves it usable (found by the live spec). |
 
 ## Phases
 
@@ -41,6 +43,16 @@ Phase 4 — live browser spec against the local backend; frontend-reviewer; PR t
           backend is on staging
           → verify: LIVE spec, npm run build
 ```
+
+## Verification
+
+- vitest: full suite 157 files / 2,423 tests pass; new: http mapper, receipt rules, confirm form, route availability.
+- lint: the 30 changed files are clean (main's baseline errors are elsewhere); typecheck clean; `npm run build` ok.
+- Live spec `tests/browser/receipts.live.spec.ts` against the local backend on main (a4ccdc1): 4 passed
+  (driver sends + confirms on desktop and mobile; dispatcher sees, cannot decide; admin rejects),
+  2 skipped by design (office flows on mobile).
+- `frontend-reviewer`: no blocking findings; should-fix items 2–8 fixed (unknown states, slow reading,
+  camera or file, driver paging and a no-list state, 360 px row, native radios, filter buttons).
 
 ## Backend asks
 
