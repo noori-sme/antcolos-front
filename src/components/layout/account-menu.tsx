@@ -1,10 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import {
-  clearAllAuthCookies,
-} from "@/lib/api/auth-cookies";
 import { toast } from "sonner";
 import { LogOut, Settings2 } from "lucide-react";
 import Link from "next/link";
@@ -15,11 +11,11 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useQueryClient } from "@tanstack/react-query";
 import { ACCOUNT_NAV } from "@/config/nav";
 import { API_MODE } from "@/lib/api/mode";
 import { useSelfAvatarUrl } from "@/lib/api/use-self-profile";
 import { useSession } from "@/lib/session/hooks";
+import { useSignOut } from "@/lib/session/use-sign-out";
 import { LockedSection } from "./locked-section";
 
 /**
@@ -31,21 +27,9 @@ export function AccountMenu() {
   // http mode (plan 11): the real picture from /users/me/avatar.
   const selfAvatarUrl = useSelfAvatarUrl();
   const avatarUrl = API_MODE === "http" ? selfAvatarUrl : user.avatarUrl;
-  const router = useRouter();
-  const queryClient = useQueryClient();
+  const handleSignOut = useSignOut();
   const [showSignOut, setShowSignOut] = useState(false);
   const items = ACCOUNT_NAV.flatMap((s) => s.items);
-
-  const handleSignOut = () => {
-    clearAllAuthCookies();
-    
-    queryClient.clear();
-    sessionStorage.removeItem("antcolos_signup_step");
-    sessionStorage.removeItem("antcolos_signup_email");
-    sessionStorage.removeItem("antcolos_signup_from_login");
-    sessionStorage.setItem("antcolos_pending_toast", "Signed out successfully");
-    router.push("/sign-in");
-  };
 
   return (
     <>
@@ -106,7 +90,7 @@ export function AccountMenu() {
           <DialogClose asChild>
             <Button variant="ghost">Cancel</Button>
           </DialogClose>
-          <Button variant="danger" onClick={handleSignOut}>
+          <Button variant="danger" onClick={() => handleSignOut()}>
             Sign out
           </Button>
         </div>

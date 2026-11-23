@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { useVisibleNav } from "@/components/layout/use-visible-nav";
 import { useActiveMembership, useRosterStatus, useSession } from "@/lib/session/hooks";
 import { greeting } from "./greeting";
+import { CarrierAuthorityCard } from "./carrier-authority-card";
 import { LiveOwnerOverview } from "./live-owner-overview";
 
 /**
@@ -51,6 +52,11 @@ export function LiveHomeScreen() {
         }
       />
       {rosterFailed ? null : <LiveOwnerOverview />}
+      {rosterFailed ? null : (
+        <Can permission="carrier:authority:view">
+          <CarrierAuthorityCard />
+        </Can>
+      )}
       {rosterFailed ? (
         <ErrorState
           title="We couldn't load your organization"

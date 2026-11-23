@@ -14,7 +14,7 @@ export interface MyMembershipDto {
   joinedAt: string;
 }
 
-const ROLE_TITLES: Record<string, string> = {
+export const ROLE_TITLES: Record<string, string> = {
   ADMIN: "Admin",
   DISPATCHER: "Dispatcher",
   DRIVER: "Driver",

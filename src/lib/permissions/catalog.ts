@@ -253,6 +253,8 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "factoring:override", label: "Book past a factoring block", description: "Book a load your factor has refused or has not approved, on the record, with a reason. The strongest factoring permission there is.", group: "factoring", financial: true, sensitive: true, prerequisites: ["factoring:view"], scopeNote: "Only where the carrier's own policy permits an override. Every use requires a reason and writes one audit entry that can never be edited or removed." },
 
   // ---- Organization settings ---------------------------------------------
+  { key: "carrier:authority:view", label: "See the carrier's FMCSA authority", description: "See this carrier's operating authority as FMCSA reported it, how long it has held it, and every check.", group: "organization", orgTypes: ["CARRIER"] },
+  { key: "carrier:authority:refresh", label: "Re-check FMCSA authority", description: "Ask FMCSA again for this carrier's authority and store the answer.", group: "organization", orgTypes: ["CARRIER"], prerequisites: ["carrier:authority:view"] },
   { key: "usage:view", label: "See usage and costs", description: "See what the organization used (AI, stored files, messages) and what it is estimated to cost.", group: "organization", sensitive: true, financial: true },
   { key: "organization:manage", label: "Manage organization settings", description: "Edit the organization's details and billing information.", group: "organization", sensitive: true },
   { key: "integrations:view", label: "View integrations", description: "See which outside tools are connected.", group: "organization" },
@@ -548,6 +550,8 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "risk.read": "risk:view",
   "risk.view": "risk:view",
   "organization.manage": "organization:manage",
+  "carrier_authority.read": "carrier:authority:view",
+  "carrier_authority.refresh": "carrier:authority:refresh",
   "usage.read": "usage:view",
   "organization.edit": "organization:manage",
   "organization.update": "organization:manage",

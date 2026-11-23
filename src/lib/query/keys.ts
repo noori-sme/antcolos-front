@@ -33,6 +33,21 @@ export const fleetKeys = {
     [...orgKey(organizationId), "trucks", "availability", query] as const,
 };
 
+/** Carrier authority, carrier directory search and own memberships (plan 25). */
+export const carrierAuthorityKeys = {
+  all: (organizationId: string) => [...orgKey(organizationId), "carrier-authority"] as const,
+  current: (organizationId: string) => [...orgKey(organizationId), "carrier-authority", "current"] as const,
+  history: (organizationId: string, page: number) =>
+    [...orgKey(organizationId), "carrier-authority", "history", page] as const,
+};
+export const orgDirectoryKeys = {
+  carriers: (organizationId: string, q: string) => [...orgKey(organizationId), "directory", "carriers", q] as const,
+};
+/** The person's own memberships; under orgKey because the cache is cleared on org switch anyway. */
+export const selfMembershipKeys = {
+  list: (organizationId: string) => [...orgKey(organizationId), "account", "memberships"] as const,
+};
+
 /** Usage and estimated costs (plan 26). */
 export const usageKeys = {
   organization: (organizationId: string, range: { from: string; to: string }) =>

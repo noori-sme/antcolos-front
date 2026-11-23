@@ -1,3 +1,4 @@
+import type { CarrierAuthorityStatus } from "@/types/carrier-authority";
 import type { DueStatus, MaintenanceTaskStatus } from "@/types/maintenance-live";
 import type { LoadExceptionSeverity, LoadExceptionStatus } from "@/types/load-exception";
 import type { LoadRecordStatus } from "@/types/load-record";
@@ -145,6 +146,13 @@ export const LOAD_EXCEPTION_STATUS: Record<LoadExceptionStatus, { label: string;
   open:         { label: "Open",         tone: "warning" },
   acknowledged: { label: "Acknowledged", tone: "info" },
   resolved:     { label: "Resolved",     tone: "success" },
+};
+
+/** The carrier's FMCSA authority (plan 25). */
+export const CARRIER_AUTHORITY_STATUS: Record<CarrierAuthorityStatus, { label: string; tone: Tone }> = {
+  AUTHORIZED: { label: "Authorized", tone: "success" },
+  NOT_AUTHORIZED: { label: "Not authorized", tone: "danger" },
+  OUT_OF_SERVICE: { label: "Out of service", tone: "danger" },
 };
 
 /** Real-API maintenance (plan 24): when a service interval comes due. */

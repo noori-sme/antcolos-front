@@ -276,3 +276,14 @@ describe("loads:respond (plan 15)", () => {
     expect(dispatcher?.permissions).toContain("loads:respond");
   });
 });
+
+describe("carrier authority keys (plan 25)", () => {
+  it("map from the backend and stay with the right seats", () => {
+    expect(normalizePermissionKey("carrier_authority.read")).toBe("carrier:authority:view");
+    expect(normalizePermissionKey("carrier_authority.refresh")).toBe("carrier:authority:refresh");
+    const dispatcher = SEED_TEMPLATES.find((t) => t.name === "Dispatcher")!;
+    expect(dispatcher.permissions).toContain("carrier:authority:view");
+    expect(dispatcher.permissions).not.toContain("carrier:authority:refresh");
+  });
+});
+

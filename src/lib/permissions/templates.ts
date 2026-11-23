@@ -58,6 +58,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "eld:location:precise:view",
       // The fleet's service due, and a reading a driver phoned in (backend plan 48).
       "maintenance:view", "maintenance:readings:record",
+      // The carrier's own FMCSA authority, read only; re-checking stays with admins (backend plan 41).
+      "carrier:authority:view",
       // A dispatcher is usually the first to hear about a wreck, so they can
       // open a claim. They are not given the policy, and never the money.
       "claims:view", "claims:create",
