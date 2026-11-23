@@ -1,5 +1,5 @@
 /**
- * Which paths need a session. Pure, so `src/middleware.ts` (server) and the
+ * Which paths need a session. Pure, so `src/proxy.ts` (server) and the
  * session provider (client) share one answer instead of two drifting lists.
  */
 

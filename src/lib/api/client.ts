@@ -1,11 +1,18 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig, type AxiosInstance } from "axios";
-import { sessionTokenFrom } from "./session-token";
+import { issuesSessionToken, sessionTokenFrom } from "./session-token";
 import {
-  clearAllAuthCookies, clearNextStep, readCookie, setAccountKind, setNextStep, setSessionToken,
+  clearAllAuthCookies, clearNextStep, setAccountKind, setNextStep, setSessionToken,
 } from "./auth-cookies";
 
-// Access the API URL from environment variables, falling back to a default
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://antcolos-staging.up.railway.app/api/v1";
+/**
+ * Every call goes to this app's own origin (plan 27): `/api/backend/*` is
+ * rewritten to the API by `src/proxy.ts`, which adds the session from an
+ * httpOnly cookie; session-issuing calls go to `/api/session/*`, which stores
+ * the tokens it receives in httpOnly cookies. The browser never holds a usable
+ * token.
+ */
+const API_URL = "/api/backend";
+const SESSION_URL = "/api/session";
 
 /**
  * Production-ready Axios instance for standard JSON API requests.
@@ -85,11 +92,10 @@ function setupInterceptors(client: AxiosInstance) {
   // Request Interceptor
   client.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
-      // Fetch token from cookies if available and Authorization header is not already provided
-      const token = readCookie('antcolos_token');
-      if (token && config.headers && !config.headers.Authorization) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+      // The session cookie authorizes the call server-side; a token in a
+      // header would be ignored (and the readable cookie holds none).
+      if (config.headers) delete config.headers.Authorization;
+      if (issuesSessionToken(config.url ?? "")) config.baseURL = SESSION_URL;
       return config;
     },
     (error: AxiosError) => {
@@ -165,6 +171,33 @@ function setupInterceptors(client: AxiosInstance) {
       const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
       const url = originalRequest.url || '';
 
+      // 401 first: renew the session once (shared by every request waiting on
+      // it) and retry, before any handler below treats the 401 as a sign-out.
+      // Even when the refresh is refused, retry once: another tab may have
+      // renewed the session a moment ago. Only then fall through.
+      const isSignInCall = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/verify-email');
+      if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isSignInCall) {
+        originalRequest._retry = true;
+        const outcome = await refreshSession();
+        if (outcome === "ok") {
+          return client.request(originalRequest);
+        }
+        if (outcome === "unavailable") {
+          // The API could not renew it right now (rate limit, restart): keep
+          // the session and let the caller retry later.
+          return Promise.reject(new Error("Could not reach the server. Try again in a moment."));
+        }
+        // "expired": another tab may have rotated the session a moment ago and
+        // its cookie may still be landing; give it a beat, then retry once.
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        try {
+          return await client.request(originalRequest);
+        } catch (retryError) {
+          // The retry's own 401 already went through the sign-out below.
+          return Promise.reject(retryError instanceof Error ? retryError : new Error("Session expired. Please sign in again."));
+        }
+      }
+
       // Standardize error message extraction for React Query to consume
       let backendMessage = (error.response?.data as any)?.message;
       
@@ -197,30 +230,52 @@ function setupInterceptors(client: AxiosInstance) {
         return Promise.reject(new Error("Session expired. Please sign in again."));
       }
 
-      // Do not trigger global logout for authentication endpoints
-      const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/verify-email');
-
-      // Handle 401 Unauthorized globally (e.g., Token Refresh)
-      if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
-        originalRequest._retry = true;
-
-        try {
-          // No refresh token logic implemented yet.
-          // Forcefully log the user out and redirect to sign-in
-          clearAllAuthCookies();
-          window.location.href = '/sign-in';
-          return Promise.reject(new Error(errorMessage));
-        } catch (refreshError) {
-          clearAllAuthCookies();
-          window.location.href = '/sign-in';
-          return Promise.reject(new Error(errorMessage));
-        }
+      // Still 401 after the refresh above: the session is over. Sign-in calls
+      // answer 401 for a wrong password, which is not a session ending.
+      if (error.response?.status === 401 && !isSignInCall && typeof window !== 'undefined') {
+        clearAllAuthCookies();
+        window.location.href = '/sign-in';
       }
-      
+
       // We reject with a standard Error object so that Tanstack Query's error field is predictable
       return Promise.reject(new Error(errorMessage));
     }
   );
+}
+
+export type RefreshOutcome = "ok" | "expired" | "unavailable";
+
+let refreshing: Promise<RefreshOutcome> | null = null;
+
+/** What a refresh answer means for the session. Only a 401 ends it. */
+export function refreshOutcome(status: number | null): RefreshOutcome {
+  if (status !== null && status >= 200 && status < 300) return "ok";
+  return status === 401 ? "expired" : "unavailable";
+}
+
+function callRefresh(): Promise<RefreshOutcome> {
+  return fetch(`${SESSION_URL}/auth/refresh`, { method: "POST", credentials: "same-origin" })
+    .then((res) => refreshOutcome(res.status))
+    .catch(() => refreshOutcome(null));
+}
+
+/**
+ * One `POST /api/session/auth/refresh` at a time: shared by every request in
+ * this tab, and serialized across tabs (Web Locks) so two tabs never present
+ * the same refresh token at once and sign each other out.
+ */
+export function refreshSession(): Promise<RefreshOutcome> {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  if (!refreshing) {
+    const run: Promise<RefreshOutcome> = locks
+      // `then` flattens the lock's Promise<Promise<…>> typing.
+      ? locks.request("antcolos-session-refresh", callRefresh).then((outcome) => outcome)
+      : callRefresh();
+    refreshing = run.finally(() => {
+      refreshing = null;
+    });
+  }
+  return refreshing;
 }
 
 // Apply interceptors to both clients

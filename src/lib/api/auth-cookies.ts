@@ -5,8 +5,9 @@ import Cookies from "js-cookie";
  * clears them. Screens call these helpers, never `Cookies.set` directly, so a
  * new cookie cannot be forgotten by sign-out.
  *
- * These cookies are readable by page scripts (js-cookie, not httpOnly). Moving
- * the token to an httpOnly cookie set by the server is a backend change.
+ * These cookies are readable by page scripts (js-cookie). `antcolos_token`
+ * holds only the claims of the session (the JWT without its signature, plan
+ * 27); the usable tokens are httpOnly cookies set by `/api/session`.
  */
 export const AUTH_COOKIE = {
   token: "antcolos_token",
@@ -156,5 +157,14 @@ export function clearAbandonedOnboarding(keepStep?: string) {
 export function clearAllAuthCookies() {
   for (const name of Object.values(AUTH_COOKIE)) {
     if (name !== AUTH_COOKIE.invitationToken) remove(name);
+  }
+  // The real tokens are httpOnly (plan 27): only the server can clear them,
+  // and it revokes the session on the API at the same time.
+  if (typeof window !== "undefined" && typeof fetch === "function") {
+    void fetch("/api/session/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+    }).catch(() => undefined);
   }
 }
