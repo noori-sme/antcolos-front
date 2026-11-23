@@ -79,6 +79,8 @@ and cache entries can't cross organizations.
 | Rate Con upload, review, approve (`/rate-cons/new`, `/rate-cons/[documentId]`) | loads / `documents-api-contract` §1–§10 | **http** in both modes (no mock); needs backend plans 21 and 26 merged | service seam (`rateConIntake`), `features/rate-con-intake`, plan 13. PDF box highlight not built (no PDF renderer) |
 | Fleet trucks | fleet / `fleet-api-contract` (v2 draft) | **http** (list, detail, every write: create/attach, edit, status, assign, ownership hand-off, leave, archive) | service seam (`trucks`, `orgPeople`), plan 02 |
 | Carrier authority, carrier directory, own memberships | identity / `carrier-authority-api-contract`, `membership-api-contract` §2, §6 | **http** (authority card on the live Home, hand-off to another carrier, My organizations with Leave) | `carrierAuthority`, `orgDirectory`, `selfMemberships`, plan 25 |
+| Truck maintenance | fleet / `maintenance-api-contract` (backend plan 48) | **http** (truck panel, Service due, driver card); the `/maintenance` demo area stays mock | `maintenance` service, plan 24 |
+| Usage and costs | `usage-api-contract` (backend plan 49) | **http** (Settings → Usage & costs, own organization) | `usage` service, plan 26 |
 | Own profile (`/account/profile`: name, phone, headline, about me, picture) | identity / `profile.md` | **http** in http mode; mock mode keeps the public-profile screen | service seam (`selfProfile`), shared reads in `lib/api/use-self-profile.ts` (also the top-bar avatar), plan 11 |
 | Public profile (username page, visibility, workplaces, share card) | **not built in backend yet** | mock | contracts seam (`profile`) |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |

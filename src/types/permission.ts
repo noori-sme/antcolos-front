@@ -65,7 +65,8 @@ export type PermissionKey =
   // Driver credentials (plan 20, backend credential.*)
   | "credentials:view" | "credentials:view_own" | "credentials:create" | "credentials:edit"
   // Maintenance — equipment upkeep. Separate from compliance, which is paperwork.
-  | "maintenance:view" | "maintenance:manage"
+  | "maintenance:view" | "maintenance:manage" | "maintenance:readings:record"
+  | "maintenance:own:view" | "maintenance:own:update"
   | "maintenance:defects:report" | "maintenance:defects:manage"
   | "maintenance:repairs:manage" | "maintenance:service:record"
   | "maintenance:costs:view" | "maintenance:outofservice:manage"
@@ -152,6 +153,7 @@ export type PermissionKey =
   | "factoring:view" | "factoring:check" | "factoring:manage" | "factoring:override"
   // Organization settings
   | "carrier:authority:view" | "carrier:authority:refresh"
+  | "usage:view"
   | "organization:manage" | "integrations:view" | "integrations:manage" | "audit:view"
   // Audit & Risk — the one ledger, and the cases opened off it.
   //

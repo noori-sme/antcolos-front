@@ -7,6 +7,8 @@ import { httpTrucksService } from "./trucks";
 import {
   httpCarrierAuthorityService, httpOrgDirectoryService, httpSelfMembershipsService,
 } from "./carrier-authority";
+import { httpMaintenanceService } from "./maintenance";
+import { httpUsageService } from "./usage";
 import { httpRateConIntakeService } from "./rate-con-intake";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
 import { httpOrgPeopleService } from "./org-people";
@@ -31,6 +33,10 @@ export const httpServices: AntcolosServices = {
   carrierAuthority: httpCarrierAuthorityService,
   orgDirectory: httpOrgDirectoryService,
   selfMemberships: httpSelfMembershipsService,
+  // http-only (plan 24), like trucks: no maintenance mock for these routes.
+  maintenance: httpMaintenanceService,
+  // http-only (plan 26), like trucks.
+  usage: httpUsageService,
   rateConIntake: httpRateConIntakeService,
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.

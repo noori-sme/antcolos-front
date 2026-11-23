@@ -167,6 +167,9 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   // ---- Maintenance -------------------------------------------------------
   { key: "maintenance:view", label: "View maintenance", description: "See what equipment is due for service, what has been reported broken, and what has been done to it.", group: "maintenance" },
   { key: "maintenance:manage", label: "Manage service schedules", description: "Add and change what a truck or trailer is due for, and defer something with a recorded reason.", group: "maintenance", prerequisites: ["maintenance:view"] },
+  { key: "maintenance:readings:record", label: "Record odometer and engine hours", description: "Write down a truck's odometer or engine hours; a reading can never go backwards.", group: "maintenance", prerequisites: ["maintenance:view"] },
+  { key: "maintenance:own:view", label: "See your own truck's maintenance", description: "See what the truck you drive is due for.", group: "maintenance", scopeNote: "Only the truck this person is the current driver of." },
+  { key: "maintenance:own:update", label: "Update your own truck's maintenance", description: "Record the odometer of the truck you drive and acknowledge what it is due for.", group: "maintenance", prerequisites: ["maintenance:own:view"], scopeNote: "Only the truck this person is the current driver of." },
   { key: "maintenance:defects:report", label: "Report defects", description: "Report something wrong with a truck or trailer, including how badly it affects using it.", group: "maintenance", prerequisites: ["maintenance:view"], scopeNote: "Reporting a fault on equipment this person is assigned to. It does not manage anybody's defect." },
   { key: "maintenance:defects:manage", label: "Handle reported defects", description: "Acknowledge, triage and close out defects other people reported.", group: "maintenance", prerequisites: ["maintenance:view"] },
   { key: "maintenance:repairs:manage", label: "Manage repair orders", description: "Open repair orders, put a vendor and a person on them, and move them along.", group: "maintenance", prerequisites: ["maintenance:view"] },
@@ -252,6 +255,7 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   // ---- Organization settings ---------------------------------------------
   { key: "carrier:authority:view", label: "See the carrier's FMCSA authority", description: "See this carrier's operating authority as FMCSA reported it, how long it has held it, and every check.", group: "organization", orgTypes: ["CARRIER"] },
   { key: "carrier:authority:refresh", label: "Re-check FMCSA authority", description: "Ask FMCSA again for this carrier's authority and store the answer.", group: "organization", orgTypes: ["CARRIER"], prerequisites: ["carrier:authority:view"] },
+  { key: "usage:view", label: "See usage and costs", description: "See what the organization used (AI, stored files, messages) and what it is estimated to cost.", group: "organization", sensitive: true, financial: true },
   { key: "organization:manage", label: "Manage organization settings", description: "Edit the organization's details and billing information.", group: "organization", sensitive: true },
   { key: "integrations:view", label: "View integrations", description: "See which outside tools are connected.", group: "organization" },
   { key: "integrations:manage", label: "Manage integrations", description: "Connect and disconnect outside tools.", group: "organization", sensitive: true, prerequisites: ["integrations:view"] },
@@ -511,6 +515,9 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "maintenance.read": "maintenance:view",
   "maintenance.view": "maintenance:view",
   "maintenance.manage": "maintenance:manage",
+  "maintenance.record_reading": "maintenance:readings:record",
+  "maintenance.read_own": "maintenance:own:view",
+  "maintenance.update_own": "maintenance:own:update",
   "maintenance.defects.report": "maintenance:defects:report",
 
   // Insurance & Claims
@@ -545,6 +552,7 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "organization.manage": "organization:manage",
   "carrier_authority.read": "carrier:authority:view",
   "carrier_authority.refresh": "carrier:authority:refresh",
+  "usage.read": "usage:view",
   "organization.edit": "organization:manage",
   "organization.update": "organization:manage",
   "integration.read": "integrations:view",

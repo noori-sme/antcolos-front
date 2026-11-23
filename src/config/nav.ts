@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BadgeCheck, Bell, Briefcase, Building2, CalendarClock, ClipboardList, Container, FileBadge,
+  BadgeCheck, Bell, Briefcase, Building2, CalendarClock, CircleDollarSign, ClipboardList, Container, FileBadge,
   FileSearch, FileSignature, FileText, Fuel, Gauge, Handshake, Home, IdCard,
   Inbox, Landmark, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
   Share2,
@@ -73,6 +73,8 @@ export const PRODUCT_NAV: NavSection[] = [
       // key would mean only people who can grant permissions may triage.
       { label: "Referrals", href: "/referrals", icon: UserPlus, requires: ["referrals:review"] },
       { label: "Trucks", href: "/fleet/trucks", icon: Truck, requires: ["trucks:view"] },
+      // Live service due (plan 24); the mock /maintenance area below stays a demo.
+      { label: "Service due", href: "/fleet/maintenance", icon: Wrench, requires: ["maintenance:view"] },
       { label: "Trailers", href: "/fleet/trailers", icon: Container, requires: ["trailers:view"] },
       { label: "Safety & Compliance", href: "/compliance", icon: ShieldCheck, requires: ["compliance:view"] },
       { label: "Maintenance", href: "/maintenance", icon: Wrench, requires: ["maintenance:view"] },
@@ -161,6 +163,7 @@ export const SETTINGS_NAV: NavSection[] = [
     label: "Organization",
     items: [
       { label: "Organization", href: "/settings/organization", icon: Building2, requires: ["organization:manage"] },
+      { label: "Usage & costs", href: "/settings/usage", icon: CircleDollarSign, requires: ["usage:view"] },
       { label: "People", href: "/settings/users", icon: Users, requires: ["members:view"] },
       // `invitations:create`, not the weaker view key. The route manifest is
       // derived from this line, so it is also what the route guard enforces —

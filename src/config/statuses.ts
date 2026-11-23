@@ -1,4 +1,5 @@
 import type { CarrierAuthorityStatus } from "@/types/carrier-authority";
+import type { DueStatus, MaintenanceTaskStatus } from "@/types/maintenance-live";
 import type { LoadExceptionSeverity, LoadExceptionStatus } from "@/types/load-exception";
 import type { LoadRecordStatus } from "@/types/load-record";
 import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
@@ -152,5 +153,21 @@ export const CARRIER_AUTHORITY_STATUS: Record<CarrierAuthorityStatus, { label: s
   AUTHORIZED: { label: "Authorized", tone: "success" },
   NOT_AUTHORIZED: { label: "Not authorized", tone: "danger" },
   OUT_OF_SERVICE: { label: "Out of service", tone: "danger" },
+};
+
+/** Real-API maintenance (plan 24): when a service interval comes due. */
+export const MAINTENANCE_DUE_STATUS: Record<DueStatus, { label: string; tone: Tone }> = {
+  OK: { label: "OK", tone: "success" },
+  DUE_SOON: { label: "Due soon", tone: "warning" },
+  OVERDUE: { label: "Overdue", tone: "danger" },
+  UNKNOWN: { label: "No reading yet", tone: "neutral" },
+};
+
+export const MAINTENANCE_TASK_STATUS: Record<MaintenanceTaskStatus, { label: string; tone: Tone }> = {
+  OPEN: { label: "Open", tone: "warning" },
+  ACKNOWLEDGED: { label: "Acknowledged", tone: "info" },
+  DEFERRED: { label: "Deferred", tone: "neutral" },
+  COMPLETED: { label: "Completed", tone: "success" },
+  CANCELLED: { label: "Cancelled", tone: "outline" },
 };
 

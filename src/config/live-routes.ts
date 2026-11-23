@@ -12,11 +12,13 @@
 export const HTTP_LIVE_ROUTES: readonly string[] = [
   "/home",                  // live home (features/home/live-home-screen)
   "/fleet/trucks",          // trucks (fleet-api-contract)
+  "/fleet/maintenance",     // maintenance (maintenance-api-contract, plan 24)
   "/people/drivers",        // orgPeople (users-api-contract)
   "/people/dispatchers",
   "/people/admins",
   "/settings/invitations",  // orgInvitations (invitations-api-contract)
   "/settings/permissions",  // orgRoles + catalog (permissions-api-contract)
+  "/settings/usage",        // usage (usage-api-contract, plan 26)
   "/account/profile",       // selfProfile (profile.md, plan 11)
   "/account/organizations", // selfMemberships (membership-api-contract §2, plan 25)
   "/settings/users",        // orgMembers (membership-api-contract §2, plan 12)

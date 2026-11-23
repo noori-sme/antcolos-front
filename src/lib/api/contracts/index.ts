@@ -11,6 +11,8 @@ export type * from "./compliance";
 export type * from "./fleet";
 export type * from "./trucks";
 export type * from "./carrier-authority";
+export type * from "./maintenance";
+export type * from "./usage";
 export type * from "./rate-con-intake";
 export type * from "./org-people";
 export type * from "./org-access";
@@ -53,6 +55,8 @@ import type { TrucksService } from "./trucks";
 import type {
   CarrierAuthorityService, OrgDirectoryService, SelfMembershipsService,
 } from "./carrier-authority";
+import type { MaintenanceService } from "./maintenance";
+import type { UsageService } from "./usage";
 import type { RateConIntakeService } from "./rate-con-intake";
 import type { LoadRecordsService } from "./load-records";
 import type { DriverLoadsService } from "./driver-loads";
@@ -97,6 +101,10 @@ export interface AntcolosServices {
   orgDirectory: OrgDirectoryService;
   /** The signed-in person's own memberships (plan 42). http-only. */
   selfMemberships: SelfMembershipsService;
+  /** Truck maintenance (backend plan 48). http-only, like trucks. */
+  maintenance: MaintenanceService;
+  /** Usage and estimated costs (backend plan 49). http-only. */
+  usage: UsageService;
   /** Rate Con upload, review and approval (NestJS `/documents`, plan 13). http-only. */
   rateConIntake: RateConIntakeService;
   /** Booked loads on the real API (F1.2, plan 14); http-only. */
