@@ -14,9 +14,9 @@ export function toReceipt(dto: Dto): Receipt {
   return {
     id: str(dto.id) ?? "",
     documentId: str(dto.documentId) ?? "",
-    // An unknown kind or status is shown as the safest one, never cast.
-    kind: oneOf(RECEIPT_KINDS, dto.kind) ?? "FUEL",
-    status: oneOf(RECEIPT_STATUSES, dto.status) ?? "PENDING_REVIEW",
+    // An unknown kind or status is shown as unknown, with no actions; never cast.
+    kind: oneOf(RECEIPT_KINDS, dto.kind) ?? "UNKNOWN",
+    status: oneOf(RECEIPT_STATUSES, dto.status) ?? "UNKNOWN",
     truckId: text(dto.truckId),
     loadId: text(dto.loadId),
     driverUserId: str(dto.driverUserId) ?? "",

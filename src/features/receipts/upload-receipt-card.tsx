@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera } from "lucide-react";
+import { Camera, FileUp } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,7 +17,8 @@ const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
  */
 export function UploadReceiptCard({ onUploaded }: { onUploaded: (receiptId: string) => void }) {
   const id = useId();
-  const input = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<ReceiptKind>("FUEL");
   const [file, setFile] = useState<File | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -34,7 +35,6 @@ export function UploadReceiptCard({ onUploaded }: { onUploaded: (receiptId: stri
         onSuccess: ({ receipt, duplicate }) => {
           keys.clear();
           setFile(null);
-          if (input.current) input.current.value = "";
           setNotice(duplicate ? "You already sent this receipt. Here it is." : null);
           onUploaded(receipt.id);
         },
@@ -42,44 +42,83 @@ export function UploadReceiptCard({ onUploaded }: { onUploaded: (receiptId: stri
     );
   };
 
+  const pick = (files: FileList | null) => {
+    const chosen = files?.[0];
+    if (chosen) setFile(chosen);
+  };
+
   return (
     <Card className="space-y-4 p-4">
       <fieldset>
         <legend className="text-[0.8125rem] font-medium text-fg">What kind of receipt?</legend>
-        <div className="mt-2 flex flex-wrap gap-2" role="radiogroup">
+        <div className="mt-2 flex flex-wrap gap-2">
           {RECEIPT_KINDS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="radio"
-              aria-checked={kind === k}
-              onClick={() => setKind(k)}
-              className={cn(
-                "h-control rounded-md border px-3.5 text-[0.875rem] transition-colors",
-                kind === k
-                  ? "border-primary bg-primary text-primary-fg"
-                  : "border-border-strong bg-surface text-fg hover:bg-surface-hover",
-              )}
-            >
-              {KIND_LABEL[k]}
-            </button>
+            <label key={k} className="cursor-pointer">
+              <input
+                type="radio"
+                name={`${id}-kind`}
+                value={k}
+                checked={kind === k}
+                onChange={() => setKind(k)}
+                className="peer sr-only"
+              />
+              <span
+                className={cn(
+                  "inline-flex h-control items-center rounded-md border px-3.5 text-[0.875rem] transition-colors",
+                  "peer-focus-visible:ring-2 peer-focus-visible:ring-ring/35",
+                  kind === k
+                    ? "border-primary bg-primary text-primary-fg"
+                    : "border-border-strong bg-surface text-fg hover:bg-surface-hover",
+                )}
+              >
+                {KIND_LABEL[k]}
+              </span>
+            </label>
           ))}
         </div>
       </fieldset>
 
       <div>
-        <label htmlFor={`${id}-file`} className="block text-[0.8125rem] font-medium text-fg">
-          Photo or PDF
-        </label>
+        <p className="text-[0.8125rem] font-medium text-fg">Photo or PDF</p>
         <input
-          ref={input}
-          id={`${id}-file`}
+          ref={cameraInput}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          tabIndex={-1}
+          aria-label="Take a photo of the receipt"
+          className="sr-only"
+          onChange={(e) => {
+            pick(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={fileInput}
           type="file"
           accept={ACCEPT}
-          capture="environment"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="mt-1.5 block w-full text-[0.875rem] text-fg file:mr-3 file:h-control file:rounded-md file:border file:border-border-strong file:bg-surface file:px-3 file:text-fg"
+          tabIndex={-1}
+          aria-label="Choose a photo or PDF of the receipt"
+          className="sr-only"
+          onChange={(e) => {
+            pick(e.target.files);
+            e.target.value = "";
+          }}
         />
+        <div className="mt-2 flex flex-wrap gap-2">
+          {/* The camera first: the receipt is in the driver's hand. */}
+          <Button type="button" onClick={() => cameraInput.current?.click()}>
+            <Camera aria-hidden />
+            Take photo
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => fileInput.current?.click()}>
+            <FileUp aria-hidden />
+            Choose file
+          </Button>
+        </div>
+        <p className="mt-2 text-[0.8125rem] text-fg-muted" aria-live="polite">
+          {file ? `Ready to send: ${file.name}` : "No receipt chosen yet."}
+        </p>
         <p className="mt-1 text-[0.75rem] text-fg-subtle">
           {kind === "FUEL"
             ? "We read fuel receipts for you; you check anything unclear."
@@ -93,7 +132,6 @@ export function UploadReceiptCard({ onUploaded }: { onUploaded: (receiptId: stri
       {notice ? <p role="status" className="text-[0.8125rem] text-fg-muted">{notice}</p> : null}
 
       <Button variant="primary" onClick={submit} disabled={!file || upload.isPending} className="w-full sm:w-auto">
-        <Camera aria-hidden />
         {upload.isPending ? "Sending…" : "Send receipt"}
       </Button>
     </Card>

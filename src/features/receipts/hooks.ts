@@ -6,7 +6,7 @@ import { services } from "@/lib/api";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { orgKey } from "@/lib/query/keys";
 import { createIntentKeys } from "@/lib/rate-con/intent-key";
-import type { Viewer } from "@/lib/receipts/receipt-rules";
+import { READING_PATIENCE_MS, type Viewer } from "@/lib/receipts/receipt-rules";
 import { useCan, useCanAny } from "@/lib/session/hooks";
 import type { ConfirmReceiptInput, ReceiptFilters, UploadReceiptInput } from "@/types/receipt";
 
@@ -18,9 +18,9 @@ export const receiptKeys = {
   detail: (org: string, id: string) => [...orgKey(org), "receipts", "detail", id] as const,
 };
 
-/** While a receipt is being read, check again every 3 s, for up to 2 minutes. */
+/** While a receipt is being read, check again every 3 s, for as long as reading should take. */
 const POLL_MS = 3_000;
-const POLL_FOR_MS = 120_000;
+const POLL_FOR_MS = READING_PATIENCE_MS;
 
 export function useReceipts(filters: ReceiptFilters) {
   const ctx = useServiceContext();

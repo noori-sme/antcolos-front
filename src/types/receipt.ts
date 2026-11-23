@@ -6,9 +6,13 @@
 
 export const RECEIPT_KINDS = ["FUEL", "REPAIR", "TOLL"] as const;
 export type ReceiptKind = (typeof RECEIPT_KINDS)[number];
+/** A kind this build does not know yet is shown as such, never as another kind. */
+export type ReceiptKindView = ReceiptKind | "UNKNOWN";
 
 export const RECEIPT_STATUSES = ["EXTRACTING", "PENDING_REVIEW", "CONFIRMED", "REJECTED"] as const;
 export type ReceiptStatus = (typeof RECEIPT_STATUSES)[number];
+/** A status this build does not know yet: shown, never acted on. */
+export type ReceiptStatusView = ReceiptStatus | "UNKNOWN";
 
 /** Why the system left a receipt for a person (contract: Receipt detail). */
 export const RECEIPT_FAILURES = [
@@ -22,8 +26,8 @@ export type ReceiptFailure = (typeof RECEIPT_FAILURES)[number];
 export interface Receipt {
   id: string;
   documentId: string;
-  kind: ReceiptKind;
-  status: ReceiptStatus;
+  kind: ReceiptKindView;
+  status: ReceiptStatusView;
   truckId: string | null;
   loadId: string | null;
   driverUserId: string;

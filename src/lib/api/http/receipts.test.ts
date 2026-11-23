@@ -49,8 +49,8 @@ describe("receipts http mapper", () => {
 
   it("never casts an unknown kind or status", () => {
     const r = toReceipt({ ...RECEIPT, kind: "PARKING", status: "VOIDED" });
-    expect(r.kind).toBe("FUEL");
-    expect(r.status).toBe("PENDING_REVIEW");
+    expect(r.kind).toBe("UNKNOWN");
+    expect(r.status).toBe("UNKNOWN");
   });
 
   it("maps the detail's fields and drops failure codes it does not know", () => {

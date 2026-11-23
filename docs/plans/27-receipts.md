@@ -24,7 +24,7 @@ Branch: `feat/finance-receipts` (same name as the backend).
 | Permissions | New UI keys mapped from the backend: `receipt.create` → `receipts:create`, `receipt.read` → `receipts:view`, `receipt.read_own` → `receipts:own:view`, `receipt.confirm_own` → `receipts:own:confirm`, `receipt.review` → `receipts:review`. Role templates mirror the backend defaults. |
 | Routes | `/driver/receipts` (driver app, `receipts:create`): capture + own list + confirm. `/finance/receipts` (Business nav, `receipts:view`): list with status/kind filters, detail sheet, confirm/reject for `receipts:review`. |
 | Idempotency | One key per intent (`createIntentKeys`), reused on retry, rotated after success. |
-| Failures | The detail shows the backend's `failures` as plain sentences (label map in `features/receipts/labels.ts`). |
+| Failures | The detail shows the backend's `failures` as plain sentences (label map in `src/lib/receipts/receipt-rules.ts`). |
 | Polling | A receipt in `EXTRACTING` refetches every 3 s until it leaves that state (stops after 2 min). |
 
 ## Phases

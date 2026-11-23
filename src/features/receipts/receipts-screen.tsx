@@ -58,13 +58,12 @@ export function ReceiptsScreen() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <div role="tablist" aria-label="Status" className="flex flex-wrap gap-1">
+        <div role="group" aria-label="Status" className="flex flex-wrap gap-1">
           {STATUS_TABS.map((tab) => (
             <button
               key={tab.label}
               type="button"
-              role="tab"
-              aria-selected={status === tab.value}
+              aria-pressed={status === tab.value}
               onClick={() => choose(() => setStatus(tab.value))}
               className={cn(
                 "h-control-sm rounded-md px-3 text-[0.8125rem] transition-colors",

@@ -4,7 +4,7 @@ import {
   TRUCK_OPERATIONAL_STATUS, TRUCK_STATUS, CARRIER_AUTHORITY_STATUS, MAINTENANCE_DUE_STATUS,
   MAINTENANCE_TASK_STATUS, RECEIPT_STATUS,
 } from "@/config/statuses";
-import type { ReceiptStatus } from "@/types/receipt";
+import type { ReceiptStatusView } from "@/types/receipt";
 import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
 import { CARRIER_AUTHORITY_STATUSES, type CarrierAuthorityStatus } from "@/types/carrier-authority";
 import type { DueStatus, MaintenanceTaskStatus } from "@/types/maintenance-live";
@@ -82,7 +82,7 @@ export function MaintenanceTaskBadge({ status }: { status: string }) {
 
 
 /** A real-API receipt status (F2.1). */
-export function ReceiptStatusBadge({ status }: { status: ReceiptStatus }) {
+export function ReceiptStatusBadge({ status }: { status: ReceiptStatusView }) {
   const meta = RECEIPT_STATUS[status];
   return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }

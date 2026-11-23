@@ -1,6 +1,6 @@
 import type { CarrierAuthorityStatus } from "@/types/carrier-authority";
 import type { DueStatus, MaintenanceTaskStatus } from "@/types/maintenance-live";
-import type { ReceiptStatus } from "@/types/receipt";
+import type { ReceiptStatusView } from "@/types/receipt";
 import type { LoadExceptionSeverity, LoadExceptionStatus } from "@/types/load-exception";
 import type { LoadRecordStatus } from "@/types/load-record";
 import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
@@ -174,9 +174,10 @@ export const MAINTENANCE_TASK_STATUS: Record<MaintenanceTaskStatus, { label: str
 
 
 /** Real-API receipts (F2.1, backend plan 50). */
-export const RECEIPT_STATUS: Record<ReceiptStatus, { label: string; tone: Tone }> = {
+export const RECEIPT_STATUS: Record<ReceiptStatusView, { label: string; tone: Tone }> = {
   EXTRACTING: { label: "Reading", tone: "info" },
   PENDING_REVIEW: { label: "Needs a check", tone: "warning" },
   CONFIRMED: { label: "Confirmed", tone: "success" },
   REJECTED: { label: "Rejected", tone: "outline" },
+  UNKNOWN: { label: "Unknown", tone: "neutral" },
 };

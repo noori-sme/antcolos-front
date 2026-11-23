@@ -8,7 +8,7 @@ import type { Receipt } from "@/types/receipt";
 const day = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
 
-/** One receipt in a list; opens its detail. */
+/** One receipt in a list; opens its detail. The badge sits under the title so it fits at 360 px. */
 export function ReceiptRow({ receipt, onOpen }: { receipt: Receipt; onOpen: (id: string) => void }) {
   const when = day(receipt.purchasedAt) ?? `Sent ${day(receipt.createdAt) ?? ""}`;
   return (
@@ -22,16 +22,18 @@ export function ReceiptRow({ receipt, onOpen }: { receipt: Receipt; onOpen: (id:
           <p className="truncate text-[0.875rem] font-medium text-fg">
             {KIND_LABEL[receipt.kind]} · {receipt.vendor ?? "Vendor not read"}
           </p>
-          <p className="mt-0.5 truncate text-[0.8125rem] text-fg-muted">{when}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <ReceiptStatusBadge status={receipt.status} />
+            <span className="text-[0.8125rem] text-fg-muted">{when}</span>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {receipt.arithmeticWarning ? (
-            <AlertTriangle aria-label="Amounts don't add up" className="size-4 text-st-warning" />
+            <AlertTriangle role="img" aria-label="Amounts don't add up" className="size-4 text-st-warning" />
           ) : null}
           <span className="text-[0.875rem] font-medium tabular-nums text-fg">
             {formatMoney(receipt.totalAmount, receipt.currency)}
           </span>
-          <ReceiptStatusBadge status={receipt.status} />
           <ChevronRight aria-hidden className="size-4 text-fg-subtle" />
         </div>
       </button>

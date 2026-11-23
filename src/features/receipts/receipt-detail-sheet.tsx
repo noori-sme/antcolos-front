@@ -7,7 +7,7 @@ import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetCloseButton, SheetContent } from "@/components/ui/sheet";
 import {
-  canConfirm, canReject, FAILURE_TEXT, formatMoney, KIND_LABEL, trimDecimal,
+  canConfirm, canReject, FAILURE_TEXT, fieldLabel, formatMoney, KIND_LABEL, readingTooLong, trimDecimal,
 } from "@/lib/receipts/receipt-rules";
 import type { ReceiptDetail } from "@/types/receipt";
 import { ConfirmReceiptForm } from "./confirm-receipt-form";
@@ -44,22 +44,46 @@ export function ReceiptDetailSheet({ receiptId, onClose }: { receiptId: string |
           {query.isError ? (
             <ErrorState description={query.error.message} onRetry={() => void query.refetch()} />
           ) : null}
-          {receipt ? <Body receipt={receipt} onDecided={onClose} /> : null}
+          {receipt ? (
+            <Body receipt={receipt} onDecided={onClose} onRefresh={() => void query.refetch()} refreshing={query.isFetching} />
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>
   );
 }
 
-function Body({ receipt, onDecided }: { receipt: ReceiptDetail; onDecided: () => void }) {
+function Body({
+  receipt, onDecided, onRefresh, refreshing,
+}: { receipt: ReceiptDetail; onDecided: () => void; onRefresh: () => void; refreshing: boolean }) {
   const viewer = useReceiptViewer();
   const [rejecting, setRejecting] = useState(false);
 
   if (receipt.status === "EXTRACTING") {
-    return (
+    // eslint-disable-next-line react-hooks/purity -- elapsed time is read once per render on purpose
+    const slow = readingTooLong(receipt, Date.now());
+    return slow ? (
+      <div className="space-y-3" role="status">
+        <p className="text-[0.875rem] text-fg">
+          Reading this receipt is taking longer than usual. Check again in a few minutes; if it
+          stays like this, tell your dispatcher.
+        </p>
+        <Button size="sm" onClick={onRefresh} disabled={refreshing}>
+          {refreshing ? "Checking…" : "Check again"}
+        </Button>
+      </div>
+    ) : (
       <p className="flex items-center gap-2 text-[0.875rem] text-fg-muted" role="status">
         <Loader2 aria-hidden className="size-4 animate-spin" />
         Reading the receipt. This usually takes under a minute.
+      </p>
+    );
+  }
+
+  if (receipt.status === "UNKNOWN") {
+    return (
+      <p className="text-[0.875rem] text-fg-muted">
+        This receipt is in a state this screen doesn&apos;t know yet. Reload the page to get the latest version.
       </p>
     );
   }
@@ -106,11 +130,13 @@ function Body({ receipt, onDecided }: { receipt: ReceiptDetail; onDecided: () =>
           <dl className="mt-2 divide-y divide-border rounded-lg border border-border">
             {receipt.fields.map((f) => (
               <div key={f.path} className="flex items-center justify-between gap-3 px-3 py-2 text-[0.8125rem]">
-                <dt className="truncate text-fg-muted">{f.path}</dt>
+                <dt className="truncate text-fg-muted">{fieldLabel(f)}</dt>
                 <dd className="flex shrink-0 items-center gap-2 text-fg">
                   <span>{f.value === null ? "—" : String(f.value)}</span>
                   {f.confidence !== null ? (
-                    <span className="tabular-nums text-fg-subtle">{Math.round(f.confidence * 100)}%</span>
+                    <span className="tabular-nums text-fg-subtle" title="How sure the reader was">
+                      {Math.round(f.confidence * 100)}% sure
+                    </span>
                   ) : null}
                 </dd>
               </div>
@@ -142,7 +168,7 @@ function Summary({ receipt }: { receipt: ReceiptDetail }) {
       ? ([["Gallons", trimDecimal(receipt.gallons)], ["Price per gallon", receipt.unitPrice ? `$${trimDecimal(receipt.unitPrice)}` : "—"]] as [string, string][])
       : []),
     ...(receipt.kind === "REPAIR"
-      ? ([["Parts", formatMoney(receipt.partsAmount)], ["Labor", formatMoney(receipt.laborAmount)]] as [string, string][])
+      ? ([["Parts", formatMoney(receipt.partsAmount, receipt.currency)], ["Labor", formatMoney(receipt.laborAmount, receipt.currency)]] as [string, string][])
       : []),
     ["Vendor", receipt.vendor ?? "—"],
     ["Place", [receipt.city, receipt.state].filter(Boolean).join(", ") || "—"],
