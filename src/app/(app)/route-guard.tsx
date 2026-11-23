@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { DemoBanner } from "@/components/data/demo-banner";
+import { SIGNED_IN_AS_DEMO } from "@/lib/api/mode";
 import { canAll } from "@/lib/permissions/can";
 import {
   isDemoRoute, isRouteAvailable, requiredPermissionsForPath,
@@ -30,7 +31,9 @@ export function RouteGuard({ children }: { children: ReactNode }) {
   const hasToken = typeof document !== 'undefined' && document.cookie.includes('antcolos_token=');
   const isBrowser = typeof window !== 'undefined';
 
-  if (isBrowser && !hasToken) {
+  // Explicit mock mode is signed in as the fixtures' demo user, with no token
+  // (src/lib/api/mode.ts), as middleware.ts already allows.
+  if (isBrowser && !hasToken && !SIGNED_IN_AS_DEMO) {
     // If no token is found, redirect to sign-in instantly
     window.location.href = '/sign-in';
     return null;
