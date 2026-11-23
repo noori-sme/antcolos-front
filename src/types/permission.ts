@@ -55,6 +55,8 @@ export type PermissionKey =
   // Accounting and financial information
   | "rates:view" | "rates:edit"
   | "revenue:view" | "expenses:view" | "profitability:view"
+  // Receipts (F2.1, backend plan 50).
+  | "receipts:view" | "receipts:create" | "receipts:own:view" | "receipts:own:confirm" | "receipts:review"
   // Fuel and IFTA — a fuel purchase and a mileage record are separate powers
   | "fuel:view" | "fuel:record" | "fuel:import"
   | "fuel:review" | "fuel:correct" | "fuel:export" | "fuel:costs:view"

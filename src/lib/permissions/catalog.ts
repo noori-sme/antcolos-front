@@ -137,6 +137,13 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "rates:edit", label: "Change rates", description: "Change what a load pays, including accessorials.", group: "accounting", sensitive: true, financial: true, prerequisites: ["rates:view"] },
   { key: "revenue:view", label: "See revenue", description: "See total revenue across the business.", group: "accounting", sensitive: true, financial: true, scopeNote: "Organization-wide figures. Without it, Reports shows a dispatcher their own income and nothing more." },
   { key: "expenses:view", label: "See expenses", description: "See what the business is spending.", group: "accounting", sensitive: true, financial: true },
+  // Receipts (F2.1, backend plan 50). A receipt carries money, so seeing the
+  // fleet's is its own key; a driver's own receipts ride on the _own keys.
+  { key: "receipts:view", label: "See receipts", description: "See the fuel, repair and toll receipts the fleet has turned in, with their amounts.", group: "accounting", sensitive: true, financial: true },
+  { key: "receipts:create", label: "Upload receipts", description: "Send in a photo or PDF of a fuel, repair or toll receipt.", group: "accounting", scopeNote: "A driver can only attach it to the truck they drive now and that truck's load." },
+  { key: "receipts:own:view", label: "See your own receipts", description: "See the receipts this person paid, with their amounts.", group: "accounting", scopeNote: "Only receipts this person paid." },
+  { key: "receipts:own:confirm", label: "Confirm your own receipts", description: "Check what was read off a receipt you paid and confirm it, correcting anything that was misread.", group: "accounting", prerequisites: ["receipts:own:view"], scopeNote: "Only receipts this person paid." },
+  { key: "receipts:review", label: "Review receipts", description: "Confirm or reject receipts waiting for review, correcting what was misread.", group: "accounting", sensitive: true, financial: true, prerequisites: ["receipts:view"] },
   { key: "profitability:view", label: "See profit and margin", description: "See what the business actually makes after costs.", group: "accounting", sensitive: true, financial: true },
 
   // ---- Fuel and IFTA -----------------------------------------------------
@@ -485,6 +492,12 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "invoice.view": "invoices:view",
   "invoices.read": "invoices:view",
   "invoices.view": "invoices:view",
+  // Receipts (backend plan 50).
+  "receipt.create": "receipts:create",
+  "receipt.read": "receipts:view",
+  "receipt.read_own": "receipts:own:view",
+  "receipt.confirm_own": "receipts:own:confirm",
+  "receipt.review": "receipts:review",
   "expense.read": "expenses:view",
   "expense.view": "expenses:view",
   "expenses.read": "expenses:view",
