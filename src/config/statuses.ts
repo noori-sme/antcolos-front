@@ -1,6 +1,7 @@
 import type { CarrierAuthorityStatus } from "@/types/carrier-authority";
 import type { DueStatus, MaintenanceTaskStatus } from "@/types/maintenance-live";
 import type { ReceiptStatusView } from "@/types/receipt";
+import type { ExpenseStatusView, LedgerEntryStatus } from "@/types/expense";
 import type { LoadExceptionSeverity, LoadExceptionStatus } from "@/types/load-exception";
 import type { LoadRecordStatus } from "@/types/load-record";
 import type { TruckOperationalStatus as ApiTruckStatus } from "@/types/fleet-truck";
@@ -179,5 +180,20 @@ export const RECEIPT_STATUS: Record<ReceiptStatusView, { label: string; tone: To
   PENDING_REVIEW: { label: "Needs a check", tone: "warning" },
   CONFIRMED: { label: "Confirmed", tone: "success" },
   REJECTED: { label: "Rejected", tone: "outline" },
+  UNKNOWN: { label: "Unknown", tone: "neutral" },
+};
+
+/** Real-API company books (F2.2, backend plan 51). */
+export const EXPENSE_STATUS: Record<ExpenseStatusView, { label: string; tone: Tone }> = {
+  UNASSIGNED: { label: "Needs routing", tone: "warning" },
+  POSTED: { label: "In the books", tone: "success" },
+  VOIDED: { label: "Voided", tone: "outline" },
+  MOVED_TO_LEDGER: { label: "Owner-operator's", tone: "info" },
+  UNKNOWN: { label: "Unknown", tone: "neutral" },
+};
+
+export const LEDGER_ENTRY_STATUS: Record<LedgerEntryStatus | "UNKNOWN", { label: string; tone: Tone }> = {
+  POSTED: { label: "Yours", tone: "success" },
+  DISMISSED: { label: "Dismissed", tone: "outline" },
   UNKNOWN: { label: "Unknown", tone: "neutral" },
 };

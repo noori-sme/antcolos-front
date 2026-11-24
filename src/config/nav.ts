@@ -5,7 +5,7 @@ import {
   Inbox, Landmark, Link2, ListChecks, MailPlus, Map, Package, Palette, Radar, Receipt, RefreshCw,
   Share2,
   ReceiptText, Route, Satellite, ScrollText, Settings2, Shield, ShieldCheck,
-  TriangleAlert, Truck, UserCircle, UserPlus, Users, UsersRound, Wrench,
+  TriangleAlert, Truck, UserCircle, UserPlus, Users, UsersRound, Wallet, Wrench,
 } from "lucide-react";
 import type { PermissionKey } from "@/types";
 
@@ -113,6 +113,8 @@ export const PRODUCT_NAV: NavSection[] = [
       { label: "Settlements", href: "/finance/settlements", icon: Receipt, requires: ["settlements:view"] },
       // The fleet's receipts and the review queue (F2.1, backend plan 50).
       { label: "Receipts", href: "/finance/receipts", icon: ReceiptText, requires: ["receipts:view"] },
+      // The company books and the unassigned queue (F2.2, backend plan 51).
+      { label: "Expenses", href: "/finance/expenses", icon: Wallet, requires: ["expenses:view"] },
       { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, requires: ["invoices:view"] },
       { label: "Reports", href: "/reports", icon: Gauge, requires: ["reports:view"] },
     ],
@@ -153,6 +155,8 @@ export const DRIVER_NAV: NavSection[] = [
       { label: "My truck's device", href: "/eld", icon: Satellite, requires: ["eld:view", "trucks:view"], driverOnly: true },
       // Receipts paid on the road (F2.1, backend plan 50).
       { label: "My receipts", href: "/driver/receipts", icon: ReceiptText, requires: ["receipts:create"], driverOnly: true },
+      // An owner-operator's private ledger (F2.2, backend plan 51): their own record, no key.
+      { label: "My truck ledger", href: "/driver/ledger", icon: Wallet, requires: [], driverOnly: true },
       { label: "Report a defect", href: "/driver/defects", icon: TriangleAlert, requires: ["maintenance:defects:report"], driverOnly: true },
       { label: "My profile", href: "/driver/profile", icon: IdCard, requires: [], driverOnly: true },
       { label: "Notifications", href: "/driver/notifications", icon: Bell, requires: [], driverOnly: true },

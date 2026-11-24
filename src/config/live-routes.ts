@@ -27,6 +27,8 @@ export const HTTP_LIVE_ROUTES: readonly string[] = [
   "/driver/loads",          // driverLoads (loads-api-contract §10–§13, plan 16)
   "/driver/receipts",       // receipts (receipts-api-contract, plan 27)
   "/finance/receipts",      // receipts review queue (receipts-api-contract, plan 27)
+  "/finance/expenses",      // company books (expenses-api-contract, plan 28)
+  "/driver/ledger",         // owner-operator ledger (expenses-api-contract, plan 28)
 ];
 
 /**
@@ -34,4 +36,4 @@ export const HTTP_LIVE_ROUTES: readonly string[] = [
  * it (components/layout/locked-section.tsx): the driver's own loads (plan 16)
  * and receipts (plan 27).
  */
-export const DRIVER_OPEN_ROUTES: readonly string[] = ["/driver/loads", "/driver/receipts"];
+export const DRIVER_OPEN_ROUTES: readonly string[] = ["/driver/loads", "/driver/receipts", "/driver/ledger"];
