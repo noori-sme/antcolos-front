@@ -4,7 +4,9 @@ Backend: plan 51 (`../antcolos/docs/plans/51-expense-routing.md`), branch
 `feat/finance-expense-routing`. Contract: `../antcolos/docs/requirements/expenses-api-contract.md`.
 Milestone F2.2 (company expense views + owner-operator ledger).
 
-Status: **IN PROGRESS** (2026-11-24). Approved with plan 51 ("accept all", product owner
+Status: **BUILT** (2026-11-24): phases 1–3 done. Live spec `expenses.live.spec.ts` 4 passed
+(company books → void; unassigned → company; driver ledger → dismiss, desktop and phone), 2 skipped by
+design. frontend-reviewer: no blocking; should-fix 1–5 addressed. PR after backend #94 is on staging. Approved with plan 51 ("accept all", product owner
 2026-11-24). Track: Feature (new routes, permission keys, nav). Branch:
 `feat/finance-expense-routing` (same name as the backend).
 
