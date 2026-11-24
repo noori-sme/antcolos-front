@@ -68,7 +68,8 @@ test("an invitation link rides through sign in to the invitation page", async ({
   await page.getByLabel("Email address").fill("carrier@antcolos.dev");
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: /^Sign in$/ }).click();
-  await page.waitForURL((u) => u.pathname === `/invitation/${token}`);
+  // use-invitation-return.ts: the token rides along, nothing else does.
+  await page.waitForURL((u) => u.pathname === `/invitations/accept/${token}`);
 });
 
 test("a signed-out visitor to a product page is sent to sign-in", async ({ page, context }) => {
