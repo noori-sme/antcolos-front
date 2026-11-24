@@ -3,11 +3,8 @@
 import { ChevronRight } from "lucide-react";
 import { ExpenseStatusBadge } from "@/components/common/status-badge";
 import { formatMoney, KIND_LABEL } from "@/lib/receipts/receipt-rules";
-import { routingReasonText } from "@/lib/expenses/expense-rules";
+import { routingReasonText, spentOn } from "@/lib/expenses/expense-rules";
 import type { Expense } from "@/types/expense";
-
-export const day = (iso: string) =>
-  iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
 
 /** One expense of the company books; opens its detail. */
 export function ExpenseRow({ expense, onOpen }: { expense: Expense; onOpen: (id: string) => void }) {
@@ -20,7 +17,7 @@ export function ExpenseRow({ expense, onOpen }: { expense: Expense; onOpen: (id:
       >
         <div className="min-w-0 flex-1">
           <p className="truncate text-[0.875rem] font-medium text-fg">
-            {KIND_LABEL[expense.kind]} · {day(expense.incurredAt)}
+            {KIND_LABEL[expense.kind]} · {spentOn(expense.incurredAt)}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
             <ExpenseStatusBadge status={expense.status} />

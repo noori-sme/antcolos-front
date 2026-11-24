@@ -5,10 +5,9 @@ import { ExpenseStatusBadge } from "@/components/common/status-badge";
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetCloseButton, SheetContent } from "@/components/ui/sheet";
-import { canRouteExpense, canVoidExpense, routingReasonText } from "@/lib/expenses/expense-rules";
+import { canRouteExpense, canVoidExpense, routingReasonText, spentOn } from "@/lib/expenses/expense-rules";
 import { formatMoney, KIND_LABEL } from "@/lib/receipts/receipt-rules";
 import type { Expense } from "@/types/expense";
-import { day } from "./expense-row";
 import {
   useExpense, useExpenseIntentKeys, useExpenseViewer, useRouteExpense, useVoidExpense,
 } from "./hooks";
@@ -53,10 +52,23 @@ function Body({ expense }: { expense: Expense }) {
   const [dialog, setDialog] = useState<"company" | "owner" | "void" | null>(null);
   const [reimbursable, setReimbursable] = useState(false);
 
+  const canRoute = canRouteExpense(expense, viewer);
+  const canVoid = canVoidExpense(expense, viewer);
+
+  /** Opening or closing a dialog starts clean: no old error, no old checkbox. */
+  const openDialog = (next: typeof dialog) => {
+    route.reset();
+    voidExpense.reset();
+    setReimbursable(false);
+    setDialog(next);
+  };
   const done = () => {
     keys.clear();
     setDialog(null);
   };
+  // A failure (e.g. someone else routed it first) gets a new key next time; the refetch
+  // after it removes the dialog if the expense can no longer be decided.
+  const failed = () => keys.clear();
   const doRoute = (to: "COMPANY" | "OWNER", reason: string) =>
     route.mutate(
       {
@@ -64,16 +76,16 @@ function Body({ expense }: { expense: Expense }) {
         input: { to, reason, ...(to === "COMPANY" ? { reimbursable } : {}) },
         idempotencyKey: keys.keyFor(`route:${expense.id}:${to}:${reason}:${reimbursable}`),
       },
-      { onSuccess: done },
+      { onSuccess: done, onError: failed },
     );
   const doVoid = (reason: string) =>
     voidExpense.mutate(
       { id: expense.id, reason, idempotencyKey: keys.keyFor(`void:${expense.id}:${reason}`) },
-      { onSuccess: done },
+      { onSuccess: done, onError: failed },
     );
 
   const rows: [string, string][] = [
-    ["Spent on", day(expense.incurredAt)],
+    ["Spent on", spentOn(expense.incurredAt)],
     ["Amount", formatMoney(expense.amount, expense.currency)],
     ["Why it's here", routingReasonText(expense.routingReason)],
     ["Owed back to the driver", expense.reimbursable ? "Yes" : "No"],
@@ -104,52 +116,57 @@ function Body({ expense }: { expense: Expense }) {
         ))}
       </dl>
 
-      {canRouteExpense(expense, viewer) ? (
+      {canRoute ? (
         <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-          <Button variant="ghost" onClick={() => setDialog("owner")}>Send to the owner-operator</Button>
-          <Button variant="primary" onClick={() => setDialog("company")}>Put in company books</Button>
+          <Button variant="ghost" onClick={() => openDialog("owner")}>Send to the owner-operator</Button>
+          <Button variant="primary" onClick={() => openDialog("company")}>Put in company books</Button>
         </div>
       ) : null}
-      {canVoidExpense(expense, viewer) ? (
+      {canVoid ? (
         <div className="flex justify-end border-t border-border pt-4">
-          <Button variant="ghost" onClick={() => setDialog("void")}>Void expense</Button>
+          <Button variant="ghost" onClick={() => openDialog("void")}>Void expense</Button>
         </div>
       ) : null}
 
       <ReasonDialog
-        open={dialog === "company"}
-        onOpenChange={(open) => setDialog(open ? "company" : null)}
+        open={canRoute && dialog === "company"}
+        onOpenChange={(open) => (open ? undefined : openDialog(null))}
         title="Put in the company books"
         description="It becomes this company's cost."
         confirmLabel="Put in books"
         pending={route.isPending}
-        error={dialog === "company" ? route.error : null}
+        error={route.error}
         onConfirm={(reason) => doRoute("COMPANY", reason)}
       >
-        <label className="flex items-center gap-2 text-[0.875rem] text-fg">
-          <input type="checkbox" checked={reimbursable} onChange={(e) => setReimbursable(e.target.checked)} />
+        <label className="flex min-h-11 cursor-pointer items-center gap-3 text-[0.875rem] text-fg">
+          <input
+            type="checkbox"
+            checked={reimbursable}
+            onChange={(e) => setReimbursable(e.target.checked)}
+            className="size-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+          />
           The driver paid it personally and is owed it back
         </label>
       </ReasonDialog>
       <ReasonDialog
-        open={dialog === "owner"}
-        onOpenChange={(open) => setDialog(open ? "owner" : null)}
+        open={canRoute && dialog === "owner"}
+        onOpenChange={(open) => (open ? undefined : openDialog(null))}
         title="Send to the owner-operator"
         description="It leaves the company books for the private ledger of the truck's owner on that date. You won't see it again."
         confirmLabel="Send"
         pending={route.isPending}
-        error={dialog === "owner" ? route.error : null}
+        error={route.error}
         onConfirm={(reason) => doRoute("OWNER", reason)}
       />
       <ReasonDialog
-        open={dialog === "void"}
-        onOpenChange={(open) => setDialog(open ? "void" : null)}
+        open={canVoid && dialog === "void"}
+        onOpenChange={(open) => (open ? undefined : openDialog(null))}
         title="Void this expense"
         description="It leaves the books. It stays on the record, marked voided."
         confirmLabel="Void expense"
         danger
         pending={voidExpense.isPending}
-        error={dialog === "void" ? voidExpense.error : null}
+        error={voidExpense.error}
         onConfirm={doVoid}
       />
     </>

@@ -1,5 +1,16 @@
 import type { Expense, ExpenseRoutingReason } from "@/types/expense";
 
+/**
+ * The calendar day money was spent, in UTC: the day routing used to pick the
+ * truck's owner, so the screen and the decision never disagree near midnight.
+ */
+export function spentOn(iso: string): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
+  });
+}
+
 /** Plain words for why routing chose what it chose (backend plan 51). */
 export const ROUTING_REASON_TEXT: Record<ExpenseRoutingReason, string> = {
   COMPANY_TRUCK: "Company truck",

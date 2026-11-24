@@ -38,6 +38,13 @@ Phase 2 — hooks, labels (+ test), company expenses screen with route/void, my 
 Phase 3 — live browser spec against the local backend; frontend-reviewer; PR after the backend is on staging
 ```
 
+## Known limits
+
+- `/driver/ledger` needs an active carrier workspace (the service context). The API itself works
+  for any token, so a driver with no carrier at all sees a "switch to a carrier" state instead of
+  their ledger. Lifting this means a context-free service call, which the data-layer rule reserves
+  for the profile service. It belongs with M2.4 (standalone driver).
+
 ## Not in this plan
 
 An organization-owned ledger screen (`/ledger`; the API exists), ledger totals and estimated net

@@ -31,7 +31,11 @@ export function ReasonDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title={title} description={description} className="max-w-md">
+      <DialogContent
+        title={title}
+        description={description}
+        className="max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto"
+      >
         {/* Mounted only while open, so the reason starts empty every time. */}
         <ReasonForm {...form} onCancel={() => onOpenChange(false)} />
       </DialogContent>

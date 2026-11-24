@@ -8,8 +8,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { formatMoney, KIND_LABEL } from "@/lib/receipts/receipt-rules";
 import { cn } from "@/lib/utils";
+import { spentOn } from "@/lib/expenses/expense-rules";
+import { useServiceContext } from "@/lib/api/use-service-context";
 import type { LedgerEntry } from "@/types/expense";
-import { day } from "./expense-row";
 import { useDismissLedgerEntry, useExpenseIntentKeys, useMyLedger } from "./hooks";
 import { ReasonDialog } from "./reason-dialog";
 
@@ -25,6 +26,7 @@ export function MyLedgerScreen() {
   const query = useMyLedger({ page, pageSize: PAGE_SIZE });
   const dismiss = useDismissLedgerEntry();
   const keys = useExpenseIntentKeys();
+  const signedIntoCarrier = useServiceContext() !== null;
   const entries = query.data?.data ?? [];
   const meta = query.data?.meta;
 
@@ -34,7 +36,14 @@ export function MyLedgerScreen() {
         title="My truck ledger"
         description="Fuel, repairs and tolls on the trucks you own, from every carrier you drive for. Only you can see this."
       />
-      {query.isPending ? <LoadingSkeleton rows={4} /> : null}
+      {!signedIntoCarrier ? (
+        <EmptyState
+          icon={Wallet}
+          title="Open a carrier workspace to see your ledger"
+          description="Your ledger is yours alone and covers every carrier, but this screen opens from inside one of them. Switch to a carrier you drive for."
+        />
+      ) : null}
+      {signedIntoCarrier && query.isPending ? <LoadingSkeleton rows={4} /> : null}
       {query.isError ? <ErrorState description={query.error.message} onRetry={() => void query.refetch()} /> : null}
       {query.isSuccess && entries.length === 0 ? (
         <EmptyState
@@ -46,27 +55,33 @@ export function MyLedgerScreen() {
       {entries.length > 0 ? (
         <ul className={cn("space-y-2", query.isPlaceholderData && "opacity-60")}>
           {entries.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3.5 shadow-e1"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[0.875rem] font-medium text-fg">
-                  {KIND_LABEL[entry.kind]} · {day(entry.incurredAt)}
+            <li key={entry.id} className="rounded-lg border border-border bg-surface px-4 py-3.5 shadow-e1">
+              <div className="flex items-center gap-3">
+                <p className="min-w-0 flex-1 truncate text-[0.875rem] font-medium text-fg">
+                  {KIND_LABEL[entry.kind]} · {spentOn(entry.incurredAt)}
                 </p>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <LedgerEntryStatusBadge status={entry.status} />
-                  <span className="truncate text-[0.8125rem] text-fg-muted">via {entry.source.name || "a carrier"}</span>
-                </div>
+                <span className="shrink-0 text-[0.875rem] font-medium tabular-nums text-fg">
+                  {formatMoney(entry.amount, entry.currency)}
+                </span>
               </div>
-              <span className="shrink-0 text-[0.875rem] font-medium tabular-nums text-fg">
-                {formatMoney(entry.amount, entry.currency)}
-              </span>
-              {entry.status === "POSTED" ? (
-                <Button size="sm" variant="ghost" onClick={() => setDismissing(entry)}>
-                  Not mine
-                </Button>
-              ) : null}
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <LedgerEntryStatusBadge status={entry.status} />
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-fg-muted">
+                  via {entry.source.name || "a carrier"}
+                </span>
+                {entry.status === "POSTED" ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      dismiss.reset();
+                      setDismissing(entry);
+                    }}
+                  >
+                    Not mine
+                  </Button>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
@@ -98,6 +113,7 @@ export function MyLedgerScreen() {
                 keys.clear();
                 setDismissing(null);
               },
+              onError: () => keys.clear(),
             },
           );
         }}
