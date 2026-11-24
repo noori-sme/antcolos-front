@@ -46,7 +46,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev -- --port 3100",
+    // CI serves a production build: `next dev` compiles each page on its first
+    // visit, which made every shard slow. Locally, dev keeps hot reload.
+    command: process.env.CI
+      ? "npm run build && npm run start -- --port 3100"
+      : "npm run dev -- --port 3100",
     // Mock mode, explicitly: the app is signed in as the fixtures' demo user
     // (src/lib/api/mode.ts SIGNED_IN_AS_DEMO), so specs open app pages directly.
     env: { NEXT_PUBLIC_API_MODE: "mock" },
@@ -64,6 +68,7 @@ export default defineConfig({
     // finishes hydrating — every click then does nothing.
     url: "http://localhost:3100/home",
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    // The CI command builds first (a few minutes).
+    timeout: process.env.CI ? 600_000 : 180_000,
   },
 });
