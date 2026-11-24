@@ -137,6 +137,8 @@ export const PERMISSION_CATALOG: readonly PermissionMeta[] = [
   { key: "rates:edit", label: "Change rates", description: "Change what a load pays, including accessorials.", group: "accounting", sensitive: true, financial: true, prerequisites: ["rates:view"] },
   { key: "revenue:view", label: "See revenue", description: "See total revenue across the business.", group: "accounting", sensitive: true, financial: true, scopeNote: "Organization-wide figures. Without it, Reports shows a dispatcher their own income and nothing more." },
   { key: "expenses:view", label: "See expenses", description: "See what the business is spending.", group: "accounting", sensitive: true, financial: true },
+  { key: "expenses:route", label: "Route expenses", description: "Decide where an expense the system couldn't place belongs: the company books or the truck's owner-operator.", group: "accounting", sensitive: true, financial: true, prerequisites: ["expenses:view"], scopeNote: "The owner-operator is always the one the truck's ownership names; it can't be chosen by hand." },
+  { key: "expenses:void", label: "Void expenses", description: "Take a wrong expense out of the company books, with a reason. It stays on the record.", group: "accounting", sensitive: true, financial: true, prerequisites: ["expenses:view"] },
   // Receipts (F2.1, backend plan 50). A receipt carries money, so seeing the
   // fleet's is its own key; a driver's own receipts ride on the _own keys.
   { key: "receipts:view", label: "See receipts", description: "See the fuel, repair and toll receipts the fleet has turned in, with their amounts.", group: "accounting", sensitive: true, financial: true },
@@ -499,6 +501,9 @@ export const BACKEND_ALIASES: Record<string, PermissionKey> = {
   "receipt.confirm_own": "receipts:own:confirm",
   "receipt.review": "receipts:review",
   "expense.read": "expenses:view",
+  // Plan 51: routing and voiding the company books.
+  "expense.route": "expenses:route",
+  "expense.update": "expenses:void",
   "expense.view": "expenses:view",
   "expenses.read": "expenses:view",
   "expenses.view": "expenses:view",

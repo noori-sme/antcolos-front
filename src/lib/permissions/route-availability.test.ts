@@ -62,7 +62,7 @@ describe("isRouteAvailable (plan 08)", () => {
     },
   );
 
-  it.each(["/driver/receipts", "/finance/receipts"])(
+  it.each(["/driver/receipts", "/finance/receipts", "/driver/ledger", "/finance/expenses"])(
     "reaches %s in http mode, live rather than demo (plan 27)",
     (path) => {
       expect(isRouteAvailable(path, "http", false)).toBe(true);

@@ -12,6 +12,7 @@ import { httpRateConIntakeService } from "./http/rate-con-intake";
 import { httpLoadRecordsService } from "./http/load-records";
 import { httpDriverLoadsService } from "./http/driver-loads";
 import { httpReceiptsService } from "./http/receipts";
+import { httpExpensesService } from "./http/expenses";
 import { httpLoadExceptionsService } from "./http/load-exceptions";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./http/org-access";
 import { httpOrgPeopleService } from "./http/org-people";
@@ -97,6 +98,8 @@ const mockServices: AntcolosServices = {
   driverLoads: httpDriverLoadsService,
   // http-only (F2.1): receipts are read and confirmed by the backend; no mock.
   receipts: httpReceiptsService,
+  // http-only (F2.2): the company books and the owner's ledger; no mock.
+  expenses: httpExpensesService,
   // http-only (F2.5): availability comes from the backend's live loads; no mock.
   fleetAvailability: httpFleetAvailabilityService,
   // http-only (F1.5): exceptions live beside live loads, which are http-only.
