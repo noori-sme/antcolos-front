@@ -61,6 +61,7 @@ import type { RateConIntakeService } from "./rate-con-intake";
 import type { LoadRecordsService } from "./load-records";
 import type { DriverLoadsService } from "./driver-loads";
 import type { ReceiptsService } from "./receipts";
+import type { ExpensesService } from "./expenses";
 import type { OrgPeopleService } from "./org-people";
 import type { DriverCredentialsService } from "./driver-credentials";
 import type { SelfProfileService } from "./self-profile";
@@ -113,6 +114,7 @@ export interface AntcolosServices {
   /** http-only (plan 16): the driver's own loads. */
   driverLoads: DriverLoadsService;
   receipts: ReceiptsService;
+  expenses: ExpensesService;
   fleetAvailability: FleetAvailabilityService;
   loadExceptions: LoadExceptionsService;
   /** Real organization invitations (NestJS). http-only: see `src/lib/api/index.ts`. */

@@ -1,6 +1,7 @@
 import { httpLoadRecordsService } from "./load-records";
 import { httpDriverLoadsService } from "./driver-loads";
 import { httpReceiptsService } from "./receipts";
+import { httpExpensesService } from "./expenses";
 import { httpFleetAvailabilityService } from "./fleet-availability";
 import { httpLoadExceptionsService } from "./load-exceptions";
 import type { AntcolosServices } from "../contracts";
@@ -44,6 +45,8 @@ export const httpServices: AntcolosServices = {
   driverLoads: httpDriverLoadsService,
   // http-only (F2.1): receipts are read by the backend; no mock.
   receipts: httpReceiptsService,
+  // http-only (F2.2): the company books and the owner's ledger come from routed receipts.
+  expenses: httpExpensesService,
   // http-only (F2.5): availability is computed by the backend from live loads.
   fleetAvailability: httpFleetAvailabilityService,
   loadExceptions: httpLoadExceptionsService,

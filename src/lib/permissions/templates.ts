@@ -127,6 +127,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "loads:view", "rates:view", "revenue:view", "expenses:view",
       // The receipt review queue (backend plan 50).
       "receipts:view", "receipts:review",
+      // The company books: route what is unassigned, void what is wrong (backend plan 51).
+      "expenses:route", "expenses:void",
       "settlements:view", "settlements:create", "settlements:export",
       "settlements:dispute:resolve", "settlements:pay",
       "invoices:view", "invoices:create", "customers:view", "documents:view",
