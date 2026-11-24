@@ -105,7 +105,10 @@ test("a person refers somebody, and the company decides separately", async ({ pa
 
   // Prefilled, and every real decision still to be made on this screen.
   await page.getByRole("button", { name: /Employee|Dispatcher|Driver/ }).first().click();
-  await expect(page.getByLabel(/name/i).first()).toHaveValue(CANDIDATE.name);
+  // The form splits the name into first and last (invite-flow.tsx).
+  const [first, ...rest] = CANDIDATE.name.split(" ");
+  await expect(page.getByLabel("First Name")).toHaveValue(first);
+  await expect(page.getByLabel("Last Name")).toHaveValue(rest.join(" "));
 });
 
 /**

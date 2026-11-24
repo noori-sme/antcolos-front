@@ -55,7 +55,8 @@ test.describe("sidebar display modes", () => {
     // The label is still announced, it is just no longer drawn: the rail is a
     // third of the docked width, and the text that names the link is sr-only.
     await expect(dispatch.locator("span.sr-only")).toHaveText("Dispatch");
-    expect((await rail(page).boundingBox())!.width).toBeLessThan(96);
+    // The width animates (transition-[width] 200ms), so wait for it to settle.
+    await expect.poll(async () => (await rail(page).boundingBox())!.width).toBeLessThan(96);
 
     // The current route is still obvious without a word on screen.
     await dispatch.click();
