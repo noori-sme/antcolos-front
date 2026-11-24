@@ -58,3 +58,21 @@ test("sign up, then resend the verification link", async ({ page }) => {
   expect((await resend).postDataJSON()).toEqual({ email });
   await expect(page.getByText(/Link sent! Resend in/)).toBeVisible();
 });
+
+// Moved from the mock suite (landing-auth-boundary, public-links): sign-in and
+// the signed-out redirect only exist against the real API.
+test("an invitation link rides through sign in to the invitation page", async ({ page }) => {
+  const token = "live-spec-not-a-real-invitation";
+  await page.goto(`${WEB}/sign-in?invitation=${token}`, { waitUntil: "networkidle" });
+  await expect(page.getByText("Sign in to accept your invitation.")).toBeVisible();
+  await page.getByLabel("Email address").fill("carrier@antcolos.dev");
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: /^Sign in$/ }).click();
+  await page.waitForURL((u) => u.pathname === `/invitation/${token}`);
+});
+
+test("a signed-out visitor to a product page is sent to sign-in", async ({ page, context }) => {
+  await context.clearCookies();
+  await page.goto(`${WEB}/home`, { waitUntil: "networkidle" });
+  expect(new URL(page.url()).pathname).toBe("/sign-in");
+});

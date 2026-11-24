@@ -34,8 +34,5 @@ test("the profile preview image is served, not redirected to sign-in", async ({ 
   expect(res.headers()["location"] ?? "").not.toContain("/sign-in");
 });
 
-test("a signed-out visitor to a product page is still sent to sign-in", async ({ page, context }) => {
-  await context.clearCookies();
-  await page.goto("/home", { waitUntil: "networkidle" });
-  expect(new URL(page.url()).pathname).toBe("/sign-in");
-});
+// Moved to auth-flow.live.spec.ts: mock mode is always signed in as the demo user
+// (SIGNED_IN_AS_DEMO), so the redirect only exists against the real API.

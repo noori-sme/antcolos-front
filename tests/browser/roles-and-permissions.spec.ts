@@ -30,7 +30,12 @@ test.describe("roles and permissions", () => {
     await expect(page.getByText(/Needs.*Open ELD & Telematics/i)).toBeVisible();
   });
 
-  test("a saved role is reusable, and editing it does not change anybody", async ({ page }) => {
+  // fixme (owner, 2026-11-24): /settings/permissions reads roles and the catalog from the
+  // real API in every mode (http-only orgRoles), so in mock mode it signs out. A live
+  // version must create its own organization and people first: applying a role to the
+  // seeded demo users would change their permissions. Creating and deleting a role is
+  // covered live in access-integration.live.spec.ts.
+  test.fixme("a saved role is reusable, and editing it does not change anybody", async ({ page }) => {
     await page.goto(ROLES);
 
     // 1. Save a role once.

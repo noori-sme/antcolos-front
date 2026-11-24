@@ -13,20 +13,9 @@ import { expect, test, type Page } from "@playwright/test";
  * Nothing here tests the landing page's looks. `landing.spec.ts` does that.
  */
 
-/** The mock backend accepts this password and no other. */
-const DEMO_PASSWORD = "Antcolos1!";
-/** An invitation code the mock recognizes. */
-const DEMO_INVITATION = "DISPATCH-2026";
-
 async function landing(page: Page) {
   await page.goto("/", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-}
-
-async function signInWith(page: Page, password: string) {
-  await page.getByLabel("Email address").fill("sam@baxtertransit.com");
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: /^Sign in$/ }).click();
 }
 
 test("the landing page opens exactly two doors, and both are auth routes", async ({ page }) => {
@@ -65,7 +54,7 @@ test("Sign in enters /sign-in and stays there", async ({ page }) => {
   );
 });
 
-test("Sign up enters /sign-up at step one of the existing four", async ({ page }) => {
+test("Sign up enters /sign-up at step one of the existing three", async ({ page }) => {
   await landing(page);
   await page.getByRole("link", { name: "Sign up", exact: true }).click();
 
@@ -73,7 +62,7 @@ test("Sign up enters /sign-up at step one of the existing four", async ({ page }
   await expect(page.getByRole("heading", { name: "Create your Antcolos account" })).toBeVisible();
   // Arriving from the landing page starts the flow at the beginning — it does
   // not skip a step or pre-fill one.
-  await expect(page.getByText("Step 1 of 4")).toBeVisible();
+  await expect(page.getByText("Step 1 of 3")).toBeVisible();
   await expect(page.getByLabel("Email address")).toHaveValue("");
   await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in");
 });
@@ -85,36 +74,11 @@ test("arriving from the landing page carries no invitation", async ({ page }) =>
   await expect(page.getByText("Sign in to accept your invitation.")).toHaveCount(0);
 });
 
-test("an invitation still rides through Sign In, exactly as before", async ({ page }) => {
-  // Not reached from the landing page — this is the invitation link's own path,
-  // checked here to prove the landing page did not disturb it.
-  await page.goto(`/sign-in?invitation=${DEMO_INVITATION}`, { waitUntil: "networkidle" });
+// Moved to auth-flow.live.spec.ts: sign-in only exists against the real API.
 
-  await expect(page.getByText("Sign in to accept your invitation.")).toBeVisible();
-  await signInWith(page, DEMO_PASSWORD);
-  // The token rides through; `signedin=1` does not, because it decided nothing
-  // and acceptance is authorized on the signed-in account instead.
-  await expect(page).toHaveURL(`/invitation/${DEMO_INVITATION}`);
-});
+// Covered by auth-flow.live.spec.ts ("a carrier admin signs in and lands on home").
 
-test("post-authentication routing still ends at the product", async ({ page }) => {
-  await landing(page);
-  await page.getByRole("link", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Sign in to Antcolos" })).toBeVisible();
-
-  await signInWith(page, DEMO_PASSWORD);
-  await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
-});
-
-test("a wrong password still fails the same way, and goes nowhere", async ({ page }) => {
-  await landing(page);
-  await page.getByRole("link", { name: "Sign in", exact: true }).click();
-
-  await signInWith(page, "not-the-password");
-  await expect(page.getByText(/Email or password is incorrect/)).toBeVisible();
-  await expect(page).toHaveURL(/\/sign-in$/);
-});
+// Covered by auth-flow.live.spec.ts ("a wrong password is refused on the sign-in screen").
 
 test("role selection still asks how you will use Antcolos", async ({ page }) => {
   // Onboarding is reached by finishing Sign Up, never from the landing page.
