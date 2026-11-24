@@ -1,5 +1,6 @@
 import { httpLoadRecordsService } from "./load-records";
 import { httpDriverLoadsService } from "./driver-loads";
+import { httpReceiptsService } from "./receipts";
 import { httpFleetAvailabilityService } from "./fleet-availability";
 import { httpLoadExceptionsService } from "./load-exceptions";
 import type { AntcolosServices } from "../contracts";
@@ -41,6 +42,8 @@ export const httpServices: AntcolosServices = {
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.
   driverLoads: httpDriverLoadsService,
+  // http-only (F2.1): receipts are read by the backend; no mock.
+  receipts: httpReceiptsService,
   // http-only (F2.5): availability is computed by the backend from live loads.
   fleetAvailability: httpFleetAvailabilityService,
   loadExceptions: httpLoadExceptionsService,

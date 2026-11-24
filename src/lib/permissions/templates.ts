@@ -29,6 +29,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "documents:review",
       // Records a driver's answer given by phone (plan 15, backend load.respond).
       "loads:respond",
+      // Uploads a receipt a driver handed in and sees the fleet's (backend plan 50).
+      "receipts:create", "receipts:view",
       "proposals:view",
       // Watching the freight run, and telling the customer about it, is the
       // dispatcher's job rather than something they are lent for an afternoon.
@@ -101,6 +103,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
       "trucks:view", "maintenance:view", "maintenance:defects:report",
       // Their current truck's service due: see it, record its odometer, acknowledge (plan 24).
       "maintenance:own:view", "maintenance:own:update",
+      // Their own receipts: send in, see and confirm what was read (backend plan 50).
+      "receipts:create", "receipts:own:view", "receipts:own:confirm",
       // A driver reads the agreement that governs their own work and signs
       // their own side of it. Signer authority is what decides which party
       // that is, so this key can never reach the carrier's signature line —
@@ -121,6 +125,8 @@ export const SEED_TEMPLATES: readonly SeedTemplate[] = [
     seeded: true,
     permissions: [
       "loads:view", "rates:view", "revenue:view", "expenses:view",
+      // The receipt review queue (backend plan 50).
+      "receipts:view", "receipts:review",
       "settlements:view", "settlements:create", "settlements:export",
       "settlements:dispute:resolve", "settlements:pay",
       "invoices:view", "invoices:create", "customers:view", "documents:view",

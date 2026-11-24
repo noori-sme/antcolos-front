@@ -25,10 +25,13 @@ export const HTTP_LIVE_ROUTES: readonly string[] = [
   "/rate-cons",             // rateConIntake (documents-api-contract, plan 13)
   "/loads",                 // loadRecords (loads-api-contract, plan 14)
   "/driver/loads",          // driverLoads (loads-api-contract §10–§13, plan 16)
+  "/driver/receipts",       // receipts (receipts-api-contract, plan 27)
+  "/finance/receipts",      // receipts review queue (receipts-api-contract, plan 27)
 ];
 
 /**
  * Routes a driver account may use while the rest of the dashboard is locked for
- * it (components/layout/locked-section.tsx): the driver's own loads (plan 16).
+ * it (components/layout/locked-section.tsx): the driver's own loads (plan 16)
+ * and receipts (plan 27).
  */
-export const DRIVER_OPEN_ROUTES: readonly string[] = ["/driver/loads"];
+export const DRIVER_OPEN_ROUTES: readonly string[] = ["/driver/loads", "/driver/receipts"];

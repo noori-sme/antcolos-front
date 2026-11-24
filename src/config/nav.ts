@@ -111,6 +111,8 @@ export const PRODUCT_NAV: NavSection[] = [
       // Same permission as the Document Center: it is the same documents.
       { label: "Shared with us", href: "/documents/shared", icon: Share2, requires: ["documents:view"] },
       { label: "Settlements", href: "/finance/settlements", icon: Receipt, requires: ["settlements:view"] },
+      // The fleet's receipts and the review queue (F2.1, backend plan 50).
+      { label: "Receipts", href: "/finance/receipts", icon: ReceiptText, requires: ["receipts:view"] },
       { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, requires: ["invoices:view"] },
       { label: "Reports", href: "/reports", icon: Gauge, requires: ["reports:view"] },
     ],
@@ -149,6 +151,8 @@ export const DRIVER_NAV: NavSection[] = [
       // summary. The service layer narrows both to this driver: another
       // driver's clock is not reachable from here by any path.
       { label: "My truck's device", href: "/eld", icon: Satellite, requires: ["eld:view", "trucks:view"], driverOnly: true },
+      // Receipts paid on the road (F2.1, backend plan 50).
+      { label: "My receipts", href: "/driver/receipts", icon: ReceiptText, requires: ["receipts:create"], driverOnly: true },
       { label: "Report a defect", href: "/driver/defects", icon: TriangleAlert, requires: ["maintenance:defects:report"], driverOnly: true },
       { label: "My profile", href: "/driver/profile", icon: IdCard, requires: [], driverOnly: true },
       { label: "Notifications", href: "/driver/notifications", icon: Bell, requires: [], driverOnly: true },
