@@ -24,11 +24,10 @@ interface Row {
 }
 
 /**
- * Settings → Integrations → Telegram (plan 29): each truck's group. The list needs `trucks:view`;
+ * Settings → Integrations → Telegram (plan 29): each truck's group. The page needs `trucks:view` (nav);
  * linking and unlinking need `trucks:edit`, which only carriers have (an agency sees it read-only).
  */
 export function TelegramIntegrationsScreen() {
-  const canView = useCan("trucks:view");
   // The code endpoint also needs load.respond (telegram-api-contract §1).
   const canLink = useCan("loads:respond");
   const [requested, setCode] = useState<{ truckId: string; code: TelegramLinkCode } | null>(null);
@@ -97,12 +96,7 @@ export function TelegramIntegrationsScreen() {
           truck&rsquo;s loads there, with status buttons.
         </p>
 
-        {!canView ? (
-          <EmptyState
-            title="Truck groups need the “View trucks” permission"
-            description="Ask your company admin if you should see them."
-          />
-        ) : trucks.isPending || chats.isPending ? (
+        {trucks.isPending || chats.isPending ? (
           <LoadingSkeleton rows={3} />
         ) : trucks.isError || chats.isError ? (
           <ErrorState

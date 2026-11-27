@@ -56,7 +56,7 @@ test("Integrations lists the truck groups; Unlink asks first", async ({ page }) 
   await signIn(page, "carrier@antcolos.dev");
   await page.goto(`${WEB}/settings/integrations`);
   await expect(page.getByRole("heading", { name: "Telegram truck groups" })).toBeVisible({ timeout: 60_000 });
-  const linked = page.getByRole("listitem").filter({ hasText: /linked .* by / }).first();
+  const linked = page.getByRole("main").getByRole("listitem").filter({ hasText: /linked .* by / }).first();
   await expect(linked).toBeVisible();
   await linked.getByRole("button", { name: "Unlink" }).click();
   const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog"));
@@ -70,11 +70,12 @@ test("Members offers Change role on others, never on yourself", async ({ page, i
   test.skip(isMobile, "desktop");
   await signIn(page, "carrier@antcolos.dev");
   await page.goto(`${WEB}/settings/users`);
-  const self = page.getByRole("listitem").filter({ hasText: "(you)" });
+  const rows = page.getByRole("main").getByRole("listitem");
+  const self = rows.filter({ hasText: "(you)" });
   await expect(self).toBeVisible({ timeout: 60_000 });
   await expect(self.getByRole("button", { name: "Change role" })).toHaveCount(0);
 
-  const other = page.getByRole("listitem").filter({ hasNotText: "(you)" }).first();
+  const other = rows.filter({ has: page.getByRole("button", { name: "Change role" }) }).first();
   await other.getByRole("button", { name: "Change role" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("(current)")).toBeVisible();

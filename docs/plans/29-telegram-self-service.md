@@ -36,8 +36,10 @@ screen); pages under `src/app` stay thin and render one screen each.
      - **Account → Notifications** (`/account/notifications`, placeholder today) for office users;
      - **Driver → Notifications** (`/driver/notifications`, placeholder today, already in the
        driver nav) for drivers. It joins `DRIVER_OPEN_ROUTES`, so the driver lock leaves it open.
-2. **Settings → Integrations → Telegram** (`/settings/integrations`, placeholder today; nav gate
-   `integrations:view` kept). A list of this organization's trucks with their group status
+2. **Settings → Integrations → Telegram** (`/settings/integrations`, placeholder today). Nav gate
+   changed from `integrations:view` to `trucks:view` during the staging check: the backend has no
+   integration permission, so `integrations:view` could never be held and the page was forbidden
+   for everyone. A list of this organization's trucks with their group status
    (title, linked when and by whom; "Removed user" when `linkedBy` is null). Cards, not a table,
    so it fits 360 px.
    - Needs `trucks:view`; without it, an `EmptyState` says truck groups need the "View trucks"

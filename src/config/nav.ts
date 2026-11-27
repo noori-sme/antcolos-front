@@ -179,7 +179,8 @@ export const SETTINGS_NAV: NavSection[] = [
       // only to tell somebody they may not have it.
       { label: "Invitations", href: "/settings/invitations", icon: MailPlus, requires: ["invitations:create"] },
       { label: "Roles and permissions", href: "/settings/permissions", icon: Shield, requires: ["permissions:manage"] },
-      { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["integrations:view"] },
+      // Its only content is Telegram truck groups (plan 29); the backend has no integration key.
+      { label: "Integrations", href: "/settings/integrations", icon: Link2, requires: ["trucks:view"] },
       // Connection and policy only. A dispatcher never comes here to work a
       // load — the factoring answer lives on the Load Search result and the
       // Opportunity, which is where the decision is actually made.

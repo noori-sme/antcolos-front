@@ -197,7 +197,8 @@ describe("people list keys match the backend (plan 06)", () => {
     // Your own connection needs no key; the truck groups page keeps its integrations gate.
     expect(requiredPermissionsForPath("/account/notifications")).toEqual([]);
     expect(requiredPermissionsForPath("/driver/notifications")).toEqual([]);
-    expect(requiredPermissionsForPath("/settings/integrations")).toEqual(["integrations:view"]);
+    // The backend has no integration key, so the page is gated on what its content needs.
+    expect(requiredPermissionsForPath("/settings/integrations")).toEqual(["trucks:view"]);
   });
 
   it("gates each people page on its own list key", () => {
