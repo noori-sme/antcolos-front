@@ -204,6 +204,22 @@ driver holds `maintenance:own:view` and `maintenance:own:update` (`read_own` / `
 only through the My loads card, and only for the truck they are the current driver of; the API
 answers 404 for any other. A dispatcher gets view + readings, not manage.
 
+## Changing a member's role (`members:role:change`, plan 29)
+
+`members:role:change` (`membership.manage_permissions`) shows **Change role** on Members
+(`/settings/users`). The dialog lists only roles whose permissions the changer holds in full
+(owners see every role), never on your own row; the member gets exactly that role's permissions.
+It is a different key from `members:edit` (`membership.update`, edit a member's profile), so a role
+that may edit profiles does not see a button the API would refuse.
+
+## Telegram (plan 29)
+
+Your own Telegram connection (Account → Notifications, or Notifications for drivers) needs no key:
+anyone sees their status and can disconnect, which applies to all their companies. **Connect**
+needs `loads:respond` (the link-code endpoint's key) and is shown disabled with that reason
+otherwise. Settings → Integrations lists truck groups with `trucks:view`; linking and unlinking a
+group need `trucks:edit` (carriers only).
+
 ## Usage and costs (`usage:view`, plan 26)
 
 `usage:view` (`usage.read`) opens Settings → Usage & costs: the organization's AI, storage and

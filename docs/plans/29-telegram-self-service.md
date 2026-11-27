@@ -3,7 +3,7 @@
 ```
 Status:   approved (owner, 2026-11-27: "plan and implement … continue with your recommendation");
           revised after frontend-reviewer (3 blocking, should-fix and nits answered below)
-Phase:    1 — not started
+Phase:    4 — docs done; live check on staging after backend #100 deploys
 Branch:   feat/telegram-self-service (same name as the backend, plan 52)
 Backend contract: ../antcolos/docs/requirements/telegram-api-contract.md §1, §5–§6;
                   ../antcolos/docs/requirements/membership-api-contract.md §2 (membershipId)
