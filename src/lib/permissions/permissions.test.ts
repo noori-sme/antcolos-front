@@ -187,7 +187,18 @@ describe("people list keys match the backend (plan 06)", () => {
     expect(normalizePermissionKey("membership.list")).toBe("members:view");
     // Plan 12: removing a member is gated on the "cut off access" key.
     expect(normalizePermissionKey("membership.remove")).toBe("members:suspend");
+    // Plan 29: changing a member's role is its own backend key, not membership.update.
+    expect(normalizePermissionKey("membership.manage_permissions")).toBe("members:role:change");
+    expect(normalizePermissionKey("membership.update")).not.toBe("members:role:change");
     expect(can(new Set<PermissionKey>(["members:list_drivers"]), "drivers:view")).toBe(false);
+  });
+
+  it("gates the Telegram pages as plan 29 says", () => {
+    // Your own connection needs no key; the truck groups page keeps its integrations gate.
+    expect(requiredPermissionsForPath("/account/notifications")).toEqual([]);
+    expect(requiredPermissionsForPath("/driver/notifications")).toEqual([]);
+    // The backend has no integration key, so the page is gated on what its content needs.
+    expect(requiredPermissionsForPath("/settings/integrations")).toEqual(["trucks:view"]);
   });
 
   it("gates each people page on its own list key", () => {

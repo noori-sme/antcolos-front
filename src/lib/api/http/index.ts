@@ -11,6 +11,7 @@ import {
 } from "./carrier-authority";
 import { httpMaintenanceService } from "./maintenance";
 import { httpUsageService } from "./usage";
+import { httpTelegramService } from "./telegram";
 import { httpRateConIntakeService } from "./rate-con-intake";
 import { httpOrgInvitationsService, httpOrgRolesService } from "./org-access";
 import { httpOrgPeopleService } from "./org-people";
@@ -39,6 +40,8 @@ export const httpServices: AntcolosServices = {
   maintenance: httpMaintenanceService,
   // http-only (plan 26), like trucks.
   usage: httpUsageService,
+  // http-only (plan 29), like usage.
+  telegram: httpTelegramService,
   rateConIntake: httpRateConIntakeService,
   loadRecords: httpLoadRecordsService,
   // http-only (plan 16): mock mode keeps the mock driver workflow screens.

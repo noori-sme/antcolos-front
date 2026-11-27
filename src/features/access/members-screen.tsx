@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useServiceContext } from "@/lib/api/use-service-context";
 import { useActiveMembership } from "@/lib/session/hooks";
 import type { OrgMember } from "@/types/org-members";
+import { ChangeRoleDialog } from "./change-role-dialog";
 import { useOrgMembers, useRemoveOrgMember } from "./hooks";
 
 const PAGE_SIZE = 20;
@@ -151,6 +152,11 @@ function MemberRow({
         <Badge>{member.roleName || "Member"}</Badge>
         {member.hasPermissionOverrides ? <Badge tone="info">Custom access</Badge> : null}
       </div>
+      {isSelf ? null : (
+        <Can permission="members:role:change">
+          <ChangeRoleDialog member={member} />
+        </Can>
+      )}
       {isSelf ? null : (
         <Can permission="members:suspend">
           <ConfirmDialog

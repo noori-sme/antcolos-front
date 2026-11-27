@@ -7,6 +7,7 @@ import type { OrgMember } from "@/types/org-members";
 export function toOrgMember(dto: Dto): OrgMember {
   const email = str(dto.email) ?? "";
   return {
+    membershipId: str(dto.membershipId) ?? "",
     userId: str(dto.userId) ?? "",
     name: str(dto.name) ?? email,
     email,
@@ -26,5 +27,9 @@ export const httpOrgMembersService: OrgMembersService = {
   },
   async remove(_ctx, userId) {
     await apiClient.delete(`/organizations/members/${encodeURIComponent(userId)}`);
+  },
+  async changeRole(_ctx, membershipId, roleId) {
+    // No permission list: the role's own template applies (membership-api-contract §2).
+    await apiClient.put(`/organizations/members/${encodeURIComponent(membershipId)}/permissions`, { roleId });
   },
 };

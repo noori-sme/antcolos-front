@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canSendBuiltInTemplate, selectionChanged } from "./invite-selection";
+import { assignableRoles, canSendBuiltInTemplate, selectionChanged } from "./invite-selection";
 
 describe("selectionChanged", () => {
   const ticked = new Set(["load.read", "document.read", "document.create", "settlement.read"]);
@@ -48,5 +48,32 @@ describe("canSendBuiltInTemplate", () => {
 
   it("refuses a non-owner when the template is unknown, so the caller keeps its list", () => {
     expect(canSendBuiltInTemplate({ isOwner: false, template: undefined, granter: new Set(driverTemplate) })).toBe(false);
+  });
+});
+
+describe("assignableRoles", () => {
+  const roles = [
+    { id: "DRIVER", name: "Driver", permissions: ["load.respond", "document.create", "document.read"] },
+    { id: "ADMIN", name: "Admin", permissions: ["truck.update", "membership.manage_permissions"] },
+    { id: "custom-1", name: "Driver (Custom)", permissions: ["load.read", "document.read"] },
+  ];
+
+  it("offers an owner every role", () => {
+    expect(assignableRoles(roles, new Set(), true).map((r) => r.id)).toEqual(["DRIVER", "ADMIN", "custom-1"]);
+  });
+
+  it("never offers a non-owner a wildcard role, and accepts an alias key they hold", () => {
+    const more = [
+      { id: "SUPER", name: "Everything", permissions: ["*"] },
+      // An older backend spelling of "see loads" (load.view → load.read → loads:view).
+      { id: "viewer", name: "Viewer", permissions: ["load.view"] },
+    ];
+    expect(assignableRoles(more, new Set(["loads:view"]), false).map((r) => r.id)).toEqual(["viewer"]);
+  });
+
+  it("offers a non-owner only roles whose permissions they hold in full", () => {
+    // Held as UI keys, as the session stores them.
+    const granter = new Set(["loads:respond", "documents:upload", "documents:view", "loads:view"]);
+    expect(assignableRoles(roles, granter, false).map((r) => r.id)).toEqual(["DRIVER", "custom-1"]);
   });
 });

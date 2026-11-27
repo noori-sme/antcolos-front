@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { TelegramAccountScreen } from "@/features/telegram/telegram-account-screen";
 
 export const metadata = { title: "Notifications" };
 
 export default function Page() {
-  return <ModulePlaceholder title="Notifications" description="Email, push and Telegram preferences." />;
+  return <TelegramAccountScreen />;
 }

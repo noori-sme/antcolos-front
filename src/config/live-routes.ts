@@ -29,11 +29,16 @@ export const HTTP_LIVE_ROUTES: readonly string[] = [
   "/finance/receipts",      // receipts review queue (receipts-api-contract, plan 27)
   "/finance/expenses",      // company books (expenses-api-contract, plan 28)
   "/driver/ledger",         // owner-operator ledger (expenses-api-contract, plan 28)
+  "/account/notifications", // telegram account (telegram-api-contract §5, plan 29)
+  "/driver/notifications",  // the same, for drivers (plan 29)
+  "/settings/integrations", // telegram truck groups (telegram-api-contract §6, plan 29)
 ];
 
 /**
  * Routes a driver account may use while the rest of the dashboard is locked for
- * it (components/layout/locked-section.tsx): the driver's own loads (plan 16)
- * and receipts (plan 27).
+ * it (components/layout/locked-section.tsx): the driver's own loads (plan 16),
+ * receipts (plan 27), ledger (plan 28) and Telegram connection (plan 29).
  */
-export const DRIVER_OPEN_ROUTES: readonly string[] = ["/driver/loads", "/driver/receipts", "/driver/ledger"];
+export const DRIVER_OPEN_ROUTES: readonly string[] = [
+  "/driver/loads", "/driver/receipts", "/driver/ledger", "/driver/notifications",
+];

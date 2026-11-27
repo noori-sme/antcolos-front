@@ -6,6 +6,7 @@ import { toOrgMember } from "./org-members";
 const CONTRACT_LIST = {
   data: [
     {
+      membershipId: "3c4d5e6f-7081-9012-cdef-234567890123",
       userId: "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
       name: "Jordan Lee",
       email: "driver@example.com",
@@ -24,6 +25,7 @@ describe("toOrgMember (membership-api-contract §2)", () => {
     expect(page.meta.totalItems).toBe(1);
     expect(page.data).toEqual([
       {
+        membershipId: "3c4d5e6f-7081-9012-cdef-234567890123",
         userId: "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
         name: "Jordan Lee",
         email: "driver@example.com",

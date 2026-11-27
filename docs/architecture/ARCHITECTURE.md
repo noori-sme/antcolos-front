@@ -85,6 +85,8 @@ and cache entries can't cross organizations.
 | Carrier authority, carrier directory, own memberships | identity / `carrier-authority-api-contract`, `membership-api-contract` §2, §6 | **http** (authority card on the live Home, hand-off to another carrier, My organizations with Leave) | `carrierAuthority`, `orgDirectory`, `selfMemberships`, plan 25 |
 | Truck maintenance | fleet / `maintenance-api-contract` (backend plan 48) | **http** (truck panel, Service due, driver card); the `/maintenance` demo area stays mock | `maintenance` service, plan 24 |
 | Usage and costs | `usage-api-contract` (backend plan 49) | **http** (Settings → Usage & costs, own organization) | `usage` service, plan 26 |
+| Telegram linking | `telegram-api-contract` §1, §5–§6 (backend plan 52) | **http** (Account / Driver → Notifications: your own link; Settings → Integrations: truck groups) | `telegram` service, plan 29 |
+| Member role change | `membership-api-contract` §2 (`membershipId`), `permissions-api-contract` | **http** (Members → Change role) | `orgMembers.changeRole`, plan 29 |
 | Own profile (`/account/profile`: name, phone, headline, about me, picture) | identity / `profile.md` | **http** in http mode; mock mode keeps the public-profile screen | service seam (`selfProfile`), shared reads in `lib/api/use-self-profile.ts` (also the top-bar avatar), plan 11 |
 | Public profile (username page, visibility, workplaces, share card) | **not built in backend yet** | mock | contracts seam (`profile`) |
 | OCR (rate cons, documents) | documents-ai / `ocr.md` | mock | contracts seam |

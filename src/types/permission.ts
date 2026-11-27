@@ -108,7 +108,7 @@ export type PermissionKey =
   // reading the file.
   | "qualification:view" | "qualification:dispose"
   // Organization members
-  | "members:view" | "members:edit" | "members:suspend" | "permissions:manage"
+  | "members:view" | "members:edit" | "members:suspend" | "members:role:change" | "permissions:manage"
   | "members:list_drivers" | "members:list_dispatchers" | "members:list_admins"
   // Invitations
   | "invitations:view" | "invitations:create" | "invitations:resend" | "invitations:revoke"

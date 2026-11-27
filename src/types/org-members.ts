@@ -4,6 +4,8 @@
  * custom roles included. Plan 12.
  */
 export interface OrgMember {
+  /** For changing their role (`PUT …/members/:membershipId/permissions`, plan 29). */
+  membershipId: string;
   userId: string;
   name: string;
   email: string;

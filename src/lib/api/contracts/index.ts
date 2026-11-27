@@ -13,6 +13,7 @@ export type * from "./trucks";
 export type * from "./carrier-authority";
 export type * from "./maintenance";
 export type * from "./usage";
+export type * from "./telegram";
 export type * from "./rate-con-intake";
 export type * from "./org-people";
 export type * from "./org-access";
@@ -57,6 +58,7 @@ import type {
 } from "./carrier-authority";
 import type { MaintenanceService } from "./maintenance";
 import type { UsageService } from "./usage";
+import type { TelegramService } from "./telegram";
 import type { RateConIntakeService } from "./rate-con-intake";
 import type { LoadRecordsService } from "./load-records";
 import type { DriverLoadsService } from "./driver-loads";
@@ -107,6 +109,8 @@ export interface AntcolosServices {
   maintenance: MaintenanceService;
   /** Usage and estimated costs (backend plan 49). http-only. */
   usage: UsageService;
+  /** Telegram linking (backend plan 52). http-only. */
+  telegram: TelegramService;
   /** Rate Con upload, review and approval (NestJS `/documents`, plan 13). http-only. */
   rateConIntake: RateConIntakeService;
   /** Booked loads on the real API (F1.2, plan 14); http-only. */

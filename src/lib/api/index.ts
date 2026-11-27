@@ -8,6 +8,7 @@ import {
 } from "./http/carrier-authority";
 import { httpMaintenanceService } from "./http/maintenance";
 import { httpUsageService } from "./http/usage";
+import { httpTelegramService } from "./http/telegram";
 import { httpRateConIntakeService } from "./http/rate-con-intake";
 import { httpLoadRecordsService } from "./http/load-records";
 import { httpDriverLoadsService } from "./http/driver-loads";
@@ -88,6 +89,8 @@ const mockServices: AntcolosServices = {
   maintenance: httpMaintenanceService,
   // http-only (plan 26), like trucks.
   usage: httpUsageService,
+  // http-only (plan 29), like usage.
+  telegram: httpTelegramService,
   // http-only (plan 13): Rate Con upload, review and approval have no mock;
   // the screens call the real API in both modes.
   rateConIntake: httpRateConIntakeService,
