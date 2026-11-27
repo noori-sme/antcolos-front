@@ -16,7 +16,7 @@ import {
   validateRoleName,
 } from "@/lib/permissions";
 import { useActiveMembership, usePermissions } from "@/lib/session/hooks";
-import type { EngagementType, PermissionKey, PermissionTemplate } from "@/types";
+import type { EngagementType, PermissionTemplate } from "@/types";
 import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_LABEL } from "@/features/driver/driver-rules";
 import { ApiPermissionPicker } from "./api-permission-picker";
 import {
@@ -31,6 +31,7 @@ import { useCreateInvitation, useCreateRole, useOrgRoles, useTeamRoster } from "
 import { PermissionDeniedError } from "@/lib/api/contracts/context";
 import { validateEmail } from "@/features/auth/rules";
 import type { ReferralHandoff } from "@/lib/api/contracts/referrals";
+import { canSendBuiltInTemplate, selectionChanged } from "@/lib/permissions/invite-selection";
 import { cn } from "@/lib/utils";
 import { useScrollToTop } from "@/lib/utils/scroll";
 import { useEffect } from "react";
@@ -87,11 +88,6 @@ function expiryIso(days: number): string | null {
   const d = new Date();
   d.setDate(d.getDate() + days);
   return d.toISOString();
-}
-
-function sameSet(a: readonly (PermissionKey | string)[], b: ReadonlySet<string>): boolean {
-  if (a.length !== b.size) return false;
-  return a.every((k) => b.has(k) || b.has(migrateKey(k)));
 }
 
 /**
@@ -158,6 +154,8 @@ export function InviteFlow() {
   const [orgName, setOrgName] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [permissions, setPermissions] = useState<Set<string>>(new Set());
+  // What choosing the preset ticked, after the grantable clamp: "changed" is measured from here.
+  const [initialPermissions, setInitialPermissions] = useState<Set<string>>(new Set());
 
   // Driver invitations only. The carrier picks this, never the driver.
   const [engagementType, setEngagementType] = useState<EngagementType | null>(null);
@@ -290,7 +288,7 @@ export function InviteFlow() {
   const effectiveRoleName = savedRole?.name ?? (needsRoleName ? roleName.trim() : preset?.label ?? "");
 
   const changedFromPreset =
-    preset != null && !savedRole && !sameSet(preset.permissions, permissions);
+    preset != null && !savedRole && selectionChanged(initialPermissions, permissions);
 
   const selectedList = useMemo(() => [...permissions], [permissions]);
 
@@ -314,7 +312,9 @@ export function InviteFlow() {
     // A preset arrives pre-ticked; anything the granter cannot hand out is
     // dropped rather than silently promised.
     const base = role ? role.permissions : next.permissions.map(migrateKey);
-    setPermissions(new Set(isOwner ? base : clampToGrantable(base, myPermissions, orgType)));
+    const ticked = isOwner ? base : clampToGrantable(base, myPermissions, orgType);
+    setPermissions(new Set(ticked));
+    setInitialPermissions(new Set(ticked));
     setRoleName(role?.name ?? "");
     setEngagementType(next.kind === "driver" ? "company_driver" : null);
     setUserMode("new");
@@ -380,6 +380,8 @@ export function InviteFlow() {
 
     try {
       let roleIdToUse = "";
+      // The built-in role's template, from the roles list (only set on the built-in path).
+      let builtInTemplate: readonly string[] | undefined;
 
       // Automatically create role internally if preset is custom or permissions were customized
       const shouldCreateRole =
@@ -426,8 +428,15 @@ export function InviteFlow() {
             r.name.toLowerCase() === preset.label.toLowerCase(),
         );
         roleIdToUse = matched ? String(matched.id) : standardRoleId;
+        builtInTemplate = matched?.permissions;
       }
 
+      // Neither a new custom role nor a saved one: the built-in role. Send no list (its own
+      // template applies) when the inviter holds that whole template; otherwise keep the list.
+      const usesBuiltInRole =
+        !shouldCreateRole &&
+        !savedRole &&
+        canSendBuiltInTemplate({ isOwner, template: builtInTemplate, granter: myPermissions });
       let invitePayload: CreateOrgInvitationInput;
 
       if (userMode === "existing") {
@@ -435,7 +444,7 @@ export function InviteFlow() {
         invitePayload = {
           userId: resolvedUserId,
           roleId: roleIdToUse,
-          permissions: safePermissions,
+          permissions: usesBuiltInRole ? undefined : safePermissions,
         };
       } else {
         const fName = isDispatchOrg
@@ -450,7 +459,7 @@ export function InviteFlow() {
           firstName: fName,
           lastName: lName,
           roleId: roleIdToUse,
-          permissions: safePermissions,
+          permissions: usesBuiltInRole ? undefined : safePermissions,
         };
       }
 
@@ -1001,7 +1010,14 @@ export function InviteFlow() {
               />
               <ReviewRow
                 label={isDispatchOrg ? "Invitation type" : "Role"}
-                value={effectiveRoleName || (changedFromPreset ? `${preset.label} (Custom)` : preset.label)}
+                value={
+                  savedRole?.name ??
+                  (needsRoleName
+                    ? roleName.trim()
+                    : changedFromPreset
+                      ? `${preset.label} (Custom)`
+                      : preset.label)
+                }
               />
               {isDriver && engagementType ? (
                 <ReviewRow label="Engagement type" value={ENGAGEMENT_LABEL[engagementType]} />
