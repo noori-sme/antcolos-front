@@ -57,6 +57,14 @@ const PARTY: Record<CancellationParty, string> = {
   other: "someone else",
 };
 
+/**
+ * Where an event came from, when it is worth saying (loads-api-contract §8 `source`).
+ * Telegram is named so the office can tell a driver's button press from its own changes.
+ */
+export function timelineVia(source: string): string | null {
+  return source === "telegram" ? "via Telegram" : null;
+}
+
 /** One readable line per timeline event; an unknown type is shown by name. */
 export function timelineSentence(entry: LoadTimelineEntry): string {
   switch (entry.type) {
