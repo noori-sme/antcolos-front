@@ -2,7 +2,7 @@
 
 import { ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { Button } from "@/components/ui/button";
-import { timelineSentence } from "@/lib/load-records/format";
+import { timelineSentence, timelineVia } from "@/lib/load-records/format";
 import { useLoadTimeline } from "./hooks";
 
 const WHEN = new Intl.DateTimeFormat("en-US", {
@@ -34,7 +34,9 @@ export function LiveLoadTimeline({ loadId }: { loadId: string }) {
       ) : (
         <>
           <ol className="space-y-0 border-l border-border pl-4">
-            {timeline.data.pages.flatMap((page) => page.items).map((entry) => (
+            {timeline.data.pages.flatMap((page) => page.items).map((entry) => {
+              const via = timelineVia(entry.source);
+              return (
               <li key={entry.id} className="relative pb-4 last:pb-0">
                 <span
                   aria-hidden
@@ -47,9 +49,11 @@ export function LiveLoadTimeline({ loadId }: { loadId: string }) {
                 <p className="mt-0.5 text-[0.75rem] text-fg-subtle">
                   <time dateTime={entry.occurredAt}>{WHEN.format(new Date(entry.occurredAt))}</time>
                   {entry.actor ? ` · ${entry.actor.name ?? "A former member"}` : " · System"}
+                  {via ? ` · ${via}` : null}
                 </p>
               </li>
-            ))}
+              );
+            })}
           </ol>
           {timeline.hasNextPage ? (
             <Button

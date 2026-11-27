@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LoadRecordStop, LoadTimelineEntry } from "@/types/load-record";
 import {
-  equipmentLabel, money, routeSummary, stopWindow, timelineSentence,
+  equipmentLabel, money, routeSummary, stopWindow, timelineSentence, timelineVia,
 } from "./format";
 
 const stop = (extras: Partial<LoadRecordStop> = {}): LoadRecordStop => ({
@@ -116,5 +116,17 @@ describe("load record formatting", () => {
       /^Problem resolved · cost \$150/,
     );
     expect(timelineSentence(entry({ type: "load.accounting_exported" }))).toBe("Sent to accounting");
+  });
+});
+
+describe("timelineVia", () => {
+  it("says an event came from Telegram", () => {
+    expect(timelineVia("telegram")).toBe("via Telegram");
+  });
+
+  it("says nothing for the office's own actions or the system", () => {
+    expect(timelineVia("api")).toBeNull();
+    expect(timelineVia("system")).toBeNull();
+    expect(timelineVia("unknown")).toBeNull();
   });
 });
