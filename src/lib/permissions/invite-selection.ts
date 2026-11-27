@@ -30,3 +30,16 @@ export function canSendBuiltInTemplate(input: {
   if (!input.template) return false;
   return ungrantablePermissions(input.template, input.granter).length === 0;
 }
+
+/**
+ * The roles someone may move a member to (plan 29): every role for an owner; otherwise only
+ * roles whose permissions they hold in full, as the backend checks (invariant 5).
+ */
+export function assignableRoles<R extends { permissions: readonly string[] }>(
+  roles: readonly R[],
+  granter: ReadonlySet<string>,
+  isOwner: boolean,
+): R[] {
+  if (isOwner) return [...roles];
+  return roles.filter((role) => ungrantablePermissions(role.permissions, granter).length === 0);
+}

@@ -214,6 +214,17 @@ export function useTeamRoster(enabled: boolean) {
  * Admins lists all change, so both prefixes are refreshed, also after a
  * refusal (someone else may have removed them first: 404).
  */
+/** Move a member to another role (plan 29); refreshes the members and people lists. */
+export function useChangeMemberRole() {
+  const ctx = useServiceContext();
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (input: { membershipId: string; roleId: string }) =>
+      services.orgMembers.changeRole(requireCtx(ctx), input.membershipId, input.roleId),
+    onSettled: () => Promise.all([invalidate(accessKeys.members), invalidate(queryKeys.people)]),
+  });
+}
+
 export function useRemoveOrgMember() {
   const ctx = useServiceContext();
   const invalidate = useInvalidate();
