@@ -1,7 +1,7 @@
-import { ModulePlaceholder } from "../../placeholder";
+import { TelegramIntegrationsScreen } from "@/features/telegram/telegram-integrations-screen";
 
 export const metadata = { title: "Integrations" };
 
 export default function Page() {
-  return <ModulePlaceholder title="Integrations" description="Telegram and other external tools connected to this organization." />;
+  return <TelegramIntegrationsScreen />;
 }

@@ -24,6 +24,10 @@ describe("isRouteAvailable (plan 08)", () => {
     "/settings/permissions",
     "/account/profile",
     "/settings/users",
+    // Plan 29: Telegram connection and truck groups.
+    "/account/notifications",
+    "/driver/notifications",
+    "/settings/integrations",
   ])("reaches %s in http mode", (path) => {
     expect(isRouteAvailable(path, "http", false)).toBe(true);
   });

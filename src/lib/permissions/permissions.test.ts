@@ -193,6 +193,13 @@ describe("people list keys match the backend (plan 06)", () => {
     expect(can(new Set<PermissionKey>(["members:list_drivers"]), "drivers:view")).toBe(false);
   });
 
+  it("gates the Telegram pages as plan 29 says", () => {
+    // Your own connection needs no key; the truck groups page keeps its integrations gate.
+    expect(requiredPermissionsForPath("/account/notifications")).toEqual([]);
+    expect(requiredPermissionsForPath("/driver/notifications")).toEqual([]);
+    expect(requiredPermissionsForPath("/settings/integrations")).toEqual(["integrations:view"]);
+  });
+
   it("gates each people page on its own list key", () => {
     expect(requiredPermissionsForPath("/people/drivers")).toEqual(["members:list_drivers"]);
     expect(requiredPermissionsForPath("/people/drivers/u1")).toEqual(["members:list_drivers"]);
