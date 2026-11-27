@@ -2,10 +2,11 @@
 
 import { Send } from "lucide-react";
 import { useState } from "react";
-import { ErrorState, LoadingSkeleton } from "@/components/data/states";
+import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useServiceContext } from "@/lib/api/use-service-context";
 import { useCan } from "@/lib/session/hooks";
 import type { TelegramLinkCode } from "@/types/telegram";
 import { useCreateTelegramLinkCode, useTelegramAccount, useUnlinkTelegramAccount } from "./hooks";
@@ -18,6 +19,7 @@ const SINCE = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric",
  * permission; Connect needs `loads:respond`, the code endpoint's key.
  */
 export function TelegramAccountScreen() {
+  const ctx = useServiceContext();
   const [requested, setCode] = useState<TelegramLinkCode | null>(null);
   // Poll while a code is out; once they tap Start the status turns linked and the code is done.
   const account = useTelegramAccount(requested !== null);
@@ -43,7 +45,13 @@ export function TelegramAccountScreen() {
           </h2>
         </div>
 
-        {account.isPending ? (
+        {!ctx ? (
+          // Individual accounts have no company: the bot works through a company's loads and trucks.
+          <EmptyState
+            title="Telegram comes with a company"
+            description="Once you work for a carrier in Antcolos, you can connect Telegram here."
+          />
+        ) : account.isPending ? (
           <LoadingSkeleton rows={1} />
         ) : account.isError ? (
           <ErrorState
