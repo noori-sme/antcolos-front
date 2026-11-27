@@ -48,6 +48,12 @@ export const selfMembershipKeys = {
   list: (organizationId: string) => [...orgKey(organizationId), "account", "memberships"] as const,
 };
 
+/** Telegram linking (plan 29). The account is per person on the backend, still org-keyed. */
+export const telegramKeys = {
+  account: (organizationId: string) => [...orgKey(organizationId), "telegram", "account"] as const,
+  truckChats: (organizationId: string) => [...orgKey(organizationId), "telegram", "truck-chats"] as const,
+};
+
 /** Usage and estimated costs (plan 26). */
 export const usageKeys = {
   organization: (organizationId: string, range: { from: string; to: string }) =>

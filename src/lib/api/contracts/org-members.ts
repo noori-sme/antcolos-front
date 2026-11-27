@@ -15,4 +15,10 @@ export interface OrgMembersService {
    * backend's message: 404 already removed, 409 the last admin.
    */
   remove(ctx: ServiceContext, userId: string): Promise<void>;
+  /**
+   * Give a member another role (built-in or custom), with that role's own permissions.
+   * Needs `membership.manage_permissions`; the backend refuses a role whose permissions the
+   * caller does not hold, and keeps the last admin.
+   */
+  changeRole(ctx: ServiceContext, membershipId: string, roleId: string): Promise<void>;
 }

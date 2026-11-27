@@ -187,6 +187,9 @@ describe("people list keys match the backend (plan 06)", () => {
     expect(normalizePermissionKey("membership.list")).toBe("members:view");
     // Plan 12: removing a member is gated on the "cut off access" key.
     expect(normalizePermissionKey("membership.remove")).toBe("members:suspend");
+    // Plan 29: changing a member's role is its own backend key, not membership.update.
+    expect(normalizePermissionKey("membership.manage_permissions")).toBe("members:role:change");
+    expect(normalizePermissionKey("membership.update")).not.toBe("members:role:change");
     expect(can(new Set<PermissionKey>(["members:list_drivers"]), "drivers:view")).toBe(false);
   });
 
