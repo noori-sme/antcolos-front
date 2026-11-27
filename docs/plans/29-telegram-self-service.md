@@ -3,7 +3,8 @@
 ```
 Status:   approved (owner, 2026-11-27: "plan and implement … continue with your recommendation");
           revised after frontend-reviewer (3 blocking, should-fix and nits answered below)
-Phase:    4 — docs done; live check on staging after backend #100 deploys
+Phase:    4 — done; frontend-reviewer: 2 blocking (spent code reappearing, endless polling) and
+          should-fix items fixed; live check on staging after backend #100 deploys
 Branch:   feat/telegram-self-service (same name as the backend, plan 52)
 Backend contract: ../antcolos/docs/requirements/telegram-api-contract.md §1, §5–§6;
                   ../antcolos/docs/requirements/membership-api-contract.md §2 (membershipId)
@@ -71,7 +72,7 @@ action.
 - `orgMembers.changeRole(ctx, membershipId, roleId)` and `OrgMember.membershipId` in the http
   mapper, the mock adapter and the mock data.
 - Keys under `orgKey`: `telegramKeys.account(org)` (per person on the backend, still org-keyed
-  so a switch never shows a stale card), `telegramKeys.truckChats(org, page)`.
+  so a switch never shows a stale card), `telegramKeys.truckChats(org)` (first 100 groups and trucks; the screen says "Showing your first 100 trucks" when there are more).
   - Disconnect and a successful link invalidate `telegramKeys.account`.
   - Unlink truck group invalidates `telegramKeys.truckChats` only.
   - Change role invalidates the members prefix and the people lists (drivers, dispatchers,

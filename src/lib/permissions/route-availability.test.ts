@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ALL_NAV_SECTIONS } from "@/config/nav";
-import { HTTP_LIVE_ROUTES } from "@/config/live-routes";
+import { DRIVER_OPEN_ROUTES, HTTP_LIVE_ROUTES } from "@/config/live-routes";
 import { isDemoRoute, isRouteAvailable, ROUTE_MANIFEST } from "./route-manifest";
 
 describe("isRouteAvailable (plan 08)", () => {
@@ -110,3 +110,10 @@ describe("demo areas (plan 10)", () => {
     expect(isDemoRoute("/home", "http", false)).toBe(false);
   });
 });
+
+describe("the driver lock (plan 29)", () => {
+  it("leaves the driver's Notifications open, so drivers can connect Telegram", () => {
+    expect(DRIVER_OPEN_ROUTES).toContain("/driver/notifications");
+  });
+});
+

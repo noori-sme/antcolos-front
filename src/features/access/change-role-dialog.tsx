@@ -21,7 +21,7 @@ export function ChangeRoleDialog({ member }: { member: OrgMember }) {
   const change = useChangeMemberRole();
   const granter = usePermissions();
   const { membership } = useActiveMembership();
-  const options = assignableRoles(roles.data ?? [], granter as ReadonlySet<string>, membership?.isOwner ?? false);
+  const options = assignableRoles(roles.data ?? [], granter, membership?.isOwner ?? false);
 
   const save = () =>
     change.mutate(

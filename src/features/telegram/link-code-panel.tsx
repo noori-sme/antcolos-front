@@ -18,18 +18,28 @@ function remaining(ms: number): string {
 export function LinkCodePanel({
   code,
   onRenew,
+  onExpire,
   renewing,
 }: {
   code: TelegramLinkCode;
   onRenew: () => void;
+  /** Called once when the countdown reaches zero, so the parent stops polling. */
+  onExpire: () => void;
   renewing: boolean;
 }) {
   const expiresAt = new Date(code.expiresAt).getTime();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      if (t >= expiresAt) {
+        window.clearInterval(timer);
+        onExpire();
+      }
+    }, 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [expiresAt, onExpire]);
   const left = expiresAt - now;
   const command = code.purpose === "ACCOUNT" ? `/start ${code.code}` : `/link ${code.code}`;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { Send } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -21,15 +21,37 @@ const SINCE = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric",
 export function TelegramAccountScreen() {
   const ctx = useServiceContext();
   const [requested, setCode] = useState<TelegramLinkCode | null>(null);
-  // Poll while a code is out; once they tap Start the status turns linked and the code is done.
-  const account = useTelegramAccount(requested !== null);
+  const [expired, setExpired] = useState(false);
+  // Poll only while a live code is out; once they tap Start the status turns linked.
+  const [linkedSeen, setLinkedSeen] = useState(false);
+  const account = useTelegramAccount(requested !== null && !expired && !linkedSeen);
   const create = useCreateTelegramLinkCode();
   const unlink = useUnlinkTelegramAccount();
   const canConnect = useCan("loads:respond");
   const linked = account.data?.linked === true;
-  const code = linked ? null : requested;
+  // A code is spent once the link shows; it never comes back after a later disconnect.
+  if (linked && requested && !linkedSeen) setLinkedSeen(true);
+  const code = linked || linkedSeen ? null : requested;
 
-  const connect = () => create.mutate({ purpose: "ACCOUNT" }, { onSuccess: setCode });
+  const connect = () =>
+    create.mutate(
+      { purpose: "ACCOUNT" },
+      {
+        onSuccess: (next) => {
+          setCode(next);
+          setExpired(false);
+          setLinkedSeen(false);
+        },
+      },
+    );
+  const disconnect = () =>
+    unlink.mutateAsync(undefined, {
+      onSuccess: () => {
+        setCode(null);
+        setLinkedSeen(false);
+      },
+    });
+  const onExpire = useCallback(() => setExpired(true), []);
 
   return (
     <div className="space-y-section">
@@ -76,7 +98,7 @@ export function TelegramAccountScreen() {
               description="This disconnects Telegram for all your companies: the bot stops sending you loads and your buttons stop working. Truck groups you linked keep working. You can connect again any time."
               confirmLabel="Disconnect"
               destructive
-              onConfirm={() => unlink.mutateAsync()}
+              onConfirm={disconnect}
               trigger={
                 <Button variant="secondary" size="sm" disabled={unlink.isPending}>
                   {unlink.isPending ? "Disconnecting…" : "Disconnect"}
@@ -96,7 +118,7 @@ export function TelegramAccountScreen() {
               person, for all your companies.
             </p>
             {code ? (
-              <LinkCodePanel code={code} onRenew={connect} renewing={create.isPending} />
+              <LinkCodePanel code={code} onRenew={connect} onExpire={onExpire} renewing={create.isPending} />
             ) : (
               <div className="space-y-1.5">
                 <Button size="sm" onClick={connect} disabled={!canConnect || create.isPending}>

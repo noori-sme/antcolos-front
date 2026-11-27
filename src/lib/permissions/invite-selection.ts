@@ -1,3 +1,4 @@
+import type { PermissionKey } from "@/types";
 import { ungrantablePermissions } from "./grantable";
 
 /**
@@ -37,7 +38,7 @@ export function canSendBuiltInTemplate(input: {
  */
 export function assignableRoles<R extends { permissions: readonly string[] }>(
   roles: readonly R[],
-  granter: ReadonlySet<string>,
+  granter: ReadonlySet<PermissionKey | string>,
   isOwner: boolean,
 ): R[] {
   if (isOwner) return [...roles];

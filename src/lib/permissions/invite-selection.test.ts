@@ -62,6 +62,15 @@ describe("assignableRoles", () => {
     expect(assignableRoles(roles, new Set(), true).map((r) => r.id)).toEqual(["DRIVER", "ADMIN", "custom-1"]);
   });
 
+  it("never offers a non-owner a wildcard role, and accepts an alias key they hold", () => {
+    const more = [
+      { id: "SUPER", name: "Everything", permissions: ["*"] },
+      // An older backend spelling of "see loads" (load.view → load.read → loads:view).
+      { id: "viewer", name: "Viewer", permissions: ["load.view"] },
+    ];
+    expect(assignableRoles(more, new Set(["loads:view"]), false).map((r) => r.id)).toEqual(["viewer"]);
+  });
+
   it("offers a non-owner only roles whose permissions they hold in full", () => {
     // Held as UI keys, as the session stores them.
     const granter = new Set(["loads:respond", "documents:upload", "documents:view", "loads:view"]);

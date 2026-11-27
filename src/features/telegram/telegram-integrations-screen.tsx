@@ -1,7 +1,7 @@
 "use client";
 
 import { Send } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Can } from "@/components/auth/can";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
@@ -29,14 +29,35 @@ interface Row {
  */
 export function TelegramIntegrationsScreen() {
   const canView = useCan("trucks:view");
+  // The code endpoint also needs load.respond (telegram-api-contract §1).
+  const canLink = useCan("loads:respond");
   const [requested, setCode] = useState<{ truckId: string; code: TelegramLinkCode } | null>(null);
+  const [expired, setExpired] = useState(false);
+  const [linkedSeen, setLinkedSeen] = useState(false);
   const trucks = useTelegramTrucks();
-  const chats = useTelegramTruckChats(requested !== null);
+  const chats = useTelegramTruckChats(requested !== null && !expired && !linkedSeen);
   const create = useCreateTelegramLinkCode();
   const unlink = useUnlinkTelegramTruckChat();
 
   const link = (truckId: string) =>
-    create.mutate({ purpose: "TRUCK_CHAT", truckId }, { onSuccess: (c) => setCode({ truckId, code: c }) });
+    create.mutate(
+      { purpose: "TRUCK_CHAT", truckId },
+      {
+        onSuccess: (c) => {
+          setCode({ truckId, code: c });
+          setExpired(false);
+          setLinkedSeen(false);
+        },
+      },
+    );
+  const unlinkTruck = (truckId: string) =>
+    unlink.mutateAsync(truckId, {
+      // A spent code never comes back after the group is unlinked.
+      onSuccess: () => {
+        if (requested?.truckId === truckId) setCode(null);
+      },
+    });
+  const onExpire = useCallback(() => setExpired(true), []);
 
   const chatOf = new Map((chats.data?.data ?? []).map((c) => [c.truckId, c]));
   const rows: Row[] = [
@@ -56,8 +77,10 @@ export function TelegramIntegrationsScreen() {
         chat: c,
       })),
   ];
-  // The code is done once the group shows as linked.
-  const code = requested && !chatOf.has(requested.truckId) ? requested : null;
+  // The code is spent once the group shows as linked.
+  if (requested && chatOf.has(requested.truckId) && !linkedSeen) setLinkedSeen(true);
+  const code = requested && !linkedSeen && !chatOf.has(requested.truckId) ? requested : null;
+  const moreTrucks = (trucks.data?.meta.totalItems ?? 0) > (trucks.data?.data.length ?? 0);
 
   return (
     <div className="space-y-section">
@@ -118,7 +141,7 @@ export function TelegramIntegrationsScreen() {
                         description={`The bot stops posting ${row.unit.toLowerCase()}'s loads to this group. It stays in the group until someone removes it.`}
                         confirmLabel="Unlink"
                         destructive
-                        onConfirm={() => unlink.mutateAsync(row.truckId)}
+                        onConfirm={() => unlinkTruck(row.truckId)}
                         trigger={
                           <Button variant="secondary" size="sm" disabled={unlink.isPending}>
                             Unlink
@@ -126,7 +149,12 @@ export function TelegramIntegrationsScreen() {
                         }
                       />
                     ) : row.operated && code?.truckId !== row.truckId ? (
-                      <Button size="sm" onClick={() => link(row.truckId)} disabled={create.isPending}>
+                      <Button
+                        size="sm"
+                        onClick={() => link(row.truckId)}
+                        disabled={!canLink || create.isPending}
+                        title={canLink ? undefined : "Needs the “Answer an assigned load” permission"}
+                      >
                         Link group
                       </Button>
                     ) : null}
@@ -136,6 +164,7 @@ export function TelegramIntegrationsScreen() {
                   <LinkCodePanel
                     code={code.code}
                     onRenew={() => link(row.truckId)}
+                    onExpire={onExpire}
                     renewing={create.isPending}
                   />
                 ) : null}
@@ -148,9 +177,13 @@ export function TelegramIntegrationsScreen() {
             {(create.error ?? unlink.error)?.message}
           </p>
         ) : null}
+        {moreTrucks ? (
+          <p className="text-[0.75rem] text-fg-subtle">Showing your first 100 trucks.</p>
+        ) : null}
         <Can permission="trucks:edit">
           <p className="text-[0.75rem] text-fg-subtle">
-            Linking a group needs your own Telegram connected first (Account → Notifications).
+            Linking a group needs your own Telegram connected first (Account → Notifications)
+            {canLink ? "" : " and the “Answer an assigned load” permission"}.
           </p>
         </Can>
       </section>

@@ -209,11 +209,6 @@ export function useTeamRoster(enabled: boolean) {
   };
 }
 
-/**
- * End a member's access (plan 12). The roster and the Drivers / Dispatchers /
- * Admins lists all change, so both prefixes are refreshed, also after a
- * refusal (someone else may have removed them first: 404).
- */
 /** Move a member to another role (plan 29); refreshes the members and people lists. */
 export function useChangeMemberRole() {
   const ctx = useServiceContext();
@@ -225,6 +220,11 @@ export function useChangeMemberRole() {
   });
 }
 
+/**
+ * End a member's access (plan 12). The roster and the Drivers / Dispatchers /
+ * Admins lists all change, so both prefixes are refreshed, also after a
+ * refusal (someone else may have removed them first: 404).
+ */
 export function useRemoveOrgMember() {
   const ctx = useServiceContext();
   const invalidate = useInvalidate();
